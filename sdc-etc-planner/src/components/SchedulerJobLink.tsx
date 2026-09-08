@@ -1,9 +1,23 @@
 import { schedulerScheduleUrl } from "@/lib/scheduler-link";
+import { CrossAppAnchor } from "@/components/CrossAppAnchor";
 
 // Small "open this job's schedule in the SDC Scheduler" icon-link, rendered
 // next to the existing Job Hour Details chart icon on the Projects / Monthly
-// ETC / Job Hour Details screens. Opens the Scheduler in a new tab, deep-linked
-// to the matching project's schedule view (see lib/scheduler-link.ts).
+// ETC / Job Hour Details screens. Deep-linked to the matching project's
+// schedule view (see lib/scheduler-link.ts).
+//
+// ── Opens inside the shell as of 2026-09-08 ────────────────────────────────
+//
+// This used to render a plain target="_blank" anchor, which inside the SDC
+// Tools shell went through setWindowOpenHandler -> shell.openExternal and threw
+// the user out to their default browser, at a standalone Scheduler with none of
+// the shell's session — while the Projects grid's own "Project Schedule" menu
+// item, pointing at the SAME place, opened it properly in the shell. Two
+// controls, one destination, two behaviours.
+//
+// STAYS a server component: schedulerScheduleUrl() below is server-only (it
+// mints a per-link SSO token). The click handling lives in CrossAppAnchor, the
+// small client boundary — see that file for why the split is this way round.
 //
 // `available` gates rendering: the caller passes jobNumbers.has(job.jobId) from
 // getSchedulerLinkContext(), so the icon only appears for jobs that actually
@@ -28,13 +42,13 @@ export function SchedulerJobLink({
 }) {
   if (!available) return null;
   const label = `Open ${jobName ?? jobId} project schedule in the Scheduler`;
+
   return (
-    <a
+    <CrossAppAnchor
+      appId="scheduler"
       href={schedulerScheduleUrl(baseUrl, jobId, ssoEmail)}
-      target="_blank"
-      rel="noopener noreferrer"
       title={label}
-      aria-label={label}
+      ariaLabel={label}
       className={className ?? "shrink-0 text-sdc-gray-400 hover:text-sdc-blue"}
     >
       {/* Gantt-style staggered bars — deliberately distinct from the vertical
@@ -44,6 +58,6 @@ export function SchedulerJobLink({
         <line x1="5.5" y1="8" x2="13.5" y2="8" strokeLinecap="round" />
         <line x1="3.5" y1="12.5" x2="10.5" y2="12.5" strokeLinecap="round" />
       </svg>
-    </a>
+    </CrossAppAnchor>
   );
 }

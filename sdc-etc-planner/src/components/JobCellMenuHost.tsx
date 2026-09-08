@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { JOB_MENU_CELL_SELECTOR, placeContextMenu } from "@/lib/job-cell-menu";
 import { currentZoom } from "@/lib/app-zoom";
+import { decideCrossAppNav, reportCrossAppNavError } from "@/lib/shell-cross-app-nav";
+import { useToast } from "@/components/ui/Toast";
 
 // The Job cell's right-click menu (Job Hour Details / Project Schedule) — ONE
 // instance for a whole grid, instead of one component per cell.
@@ -42,6 +44,8 @@ export function JobCellMenuHost() {
   // click handler races React's unmount of the menu.
   const [at, setAt] = useState<OpenAt | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // For the one failure the shell bridge reports: the target app not running.
+  const { toast } = useToast();
 
   useEffect(() => {
     function onContextMenu(e: MouseEvent) {
@@ -138,52 +142,30 @@ export function JobCellMenuHost() {
   // one) instead of starting anything. Feature-detected, because a browser tab
   // and older shell builds have no such object — those keep the _blank tab,
   // which is the right behaviour there.
-  const g = globalThis as unknown as {
-    sdcShell?: { openApp?: (appId: string, path?: string) => void };
-    // appPreload.js has exposed this to every embedded app window for a long
-    // time, so it is the reliable "am I inside the shell" signal — including on
-    // shell builds that predate sdcShell.
-    electronAPI?: unknown;
-  };
-  const shellOpen = g.sdcShell?.openApp;
-  const insideShell = Boolean(g.electronAPI);
-
   const onScheduleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     const href = at.schedulerUrl ? `${at.schedulerUrl}&ret=${encodeURIComponent(at.ret)}` : null;
 
-    // 1. New shell — hand it to the launcher. It focuses the Scheduler window
-    //    that is already open (or starts one) and navigates it to this job.
-    //    Only the path crosses: the shell owns the origin.
-    if (shellOpen && href) {
-      e.preventDefault();
-      const u = new URL(href);
-      shellOpen("scheduler", `${u.pathname}${u.search}`);
-      setAt(null);
-      return;
+    // The three tiers (shell bridge / in-place inside an older shell / plain
+    // _blank tab) now live in lib/shell-cross-app-nav.ts, because two other
+    // links in this app need exactly the same decision. This block used to be
+    // that logic; the `ret` parameter above still gives the Scheduler its
+    // "← Back to report" button, so a tier-2 in-place navigation is a round
+    // trip rather than a dead end.
+    if (href) {
+      const result = decideCrossAppNav("scheduler", href);
+      if (result.mode !== "anchor") {
+        e.preventDefault();
+        void reportCrossAppNavError(result, (message) => toast(message, "error"));
+        setAt(null);
+        return;
+      }
     }
 
-    // 2. Older shell, no bridge yet — navigate THIS window instead of opening a
-    //    tab. Without this the anchor's target="_blank" reaches the shell's
-    //    setWindowOpenHandler, which answers with shell.openExternal and throws
-    //    the user out to their default browser at a standalone Scheduler, with
-    //    none of the shell's session. Staying in the shell is strictly better,
-    //    and the `ret` parameter already gives the Scheduler its "← Back to
-    //    report" button, so this is a round trip rather than a dead end.
-    //
-    //    Drops away on its own once the shell ships the bridge — this branch is
-    //    only reachable while sdcShell is undefined.
-    if (insideShell && href) {
-      e.preventDefault();
-      window.location.assign(href);
-      setAt(null);
-      return;
-    }
-
-    // 3. A normal browser tab — the anchor's own target="_blank" is right here.
-    //    Deferred close: setAt(null) unmounts this anchor, and React flushes
-    //    that synchronously for discrete events — potentially before the browser
-    //    performs the default action, which can silently cancel the new tab. A
-    //    macrotask close lets the navigation start first.
+    // A normal browser tab — the anchor's own target="_blank" is right here.
+    // Deferred close: setAt(null) unmounts this anchor, and React flushes that
+    // synchronously for discrete events — potentially before the browser
+    // performs the default action, which can silently cancel the new tab. A
+    // macrotask close lets the navigation start first.
     setTimeout(() => setAt(null), 0);
   };
 

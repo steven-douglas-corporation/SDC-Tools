@@ -8,6 +8,8 @@ import { tabById } from "@/lib/workspace";
 import { closePaneHref } from "@/lib/split-view";
 import { useWorkspaceActions } from "@/components/useWorkspaceActions";
 import { NavItemMenu, NavItemMenuButton, type NavMenuAnchor } from "@/components/NavItemMenu";
+import { decideCrossAppNav, insideShell, reportCrossAppNavError } from "@/lib/shell-cross-app-nav";
+import { useToast } from "@/components/ui/Toast";
 import {
   applyNavOrder,
   moveItem,
@@ -349,6 +351,23 @@ export default function Sidebar({
   // ONE menu for both entry points — the visible ⋮ button and right-click. See
   // components/NavItemMenu.tsx for why right-click alone was not enough.
   const [navMenu, setNavMenu] = useState<NavMenuAnchor | null>(null);
+  const { toast } = useToast();
+  // Whether we are inside an SDC Tools shell window, resolved AFTER mount.
+  // insideShell() reads a preload-injected global, which does not exist during
+  // SSR — reading it in render would make the server and client disagree about
+  // the "opens in a new tab" wording and the external-link arrow below, which
+  // is a hydration mismatch. The click handler has no such problem: it runs
+  // only on the client, so it calls decideCrossAppNav() directly.
+  const [inShell, setInShell] = useState(false);
+  useEffect(() => setInShell(insideShell()), []);
+
+  const onSchedulerClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!schedulerProjectsUrl) return;
+    const result = decideCrossAppNav("scheduler", schedulerProjectsUrl);
+    if (result.mode === "anchor") return;
+    e.preventDefault();
+    void reportCrossAppNavError(result, (message) => toast(message, "error"));
+  };
   // Every tab action, centralized. Nothing in this file decides what opening a tab
   // means any more — see components/useWorkspaceActions.ts.
   const tabs = useWorkspaceActions();
@@ -904,9 +923,14 @@ export default function Sidebar({
             </p>
             <a
               href={schedulerProjectsUrl}
+              onClick={onSchedulerClick}
               target="_blank"
               rel="noopener noreferrer"
-              title="Project Scheduler — opens the SDC Scheduler's Projects page in a new tab"
+              title={
+                inShell
+                  ? "Project Scheduler — opens the SDC Scheduler's Projects page in SDC Tools"
+                  : "Project Scheduler — opens the SDC Scheduler's Projects page in a new tab"
+              }
               className={`text-sm text-[#C3D1E0] motion-interactive hover:bg-[#0E3157] ${
                 collapsed ? RAIL_ITEM : "flex h-9 items-center gap-[11px] rounded-[7px] px-[10px]"
               }`}
@@ -921,10 +945,12 @@ export default function Sidebar({
                 </Icon>
               </span>
               <span className={collapsed ? "sr-only" : "truncate"}>Project Scheduler</span>
-              {/* External-link cue, matching the new-tab behavior. Dropped in the rail:
+              {/* External-link cue, matching the new-tab behavior — and dropped
+                  inside the shell, where the click opens an SDC Tools window
+                  rather than leaving for a browser. Dropped in the rail too:
                   there is no room for a second glyph beside the icon, and the tooltip
                   and the sr-only label both say it opens in a new tab. */}
-              {!collapsed && (
+              {!collapsed && !inShell && (
                 <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" className="ml-auto shrink-0 text-[#6E88A5]">
                   <path d="M6 3 H13 V10" strokeLinecap="round" strokeLinejoin="round" />
                   <line x1="13" y1="3" x2="6.5" y2="9.5" strokeLinecap="round" />
