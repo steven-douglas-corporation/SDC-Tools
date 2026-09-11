@@ -10,7 +10,7 @@
 // its drill-through agree afterwards.
 import "dotenv/config";
 import { prisma } from "@/lib/prisma";
-import { readHoursFeed, describeProvenance } from "@/lib/hours-feed";
+import { describeProvenance } from "@/lib/hours-feed";
 import { newImportContext, beginPaylocityImport, recordUndefinedHours, completePaylocityImport } from "@/lib/paylocity-import";
 import { syncActualHours, syncHoursWorked } from "@/lib/sync-actuals";
 import { getUnattributedDetail } from "@/lib/unattributed-hours";

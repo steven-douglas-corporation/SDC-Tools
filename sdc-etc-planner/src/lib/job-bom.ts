@@ -1,6 +1,6 @@
 import "server-only";
 import sql from "mssql";
-import { totalEtoConfig, TOTALETO_TIMEOUT, totalEtoPool } from "@/lib/totaleto-connection";
+import { totalEtoConfig, TOTALETO_TIMEOUT, withTotalEto, describeTotalEtoFailure } from "@/lib/totaleto-connection";
 import {
   type BomContext,
   type BomNode,
@@ -40,6 +40,14 @@ export type { BomStats, BomPart, BomNode, ReleaseStatus, PartSource, CostBasis }
 // — the supplier's own line counts, independent of the BOM explosion. Used to
 // override the BOM-derived received/total in the Card view + PO panel.
 export type PoLineDetail = {
+  /**
+   * `pod:<PurchaseDetailID>` — the same stable id PartsCostLine.lineId carries,
+   * so the Parts List can attach a purchase line's expected/received dates to
+   * its money without joining on a part number the two queries spell
+   * differently (34 of job 1116's 1083 lines disagree). Same string on both
+   * sides by construction: both are built from POD.PurchaseDetailID.
+   */
+  lineId: string;
   partNumber: string;
   desc: string;
   qty: number;
@@ -302,6 +310,7 @@ function buildVendors(rows: PoRow[]): Vendor[] {
       const qty = Number(r.PurchaseQty) || 0;
       const receivedQty = Number(r.ReceivedQty) || 0;
       const line: PoLineDetail = {
+        lineId: r.PurchaseDetailID != null ? `pod:${r.PurchaseDetailID}` : "",
         partNumber: clean(r.PartNumber) || "—",
         desc: clean(r.PartDesc),
         qty,
@@ -351,7 +360,6 @@ export async function getJobBom(jobId: string): Promise<JobBom> {
   if (!Number.isFinite(numericJob) || numericJob === 0) return empty;
   if (!config.user || !config.password) return empty;
 
-  let pool: sql.ConnectionPool | undefined;
   let specs: SpecRow[] = [];
   let tops: TopRow[] = [];
   let bomRows: BomRow[] = [];
@@ -360,24 +368,46 @@ export async function getJobBom(jobId: string): Promise<JobBom> {
   let processRows: ProcessRow[] = [];
   try {
     // The SHARED pool, never closed — see totaleto-connection.ts. This used to open
-    // mssql's global pool and close it in the finally below, which is what let a BOM
-    // read finishing mid-query abort somebody else's Total ETO request.
-    pool = await totalEtoPool(TOTALETO_TIMEOUT.bom);
-    const [specR, topR, bomR, poR, pullR, procR] = await Promise.all([
-      pool.request().input("job", sql.Int, numericJob).query(SPECS_SQL),
-      pool.request().input("job", sql.Int, numericJob).query(TOP_SQL),
-      pool.request().input("job", sql.Int, numericJob).query(BOM_SQL),
-      pool.request().input("job", sql.Int, numericJob).query(PO_SQL),
-      pool.request().input("job", sql.Int, numericJob).query(PULLS_SQL),
-      pool.request().input("job", sql.Int, numericJob).query(PROCESS_SQL),
-    ]);
+    // mssql's global pool and close it in a finally, which is what let a BOM read
+    // finishing mid-query abort somebody else's Total ETO request.
+    //
+    // Through withTotalEto since 2026-09-09 rather than totalEtoPool directly, so a
+    // BOM walk gets the same bounded retries and the same per-attempt diagnostics as
+    // every other Total ETO read. It also has to: `sql.Int` below is a type constant
+    // from THIS module's copy of mssql, and only withTotalEto/totalEtoPool guarantee
+    // a pool built by the same copy (see that file's note on the parameter-binding
+    // failure this class of mistake caused).
+    const [specR, topR, bomR, poR, pullR, procR] = await withTotalEto(
+      async (pool) =>
+        Promise.all([
+          pool.request().input("job", sql.Int, numericJob).query(SPECS_SQL),
+          pool.request().input("job", sql.Int, numericJob).query(TOP_SQL),
+          pool.request().input("job", sql.Int, numericJob).query(BOM_SQL),
+          pool.request().input("job", sql.Int, numericJob).query(PO_SQL),
+          pool.request().input("job", sql.Int, numericJob).query(PULLS_SQL),
+          pool.request().input("job", sql.Int, numericJob).query(PROCESS_SQL),
+        ]),
+      { requestTimeout: TOTALETO_TIMEOUT.bom, feed: "job_bom.walk" },
+    );
     specs = specR.recordset as SpecRow[];
     tops = topR.recordset as TopRow[];
     bomRows = bomR.recordset as BomRow[];
     poRows = poR.recordset as PoRow[];
     pullRows = pullR.recordset as PullRow[];
     processRows = procR.recordset as ProcessRow[];
-  } catch {
+  } catch (error) {
+    // ── An empty BOM and a failed BOM read looked identical (2026-09-09) ────
+    //
+    // This `catch` returned `empty` and said nothing, and Procurement renders an
+    // empty BOM as a job with nothing left to buy. So any Total ETO fault here —
+    // including the parameter-binding one that broke Parts cost for five days —
+    // showed as a clean, confident, wrong answer.
+    //
+    // The return value is unchanged (every caller expects a JobBom, and inventing
+    // an error channel through several components is a bigger change than this
+    // finding warrants), but the reason now reaches the log with its diagnosis
+    // rather than being discarded.
+    console.error(`[job-bom] job ${jobId}: BOM read failed, returning an EMPTY bom. ${describeTotalEtoFailure(error)}`);
     return empty;
   }
 

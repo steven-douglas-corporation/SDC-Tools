@@ -145,12 +145,17 @@ export function PartsCostDrill({
   // panel has closed or switched mode rather than setting state on a view nobody is
   // looking at.
   const [history, setHistory] = useState<PartsEtcMonth[] | null | undefined>(undefined);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  // Which job set the history answer belongs to. "Loading" is DERIVED from this
+  // — ETC mode is open and the answer on hand is not for these jobs — rather than
+  // held as its own flag flipped true at the top of the effect. Same meaning,
+  // same frames, but nothing sets state synchronously inside the effect, which
+  // is a lint error in this repo and can cascade a render.
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
   const jobKey = jobIds.join(",");
+  const historyLoading = mode === "etc" && historyFor !== jobKey;
   useEffect(() => {
     if (mode !== "etc") return;
     let alive = true;
-    setHistoryLoading(true);
     loadPartsEtcHistory(jobIds)
       .then((rows) => {
         if (alive) setHistory(rows);
@@ -159,7 +164,7 @@ export function PartsCostDrill({
         if (alive) setHistory(null);
       })
       .finally(() => {
-        if (alive) setHistoryLoading(false);
+        if (alive) setHistoryFor(jobKey);
       });
     return () => {
       alive = false;

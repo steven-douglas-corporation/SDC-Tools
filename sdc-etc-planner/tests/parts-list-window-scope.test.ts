@@ -57,13 +57,68 @@ test("row inclusion for Invoiced+range switches off the resolved window's invoic
   assert.match(fnBody, /p\.invoicedAmount === 0/, "a windowed row is excluded by zero invoiced amount, not by its collapsed lifetime invoicedDate");
 });
 
-test("Purchase mode's date-inclusion branch is unchanged — still a plain purchasedDate/invoicedDate comparison, with Req/Exp Date added as more single-field modes alongside it (2026-08-14)", () => {
+// ── Every date mode is a plain single field (2026-08-14, generalised 2026-09-10) ──
+//
+// This used to transcribe the four-mode ternary chain verbatim. Adding a fifth
+// mode ("delivered") broke it — and broke it for a change that is precisely what
+// the guard exists to permit: one more mode resolving to one more plain date
+// field. A guard that goes red for the thing it was written to allow is the
+// failure mode procurement-uncovered-consistency.test.ts's own header describes.
+//
+// So it asserts the INVARIANT rather than the transcript: every mode in
+// `PartsDateFilter` appears in the chain, each resolves to its own distinct
+// `p.<x>Date`, and nothing in the chain reaches for windowed-invoiced state.
+// Stronger than the literal regex was — that version could not have caught a
+// mode added to the type and forgotten in the chain — and a sixth mode needs no
+// edit here.
+test("every date-range mode resolves to its own plain date field — none picks up windowed-invoiced logic", () => {
   const fnBody = functionBody(CODE, "PartsListTab", "JobProcurement.tsx");
-  assert.match(
-    fnBody,
-    /dateType === "purchase" \? p\.purchasedDate :\s*dateType === "invoice" \? p\.invoicedDate :\s*dateType === "req" \? p\.requiredDate :\s*p\.expectedDate/,
-    "Purchase/Invoiced/Req Date/Exp Date must each resolve to their own plain date field — none of them may pick up windowed-invoiced logic",
+
+  // The chain, up to the semicolon that ends it. Newlines normalised: this repo's
+  // files are CRLF, and a `\n`-anchored pattern silently matches nothing on them.
+  const chain = fnBody.replace(/\r\n/g, "\n").match(/const d =\s*([\s\S]*?);/);
+  assert.ok(chain, "the date-inclusion branch must still be one `const d = ...` chain");
+  const body = chain[1];
+
+  const declared = CODE.match(/type PartsDateFilter = ([^;]+);/);
+  assert.ok(declared, "PartsDateFilter must be the one named list of modes");
+  const modes = [...declared[1].matchAll(/"(\w+)"/g)].map((m) => m[1]);
+  assert.ok(modes.length >= 4, "sanity: the mode list parsed");
+
+  // Each arm is a bare field read — no call, no arithmetic, no window state. One
+  // mode is the chain's fallback and so has no `dateType ===` test of its own;
+  // that is why this counts fields against modes rather than requiring a test per
+  // mode. A mode added to the type and forgotten in the chain fails the count.
+  const tested = [...body.matchAll(/dateType === "(\w+)" \? (p\.\w+)/g)];
+  const fallback = body.match(/:\s*(p\.\w+)\s*$/);
+  assert.ok(fallback, "the chain must end in a plain fallback field");
+
+  const missing = modes.filter((m) => !tested.some((t) => t[1] === m));
+  assert.equal(
+    missing.length,
+    1,
+    `exactly one mode may be the unnamed fallback; ${missing.length === 0 ? "none is" : `these are unhandled: ${missing.join(", ")}`}`,
   );
+  // The fallback mode must still be identifiable to a reader — RAW, not CODE,
+  // because `strip` removes the trailing comment that names it.
+  assert.match(
+    RAW,
+    new RegExp(`${fallback[1].replace(".", "\\.")};\\s*// "${missing[0]}"`),
+    `the fallback arm must say which mode it serves ("${missing[0]}")`,
+  );
+
+  const all = [...tested.map((t) => t[2]), fallback[1]];
+  assert.equal(all.length, modes.length, `expected one plain field per mode, got ${all.length} for ${modes.length} modes`);
+  assert.equal(new Set(all).size, all.length, `two modes resolve to the same field: ${all.join(", ")}`);
+  for (const f of all) {
+    assert.match(f, /^p\.\w+Date$/, `${f} is not a plain date field on the row`);
+  }
+
+  // The whole point: the lifetime/windowed split is decided ABOVE this chain by
+  // `windowStatus.active`, and must never leak into it.
+  for (const forbidden of ["windowStatus", "activeAttribution", "invoicedAmount", "attributeInvoicedWindow"]) {
+    assert.doesNotMatch(body, new RegExp(forbidden), `${forbidden} must not appear inside the plain-date chain`);
+  }
 });
 
 test("the footer reconciliation row is gated on an active window and a non-zero unattached amount", () => {

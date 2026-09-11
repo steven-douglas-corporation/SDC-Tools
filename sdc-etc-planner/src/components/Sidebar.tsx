@@ -48,6 +48,10 @@ import {
 // lib/sidebar-prefs.ts for the measurement and for why this one preference is a
 // cookie while §45's zoom is not.
 //
+// For a value that is fixed before React runs and never changes: there is no
+// event to subscribe to, so the store simply never notifies.
+const subscribeNever = () => () => {};
+
 // The store shape is unchanged: useSyncExternalStore, a primitive snapshot, and a
 // server snapshot — except the server snapshot is now the value the server actually
 // rendered with, handed down as `initial`.
@@ -358,8 +362,14 @@ export default function Sidebar({
   // the "opens in a new tab" wording and the external-link arrow below, which
   // is a hydration mismatch. The click handler has no such problem: it runs
   // only on the client, so it calls decideCrossAppNav() directly.
-  const [inShell, setInShell] = useState(false);
-  useEffect(() => setInShell(insideShell()), []);
+  //
+  // useSyncExternalStore, not setState-in-effect — the same idiom navOrder and
+  // the collapsed state below already use, for the same hydration reason. The
+  // server snapshot is `false`; the client reads the real value on the first
+  // client render. The global is injected by the preload before any script
+  // runs and never changes afterwards, so the subscription has nothing to
+  // listen to and is a no-op by design.
+  const inShell = useSyncExternalStore(subscribeNever, insideShell, () => false);
 
   const onSchedulerClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (!schedulerProjectsUrl) return;

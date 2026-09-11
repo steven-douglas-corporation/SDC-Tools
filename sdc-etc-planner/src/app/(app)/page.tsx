@@ -77,7 +77,13 @@ export async function DashboardView({ params }: { params: {
     // which is all the old card asked; the health panel also draws each source's
     // own recent outcomes from these, which is what makes "failing since 6am"
     // distinguishable from "failed once just now" — see lib/source-health.ts.
-    recentRefreshRuns(6),
+    // 20, not 6, since 2026-09-09. Six rows is six hours of a quiet day and about
+    // four minutes of a busy one: five manual clicks in a row (which is what people
+    // do when a source keeps failing) pushed every successful hourly pass out of the
+    // window, so "Last success" read "not in recent history" for a source that had
+    // in fact succeeded forty minutes earlier — the one fact that distinguishes
+    // "Total ETO is broken" from "Total ETO is an hour stale".
+    recentRefreshRuns(20),
     // So a source being worked on right now reads as refreshing rather than as
     // whatever it was on the last completed pass.
     currentRefresh(),

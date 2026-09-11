@@ -72,6 +72,18 @@ export type SyncStepResult = {
   // each step, so differencing its timestamps would attribute every step's cost
   // to the one after it.
   ms: number;
+  // ── What KIND of failure, and whether waiting fixes it (2026-09-09) ────────
+  //
+  // Set for a failed Total ETO source only. Carried so the toast can stop saying
+  // "the hourly schedule will retry the rest" about failures no schedule can fix:
+  // a rejected login needs a password, a parameter-binding fault needs a deploy,
+  // and telling a manager to wait an hour for either is how a five-day outage got
+  // read as a flaky feed. See lib/totaleto-connection.ts for the taxonomy.
+  //
+  // Optional, and every reader treats it as such: these land in RefreshRun.steps
+  // as JSON, so every row written before today has neither.
+  kind?: string;
+  retryable?: boolean;
 };
 
 export type SyncRunResult = {
@@ -153,7 +165,10 @@ export async function runAllSyncs(
   const { prisma } = await import("@/lib/prisma");
   const { isMonthLocked } = await import("@/lib/etc");
   // One connection definition for every Total ETO source — see the lane below.
-  const { checkTotalEtoLogin, describeTotalEtoFailure } = await import("@/lib/totaleto-connection");
+  const { checkTotalEtoLogin, describeTotalEtoFailure, classifyTotalEto, isTransientTotalEto, totalEtoFailureStage, TOTALETO_SERVER, TOTALETO_DATABASE } =
+    await import("@/lib/totaleto-connection");
+  // Records that a failed source is now serving its last known-good snapshot.
+  const { recordTotalEtoFallback } = await import("@/lib/totaleto-diagnostics");
 
   const startedAt = new Date();
   // ── Recorded by source, reported in declaration order (2026-08-25) ────────
@@ -237,18 +252,43 @@ export async function runAllSyncs(
       // sees the toast, and says nothing about what to do. describeTotalEtoFailure
       // names the server, the account and whether retrying can possibly help.
       // Everything else keeps its own message unchanged.
-      const message = TOTALETO_SOURCES.has(source)
+      const isTotalEto = TOTALETO_SOURCES.has(source);
+      const message = isTotalEto
         ? describeTotalEtoFailure(err)
         : err instanceof Error
           ? err.message
           : String(err);
+      // The classification, kept beside the sentence so the toast and the health
+      // panel can act on it rather than parse it.
+      const kind = isTotalEto ? classifyTotalEto(err) : undefined;
+      const retryable = kind ? isTransientTotalEto(kind) : undefined;
       // Timing a FAILED step matters as much as a successful one: a source that
       // fails after a 30s socket timeout and one that fails instantly on a bad
       // credential look identical in the log without this, and only the first
       // is why the pass felt slow.
       console.error(`[auto-sync] ${label} failed after ${ms}ms:`, err);
+      // ── The line that says the app is now serving stale figures ─────────────
+      //
+      // Every step writes nothing until its whole fetch has succeeded (see
+      // syncPartsCost, which reads the entire month from Total ETO before it
+      // touches a row), so a failed source leaves the LAST GOOD snapshot in place.
+      // That is the correct behaviour and it was completely silent: the same
+      // numbers stayed on screen, correct as of some earlier hour, with nothing
+      // recording that a newer attempt had failed and they were now old.
+      if (kind) {
+        recordTotalEtoFallback({
+          feed: source,
+          stage: totalEtoFailureStage(kind),
+          kind,
+          ms,
+          detail: message,
+          server: TOTALETO_SERVER,
+          database: TOTALETO_DATABASE,
+          retryable: retryable === true,
+        });
+      }
       await recordSyncFailure(err, source);
-      done.set(source, { source, label, status: "failed", detail: message, ms });
+      done.set(source, { source, label, status: "failed", detail: message, ms, kind, retryable });
     }
   }
 

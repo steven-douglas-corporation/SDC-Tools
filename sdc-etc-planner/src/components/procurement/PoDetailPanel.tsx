@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MATCH_REASON_LABEL, MATCH_REASON_TEXT } from "@/lib/parts-match-reason";
 import type { BomPart, PoLineGroup } from "@/lib/job-bom";
-import { usd } from "@/components/ui/format";
+import { usd, usd2 } from "@/components/ui/format";
 import { useColumnSort } from "@/components/useColumnSort";
 import { SortableTh } from "@/components/ui/SortableHeader";
 import { sortRows, type SortColumns } from "@/lib/table-sort";
@@ -172,13 +172,16 @@ export type ColKey =
   | "mfr"
   | "supplier"
   | "po"
+  | "subs"
   | "purchased"
   | "invoiceddate"
   | "req"
   | "exp"
+  | "delivered"
   | "lead"
   | "due"
   | "unit"
+  | "purchqty"
   | "total"
   | "invoiced"
   | "pctinv"
@@ -195,13 +198,51 @@ export const ALL_COLS: { key: ColKey; label: string; align?: "right"; title?: st
   { key: "mfr", label: "Mfr" },
   { key: "supplier", label: "Supplier" },
   { key: "po", label: "PO #" },
+  // ── "# Subs", replacing the "+N" badge inside the PO cell (2026-09-10) ────
+  //
+  // The badge said the same thing, but said it inside another column's cell:
+  // it could not be sorted, could not be filtered, could not be hidden, and
+  // read as decoration on the PO number rather than as a fact about the row.
+  // Worse, it put a count where a reader expects part of the PO identifier.
+  // Its own column is sortable like everything else — "show me the parts bought
+  // the most times" is now a click.
+  { key: "subs", label: "# Subs", align: "right", title: "Additional purchase lines rolled into this row beyond the PO shown. 0 means this row is a single purchase. Click the part number to see them all." },
   { key: "purchased", label: "Purchased" },
   { key: "invoiceddate", label: "Invoiced" },
   { key: "req", label: "Required Date", title: "eps.RequiredDate — when the part is needed" },
   { key: "exp", label: "Expected Date", title: "Current due date (DateRequired || PurchaseDateRequired)" },
+  // ── "Delivered Date" — when the part ACTUALLY arrived (2026-09-10) ────────
+  //
+  // Not derived from Expected or Required: it is `BomPart.receivedDate`, which
+  // job-bom-rules.ts fills from `MAX(tblReceiverLog.[Date])` for this item on this
+  // job — the receiving clerk's own goods-in date — falling back to the inventory
+  // pull's FulfilledDate for a part issued from stock rather than bought.
+  //
+  // Deliberately the SAME two facts that decide `status === "received"`
+  // (receivedQtyFor = PO receipts + fulfilled pulls), so the date and the status can
+  // never tell different stories. Audited on job 1116: 636/636 received-from-PO rows
+  // and 24/24 received-from-stock rows carry a date. The exceptions are honest — a
+  // zero-quantity requirement reads RECEIVED because `0 >= 0` and nothing was ever
+  // delivered, and a process-built part is counted by neither.
+  //
+  // NOT tblReceiverLog.DateCreated: that is when the receipt was keyed in, and it
+  // differs from the real receipt date on 262 rows (backdated receiving).
+  { key: "delivered", label: "Delivered Date", title: "When the part actually arrived — MAX(tblReceiverLog.Date), or the inventory pull's fulfilment date for a part issued from stock. Blank until something is received." },
   { key: "lead", label: "Lead" },
   { key: "due", label: "Due" },
   { key: "unit", label: "Unit $", align: "right" },
+  // ── "Purch Qty", so the money row actually self-adds (2026-09-10) ─────────
+  //
+  // Unit x Qty never made Total and could not: `qty` is the BOM REQUIREMENT
+  // (eps.ItemQty), which is a different quantity from the one that was bought.
+  // Job 1116's 2198-C1004-ERS is required once and was bought five times across
+  // three POs — so Total / qty is $5,115.74 for a part whose every PO is about
+  // $1,050, which is not a unit price by any reading.
+  //
+  // Qty keeps its meaning (readiness, RECEIVED and the coverage bars all compare
+  // it against receivedQty) and the purchased quantity gets its own column, so
+  // Unit $ x Purch Qty === Total $ is an identity on every row that has one.
+  { key: "purchqty", label: "Purch Qty", align: "right", title: "Units actually bought, across every PO. Unit $ x Purch Qty = Total $. Differs from Qty, which is what the BOM requires." },
   { key: "total", label: "Total $", align: "right" },
   { key: "invoiced", label: "Invoiced $", align: "right" },
   // ── "Left to Invoice", immediately after Invoiced $ (2026-09-02) ──────────
@@ -253,10 +294,17 @@ export function partsListSortColumns(now: number): SortColumns<FlatPart, ColKey>
     // already sort last in both directions, which is the right place for
     // "there is no PO" regardless of why.
     po: { type: "id", value: (p) => p.poNumber },
+    // The count the cell prints, so sorting matches what is on screen.
+    subs: { type: "number", value: (p) => Math.max(0, p.lineCount - 1) },
     purchased: { type: "date", value: (p) => p.purchasedDate },
     invoiceddate: { type: "date", value: (p) => p.invoicedDate },
     req: { type: "date", value: (p) => p.requiredDate },
     exp: { type: "date", value: (p) => p.expectedDate },
+    // Same value the cell prints, partial receipts included — a row with SOME
+    // quantity in hand has genuinely had a delivery, and sorting it in with the
+    // rest is what makes "what landed in August" answerable. Nulls (nothing
+    // received) sort last in both directions, which is where "—" belongs.
+    delivered: { type: "date", value: (p) => p.receivedDate },
     // LeadChip's own underlying number (days from purchased to expected),
     // with the same "negative reads as no data" rule it renders with: a
     // negative lead time is display "—", so it sorts where "—" sorts.
@@ -273,7 +321,10 @@ export function partsListSortColumns(now: number): SortColumns<FlatPart, ColKey>
       type: "number",
       value: (p) => (p.st.key === "received" || !p.expectedDate ? null : (new Date(p.expectedDate).getTime() - now) / DAY),
     },
-    unit: { type: "currency", value: (p) => p.unitPrice },
+    // The blended figure the cell shows, falling back to the BOM estimate for a
+    // row with no purchases at all — again, exactly what is rendered.
+    unit: { type: "currency", value: (p) => p.effectiveUnitPrice ?? (p.purchasedQty === 0 ? p.unitPrice : null) },
+    purchqty: { type: "number", value: (p) => (p.poBreakdown.length ? p.purchasedQty : null) },
     total: { type: "currency", value: (p) => p.totalPrice },
     invoiced: { type: "currency", value: (p) => p.invoicedAmount },
     pctinv: { type: "number", value: (p) => p.pctInvoiced },
@@ -288,11 +339,15 @@ export function PartRowCells({
   cols,
   now,
   onOpenPo,
+  onOpenPart,
 }: {
   p: FlatPart;
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
   now: number;
   onOpenPo: (supplier: string | null, poNumber: string | null) => void;
+  /** Opens the part's PO-history panel. Optional so a caller with no panel of
+   *  its own (the PO drawer's table) renders the part number as plain text. */
+  onOpenPart?: (p: FlatPart) => void;
 }) {
   const parentLine = parentLineFor(p);
   const cell = (key: ColKey) => {
@@ -300,11 +355,23 @@ export function PartRowCells({
       case "qty":
         return <span className="text-note font-bold tabular-nums text-sdc-navy">{num(p.qty)}</span>;
       case "pn":
-        // Blue link-style — the row itself copies the PN + drills, so the link
-        // is the affordance (no separate copy glyph).
+        // -- The part number opens the part's PO history (2026-09-10) --------
+        //
+        // It used to be decoration: blue and underlined, but the click it
+        // implied was the ROW's, which clears every filter and scroll-flashes
+        // the row you already clicked. Now it is a real button to a real
+        // destination, and stopPropagation keeps the row's own handler out of
+        // it -- the same shape the PO # button below already had.
         return (
-          <span className="flex items-center gap-1 truncate font-mono text-note font-bold text-sdc-blue group-hover:underline" title={p.pn}>
-            <span className="truncate">{p.pn}</span>
+          <span className="flex items-center gap-1 truncate">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onOpenPart?.(p); }}
+              title={p.lineCount > 1 ? `${p.pn} \u2014 see all ${p.lineCount} purchases` : `${p.pn} \u2014 see purchase detail`}
+              className="min-w-0 truncate text-left font-mono text-note font-bold text-sdc-blue hover:underline"
+            >
+              {p.pn}
+            </button>
             <ReleaseBadge p={p} />
           </span>
         );
@@ -339,21 +406,11 @@ export function PartRowCells({
                 >
                   {cell.po}
                 </button>
-                {/* ── "+5" (2026-09-03) ────────────────────────────────────
-                    Without this the row reads as ONE purchase order whose total
-                    is the sum of several. Job 1101's card row showed PO
-                    `07.26 CC` against $9,840 that was actually six monthly
-                    invoices — which is what prompted the question this exists to
-                    answer. The PO shown is the newest; the badge says how many
-                    others are behind it. */}
-                {p.lineCount > 1 && (
-                  <span
-                    title={`This row sums ${p.lineCount} purchase lines. The PO number, date and unit price shown are the newest one's; Total $ and Invoiced $ cover all ${p.lineCount}.`}
-                    className="shrink-0 rounded bg-sdc-blue/10 px-1 text-micro font-semibold tabular-nums text-sdc-blue-dark"
-                  >
-                    +{p.lineCount - 1}
-                  </span>
-                )}
+                {/* The "+5" badge that lived here until 2026-09-10 moved out to
+                    its own "# Subs" column. It answered the right question — this
+                    row sums several purchases — from the wrong place: inside the
+                    PO cell it read as part of the PO number, and could not be
+                    sorted or hidden. */}
               </span>
             );
           case "stock":
@@ -375,6 +432,17 @@ export function PartRowCells({
             );
         }
       }
+      case "subs": {
+        const subs = Math.max(0, p.lineCount - 1);
+        return (
+          <span
+            className={`whitespace-nowrap font-mono text-note tabular-nums ${subs > 0 ? "font-semibold text-sdc-blue-dark" : "text-sdc-gray-400"}`}
+            title={subs > 0 ? `${p.lineCount} purchase lines across ${p.poBreakdown.length} PO${p.poBreakdown.length > 1 ? "s" : ""} \u2014 the PO column shows the newest. Click the part number for all of them.` : "A single purchase"}
+          >
+            {subs > 0 ? subs : "\u2014"}
+          </span>
+        );
+      }
       case "purchased":
         // The newest of the group, flagged as such rather than presented as the date
         // the whole row was bought — job 1101's six card invoices span Aug 2025 to
@@ -394,10 +462,37 @@ export function PartRowCells({
         return <span className="whitespace-nowrap font-mono text-label font-medium text-sdc-navy">{fmtDate(p.requiredDate)}</span>;
       case "exp":
         return <span className="whitespace-nowrap font-mono text-label font-medium text-sdc-navy">{fmtDate(p.expectedDate)}</span>;
+      case "delivered": {
+        // A part can be part-delivered: job 1116's LEM150D 04 S had 5 of 95 in
+        // hand, so it is still ON ORDER and yet something really did arrive on
+        // 2026-08-10. Printing the date bare would read as "this line is done";
+        // hiding it would lose a real receipt. The `*` is the same marker the
+        // Purchased and Unit $ cells already use for "true, but not the whole
+        // story", and the title says which part of the order landed.
+        const partial = p.receivedQty > 0 && p.receivedQty < p.qty;
+        return (
+          <span
+            className="whitespace-nowrap font-mono text-label font-medium text-sdc-navy"
+            title={partial ? `Partial delivery — ${num(p.receivedQty)} of ${num(p.qty)} received as of this date` : undefined}
+          >
+            {fmtDate(p.receivedDate)}
+            {p.receivedDate && partial && <span className="ml-0.5 text-sdc-gray-400" aria-hidden>*</span>}
+          </span>
+        );
+      }
       case "lead":
         return <LeadChip ordered={p.purchasedDate} expected={p.expectedDate} />;
       case "due":
         return <DueChip expected={p.expectedDate} received={p.st.key === "received"} now={now} />;
+      case "purchqty":
+        return (
+          <span
+            className="whitespace-nowrap font-mono text-note font-medium tabular-nums text-sdc-navy"
+            title={p.poBreakdown.length ? `Bought across ${p.poBreakdown.length} PO${p.poBreakdown.length > 1 ? "s" : ""}. The BOM requires ${num(p.qty)}.` : "Nothing purchased against this part yet"}
+          >
+            {p.poBreakdown.length ? num(p.purchasedQty) : "\u2014"}
+          </span>
+        );
       case "unit": {
         // ── A grouped row has no single unit price ──────────────────────────
         //
@@ -406,18 +501,33 @@ export function PartRowCells({
         // looked wrong even though every figure in it was right. An em dash is the
         // honest answer: the row has a total, not a price. Same convention the
         // windowed-invoiced columns already use for "no coherent single value".
-        const grouped = p.lineCount > 1;
+        // A blend across every PO, not the newest line's price -- and no longer
+        // an em dash. `effectiveUnitPrice x purchasedQty === totalPrice` holds by
+        // construction (po-detail.ts derives it from those two fields), so the
+        // row self-adds for the first time.
+        const blended = p.lineCount > 1;
+        if (p.effectiveUnitPrice !== null) {
+          return (
+            <span
+              className="whitespace-nowrap font-mono text-note font-medium tabular-nums text-sdc-navy"
+              title={
+                blended
+                  ? `Average across ${p.poBreakdown.length} PO${p.poBreakdown.length > 1 ? "s" : ""} (${p.lineCount} purchase lines) \u2014 ${usd(p.totalPrice)} over ${num(p.purchasedQty)} units. Click the part number for each PO's own price.`
+                  : COST_BASIS_NOTE[p.costBasis]
+              }
+            >
+              {usd2(p.effectiveUnitPrice)}
+              {blended ? <span className="ml-0.5 text-sdc-gray-400" aria-hidden>~</span> : null}
+            </span>
+          );
+        }
+        // Nothing bought (or a purchased quantity that nets to zero): the total
+        // beside this is the BOM's own estimate, and the existing asterisk is
+        // what already says so.
         return (
-          <span
-            className="whitespace-nowrap font-mono text-note font-medium tabular-nums text-sdc-navy"
-            title={
-              grouped
-                ? `${p.lineCount} purchase lines at different prices — see Total $. The newest was ${usd(p.unitPrice)}.`
-                : COST_BASIS_NOTE[p.costBasis]
-            }
-          >
-            {grouped ? "—" : p.unitPrice > 0 ? usd(p.unitPrice) : "—"}
-            {!grouped && p.unitPrice > 0 && isEstimatedCost(p.costBasis) ? (
+          <span className="whitespace-nowrap font-mono text-note font-medium tabular-nums text-sdc-navy" title={COST_BASIS_NOTE[p.costBasis]}>
+            {p.unitPrice > 0 ? usd2(p.unitPrice) : "\u2014"}
+            {p.unitPrice > 0 && isEstimatedCost(p.costBasis) ? (
               <span className="ml-0.5 text-sdc-gray-400" aria-hidden>*</span>
             ) : null}
           </span>
@@ -484,7 +594,7 @@ export function PartRowCells({
 // (including any non-BOM lines) isn't lost, though — the authoritative
 // "PO Lines (Supplier Status)" bar below still reads
 // `authoritative.received/itemCount/pct`.
-const PO_PANEL_COL_KEYS: ColKey[] = ["qty", "pn", "desc", "mfr", "purchased", "invoiceddate", "req", "exp", "unit", "total", "invoiced", "status"];
+const PO_PANEL_COL_KEYS: ColKey[] = ["qty", "pn", "desc", "mfr", "purchased", "invoiceddate", "req", "exp", "delivered", "unit", "total", "invoiced", "status"];
 
 // Pinned column widths — an auto-layout table with no width hints sizes every
 // column to its OWN widest cell with no ceiling, and "Desc" is free text
@@ -500,6 +610,7 @@ const PO_PANEL_COL_WIDTH: Partial<Record<ColKey, number>> = {
   invoiceddate: 68,
   req: 78,
   exp: 78,
+  delivered: 84,
   unit: 64,
   total: 68,
   invoiced: 72,

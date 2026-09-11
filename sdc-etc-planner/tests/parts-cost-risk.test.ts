@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { suggestNewEtc, calcHoursLeft, redrivenDraft } from "../src/lib/etc";
+import { suggestNewEtc, redrivenDraft } from "../src/lib/etc";
 import { isDerivedPartsDraft } from "../src/lib/parts-breakout-scope";
 import { PARTS_COST_SECTION } from "../src/lib/sections";
 

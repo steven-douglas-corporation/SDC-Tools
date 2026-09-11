@@ -170,9 +170,34 @@ export function RefreshDataButton({
       } else {
         // Explicitly NOT a success: names what failed, says what did update, and says
         // what happens next (§25.7).
+        //
+        // ── Say WHY, and stop promising a retry that cannot work (2026-09-09) ──
+        //
+        // This message used to end "the hourly schedule will retry the rest" for
+        // every failure there is. For five days it said exactly that about a
+        // parameter-binding bug in this application, which no schedule was ever
+        // going to fix — so managers clicked Refresh Data again, got the same
+        // sentence, and reasonably concluded Total ETO was flaky. The diagnosis
+        // was sitting in the refresh record the whole time.
+        //
+        // The failing source's own sentence is included now (the one
+        // describeTotalEtoFailure writes: what is wrong, where, and who has to do
+        // something about it), and the tail is chosen from whether the failure is
+        // actually retryable. Only when ONE source failed — with several, the
+        // detail belongs on the Dashboard's source-health panel, which has room
+        // for all of them, rather than in a toast nobody can read.
+        const failures = outcome.sources.filter((s) => s.status === "failed");
+        const only = failures.length === 1 ? failures[0] : null;
+        const why = only?.detail ? ` ${only.detail}` : "";
+        // `retryable` is only set for Total ETO sources; anything else keeps the
+        // old assumption, which is right for them — the hourly pass IS their retry.
+        const tail =
+          only && only.retryable === false
+            ? " Refreshing again will not change this."
+            : " Everything else was updated; the hourly schedule will retry the rest.";
         toast(
           `Refreshed at ${at}, but ${outcome.failedLabels.length} source${outcome.failedLabels.length === 1 ? "" : "s"} failed: ` +
-            `${outcome.failedLabels.join(", ")}. Everything else was updated; the hourly schedule will retry the rest.${started}`,
+            `${outcome.failedLabels.join(", ")}.${why}${tail}${started}`,
           "error",
           { critical: true },
         );

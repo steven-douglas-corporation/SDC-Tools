@@ -16,7 +16,8 @@ const GROUP = new Map(ETC_SECTIONS.map((s) => [s.code, s.billingGroup]));
 
 async function main() {
   const jobs = await prisma.job.findMany({ select: { id: true, jobId: true } });
-  const jobIdByPk = new Map(jobs.map((j) => [j.id, j.jobId]));
+  // Kept for the next person to reach for; underscore is this repo's allowed idiom.
+  const _jobIdByPk = new Map(jobs.map((j) => [j.id, j.jobId]));
   const jobPks = jobs.map((j) => j.id);
 
   // Ground truth: fresh fetch, right now.

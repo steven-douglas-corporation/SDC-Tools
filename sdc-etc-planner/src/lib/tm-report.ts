@@ -148,16 +148,6 @@ export function buildTmFilters(filters: TmFilters, basis: TmDateBasis = "invoice
   return args;
 }
 
-function num(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function toIsoDateOrNull(value: unknown): string | null {
-  if (!value) return null;
-  const d = new Date(String(value));
-  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
-}
 
 // ── Drill-through row-level detail (Parts cards only) ───────────────────────
 //

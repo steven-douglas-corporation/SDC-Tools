@@ -210,6 +210,56 @@ export const NON_BOM_SECTION_ID = "__NON_BOM__";
 // for "nothing to track here".
 const NON_BOM_STATUS: PartStatus = { key: "noPO", label: "Not on BOM", sub: "", cls: "text-sdc-muted" };
 
+/**
+ * One PURCHASE ORDER's worth of a part, for the part detail panel.
+ *
+ * The Parts List row stays one row per part — the money on it is the sum of
+ * every PO the part was ever bought on, which is the whole reason the row's own
+ * unit price is a blend rather than any single purchase's. This is the
+ * breakdown behind that blend: one entry per PO, each keeping its OWN price,
+ * quantity, invoiced amount and dates, because averaging them is exactly the
+ * thing that loses the information someone opens the panel to find. Job 1116's
+ * 2090-CTFB-MADD-CFF05 was bought at $166.66, $220.00 and $169.16 on three
+ * different POs; no single number describes that honestly.
+ *
+ * Reconciles by construction, not by a later check: each entry applies the same
+ * share division `flattenBomParts` applies to the row (see `shareOf`), and
+ * summing a linear function over a partition of the lines gives the same answer
+ * as summing it over all of them. `tests/parts-po-breakdown.test.ts` pins that
+ * against live jobs anyway, because "by construction" is a claim about code that
+ * can stop being true.
+ */
+export type PartPoGroup = {
+  /**
+   * The Total ETO ids of the purchase lines in this group — `pod:<PurchaseDetailID>`
+   * for PO lines. The group key, and the panel's React key: two POs can share a
+   * number across suppliers, and a part can appear twice on ONE PO (33 of job
+   * 1116's 1045 part/PO pairs do), so neither the PO number nor the part number
+   * identifies a row here.
+   */
+  lineIds: string[];
+  poNumber: string | null;
+  supplier: string | null;
+  /** Purchase lines rolled into this ONE PO — >1 when a PO carries the part twice. */
+  lineCount: number;
+  qty: number;
+  /**
+   * `totalPrice / qty` — the effective unit cost for this PO, so unit × qty is
+   * exactly the total shown beside it. Null when qty is 0 (job 1116 has plenty:
+   * cancelled lines and zero-quantity corrections), because the alternative is
+   * printing Infinity.
+   */
+  unitPrice: number | null;
+  totalPrice: number;
+  invoicedAmount: number;
+  leftToInvoice: number;
+  purchaseDate: string | null;
+  invoicedDate: string | null;
+  /** From the BOM's own PO lines, joined by lineId — null when unmatched. */
+  expectedDate: string | null;
+  deliveredDate: string | null;
+};
+
 export type FlatPart = BomPart & {
   /**
    * Why this row exists: "matched" for a BOM part, a `join-*` reason for one the
@@ -237,6 +287,45 @@ export type FlatPart = BomPart & {
    * 1 for an ordinary row, so `> 1` is the only test any renderer needs.
    */
   lineCount: number;
+  /**
+   * Every PO this part was bought on, newest first — the part detail panel's
+   * source, and the honest form of the money the row sums into one figure.
+   *
+   * Always LIFETIME, even when an Invoiced+range window is active. The window
+   * scopes `invoicedAmount` by part number (attributeInvoicedWindow), not per
+   * purchase line, so there is no windowed figure to put here; the panel says so
+   * rather than showing a lifetime number under a windowed heading.
+   */
+  poBreakdown: PartPoGroup[];
+  /**
+   * How many UNITS were actually bought, summed over every PO — not `qty`.
+   *
+   * `qty` is the BOM requirement (`eps.ItemQty`) and stays that way: readiness,
+   * the RECEIVED status and the coverage bars all compare it against
+   * receivedQty, so repurposing it would move numbers all over the app. The two
+   * genuinely differ — job 1116's 2198-C1004-ERS is required once and was bought
+   * five times across three POs — and conflating them is what made the old row
+   * fail to self-add.
+   *
+   * This is the quantity `effectiveUnitPrice` divides into, so
+   * `effectiveUnitPrice x purchasedQty === totalPrice` exactly.
+   */
+  purchasedQty: number;
+  /**
+   * `totalPrice / purchasedQty` — what a unit of this part actually cost the
+   * job, blended across every PO when there is more than one.
+   *
+   * The Unit $ column printed the NEWEST line's price beside a Total covering
+   * the whole group, so `Qty 6 x $210.36` visibly failed to make `$9,840`; that
+   * was replaced with an em dash in 2026-09-03, which was honest but answered
+   * nothing. This is the number that makes the row self-add, and the part panel
+   * is where the individual PO prices it blends stay visible and unaveraged.
+   *
+   * Null when nothing was purchased (the row's total is then a BOM estimate) or
+   * when the purchased quantity nets to zero — job 1116 carries cancelled and
+   * correcting lines whose quantities cancel out, and `x / 0` is Infinity.
+   */
+  effectiveUnitPrice: number | null;
   parentPN: string;
   parentDesc: string;
   sectionId: string;
@@ -276,7 +365,106 @@ export function parentLineFor(p: FlatPart): string {
 // `activeAttribution` mirrors JobProcurement's own Invoiced+range window
 // feature: null (the default) means every figure is lifetime, which is what
 // every caller other than JobProcurement.tsx itself wants.
+/**
+ * Group a part's purchase lines into one entry per PO.
+ *
+ * `divide` is the caller's share divisor for lines it does not wholly own — the
+ * same `shareOf` the row's own money goes through. Passed in rather than looked
+ * up here so this function has no opinion about sharing: it partitions and sums,
+ * and the caller decides what a line is worth. That is what makes the entries
+ * add up to the row exactly, for any divisor.
+ *
+ * Ordered newest purchase first, which is the order the row's own "primary" PO
+ * comes from — so the first entry here IS the PO the Parts List row displays.
+ */
+export function groupLinesByPo(
+  exact: PartsCostLine[],
+  alt: PartsCostLine[],
+  divide: number,
+  dateIndex: Map<string, { expectedDate: string | null; receivedDate: string | null }>,
+): PartPoGroup[] {
+  // Keyed by supplier + PO number, NOT by part number: a part bought twice on one
+  // PO is one row in this panel, summing both lines, and `lineCount` says so. A
+  // null PO number (extra costs) groups under its own single bucket rather than
+  // merging with every other null.
+  //
+  // Supplier is part of the key (2026-09-11) because a PO NUMBER is not a PO: two
+  // suppliers can each raise "100815", and the type comment above already said so
+  // while this map keyed on the number alone — which would have summed two
+  // different vendors' purchases into one row wearing the first vendor's name.
+  // The PO drawer this panel opens (onOpenPo) is addressed by supplier + number
+  // for the same reason. Vendor names are normalized first, so a trailing space
+  // in the feed cannot split one PO into two.
+  const buckets = new Map<string, { lines: PartsCostLine[]; weight: number[] }>();
+  const add = (l: PartsCostLine, weight: number) => {
+    const key = l.poNumber == null ? `\u0000nopo:${l.lineId}` : `${normalizeVendor(l.supplier) ?? ""}::${l.poNumber}`;
+    let b = buckets.get(key);
+    if (!b) buckets.set(key, (b = { lines: [], weight: [] }));
+    b.lines.push(l);
+    b.weight.push(weight);
+  };
+  for (const l of exact) add(l, 1 / (divide || 1));
+  for (const l of alt) add(l, 1);
+
+  const out: PartPoGroup[] = [];
+  for (const [, b] of buckets) {
+    const w = (f: (l: PartsCostLine) => number) =>
+      b.lines.reduce((sum, l, i) => sum + (Number(f(l)) || 0) * b.weight[i], 0);
+    const first = b.lines[0];
+    const qty = w((l) => l.quantity);
+    const totalPrice = w((l) => l.totalPrice);
+    // The newest date across the group's lines, matching how the row picks its
+    // own displayed purchase date.
+    const newest = (pick: (l: PartsCostLine) => string | null) =>
+      b.lines.reduce<string | null>((best, l) => {
+        const v = pick(l);
+        return v && (!best || v > best) ? v : best;
+      }, null);
+    // Dates come from the BOM's PO lines, matched on the stable line id. A group
+    // is "delivered" on the newest receipt any of its lines has.
+    const dated = b.lines.map((l) => dateIndex.get(l.lineId)).filter(Boolean) as { expectedDate: string | null; receivedDate: string | null }[];
+    const newestOf = (pick: (d: { expectedDate: string | null; receivedDate: string | null }) => string | null) =>
+      dated.reduce<string | null>((best, d) => {
+        const v = pick(d);
+        return v && (!best || v > best) ? v : best;
+      }, null);
+    out.push({
+      lineIds: b.lines.map((l) => l.lineId),
+      poNumber: first.poNumber,
+      supplier: normalizeVendor(first.supplier),
+      lineCount: b.lines.length,
+      qty,
+      // Guarded, not merely divided: job 1116 carries zero-quantity purchase
+      // lines (cancellations, corrections), and `x / 0` is Infinity, which
+      // renders as "$Infinity" rather than as the "no meaningful unit price"
+      // it actually is.
+      unitPrice: qty !== 0 ? totalPrice / qty : null,
+      totalPrice,
+      invoicedAmount: w((l) => l.actualAmount),
+      leftToInvoice: w((l) => lineLeftToInvoice(l)),
+      purchaseDate: newest((l) => l.purchaseDate),
+      invoicedDate: newest((l) => l.invoicedDate),
+      expectedDate: newestOf((d) => d.expectedDate),
+      deliveredDate: newestOf((d) => d.receivedDate),
+    });
+  }
+  // Newest purchase first; a group with no date sorts last rather than first,
+  // the same "nulls last" convention every sortable column here uses.
+  out.sort((a, b2) => (b2.purchaseDate ?? "").localeCompare(a.purchaseDate ?? ""));
+  return out;
+}
+
 export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], activeAttribution: WindowAttribution | null = null): FlatPart[] {
+  // Expected / received date per purchase line, keyed by the stable id both
+  // queries build from POD.PurchaseDetailID. Built once for the whole job.
+  const poLineDates = new Map<string, { expectedDate: string | null; receivedDate: string | null }>();
+  for (const v of bom.vendors ?? []) {
+    for (const po of v.pos) {
+      for (const l of po.lines) {
+        if (l.lineId) poLineDates.set(l.lineId, { expectedDate: l.expectedDate, receivedDate: l.receivedDate });
+      }
+    }
+  }
   const lineIndex = new Map<string, PartsCostLine[]>();
   for (const l of partsLines ?? []) {
     const key = normPn(l.partNumber);
@@ -484,6 +672,8 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
         : invoicedAmount > 0
           ? 100
           : 0;
+    const poBreakdown = groupLinesByPo(exactLines, altLines, shareOf(p.pn), poLineDates);
+    const purchasedQty = poBreakdown.reduce((sum, g) => sum + g.qty, 0);
     const flat: FlatPart = {
       ...p,
       // After the spread, so it overrides the BomPart's raw value.
@@ -520,6 +710,15 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       nonBom: false,
       // A BOM part bought three times is three lines under one row, same as below.
       lineCount: pnLines?.length ?? 1,
+      // Same lines, same share divisor, partitioned by PO — so these entries sum
+      // to `totalPrice` / `invoicedAmount` above rather than being a second,
+      // independently-derived set of numbers that could drift from them.
+      poBreakdown,
+      purchasedQty,
+      // Derived from the SAME two fields the row displays, not recomputed from
+      // the lines — so "unit x purchased qty = total" is an identity here rather
+      // than an arithmetic coincidence that a later edit could break.
+      effectiveUnitPrice: purchasedQty !== 0 ? totalPrice / purchasedQty : null,
     };
     out.push(flat);
   };
@@ -573,6 +772,8 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       ? (activeAttribution.byPartNumber.get(normPn(first.partNumber)) ?? 0)
       : sumLines(lines, (l) => l.actualAmount);
     const reason = classifyUnmatched(first.partNumber, first.description, totalPrice, null);
+    const nonBomBreakdown = groupLinesByPo(lines, [], 1, poLineDates);
+    const nonBomPurchasedQty = nonBomBreakdown.reduce((sum, g) => sum + g.qty, 0);
     out.push({
       // Negative synthetic ids: BomPart ids are Total ETO's own positive keys, so
       // these cannot collide with a real part, and anything keyed on id (the drill
@@ -650,6 +851,14 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       matchReason: reason,
       nonBom: true,
       lineCount: lines.length,
+      // Divisor 1: a non-BOM row owns its lines outright — `usedLines` makes the
+      // leftover set disjoint from every matched row, so there is nobody to share
+      // with. Job 1101's "MISC CC" row is the case this panel was needed for:
+      // six monthly card invoices under one row, which the table used to present
+      // as a single $9,840 purchase dated Jul 30.
+      poBreakdown: nonBomBreakdown,
+      purchasedQty: nonBomPurchasedQty,
+      effectiveUnitPrice: nonBomPurchasedQty !== 0 ? totalPrice / nonBomPurchasedQty : null,
     });
   }
 

@@ -11,7 +11,11 @@ import type { PartsCostLine } from "../src/lib/sync-totaleto";
 const proj = (invoiced: number, priorEtc: number | null, spent: number, openBalance: number) =>
   computePartsProjection({ invoiced, priorEtc, partsSpentThisMonth: spent, openBalance });
 
+// Unique per call, not a shared constant: lineId is a purchase line's identity,
+// and anything that groups by it would silently collapse two fixtures into one.
+let lineSeq = 0;
 const line = (over: Partial<PartsCostLine>): PartsCostLine => ({
+  lineId: `fixture:${++lineSeq}`,
   purchaseDate: null,
   invoicedDate: null,
   supplier: null,

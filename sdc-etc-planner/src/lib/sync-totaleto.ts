@@ -110,7 +110,7 @@ export async function getPartsCostPurchasedByJob(monthStart: Date, monthEndExclu
       if (Number.isFinite(purchased)) map.set(String(Number(r.JobId)), purchased);
     }
     return map;
-  }, 120000);
+  }, { requestTimeout: 120_000, feed: "parts_cost.purchased_by_job" });
 }
 
 // ── Money Spent Month, reconciled to the Total ETO report (§41) ──────────────
@@ -411,7 +411,7 @@ export async function getUnclassifiedFlaggedSpend(
       lines: Number(r.Lines) || 0,
       amount: Number(r.Amount) || 0,
     }));
-  });
+  }, { feed: "parts_cost.unclassified_flagged_spend" });
 }
 
 export async function getPartsCostBookedByJob(
@@ -471,7 +471,7 @@ export async function getPartsCostBookedByJob(
       unmatchedLines: Number(un.recordset[0]?.Lines ?? 0),
       unmatchedAmount: Number(un.recordset[0]?.Amt ?? 0),
     };
-  }, 180000);
+  }, { requestTimeout: 180_000, feed: "parts_cost.booked_by_job" });
 }
 
 // ── Row-count baseline, for detecting a join fan-out (§82) ──────────────────
@@ -510,7 +510,7 @@ export async function getApLineCountByJob(monthStart: Date, monthEndExclusive: D
     const counts = new Map<string, number>();
     for (const r of result.recordset) counts.set(String(Number(r.JobId)), Number(r.Lines) || 0);
     return counts;
-  }, 120000);
+  }, { requestTimeout: 120_000, feed: "parts_cost.ap_line_count_by_job" });
 }
 
 // Net AP-document amount per job over an arbitrary window, as a SINGLE query —
@@ -544,7 +544,7 @@ export async function getPartsInvoicedByJob(monthStart: Date, monthEndExclusive:
       if (Number.isFinite(n)) net.set(String(Number(r.JobId)), n);
     }
     return net;
-  }, 180000);
+  }, { requestTimeout: 180_000, feed: "parts_cost.invoiced_by_job" });
 }
 
 // ── THE definition of Parts Actual (2026-08-10) ─────────────────────────────
@@ -679,7 +679,7 @@ export async function getPartsActualByJob(): Promise<Map<string, number>> {
       if (Number.isFinite(actual)) map.set(String(Number(r.JobId)), actual);
     }
     return map;
-  }, 180000);
+  }, { requestTimeout: 180_000, feed: "parts_actual.by_job" });
 }
 
 // Parts COMMITMENT (not actual) per job, straight from TotalETO — SUM(Total
@@ -730,7 +730,7 @@ export async function getPartsCostSpentByJob(): Promise<Map<string, number>> {
       if (Number.isFinite(spent)) map.set(String(Number(r.JobId)), spent);
     }
     return map;
-  }, 120000);
+  }, { requestTimeout: 120_000, feed: "parts_cost.spent_by_job" });
 }
 
 // Frozen copy of getPartsCostSpentByJob's PRE-2026-08-07 behavior — windowed on
@@ -758,7 +758,7 @@ export async function legacyPartsCostSpentByJobWindowed(monthStart: Date, monthE
       if (Number.isFinite(spent)) map.set(String(Number(r.JobId)), spent);
     }
     return map;
-  }, 120000);
+  }, { requestTimeout: 120_000, feed: "parts_cost.spent_by_job_windowed" });
 }
 
 // ── Per-job Parts Cost detail (live) — for the Job Hour Details dashboard ────
@@ -767,6 +767,23 @@ export async function legacyPartsCostSpentByJobWindowed(monthStart: Date, monthE
 // master (manufacturer / part# / category); Extra Costs branch (fees, shipping,
 // tariffs) comes from vwCostingExtraCostsDetailed.
 export type PartsCostLine = {
+  /**
+   * Stable Total ETO identity for this purchase line.
+   *
+   * `pod:<PurchaseDetailID>` for a PO line — verified 1:1 with rows on job 1116
+   * (1083 rows, 1083 distinct ids), so it is the real grain of the PO branch.
+   * Extra-cost rows have no PurchaseDetailID at all (NULL on all 22 of 1116's),
+   * and APDocID repeats across them (20 ids for 22 rows), so those get a
+   * composite `ec:<APDocID>:<item>:<value>` — unique on all 22.
+   *
+   * Why it exists: the Parts List groups a part's purchases by PO, and grouping
+   * on part number alone is not safe. The two queries that describe the same
+   * purchase line spell the part number differently — PARTS_DETAIL_SQL uses
+   * `PurchaseSupplierItem || ManufacturerPartNumber`, job-bom's PO_SQL uses
+   * `ItemCompanyID` — and they disagree on 34 of 1116's 1083 lines. A name join
+   * silently drops those 3%; an id join cannot.
+   */
+  lineId: string;
   purchaseDate: string | null;
   invoicedDate: string | null;
   supplier: string | null;
@@ -823,6 +840,7 @@ const LINE_TOTAL_PRICE = `
 const partsDetailSql = (where: { pod: string; ec: string }) => `
 SELECT
    POD.ProjectID AS JobId
+  ,CONCAT('pod:', CAST(POD.PurchaseDetailID AS varchar(20))) AS LineId
   ,CONVERT(varchar(10), POH.PurchaseDate, 23) AS PurchaseDate
   ,CONVERT(varchar(10), INV.APDocDate, 23) AS InvoicedDate
   ,SUP.CName AS Supplier
@@ -864,6 +882,9 @@ UNION ALL
 
 SELECT
    EC.ProjectID AS JobId
+  -- CONCAT, not '+': it coerces and treats NULL as '', so one null component
+  -- cannot collapse the whole id to NULL the way string concatenation would.
+  ,CONCAT('ec:', CAST(EC.APDocID AS varchar(20)), ':', EC.PurchaseSupplierItem, ':', CAST(EC.decExtraCostingValue AS varchar(40))) AS LineId
   ,CONVERT(varchar(10), EC.APDocDate, 23) AS PurchaseDate
   ,CONVERT(varchar(10), EC.APDocDate, 23) AS InvoicedDate
   ,EC.Vendor AS Supplier
@@ -899,6 +920,7 @@ const PARTS_DETAIL_SQL = partsDetailSql({ pod: "POD.ProjectID = @job", ec: "EC.P
 /** One recordset row -> one PartsCostLine. Shared so the two scopes cannot map differently. */
 function toPartsCostLine(r: Record<string, unknown>): PartsCostLine {
   return {
+    lineId: (r.LineId as string) ?? "",
     purchaseDate: (r.PurchaseDate as string) ?? null,
     invoicedDate: (r.InvoicedDate as string) ?? null,
     supplier: (r.Supplier as string) ?? null,
@@ -954,7 +976,7 @@ export async function getPartsCostForJobs(jobIds: string[]): Promise<Map<string,
     }
     for (const [job, lines] of byJob) out.set(job, meaningfulLines(lines));
     return out;
-  }, 300000);
+  }, { requestTimeout: 300_000, feed: "parts_cost.lines_for_jobs" });
 }
 
 // ── Genuinely month-scoped invoice lines, for the Parts Spent drill (2026-08-07) ──
@@ -1020,7 +1042,12 @@ export async function getJobPartsInvoicedInMonth(jobId: string, monthStart: Date
       .input("end", sql.DateTime, monthEndExclusive)
       .query(`
         SELECT
-           CONVERT(varchar(10), POH.PurchaseDate, 23) AS PurchaseDate
+          -- This drill's grain is the AP document DETAIL, not the purchase line
+          -- (it LEFT JOINs POD, and a non-PO line has none), so its stable id is
+          -- APDocDetailID. Prefixed distinctly so an id from here can never be
+          -- mistaken for a 'pod:' one from PARTS_DETAIL_SQL.
+           CONCAT('apdd:', CAST(APDD.APDocDetailID AS varchar(20))) AS LineId
+          ,CONVERT(varchar(10), POH.PurchaseDate, 23) AS PurchaseDate
           ,CONVERT(varchar(10), APBD.APDocDate, 23) AS InvoicedDate
           ,SUP.CName AS Supplier
           ,IM.Manufacturer AS Manufacturer
@@ -1053,6 +1080,7 @@ export async function getJobPartsInvoicedInMonth(jobId: string, monthStart: Date
           AND APBD.APDocDate >= @start AND APBD.APDocDate < @end
       `);
     const lines: PartsCostLine[] = result.recordset.map((r) => ({
+      lineId: r.LineId ?? "",
       purchaseDate: r.PurchaseDate ?? null,
       invoicedDate: r.InvoicedDate ?? null,
       supplier: r.Supplier ?? null,
@@ -1082,7 +1110,7 @@ export async function getJobPartsInvoicedInMonth(jobId: string, monthStart: Date
     const paid = meaningful.reduce((s, l) => s + l.invoicedAmount, 0);
     const actual = meaningful.reduce((s, l) => s + l.actualAmount, 0);
     return { purchased: paid, paid, actual, leftToPay: 0, lines: meaningful };
-  }, 120000);
+  }, { requestTimeout: 120_000, feed: "parts_cost.job_invoiced_in_month" });
 }
 
 export async function getJobPartsCost(jobId: string): Promise<JobPartsCost> {
@@ -1102,7 +1130,7 @@ export async function getJobPartsCost(jobId: string): Promise<JobPartsCost> {
     const paid = meaningful.reduce((s, l) => s + l.invoicedAmount, 0);
     const actual = meaningful.reduce((s, l) => s + l.actualAmount, 0);
     return { purchased, paid, actual, leftToPay: purchased - paid, lines: meaningful };
-  }, 120000);
+  }, { requestTimeout: 120_000, feed: "parts_cost.job_detail" });
 }
 
 // Credentials come from the environment, same as every other integration in
@@ -1282,5 +1310,5 @@ export async function syncFromTotalEto(): Promise<{ jobsUpdated: number; skipped
     }
 
     return { jobsUpdated, skippedNoType };
-  }, TOTALETO_TIMEOUT.sync);
+  }, { requestTimeout: TOTALETO_TIMEOUT.sync, feed: "totaleto_jobs.mirror" });
 }

@@ -33,7 +33,11 @@ import type { PartsCostLine } from "../src/lib/sync-totaleto";
 // report asked about (partial invoices, credits, zero rows, undated lines, month
 // boundaries, over-invoicing) rather than only the happy path.
 
+// Unique per call, not a shared constant: lineId is a purchase line's identity,
+// and anything that groups by it would silently collapse two fixtures into one.
+let lineSeq = 0;
 const line = (o: Partial<PartsCostLine>): PartsCostLine => ({
+  lineId: `fixture:${++lineSeq}`,
   purchaseDate: null,
   invoicedDate: null,
   supplier: null,

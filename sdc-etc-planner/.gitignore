@@ -14,11 +14,15 @@
 /coverage
 
 # next.js
+#
+# One glob rather than a line per NEXT_DIST_DIR. This listed .next-preview*,
+# .next-verify*, .next-perf* and .next-buildcheck individually, and every new
+# dist dir since then arrived untracked: .next-ci/ and .next-safety-check/ were
+# both sitting in the tree, so `git add sdc-etc-planner` would have committed
+# two full build outputs. Nothing but build output is ever named `.next-<x>`,
+# and the next one is now covered before it is created.
 /.next/
-/.next-preview*/
-/.next-verify*/
-/.next-perf*/
-/.next-buildcheck/
+/.next-*/
 /out/
 
 # production

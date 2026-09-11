@@ -1,5 +1,4 @@
-import sql from "mssql";
-import { totalEtoConfig, TOTALETO_TIMEOUT } from "@/lib/totaleto-connection";
+import { TOTALETO_TIMEOUT, withTotalEto } from "@/lib/totaleto-connection";
 
 // ── Raw Total ETO extraction for Cash Flow Forecast (2026-08-19) ────────────
 //
@@ -37,12 +36,26 @@ import { totalEtoConfig, TOTALETO_TIMEOUT } from "@/lib/totaleto-connection";
 //                     dollar figure "remaining ETC" allocation is spread
 //                     across future months from).
 
-// The connection config moved to lib/totaleto-connection.ts (2026-09-01):
-// this file held one of FOUR byte-identical copies, which is what made a single
-// shared credential failure look like four unrelated ones. `config` below is that
-// shared definition, with this file's own requestTimeout.
-const config = totalEtoConfig(TOTALETO_TIMEOUT.cashFlow);
-
+// ── The shared pool, not a pool per query (2026-09-09) ──────────────────────
+//
+// Every function below used to open a ConnectionPool of its own on the shared
+// config,
+// run one statement, and close it again — so a Cash Flow snapshot capture cost
+// four full TCP connections and four NTLM logins, and a drill click cost another
+// three. The 2026-09-03 shared-pool work (lib/totaleto-connection.ts) never
+// reached these two files, which still carried the config-only half of the
+// 2026-09-01 consolidation.
+//
+// They use withTotalEto now, which means they get the one long-lived pool, the
+// bounded retries, and the per-attempt diagnostics with everything else that
+// talks to Total ETO. Connection churn of that shape is also the thing most
+// likely to make a healthy server look unreliable: each login is a fresh chance
+// to be refused, time out, or lose a race, for no benefit at all.
+//
+// Safe only BECAUSE the pool is now instance-tagged: `.input("projectId",
+// sql.Int, ...)` below binds a type constant from THIS module's copy of mssql,
+// and handing that to a pool another copy had built is the exact fault that broke
+// Parts cost for five days. See totaleto-connection.ts.
 export type ProjectEstimateRow = {
   projectId: string;
   customer: string | null;
@@ -91,8 +104,7 @@ function num(v: unknown): number {
 }
 
 export async function fetchProjectEstimates(): Promise<ProjectEstimateRow[]> {
-  const pool = await new sql.ConnectionPool(config).connect();
-  try {
+  return withTotalEto(async (pool) => {
     const result = await pool.request().query(`
       SELECT
         E.ProjectID AS ProjectID,
@@ -117,9 +129,7 @@ export async function fetchProjectEstimates(): Promise<ProjectEstimateRow[]> {
       projectProfit: num(r.Margin),
       remainingCost: r.RemainingCost == null ? null : num(r.RemainingCost),
     }));
-  } finally {
-    await pool.close();
-  }
+  }, { requestTimeout: TOTALETO_TIMEOUT.cashFlow, feed: "cash_flow.project_estimates" });
 }
 
 // One row per sales term, refined against the real invoice due date/amount
@@ -127,8 +137,7 @@ export async function fetchProjectEstimates(): Promise<ProjectEstimateRow[]> {
 // invoiced AR line to the term it fulfills — confirmed live (tblARSalesTerms'
 // ARTProjectId/ARTTermId is the same composite key).
 export async function fetchArForecastRows(): Promise<ArForecastRow[]> {
-  const pool = await new sql.ConnectionPool(config).connect();
-  try {
+  return withTotalEto(async (pool) => {
     const result = await pool.request().query(`
       SELECT
         T.ARTProjectId AS ProjectID,
@@ -155,9 +164,7 @@ export async function fetchArForecastRows(): Promise<ArForecastRow[]> {
       const amount = released && r.InvoiceAmount != null ? num(r.InvoiceAmount) : num(r.TermAmount);
       return { projectId: String(r.ProjectID), dueDate, amount, released, description: r.Description ?? null };
     });
-  } finally {
-    await pool.close();
-  }
+  }, { requestTimeout: TOTALETO_TIMEOUT.cashFlow, feed: "cash_flow.ar_forecast" });
 }
 
 // The exact GL-posted rule sync-totaleto.ts's own AP reconciliation uses
@@ -168,8 +175,7 @@ const GL_POSTED_AP = "ISNULL(APBD.APDocDoNotExport, 0) = 0";
 const AP_LINE_AMOUNT = "(APDD.APDocQty * APDD.APDocUnitPrice * (1 - APDD.APDocItemPctDisc) * APBD.APDocCurrRate)";
 
 export async function fetchApForecastRows(): Promise<ApForecastRow[]> {
-  const pool = await new sql.ConnectionPool(config).connect();
-  try {
+  return withTotalEto(async (pool) => {
     const result = await pool.request().query(`
       SELECT
         APDD.ProjectID AS ProjectID,
@@ -183,9 +189,7 @@ export async function fetchApForecastRows(): Promise<ApForecastRow[]> {
       GROUP BY APDD.ProjectID, APBD.APDocDueDate
     `);
     return result.recordset.map((r) => ({ projectId: String(r.ProjectID), dueDate: toIso(r.DueDate), amount: num(r.Amount) }));
-  } finally {
-    await pool.close();
-  }
+  }, { requestTimeout: TOTALETO_TIMEOUT.cashFlow, feed: "cash_flow.ap_forecast" });
 }
 
 // Remaining (uninvoiced) commitment per PO line = ordered value minus
@@ -197,8 +201,7 @@ export async function fetchApForecastRows(): Promise<ApForecastRow[]> {
 // remaining commitment already reflected in booked AP above must never be
 // double-counted here.
 export async function fetchPoForecastRows(): Promise<PoForecastRow[]> {
-  const pool = await new sql.ConnectionPool(config).connect();
-  try {
+  return withTotalEto(async (pool) => {
     const result = await pool.request().query(`
       SELECT
         POD.ProjectID AS ProjectID,
@@ -222,7 +225,5 @@ export async function fetchPoForecastRows(): Promise<PoForecastRow[]> {
         remainingAmount: Math.max(0, num(r.OrderedAmount) - num(r.InvoicedAmount)),
       }))
       .filter((r) => r.remainingAmount > 0.005); // fully-invoiced lines carry no remaining cash-out at all
-  } finally {
-    await pool.close();
-  }
+  }, { requestTimeout: TOTALETO_TIMEOUT.cashFlow, feed: "cash_flow.po_forecast" });
 }

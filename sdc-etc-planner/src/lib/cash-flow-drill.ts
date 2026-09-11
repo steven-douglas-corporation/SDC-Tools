@@ -1,5 +1,5 @@
 import sql from "mssql";
-import { totalEtoConfig, TOTALETO_TIMEOUT } from "@/lib/totaleto-connection";
+import { TOTALETO_TIMEOUT, withTotalEto } from "@/lib/totaleto-connection";
 
 // Record-level drill-through behind one Cash Flow cell — CURRENT only. A
 // stored snapshot keeps only the aggregated (project, month, category)
@@ -9,12 +9,26 @@ import { totalEtoConfig, TOTALETO_TIMEOUT } from "@/lib/totaleto-connection";
 // so a historical "As Of" cell's drill panel shows the total only; these
 // queries back "Current" drill-through, always live against Total ETO.
 
-// The connection config moved to lib/totaleto-connection.ts (2026-09-01):
-// this file held one of FOUR byte-identical copies, which is what made a single
-// shared credential failure look like four unrelated ones. `config` below is that
-// shared definition, with this file's own requestTimeout.
-const config = totalEtoConfig(TOTALETO_TIMEOUT.sync);
-
+// ── The shared pool, not a pool per query (2026-09-09) ──────────────────────
+//
+// Every function below used to open a ConnectionPool of its own on the shared
+// config,
+// run one statement, and close it again — so a Cash Flow snapshot capture cost
+// four full TCP connections and four NTLM logins, and a drill click cost another
+// three. The 2026-09-03 shared-pool work (lib/totaleto-connection.ts) never
+// reached these two files, which still carried the config-only half of the
+// 2026-09-01 consolidation.
+//
+// They use withTotalEto now, which means they get the one long-lived pool, the
+// bounded retries, and the per-attempt diagnostics with everything else that
+// talks to Total ETO. Connection churn of that shape is also the thing most
+// likely to make a healthy server look unreliable: each login is a fresh chance
+// to be refused, time out, or lose a race, for no benefit at all.
+//
+// Safe only BECAUSE the pool is now instance-tagged: `.input("projectId",
+// sql.Int, ...)` below binds a type constant from THIS module's copy of mssql,
+// and handing that to a pool another copy had built is the exact fault that broke
+// Parts cost for five days. See totaleto-connection.ts.
 function toIso(d: unknown): string | null {
   if (!d) return null;
   const date = d instanceof Date ? d : new Date(String(d));
@@ -37,8 +51,7 @@ export type ArDrillRow = {
 };
 
 export async function fetchArDrillRows(projectId: string): Promise<ArDrillRow[]> {
-  const pool = await new sql.ConnectionPool(config).connect();
-  try {
+  return withTotalEto(async (pool) => {
     const result = await pool
       .request()
       .input("projectId", sql.Int, Number(projectId))
@@ -72,9 +85,7 @@ export async function fetchArDrillRows(projectId: string): Promise<ArDrillRow[]>
         status: released ? "Invoiced" : "Pending",
       };
     });
-  } finally {
-    await pool.close();
-  }
+  }, { requestTimeout: TOTALETO_TIMEOUT.sync, feed: "cash_flow_drill.ar_lines" });
 }
 
 export type ApDrillRow = {
@@ -88,8 +99,7 @@ export type ApDrillRow = {
 const AP_LINE_AMOUNT = "(APDD.APDocQty * APDD.APDocUnitPrice * (1 - APDD.APDocItemPctDisc) * APBD.APDocCurrRate)";
 
 export async function fetchApDrillRows(projectId: string): Promise<ApDrillRow[]> {
-  const pool = await new sql.ConnectionPool(config).connect();
-  try {
+  return withTotalEto(async (pool) => {
     const result = await pool
       .request()
       .input("projectId", sql.Int, Number(projectId))
@@ -114,9 +124,7 @@ export async function fetchApDrillRows(projectId: string): Promise<ApDrillRow[]>
       invoiceDate: toIso(r.InvoiceDate),
       dueDate: toIso(r.DueDate),
     }));
-  } finally {
-    await pool.close();
-  }
+  }, { requestTimeout: TOTALETO_TIMEOUT.sync, feed: "cash_flow_drill.ap_lines" });
 }
 
 export type PoDrillRow = {
@@ -129,8 +137,7 @@ export type PoDrillRow = {
 };
 
 export async function fetchPoDrillRows(projectId: string): Promise<PoDrillRow[]> {
-  const pool = await new sql.ConnectionPool(config).connect();
-  try {
+  return withTotalEto(async (pool) => {
     const result = await pool
       .request()
       .input("projectId", sql.Int, Number(projectId))
@@ -161,7 +168,5 @@ export async function fetchPoDrillRows(projectId: string): Promise<PoDrillRow[]>
         remainingAmount: Math.max(0, num(r.OrderedAmount) - num(r.InvoicedAmount)),
       }))
       .filter((r) => r.remainingAmount > 0.005);
-  } finally {
-    await pool.close();
-  }
+  }, { requestTimeout: TOTALETO_TIMEOUT.sync, feed: "cash_flow_drill.po_lines" });
 }

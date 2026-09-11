@@ -81,7 +81,7 @@ async function jobsCarryingPo(poNumber: string): Promise<string[]> {
          ) x WHERE JobId IS NOT NULL`,
       );
     return r.recordset.map((row: Record<string, unknown>) => String(row.JobId));
-  });
+  }, { feed: "po_across_jobs.jobs_carrying_po" });
 }
 
 /** Case- and space-insensitive, because a PO is typed by hand into a search box. */

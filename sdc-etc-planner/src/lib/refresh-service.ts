@@ -56,7 +56,10 @@ export type RefreshOutcome =
       // "ok" when every source that ran succeeded, "partial" when some failed. There is
       // no "ok" with failures — see the note on `status` below.
       status: "ok" | "partial";
-      sources: { source: string; label: string; status: string; detail: string }[];
+      // `kind` / `retryable` are set for a failed Total ETO source only (see
+      // SyncStepResult) — they are what lets the toast say whether waiting for the
+      // hourly schedule can possibly help.
+      sources: { source: string; label: string; status: string; detail: string; kind?: string; retryable?: boolean }[];
       failedLabels: string[];
       month: string | null;
       // Set when this refresh also STARTED a new ETC month — see the note in the body.
@@ -300,7 +303,7 @@ export type RefreshRunRecord = {
   // slow or broken, and for how many passes in a row — the run row's own counts
   // only ever said how many. Never throws on a malformed value: a bad JSON blob
   // yields no per-source detail, not a failed dashboard.
-  steps: { source: string; label: string; status: string; detail: string; ms?: number }[];
+  steps: { source: string; label: string; status: string; detail: string; ms?: number; kind?: string; retryable?: boolean }[];
 };
 
 // The last few passes, for the dashboard's own "when was this last refreshed" line.
@@ -526,7 +529,7 @@ export async function refreshAllData(input: {
     completedAt: completedAt.toISOString(),
     durationMs,
     status,
-    sources: result.steps.map((s) => ({ source: s.source, label: s.label, status: s.status, detail: s.detail })),
+    sources: result.steps.map((s) => ({ source: s.source, label: s.label, status: s.status, detail: s.detail, kind: s.kind, retryable: s.retryable })),
     failedLabels: failed.map((f) => f.label),
     month: result.month,
     seededMonth,

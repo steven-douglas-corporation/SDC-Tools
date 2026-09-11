@@ -35,6 +35,7 @@ import {
   type StatusKey,
 } from "@/lib/po-detail";
 import { PoPanel, ReleaseBadge, SupplierAvatar, Stat, ALL_COLS, partsListSortColumns, PartRowCells, type ColKey } from "@/components/procurement/PoDetailPanel";
+import { PartPoPanel } from "@/components/procurement/PartPoPanel";
 import { computeRiskCards, dueMs, earliestRequired, groupPartsByPo } from "@/lib/procurement-risk";
 import { FILTER_ALL, resolveFilterChoice, filterOptionValues, sanitizeStatusSelection } from "@/lib/filter-choice";
 
@@ -117,6 +118,20 @@ function ReadinessBar({ pct, width = "w-full", size = "sm" }: { pct: number; wid
 
 const STORAGE_KEY = "sdc-etc-proc-state";
 
+/**
+ * Which date the From/To range filters on.
+ *
+ * Named rather than written out inline, which is what it was in five places
+ * (PersistedState, the useState, the PartsListTab prop pair, and the Segmented's
+ * onChange cast) — adding "delivered" to a fifth copy is exactly how a filter
+ * ends up accepting a value one of its own call sites cannot express.
+ *
+ * "delivered" reads FlatPart.receivedDate, the same field the Delivered Date
+ * column shows, so "what actually landed in August" and the column that answers
+ * it can never disagree.
+ */
+type PartsDateFilter = "purchase" | "invoice" | "req" | "exp" | "delivered";
+
 type PersistedState = {
   tab: "assemblies" | "parts";
   view: "list" | "card";
@@ -125,7 +140,7 @@ type PersistedState = {
   category: string;
   manufacturer: string;
   supplier: string;
-  dateType: "purchase" | "invoice" | "req" | "exp";
+  dateType: PartsDateFilter;
   from: string;
   to: string;
   upcomingWeek: number;
@@ -179,7 +194,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
   const [category, setCategory] = useState(() => saved.category ?? FILTER_ALL);
   const [manufacturer, setManufacturer] = useState(() => saved.manufacturer ?? FILTER_ALL);
   const [supplier, setSupplier] = useState(() => saved.supplier ?? FILTER_ALL);
-  const [dateType, setDateType] = useState<"purchase" | "invoice" | "req" | "exp">(() => saved.dateType ?? "purchase");
+  const [dateType, setDateType] = useState<PartsDateFilter>(() => saved.dateType ?? "purchase");
   const [from, setFrom] = useState(() => saved.from ?? "");
   const [to, setTo] = useState(() => saved.to ?? "");
   // Default hidden columns (fresh users; anyone with a stored set keeps theirs).
@@ -231,6 +246,13 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
   // PO detail — the right-side sliding panel. null = closed. `authoritative` is
   // the matched real PO line-group (undefined → panel falls back to BOM rows).
   const [poPanel, setPoPanel] = useState<{ supplier: string; po: PoGroup; authoritative?: PoLineGroup } | null>(null);
+
+  // Part detail — the right-side panel behind a Parts List part number. Holds
+  // the part id, not the FlatPart: `parts` is rebuilt whenever the window
+  // attribution or the BOM changes, and a captured object would leave the panel
+  // showing figures the table no longer agrees with. Resolved against the live
+  // list on every render below.
+  const [partPanelId, setPartPanelId] = useState<number | null>(null);
 
   // The primary click action anywhere a part is shown: jump to its Parts-List
   // row (table mode, filters cleared, then scroll+flash) and copy the part #.
@@ -369,6 +391,10 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
   // fetches its own bom/partsLines for a single PO via a Server Action rather
   // than rendering this whole component.)
   const parts = useMemo<FlatPart[]>(() => flattenBomParts(bom, partsLines, activeAttribution), [bom, partsLines, activeAttribution]);
+  const partPanelPart = useMemo(
+    () => (partPanelId === null ? null : (parts.find((p) => p.id === partPanelId) ?? null)),
+    [parts, partPanelId],
+  );
 
   // ── The one number that closes the gap to the Parts Cost card ─────────────
   //
@@ -624,7 +650,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
           state={partsState}
           drill={drill}
           vendors={bom.vendors}
-          onPartClick={drillToPart}
+          onOpenPart={(p) => setPartPanelId(p.id)}
           onCopy={copyText}
           onOpenPo={openPoFor}
           windowStatus={{
@@ -646,6 +672,20 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
           onClose={() => setPoPanel(null)}
           onPartClick={drillToPart}
           onOpenPo={openPoFor}
+        />
+      )}
+
+      {/* Resolved from `parts` by id rather than held as an object: the list is
+          rebuilt whenever the invoiced window resolves, so a captured FlatPart
+          would go on showing figures the table behind it had already replaced.
+          A missing id renders nothing, which is the right answer if the part
+          stopped existing. */}
+      {partPanelPart && (
+        <PartPoPanel
+          part={partPanelPart}
+          onClose={() => setPartPanelId(null)}
+          onOpenPo={openPoFor}
+          windowActive={activeAttribution !== null}
         />
       )}
     </div>
@@ -1186,6 +1226,19 @@ function PartsDetailTable({
 // "leftspend" (Left to Invoice) left this list 2026-09-02 — it is one of the
 // financial columns now, beside Total $ and Invoiced $, rather than an optional
 // extra behind the Columns menu.
+//
+// "subs" (# Subs) and "purchqty" (Purch Qty) joined the default-VISIBLE set
+// 2026-09-10. "# Subs" replaces the "+N" badge that used to sit inside the PO
+// cell, so hiding it by default would simply delete information the table
+// already showed; "Purch Qty" is the quantity Unit $ multiplies by, and a money
+// row that cannot be checked is the thing this change exists to fix.
+//
+// "delivered" (Delivered Date) joined the default-VISIBLE set 2026-09-10, beside
+// Required/Expected Date — the three read as one group and the request was for
+// the actual date next to the promised ones. It needs no migration of the kind
+// "leftspend" did: a stored `hiddenPartCols` lists what is HIDDEN, so a key that
+// did not exist when it was written is simply absent, and the column shows up for
+// existing users as well as new ones.
 const DEFAULT_HIDDEN_COLS: ColKey[] = ["parent", "category", "invoiceddate", "lead", "due", "pctinv"];
 
 // Invoiced+range window fetch status — passed down so PartsListTab can show a
@@ -1233,8 +1286,8 @@ type PartsListState = {
   setManufacturer: (v: string) => void;
   supplier: string;
   setSupplier: (v: string) => void;
-  dateType: "purchase" | "invoice" | "req" | "exp";
-  setDateType: (v: "purchase" | "invoice" | "req" | "exp") => void;
+  dateType: PartsDateFilter;
+  setDateType: (v: PartsDateFilter) => void;
   from: string;
   setFrom: (v: string) => void;
   to: string;
@@ -1259,10 +1312,16 @@ const DEFAULT_COL_WIDTH: Record<ColKey, number> = {
   mfr: 115,
   supplier: 130,
   po: 72,
+  // Narrow on purpose: it holds a single digit on all but a handful of rows
+  // (job 1116: 748 rows with purchases, 63 of them on more than one PO).
+  subs: 62,
   purchased: 80,
   invoiceddate: 64,
   req: 84,
   exp: 84,
+  // Wider than req/exp: "Delivered Date" is the longest header in the date group,
+  // and at text-micro it needs the room its neighbours don't.
+  delivered: 96,
   lead: 60,
   due: 68,
   // ── The financial group, widened 2026-09-02 ──────────────────────────────
@@ -1276,6 +1335,7 @@ const DEFAULT_COL_WIDTH: Record<ColKey, number> = {
   // an `overflow-auto` scroller, so the extra width costs horizontal scroll, which
   // is the correct trade and what the request asks for.
   unit: 84,
+  purchqty: 80,
   total: 92,
   invoiced: 96,
   pctinv: 64,
@@ -1293,7 +1353,7 @@ function PartsListTab({
   state,
   drill,
   vendors,
-  onPartClick,
+  onOpenPart,
   onCopy,
   onOpenPo,
   windowStatus,
@@ -1306,7 +1366,10 @@ function PartsListTab({
   state: PartsListState;
   drill: { key: string; nonce: number };
   vendors: Vendor[];
-  onPartClick: (p: DrillablePart) => void;
+  /** Opens the part's PO-history panel — the part NUMBER's own click. The row
+   *  itself copies (onCopy); the filter-clearing jump (drillToPart) is for
+   *  arriving from the Assemblies tree or a risk card, not for this table. */
+  onOpenPart: (p: FlatPart) => void;
   onCopy: (text: string, label?: string) => void;
   onOpenPo: (supplier: string | null, poNumber: string | null) => void;
   windowStatus: WindowStatus;
@@ -1492,6 +1555,12 @@ function PartsListTab({
             dateType === "purchase" ? p.purchasedDate :
             dateType === "invoice" ? p.invoicedDate :
             dateType === "req" ? p.requiredDate :
+            // The Delivered Date column's own field — actual arrival, never a
+            // promised date. A row with nothing received has no delivered date
+            // and drops out of the range, the same way a row with no purchase
+            // date drops out of a Purchase range: "delivered in August" is a
+            // question about parts that were delivered.
+            dateType === "delivered" ? p.receivedDate :
             p.expectedDate; // "exp"
           if (!d) return false;
           const day = d.slice(0, 10);
@@ -1600,12 +1669,13 @@ function PartsListTab({
 
         <Segmented
           value={dateType}
-          onChange={(v) => setDateType(v as "purchase" | "invoice" | "req" | "exp")}
+          onChange={(v) => setDateType(v as PartsDateFilter)}
           options={[
             { value: "purchase", label: "Purchase" },
             { value: "invoice", label: "Invoiced" },
             { value: "req", label: "Req Date" },
             { value: "exp", label: "Exp Date" },
+            { value: "delivered", label: "Delivered" },
           ]}
         />
         <input type="date" aria-label="From date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 rounded-md border border-sdc-border bg-white px-2 text-xs text-sdc-navy outline-none focus:border-sdc-blue" />
@@ -1647,7 +1717,7 @@ function PartsListTab({
           No parts match the current filters.
         </p>
       ) : view === "list" ? (
-        <PartsTableView parts={filtered} cols={visibleCols} onPartClick={onPartClick} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} scope={scope} setScope={setScope} drillKey={drill.key} />
+        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} scope={scope} setScope={setScope} drillKey={drill.key} />
       ) : (
         <PartsCardView parts={filtered} vendors={vendors} onCopy={onCopy} onOpenPo={onOpenPo} />
       )}
@@ -1753,7 +1823,8 @@ function useRowWindow(total: number, scrollRef: React.RefObject<HTMLDivElement |
 function PartsTableView({
   parts,
   cols,
-  onPartClick,
+  onCopy,
+  onOpenPart,
   onOpenPo,
   now,
   colWidths,
@@ -1767,7 +1838,20 @@ function PartsTableView({
 }: {
   parts: FlatPart[];
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
-  onPartClick: (p: DrillablePart) => void;
+  // ── Why this is onCopy and not onPartClick (2026-09-10) ──────────────────
+  //
+  // The row used to call `drillToPart`, which clears every filter, switches to
+  // List view and scroll-flashes the target. That is exactly right when you
+  // arrive from the Assemblies tree or a risk card — it guarantees the row you
+  // asked for is actually on screen. Called from a Parts List row, it could only
+  // ever throw away the filters you had set in order to "find" the row you were
+  // already looking at and had just clicked.
+  //
+  // So the row keeps the useful half, copying the part number, and matches
+  // PartsCardView beside it, which already took onCopy for the same reason. The
+  // part number itself is now the real destination (onOpenPart).
+  onCopy: (text: string, label?: string) => void;
+  onOpenPart: (p: FlatPart) => void;
   onOpenPo: (supplier: string | null, poNumber: string | null) => void;
   now: number;
   colWidths: Partial<Record<ColKey, number>>;
@@ -1986,14 +2070,14 @@ function PartsTableView({
                   data-part-key={String(p.id)}
                   data-pn={p.pn}
                   data-part-id={p.id}
-                  onClick={() => onPartClick(p)}
-                  title="Copy part # · locate row"
+                  onClick={() => onCopy(p.pn, p.pn)}
+                  title="Copy part # · click the part number for its PO history"
                   // The height the windowing arithmetic assumes. Every cell already
                   // truncates to one line, so this fixes what was true by convention.
                   style={{ height: ROW_H }}
                   className={`group cursor-pointer ${rowBg}`}
                 >
-                  <PartRowCells p={p} cols={cols} now={now} onOpenPo={onOpenPo} />
+                  <PartRowCells p={p} cols={cols} now={now} onOpenPo={onOpenPo} onOpenPart={onOpenPart} />
                 </tr>
               );
             })}

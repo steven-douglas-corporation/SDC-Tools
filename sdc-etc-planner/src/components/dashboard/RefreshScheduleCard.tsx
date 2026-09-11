@@ -204,6 +204,25 @@ function SourceRow({ s, dense }: { s: SourceHealth; dense: boolean }) {
           {duration && <Detail term="Last duration" value={duration} />}
           {s.detail && <Detail term="Last result" value={s.detail} />}
           {s.failure && <Detail term="Error" value={s.failure.replace(/^Failed:\s*/, "")} tone="bad" />}
+          {/* WHAT KIND of failure, and whether waiting can fix it (2026-09-09).
+              A panel that says only "failed" invites the one response that cannot
+              work — press Refresh again — which is exactly what happened for five
+              days while the cause was a parameter-binding bug in this app rather
+              than anything wrong with Total ETO. */}
+          {s.failureKind && (
+            <Detail
+              term="Cause"
+              value={
+                `${s.failureKind.replace(/_/g, " ")}` +
+                (s.failureRetryable === false
+                  ? " — retrying cannot fix this; it needs a credential, a deploy or a schema change"
+                  : s.failureRetryable === true
+                    ? " — transient; the next pass has a real chance"
+                    : "")
+              }
+              tone="bad"
+            />
+          )}
           {s.waiting && <Detail term="Waiting on" value={s.waiting} tone="warn" />}
           <Detail term="Source system" value={s.family} />
           <Detail

@@ -167,19 +167,28 @@ export function StandardPoolPanel({
   // server-rendered, and reading sessionStorage during the first render would hydrate
   // differently from the server. The cost is one frame collapsed before it opens, on a
   // reload — a frame during which the whole page is painting anyway.
+  //
+  // The restore runs on the next frame rather than synchronously in the effect:
+  // the comment above already accepts one collapsed frame on a reload, so this
+  // costs nothing visible, and it keeps a setState out of the effect body — a
+  // lint error in this repo (react-hooks/set-state-in-effect). Cancelled on
+  // unmount so a panel that closes within that frame cannot set state after it.
   useEffect(() => {
-    try {
-      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-      if (nav?.type === "reload") {
-        if (sessionStorage.getItem(PANEL_OPEN_KEY) === "1") setOpen(true);
-      } else {
-        // A fresh entry: clear the marker so a later reload cannot resurrect a state
-        // from an earlier visit to this tab.
-        sessionStorage.removeItem(PANEL_OPEN_KEY);
+    const id = window.requestAnimationFrame(() => {
+      try {
+        const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+        if (nav?.type === "reload") {
+          if (sessionStorage.getItem(PANEL_OPEN_KEY) === "1") setOpen(true);
+        } else {
+          // A fresh entry: clear the marker so a later reload cannot resurrect a state
+          // from an earlier visit to this tab.
+          sessionStorage.removeItem(PANEL_OPEN_KEY);
+        }
+      } catch {
+        /* storage blocked (private modes) — collapsed is the correct fallback */
       }
-    } catch {
-      /* storage blocked (private modes) — collapsed is the correct fallback */
-    }
+    });
+    return () => window.cancelAnimationFrame(id);
   }, []);
 
   // One place that both toggles do their writing, so the stored marker cannot drift

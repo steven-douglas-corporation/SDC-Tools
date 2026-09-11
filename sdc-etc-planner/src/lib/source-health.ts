@@ -81,7 +81,7 @@ export type RunInput = {
   status: string;
   sourcesOk: number;
   sourcesFailed: number;
-  steps: { source: string; label: string; status: string; detail: string; ms?: number }[];
+  steps: { source: string; label: string; status: string; detail: string; ms?: number; kind?: string; retryable?: boolean }[];
 };
 
 export type RunningInput = { running: boolean; since: Date | null; stage: string | null; done: number; total: number };
@@ -112,6 +112,16 @@ export type SourceHealth = {
   history: HistoryPoint[];
   /** How many consecutive recent passes have failed for this source. */
   failStreak: number;
+  // ── Whether waiting fixes it (2026-09-09) ─────────────────────────────────
+  //
+  // Set for a failed Total ETO source; see SyncStepResult.kind. A panel that
+  // says "failed" and nothing else invites the one response that cannot work —
+  // press it again — which is what happened for five days when the cause was a
+  // parameter-binding bug in this app rather than anything upstream.
+  /** The classification of the last failure, e.g. "query_timeout". */
+  failureKind: string | null;
+  /** False when another attempt provably cannot help (a credential, a bug, a schema change). */
+  failureRetryable: boolean | null;
   /** When the hourly schedule should next touch it. */
   nextRefreshAt: Date | null;
   /** ms overdue, for a source past its window; null when it is inside it. */
@@ -176,6 +186,8 @@ export function buildSourceHealth(input: {
     let lastFailureAt: Date | null = null;
     let lastDurationMs: number | null = null;
     let detail: string | null = null;
+    let failureKind: string | null = null;
+    let failureRetryable: boolean | null = null;
     for (const run of runs) {
       const step = run.steps.find((s) => s.source === feed.source);
       if (!step) continue;
@@ -185,7 +197,11 @@ export function buildSourceHealth(input: {
       if (lastDurationMs == null && typeof step.ms === "number") lastDurationMs = step.ms;
       if (detail == null && step.detail) detail = step.detail;
       if (outcome === "ok" && !lastSuccessAt) lastSuccessAt = at;
-      if (outcome === "failed" && !lastFailureAt) lastFailureAt = at;
+      if (outcome === "failed" && !lastFailureAt) {
+        lastFailureAt = at;
+        failureKind = step.kind ?? null;
+        failureRetryable = step.retryable ?? null;
+      }
     }
     let failStreak = 0;
     for (const h of history) {
@@ -228,6 +244,8 @@ export function buildSourceHealth(input: {
       lastFailureAt,
       history,
       failStreak,
+      failureKind,
+      failureRetryable,
       nextRefreshAt,
       overdueBy,
     };

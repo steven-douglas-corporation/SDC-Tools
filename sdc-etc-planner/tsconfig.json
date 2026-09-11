@@ -52,7 +52,11 @@
     ".next-audit/types/**/*.ts",
     ".next-audit/dev/types/**/*.ts",
     ".next-preview-audit/types/**/*.ts",
-    ".next-preview-audit/dev/types/**/*.ts"
+    ".next-preview-audit/dev/types/**/*.ts",
+    ".next-ci/types/**/*.ts",
+    ".next-ci/dev/types/**/*.ts",
+    ".next-verify-build/types/**/*.ts",
+    ".next-verify-build/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

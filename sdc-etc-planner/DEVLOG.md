@@ -6465,3 +6465,101 @@ that premise still holds. Test: tests/etc-remote-values.test.ts.
 Clean: `npx tsc --noEmit`, `npx eslint` on every touched file, the three related
 test files (56 pass). pm2 is not reachable from the agent's session, so the deploy
 (`npm run deploy`) is also left for a person.
+
+## 70. Parts List: one row per part, "# Subs" column instead of the "+N" badge, and a per-PO side panel (2026-09-10 – 2026-09-11)
+
+### The requirement
+
+Job Details → Parts List must stay one row per part. The row shows the part's
+current PO, a numeric count of the further purchase lines behind it, a unit
+price, a quantity and a total that multiply out, and its money must still add
+up to the job. No `+2` / `+4` badge inside the PO cell. Clicking the part number
+opens a right-side panel listing EVERY PO the part was bought on, each keeping
+its own quantity, unit price, extended total, invoiced amount, left to invoice,
+dates and supplier — never averaged. Aggregation by stable source identifiers,
+not the part number alone.
+
+### What the table does now
+
+| column | value | note |
+|---|---|---|
+| Part No | `pn` | now a button; opens the part panel |
+| PO # | newest purchase line's PO | unchanged; the `+N` badge is gone from this cell |
+| # Subs | `lineCount − 1` | its own sortable, hideable column; `—` for a single purchase |
+| Unit $ | `totalPrice / purchasedQty` | blended across POs, marked `~` when blended; the BOM estimate (`*`) when nothing was bought |
+| Purch Qty | Σ quantity over every PO | new; the quantity Unit $ multiplies by |
+| Qty | BOM requirement (`eps.ItemQty`) | unchanged — readiness, RECEIVED and coverage bars still compare against it |
+| Total $ | Σ over every PO the row owns a share of | unchanged |
+| Delivered Date | `MAX(tblReceiverLog.Date)` or the stock pull's fulfilment date | new, beside Required/Expected; `*` on a partial receipt |
+
+`Unit $ × Purch Qty = Total $` is an identity on every row that has a purchase,
+derived from the two displayed fields rather than recomputed from the lines. The
+old row could not self-add because it printed the newest line's price beside a
+total covering the whole group (`Qty 6 × $210.36` visibly failing to make
+`$9,840`), and from 2026-09-03 printed an em dash instead — honest, but an
+answer to nothing.
+
+### Why the row's unit price is a blend and not the displayed PO's price
+
+The request reads "Unit Price = the correct unit price for that displayed PO/part
+combination". Taken literally, with one row per part, the row's Total would then
+be that PO's total alone and every other PO's money would vanish from the row and
+the footer — the same "money hidden behind a badge" the request forbids. The row
+therefore carries the honest lifetime figures (blended unit, purchased quantity,
+full total) and marks the blend with `~`; the panel is where each PO's own price
+lives, unaveraged. Both halves of the request are satisfied, in the only
+arrangement where the footer still reconciles.
+
+### The part panel (components/procurement/PartPoPanel.tsx)
+
+Header: BOM Qty, Purchased Qty, Avg Unit $, Required, Delivered, PO count. Required
+Date sits in the header rather than in the table because it is a property of the
+BOM edge (`eps.RequiredDate`), not of any purchase.
+
+Table, one row per PO: PO # (opens the PO drawer), Supplier, Qty, Unit $, Total $,
+Invoiced, Left to Invoice, Purchased, Expected, Delivered. A PO carrying the same
+part on more than one line is one row with an `N lines` marker (33 of job 1116's
+1,045 part/PO pairs; 320 of job 1101's 1,283).
+
+Footer sums the rows drawn, and a reconciliation line compares that sum with the
+row's own Total $ — stated on screen, not only in a test, so a disagreement would
+be visible to the first person who opened the panel.
+
+### Aggregation by stable ids (lib/po-detail.ts `groupLinesByPo`)
+
+* Purchase lines carry `lineId = pod:<PurchaseDetailID>`; `PoLineDetail` now
+  carries the same id, so expected/delivered dates join the money on the id
+  rather than on a part number the two queries spell differently (34 of job
+  1116's 1,083 lines disagree).
+* Groups are keyed by **supplier + PO number** (2026-09-11). The 2026-09-10 draft
+  keyed on the PO number alone while its own type comment said two suppliers can
+  raise the same number — which would have summed two vendors' purchases into one
+  row wearing the first vendor's name. Vendor names are normalized before keying.
+  Panel rows are React-keyed on the group's `lineIds`.
+* Each group applies the same share divisor (`shareOf`) the row's own money goes
+  through, so Σ groups = row by construction. `purchasedQty` is Σ group qty, so
+  non-BOM rows and shared-part rows follow the same rule.
+
+### Verified
+
+`scripts/audit-parts-po-breakdown.ts`, live against Total ETO on 2026-09-11 with
+the supplier-aware key:
+
+| job | rows | PO groups | rows on >1 PO | total mismatches unexplained | invoiced mismatches | unit×qty failures |
+|---|---|---|---|---|---|---|
+| 1116 | 825 | 1,067 | 63 | 0 | 0 | 0 |
+| 1101 | 629 | 1,283 | 339 | 0 | 0 | 0 |
+
+The only row-vs-groups deltas are parts with no purchase lines, whose Total $ is
+the BOM estimate (job 1116: 77 rows, $6,433.85; job 1101: 41 rows, $3,630.32),
+exactly the amount by which job total exceeds Σ groups. Job 1101's "2 lines
+under two rows" are two BOM rows with the same part number each taking a share.
+
+Unit tests: tests/parts-po-breakdown.test.ts (conservation, per-PO prices,
+share weighting, supplier split, same-PO roll-up, date join),
+tests/parts-list-row-model.test.ts (the panel renders each group's OWN field and
+keys on line ids), tests/parts-list-delivered-date.test.ts. `npx tsc --noEmit`
+and `npx eslint` clean on every touched file.
+
+Browser verification was not done from the agent session: the app is behind a
+credentials sign-in, and entering a password is outside what the agent will do.

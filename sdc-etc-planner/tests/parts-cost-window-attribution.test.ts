@@ -11,8 +11,12 @@ import type { PartsCostLine } from "../src/lib/sync-totaleto";
 // event within a window), which is what loadPartsListInvoicedInWindow hands
 // to attributeInvoicedWindow unchanged.
 
+// Unique per call, not a shared constant: lineId is a purchase line's identity,
+// and anything that groups by it would silently collapse two fixtures into one.
+let lineSeq = 0;
 function line(partial: Partial<PartsCostLine>): PartsCostLine {
   return {
+    lineId: `fixture:${++lineSeq}`,
     purchaseDate: null,
     invoicedDate: null,
     supplier: null,
