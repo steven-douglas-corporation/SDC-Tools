@@ -9,6 +9,7 @@ import {
   isNewEtcCellDecided,
   hasNewEtcValue,
   formatNewEtcText,
+  etcCreateCellLiveKey,
   type NewEtcCellState,
 } from "@/lib/etc";
 import { registerEtcField, forgetEtcField, updateEtcField, adoptEtcFieldBaseline } from "@/lib/etc-dirty-tracker";
@@ -76,6 +77,7 @@ export function EtcSectionCells({
   cleared,
   locked,
   monthComplete,
+  month,
 }: {
   // NULL when this job/section has no EtcEntry yet.
   //
@@ -121,6 +123,9 @@ export function EtcSectionCells({
   // partial-month value never looks final. Submit still falls back to the
   // suggestion, so nothing is lost.
   monthComplete?: boolean;
+  // Which month this grid shows. Only used to scope the realtime and presence key
+  // of a cell that has no row yet — see `liveKey` below.
+  month: string;
 }) {
   // Hours Worked Month is no longer manager-editable — it auto-syncs from
   // Power BI on the same cadence as the rest of the live sync (see
@@ -170,6 +175,13 @@ export function EtcSectionCells({
   // Stable key for the live-totals store, which cannot use an id that has not
   // been assigned yet.
   const cellKey = entryId != null ? String(entryId) : `${jobId}:${sectionCode}`;
+  // What a colleague's save is DELIVERED under, and what the presence marker hangs on
+  // (2026-09-11). For an existing row it is the field name. For a cell with no row it
+  // is the field name PLUS the month, because the bare name is identical for this
+  // job/section in every month that has no row here — so a September save reached
+  // a clean August cell and was adopted as August's value. The form field name itself
+  // is unchanged; only what the realtime layer keys on. See etcCreateCellLiveKey.
+  const liveKey = entryId != null ? fieldName : etcCreateCellLiveKey(jobId, sectionCode, month);
 
   const seedText = newEtcSeedText(cellState);
   const [newEtcText, setNewEtcText] = useState(seedText);
@@ -190,7 +202,7 @@ export function EtcSectionCells({
   // below). A full payload is newer and more complete than any single event — it may
   // carry changes whose events this tab never received — so it always wins. That is
   // what keeps an older response from replacing a newer result.
-  const remoteRaw = useRemoteEtcValue(fieldName);
+  const remoteRaw = useRemoteEtcValue(liveKey);
   // Where THIS cell's save got to (§17): saving / saved / failed / conflict. A ring on
   // the cell, because a single toolbar chip cannot answer "did my cell save" on a grid
   // this size. See lib/etc-save-state.ts.
@@ -354,8 +366,8 @@ export function EtcSectionCells({
   // Keyed on seedText alone: an unchanged prop means the server has said nothing new
   // and the patch is still the freshest thing this cell knows.
   useEffect(() => {
-    forgetRemoteEtcValue(fieldName);
-  }, [fieldName, seedText]);
+    forgetRemoteEtcValue(liveKey);
+  }, [liveKey, seedText]);
 
   // Publish this cell's live figures for the totals that sum it — the row's
   // TOTAL (NEW ETC) block, the grand-total row, and the Standard Sheet's
@@ -487,7 +499,7 @@ export function EtcSectionCells({
         // background two cells over.
         aria-invalid={invalidMessage ? true : undefined}
       >
-        <CellPresence cellKey={fieldName} />
+        <CellPresence cellKey={liveKey} />
         {/* No hours worked -> carry-forward is deterministic, safe to auto-fill.
             Hours worked > 0 -> a manager's judgment call, not auto-filled;
             flagged yellow so it's obviously not done yet — left with no
@@ -535,11 +547,11 @@ export function EtcSectionCells({
               tab: "Monthly ETC",
               rowRef: jobName,
               columnName: sectionName,
-              cellKey: fieldName,
+              cellKey: liveKey,
             })
           }
           onBlur={() => {
-            endEditingCell(fieldName);
+            endEditingCell(liveKey);
             // Commit on leaving the cell rather than waiting out the debounce (§43).
             // The 800ms exists to batch keystrokes WITHIN a cell; once focus has gone
             // there is nothing left for it to batch, and every millisecond of it is

@@ -422,7 +422,9 @@ test("the submission derives Parts Cost New ETC from the two halves — and free
   // the manually-adjusted highlight on rows nobody had touched.
   const report = readFileSync(join(process.cwd(), "src", "lib", "monthly-report.ts"), "utf8");
   assert.match(report, /const breakoutSum = partsNewEtc\(resolvedInvoice, purchase\);/, "both halves, or nothing");
-  assert.match(report, /const newEtc = breakoutSum \?\? draft \?\? round2\(suggestNewEtc\(priorEtc, hoursWorked\)\);/);
+  // The two halves still come first; the rest of the rule (draft, then the figure a
+  // REOPENED row was confirmed at, then the suggestion) lives in lib/etc.ts since §69.
+  assert.match(report, /const newEtc =\s*breakoutSum \?\?\s*newEtcForSubmission\(\{/);
   assert.match(report, /resolveLeftToInvoice\(\{/, "through the shared rule, not a private copy");
   // `newEtc` is the frozen figure, as it always was — and the override column is left
   // exactly as the manager left it.

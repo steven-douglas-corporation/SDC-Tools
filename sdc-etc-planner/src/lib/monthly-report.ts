@@ -4,7 +4,7 @@ import { readPartsEtcBreakout } from "@/lib/parts-etc-breakout";
 import { resolveLeftToInvoice, partsNewEtc } from "@/lib/left-to-invoice";
 import { APP_VERSION } from "@/lib/app-version";
 import { createHash, randomUUID } from "crypto";
-import { calcHoursLeft, isMonthLocked, isValidMonth, newEtcSeedText, round2, suggestNewEtc, type NewEtcCellState } from "@/lib/etc";
+import { calcHoursLeft, isMonthLocked, isValidMonth, newEtcForSubmission, newEtcSeedText, round2, type NewEtcCellState } from "@/lib/etc";
 import { PARTS_COST_SECTION, SECTIONS } from "@/lib/sections";
 import { usd, hours as fmtHours } from "@/components/ui/format";
 import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
@@ -565,7 +565,23 @@ export async function submitEtcEntriesInTx(tx: Tx, month: string, userId: number
     // then to the carry-forward suggestion, exactly as a row did before these columns
     // existed. "Keep submissions using New ETC only after it becomes valid."
     const breakoutSum = partsNewEtc(resolvedInvoice, purchase);
-    const newEtc = breakoutSum ?? draft ?? round2(suggestNewEtc(priorEtc, hoursWorked));
+    // ── A REOPENED row keeps the figure it was confirmed at (2026-09-11) ──────
+    //
+    // This read `draft ?? suggestion`. The first submission nulls every draft, and
+    // a reopen does not restore them, so a re-submission with no new edits froze the
+    // SUGGESTION over what the grid was showing — 161 hours cells of August 2026,
+    // typed by managers, replaced by the carry-forward in one click. The rule lives
+    // in lib/etc.ts (newEtcForSubmission) beside the cell's own seed rule, and
+    // `confirmed` is the same expression the page seeds `initialConfirmed` from.
+    const newEtc =
+      breakoutSum ??
+      newEtcForSubmission({
+        draft,
+        confirmed: entry.submittedAt != null ? round2(Number(entry.newEtc)) : null,
+        cleared: entry.newEtcClearedAt != null,
+        priorEtc,
+        hoursWorked,
+      });
     await tx.etcEntry.update({
       where: { id: entry.id },
       data: {

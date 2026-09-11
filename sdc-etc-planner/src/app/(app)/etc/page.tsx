@@ -1774,6 +1774,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                             <Fragment key={s.code}>
                               <EtcSectionCells
                                 entryId={null}
+                                month={month}
                                 jobId={job.id}
                                 sectionCode={s.code}
                                 billingGroup={s.billingGroup}
@@ -1805,6 +1806,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                           <Fragment key={s.code}>
                             <EtcSectionCells
                               entryId={entry.id}
+                              month={month}
                               // Lets the cell publish its live figures to the
                               // totals that sum it (lib/etc-live-totals.ts).
                               jobId={job.id}

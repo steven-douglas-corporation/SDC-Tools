@@ -6375,3 +6375,93 @@ Browser verification was NOT done: the app requires a sign-in, and entering
 credentials is outside what this agent will do. The production build proves the
 page compiles and its server/client boundaries are valid; the visual pass is left
 to a signed-in reviewer.
+
+## 69. Re-submitting a reopened month overwrote 161 manager-entered New ETC cells with the suggestion (2026-09-11)
+
+### Reported as
+
+"The Monthly ETC tab is completely broken — it keeps changing the values the
+managers entered." Two screenshots of August 2026, a `2 cells not saved — changed
+by someone else` chip visible in the toolbar.
+
+### What actually happened
+
+Nothing was changing values *while people typed*. The audit log for the last seven
+days shows every save landing (`etc.saveAllNewEtcDrafts`: 96 edited, 29 added, 10
+removed, 9 refused — all refusals legitimate two-manager collisions on Parts Cost).
+What changed the values was one sequence of four clicks on 2026-09-11:
+
+| time (UTC) | action | effect on `EtcEntry` for 2026-08 |
+|---|---|---|
+| 19:09:35 | Submit August | `newEtc` ← draft ?? suggestion; **`newEtcDraft` ← null** ("consumed by the submission"); `needsReview` ← false |
+| 19:09:54 | Start September | September rows created with `priorEtc = newEtc = August newEtc` (the correct figures) |
+| 19:17:46 | Reopen August | `needsReview` ← true. Nothing else — drafts stay null, `newEtc` keeps the confirmed figure, `submittedAt` stays set |
+| 19:25:39 | Submit August again | `newEtc` ← **draft ?? suggestion** — drafts are all null, so 161 hours cells got the carry-forward; cascade pushed the wrong figures into September's Prior ETC (166 rows) |
+| 19:31:25 | Reopen August | cells now seed from the overwritten `newEtc`: 1122 ME & CE shows 93.5 where Dan had typed 160, 1118 CE shows 12.92 where Tim had typed 400, 1130 CE shows 0 where Tim had typed 20 |
+
+Between the two submissions the grid looked exactly as it had been signed off,
+because a reopened cell seeds from its confirmed value (`initialConfirmed =
+submittedAt != null ? newEtc : null`, etc/page.tsx). The submission did not know
+that rung existed. `submitEtcEntriesInTx` read `breakoutSum ?? draft ??
+suggestNewEtc(prior, worked)` — correct on a first pass, where every decided cell
+has a draft, and wrong on every re-submission of a reopened month with no new edits.
+
+This is the bug §15 (2026-08-04) unknowingly created. The old form-posting submit
+re-posted the confirmed seeds as overrides and so could not lose them; the
+database-reading replacement dropped the "or the confirmed figure" clause along
+with the form.
+
+Damage, measured: 161 of August's 439 open hours rows. 0 Parts Cost rows (the four
+that differ between submissions were edited by Dan after the first reopen — real
+edits). 40 further hours cells had been typed to exactly the suggestion, so
+nothing visible changed there.
+
+### Fix
+
+`newEtcForSubmission` in lib/etc.ts — draft, else the confirmed figure when the
+row has a `submittedAt` and was not deliberately cleared, else the suggestion —
+sitting beside `newEtcSeedText` so the freeze rule and the render rule are read
+together. `submitEtcEntriesInTx` calls it, passing the same `confirmed`
+expression the page seeds from. Parts Cost on a breakout month is unchanged:
+`breakoutSum` still takes precedence, because that cell renders from its two
+halves rather than from `newEtc`.
+
+tests/monthly-report-resubmit.test.ts pins it, including a rung-for-rung check
+that what is frozen equals `Number(newEtcSeedText(state))` for every state whose
+cell shows a figure.
+
+### Repair
+
+`scripts/repair-2026-08-resubmit.ts` — dry-run by default, `--run` to apply. It
+restores each damaged cell's `newEtc` AND `newEtcDraft` to the manager's last
+saved value and re-derives September's Prior ETC. Two independent sources for
+"the manager's value" were cross-checked before it was written and are
+re-checked per row inside it: the last `etc.saveAllNewEtcDrafts` audit row for
+the entry, and September's `newEtc` column, which `startMonth` seeded from
+August's first-submission figure and nothing has rewritten since. They agree on
+all 161 cells. A disagreement is reported and skipped, never guessed. Each write
+is guarded on the values the dry run read, so a cell a manager has retyped in the
+meantime is left alone and the whole transaction aborts rather than half-apply.
+Every restored cell gets an audit row (`etc.repairResubmit`, changeType
+`recalculated`, user "Data repair") and a before/after JSON backup is written.
+
+The dry run listed exactly 161 cells, 0 skipped. The `--run` was NOT executed
+from the agent session (the permission classifier refused the production write);
+it is left for a person to run.
+
+### Also fixed: the realtime key of a not-yet-created cell had no month in it
+
+The realtime patch key for a cell with no row yet was its form-field name,
+`newEtcCreate__<jobId>__<section>`, and the presence marker hung on the same
+string. A save in one month could therefore be adopted by a clean cell for the
+same job and section in a tab viewing a different month that also had no row
+there, and a manager focused on such a cell showed as present in every month.
+`etcCreateCellLiveKey` (lib/etc.ts) appends the month; the server announces under
+it (`keysFor` in etc-actions.ts) and the cell listens, forgets and marks presence
+under it. The FORM field name is deliberately unchanged — lib/split-view.ts pins
+that it carries no month and keeps Monthly ETC single-instance because of it, and
+that premise still holds. Test: tests/etc-remote-values.test.ts.
+
+Clean: `npx tsc --noEmit`, `npx eslint` on every touched file, the three related
+test files (56 pass). pm2 is not reachable from the agent's session, so the deploy
+(`npm run deploy`) is also left for a person.

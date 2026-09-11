@@ -9,6 +9,7 @@ import {
   isStaleDraftWrite,
   parseNewEtcField,
   type NewEtcWriteIntent,
+  etcCreateCellLiveKey,
 } from "@/lib/etc";
 import { resolveLeftToInvoice, partsNewEtc } from "@/lib/left-to-invoice";
 import { readPartsEtcBreakout } from "@/lib/parts-etc-breakout";
@@ -826,7 +827,9 @@ export async function saveAllNewEtcDrafts(
       // those tabs would fall back to a full refetch.
       const keysFor = (entryId: number, jobPk: number, section: string) => ({
         cellKey: `newEtcOverride__${entryId}`,
-        altCellKey: `newEtcCreate__${jobPk}__${section}`,
+        // Month-scoped (2026-09-11): the bare field name is shared by every month's
+        // not-yet-created cell for this job/section — see etcCreateCellLiveKey.
+        altCellKey: etcCreateCellLiveKey(jobPk, section, month),
       });
 
       const cellChanges: CellChange[] = [];

@@ -7,7 +7,9 @@ import {
   clearRemoteEtcValues,
   subscribeRemoteEtcValues,
 } from "../src/lib/etc-remote-values";
-import { formatNewEtcText } from "../src/lib/etc";
+import { formatNewEtcText, etcCreateCellLiveKey } from "../src/lib/etc";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 // ── Incremental realtime updates ────────────────────────────────────────────
 //
@@ -132,4 +134,35 @@ test("zero survives the trip as zero", () => {
   clearRemoteEtcValues();
   applyRemoteEtcValues([{ cellKey: "c1", newValue: "0" }]);
   assert.equal(readRemoteEtcValue("c1"), "0");
+});
+
+// ── A cell with no row yet is addressed WITH its month (2026-09-11) ─────────
+//
+// The form-field name `newEtcCreate__<jobPk>__<section>` has no month in it, on
+// purpose (split-view.ts). It was also the key a colleague's value arrived under, so a
+// September save to a not-yet-created cell named the SAME cell in a tab showing August
+// — and a clean August cell adopted it. The live key now carries the month; the form
+// field name does not, so the split-view guard's premise still holds.
+
+test("the live key of a not-yet-created cell differs between months", () => {
+  assert.notEqual(etcCreateCellLiveKey(9, "10-211", "2026-08"), etcCreateCellLiveKey(9, "10-211", "2026-09"));
+  assert.equal(etcCreateCellLiveKey(9, "10-211", "2026-08"), "newEtcCreate__9__10-211__2026-08");
+  clearRemoteEtcValues();
+  applyRemoteEtcValues([{ cellKey: "newEtcOverride__777", altCellKey: etcCreateCellLiveKey(9, "10-211", "2026-09"), newValue: "40" }]);
+  assert.equal(readRemoteEtcValue(etcCreateCellLiveKey(9, "10-211", "2026-09")), "40");
+  assert.equal(readRemoteEtcValue(etcCreateCellLiveKey(9, "10-211", "2026-08")), null, "August's cell hears nothing");
+  assert.equal(readRemoteEtcValue("newEtcCreate__9__10-211"), null, "and nothing is published under the bare field name");
+});
+
+test("both ends use the shared key — the server announcing, the cell listening", () => {
+  const actions = readFileSync(join(process.cwd(), "src", "lib", "etc-actions.ts"), "utf8");
+  assert.match(actions, /altCellKey: etcCreateCellLiveKey\(jobPk, section, month\)/);
+  const cells = readFileSync(join(process.cwd(), "src", "components", "EtcSectionCells.tsx"), "utf8");
+  assert.match(cells, /const liveKey = entryId != null \? fieldName : etcCreateCellLiveKey\(jobId, sectionCode, month\);/);
+  assert.match(cells, /useRemoteEtcValue\(liveKey\)/);
+  assert.match(cells, /forgetRemoteEtcValue\(liveKey\)/);
+  assert.match(cells, /<CellPresence cellKey=\{liveKey\} \/>/);
+  // The FORM field name is untouched — the dirty tracker, the server parser and the
+  // split-view exclusivity guard all still key on it.
+  assert.match(cells, /const fieldName = entryId != null \? `newEtcOverride__\$\{entryId\}` : `newEtcCreate__\$\{jobId\}__\$\{sectionCode\}`;/);
 });

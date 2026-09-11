@@ -13,6 +13,59 @@ export function suggestNewEtc(priorEtc: number, hoursWorked: number): number {
   return Math.max(calcHoursLeft(priorEtc, hoursWorked), 0);
 }
 
+// ── What the submission FREEZES into `newEtc` for one unsubmitted row ────────
+//
+// The same precedence the cell renders by (newEtcSeedText): the saved draft, else
+// the figure this row was CONFIRMED at before the month was reopened, else the
+// suggestion. The middle rung is the one that was missing (2026-09-11).
+//
+// What happened without it: August 2026 was submitted, reopened, and submitted again
+// within twenty minutes. The first submission consumed every draft (`newEtcDraft:
+// null` — "consumed by the submission") and froze the managers' figures into
+// `newEtc`. The reopen only flipped `needsReview` back on, so every cell arrived
+// pre-filled from `newEtc` — the grid looked exactly as it had been signed off. But
+// the SECOND submission read `draft ?? suggestion`, found no drafts, and wrote the
+// carry-forward suggestion over 161 hours cells that managers had typed a figure
+// into: 1122 ME & CE went 160 -> 93.5, 1118 CE 400 -> 12.92, 1130 CE 20 -> 0. The
+// second reopen then showed those numbers back to the people who had entered the
+// originals, and it was reported as "the tab changes the values managers enter".
+//
+// A deliberate clear on a reopened month still falls through to the suggestion:
+// the cell is blank on screen and its own tooltip says that is what a blank submits
+// as. `confirmed` is the caller's `submittedAt != null ? newEtc : null` — the exact
+// expression etc/page.tsx seeds `initialConfirmed` from, so what is frozen is what
+// was on screen.
+export function newEtcForSubmission(s: {
+  draft: number | null;
+  confirmed: number | null;
+  cleared: boolean;
+  priorEtc: number;
+  hoursWorked: number;
+}): number {
+  if (s.draft != null) return round2(s.draft);
+  if (!s.cleared && s.confirmed != null) return round2(s.confirmed);
+  return round2(suggestNewEtc(s.priorEtc, s.hoursWorked));
+}
+
+// ── The realtime name of a cell that has no row yet — WITH its month ─────────
+//
+// A cell with no EtcEntry posts under the form-field name `newEtcCreate__<jobPk>__
+// <section>`, and that name deliberately carries no month (lib/split-view.ts pins
+// the fact and guards against it by keeping Monthly ETC single-instance). But the
+// same string was also the key a colleague's saved value was DELIVERED under
+// (lib/etc-remote-values.ts) and the key presence markers hung on — and a save to
+// job X / section S in September names exactly the cell job X / section S in a tab
+// showing August, if August has no row there either. A clean August cell would
+// adopt September's figure; the presence marker would light up a month away.
+//
+// So the live key is the field name plus the month. The FORM field name is
+// unchanged: the server parser, the dirty tracker and the split-view guard all
+// still see `newEtcCreate__<jobPk>__<section>`. An existing row needs none of this
+// — `newEtcOverride__<id>` is unique across months by construction.
+export function etcCreateCellLiveKey(jobPk: number, section: string, month: string): string {
+  return `newEtcCreate__${jobPk}__${section}__${month}`;
+}
+
 // Has a manager actually decided this cell's New ETC? Submitted (needsReview
 // false) or typed-and-saved (a draft) both count; anything else is still the
 // machine's suggestion standing in for an answer nobody has given.
