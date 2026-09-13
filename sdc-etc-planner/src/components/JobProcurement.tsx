@@ -30,11 +30,12 @@ import {
   poCellState,
   NO_PO_KEY,
   type FlatPart,
+  type PartPoGroup,
   type PoGroup,
   type DrillablePart,
   type StatusKey,
 } from "@/lib/po-detail";
-import { PoPanel, ReleaseBadge, SupplierAvatar, Stat, ALL_COLS, partsListSortColumns, PartRowCells, type ColKey } from "@/components/procurement/PoDetailPanel";
+import { PoPanel, ReleaseBadge, SupplierAvatar, Stat, ALL_COLS, partsListSortColumns, PartRowCells, PartPoSubRowCells, type ColKey } from "@/components/procurement/PoDetailPanel";
 import { PartPoPanel } from "@/components/procurement/PartPoPanel";
 import { computeRiskCards, dueMs, earliestRequired, groupPartsByPo } from "@/lib/procurement-risk";
 import { FILTER_ALL, resolveFilterChoice, filterOptionValues, sanitizeStatusSelection } from "@/lib/filter-choice";
@@ -1887,18 +1888,58 @@ function PartsTableView({
   const sortColumns = useMemo(() => partsListSortColumns(now), [now]);
   const sortedParts = sortRows(parts, sort.sort, sortColumns);
 
+  // ── Expanded rows: a part's POs unfolded beneath it (2026-09-13) ──────────
+  //
+  // The drop-down the requester asked for after the side panel shipped. Held as
+  // the set of expanded part IDS, not row indexes, so a re-sort or a filter
+  // change keeps the same parts open. Session-only on purpose: an expansion is a
+  // glance, not a layout preference, and reopening the job should start folded.
+  //
+  // The rows the table draws are then PARTS INTERLEAVED WITH PO SUB-ROWS, every
+  // one exactly ROW_H tall — which is what lets the windowing arithmetic below
+  // keep treating "row N" as N * ROW_H. A sub-row that could grow taller than its
+  // parent would drift the window against the scrollbar; PartPoSubRowCells
+  // truncates every cell to one line for exactly that reason.
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
+  const toggleExpanded = useCallback((id: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  // Only rows with something to unfold count — a part with no purchases has no
+  // chevron, so "all open" must not wait on it.
+  const expandableIds = useMemo(() => sortedParts.filter((p) => p.poBreakdown.length > 0).map((p) => p.id), [sortedParts]);
+  const allOpen = expandableIds.length > 0 && expandableIds.every((id) => expanded.has(id));
+  const toggleAll = useCallback(() => {
+    setExpanded(allOpen ? new Set() : new Set(expandableIds));
+  }, [allOpen, expandableIds]);
+  type DisplayRow = { kind: "part"; p: FlatPart } | { kind: "po"; p: FlatPart; g: PartPoGroup };
+  const displayRows = useMemo<DisplayRow[]>(() => {
+    const rows: DisplayRow[] = [];
+    for (const p of sortedParts) {
+      rows.push({ kind: "part", p });
+      if (expanded.has(p.id)) for (const g of p.poBreakdown) rows.push({ kind: "po", p, g });
+    }
+    return rows;
+  }, [sortedParts, expanded]);
+
   // Sorted FIRST, then sliced — so page 1 is the top of the sort rather than the
   // first fifty rows re-sorted among themselves. The signature resets the page
   // whenever the filtered set changes; the sort key is in it too, since re-sorting
   // makes the current page's contents arbitrary.
   // ── The scroll container, and the slice of rows it needs ──────────────────
   const scrollRef = useRef<HTMLDivElement>(null);
-  const win = useRowWindow(sortedParts.length, scrollRef);
-  const visibleParts = sortedParts.slice(win.start, win.end);
+  // Over displayRows, not sortedParts: an expanded part's PO sub-rows are rows the
+  // scrollbar has to account for, at the same ROW_H as everything else.
+  const win = useRowWindow(displayRows.length, scrollRef);
+  const visibleRows = displayRows.slice(win.start, win.end);
   // Spacer heights: the rows that exist but are not rendered. These are what keep the
   // scrollbar the right length and the rendered rows at the right offset.
   const padTop = win.start * ROW_H;
-  const padBottom = Math.max(0, (sortedParts.length - win.end) * ROW_H);
+  const padBottom = Math.max(0, (displayRows.length - win.end) * ROW_H);
 
   // ── Scrolling a drilled-to row into the window ────────────────────────────
   //
@@ -1910,12 +1951,13 @@ function PartsTableView({
     if (!drillKey) return;
     const el = scrollRef.current;
     if (!el) return;
-    const i = sortedParts.findIndex((p) => String(p.id) === drillKey);
+    // Index into the DISPLAY rows, since that is what the scroll offset is made of.
+    const i = displayRows.findIndex((r) => r.kind === "part" && String(r.p.id) === drillKey);
     if (i < 0) return; // genuinely not in the filtered set — the parent says so
     // Centred, matching the scrollIntoView({ block: "center" }) the parent then does,
     // so the row does not jump twice.
     el.scrollTop = Math.max(0, i * ROW_H - el.clientHeight / 2);
-  }, [drillKey, sortedParts]);
+  }, [drillKey, displayRows]);
 
   // Drag-to-resize: listeners are added on mousedown and torn down on mouseup;
   // stopPropagation keeps a drag from also triggering the row click.
@@ -2034,14 +2076,33 @@ function PartsTableView({
                       shared component's non-`<th>` variant (built for exactly
                       this case, see its own doc comment) is embedded inside it
                       rather than replacing it wholesale. */}
-                  <SortableColumnHeader
-                    label={<span className="block truncate">{c.label}</span>}
-                    sortKey={c.key}
-                    type={sortColumns[c.key].type}
-                    align={c.align === "right" ? "right" : "left"}
-                    sort={sort.sort}
-                    onSort={sort.onSort}
-                  />
+                  <span className="flex items-center gap-1">
+                    {/* Expand / collapse every row at once. Lives in the Part No
+                        header because that is the column the per-row chevrons sit
+                        in, so the control is beside the thing it controls. */}
+                    {c.key === "pn" && expandableIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleAll(); }}
+                        aria-expanded={allOpen}
+                        aria-label={allOpen ? "Collapse all PO rows" : "Expand all PO rows"}
+                        title={allOpen ? "Collapse every part's POs" : `Show every part's POs under its row (${expandableIds.length} parts with purchases)`}
+                        className="shrink-0 rounded px-0.5 text-white/70 hover:bg-white/15 hover:text-white"
+                      >
+                        <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" className={`motion-interactive ${allOpen ? "rotate-90" : ""}`} aria-hidden>
+                          <path d="M4 2.5 L8 6 L4 9.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    )}
+                    <SortableColumnHeader
+                      label={<span className="block truncate">{c.label}</span>}
+                      sortKey={c.key}
+                      type={sortColumns[c.key].type}
+                      align={c.align === "right" ? "right" : "left"}
+                      sort={sort.sort}
+                      onSort={sort.onSort}
+                    />
+                  </span>
                   <span
                     onMouseDown={(e) => startResize(c.key, e)}
                     role="separator"
@@ -2061,7 +2122,23 @@ function PartsTableView({
                 <td colSpan={cols.length} className="p-0" />
               </tr>
             )}
-            {visibleParts.map((p, i) => {
+            {visibleRows.map((row, i) => {
+              if (row.kind === "po") {
+                // A PO unfolded under its part. Same ROW_H as its parent — the
+                // windowing depends on it — and no row-level click: the PO number
+                // inside is the one thing here that goes anywhere.
+                return (
+                  <tr
+                    key={`${row.p.id}-po-${row.g.lineIds.join("|")}`}
+                    data-po-subrow-of={String(row.p.id)}
+                    style={{ height: ROW_H }}
+                    className="bg-sdc-gray-50 hover:bg-sdc-blue-light/40"
+                  >
+                    <PartPoSubRowCells p={row.p} g={row.g} cols={cols} onOpenPo={onOpenPo} />
+                  </tr>
+                );
+              }
+              const p = row.p;
               // Row tint by status (STATUS_ROW_BG) so each row reads by its
               // status at a glance. Precedence: drill-flash (inline style, set
               // imperatively) > the status tint's hover > the status tint.
@@ -2079,7 +2156,14 @@ function PartsTableView({
                   style={{ height: ROW_H }}
                   className={`group cursor-pointer ${rowBg}`}
                 >
-                  <PartRowCells p={p} cols={cols} now={now} onOpenPo={onOpenPo} onOpenPart={onOpenPart} />
+                  <PartRowCells
+                    p={p}
+                    cols={cols}
+                    now={now}
+                    onOpenPo={onOpenPo}
+                    onOpenPart={onOpenPart}
+                    expand={{ open: expanded.has(p.id), onToggle: () => toggleExpanded(p.id) }}
+                  />
                 </tr>
               );
             })}

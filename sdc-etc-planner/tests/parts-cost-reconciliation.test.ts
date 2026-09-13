@@ -266,8 +266,10 @@ test("a failed batch read reports every job failed, never a confident zero", () 
 test("the rendered window is a slice; the totals still cover every filtered row", () => {
   // Sorted first, then windowed — otherwise the visible rows are an arbitrary 60 of
   // the set re-sorted among themselves rather than a piece of the real order.
-  assert.match(PROC, /const visibleParts = sortedParts\.slice\(win\.start, win\.end\)/);
-  assert.match(PROC, /\{visibleParts\.map\(\(p, i\) => \{/, "the tbody renders the window");
+  // Display rows since 2026-09-13: parts interleaved with any expanded PO sub-rows,
+  // all ROW_H tall — see tests/parts-list-expand-rows.test.ts.
+  assert.match(PROC, /const visibleRows = displayRows\.slice\(win\.start, win\.end\)/);
+  assert.match(PROC, /\{visibleRows\.map\(\(row, i\) => \{/, "the tbody renders the window");
 
   // The column totals and the row counts must still reduce over `parts` — the whole
   // filtered set — never over what happens to be on screen.
@@ -278,7 +280,7 @@ test("the rendered window is a slice; the totals still cover every filtered row"
     "row counts stay over every filtered row",
   );
   assert.ok(
-    !/visibleParts\.reduce\(/.test(PROC),
+    !/visibleRows\.reduce\(/.test(PROC) && !/displayRows\.reduce\(/.test(PROC),
     "nothing may be summed from the window — it changes as the user scrolls",
   );
 });
@@ -297,7 +299,7 @@ test("spacer rows keep the scrollbar honest without rendering every row", () => 
   // them the scrollbar would describe 60 rows while the table claims 628, and the
   // rendered rows would sit at the top instead of at their real offset.
   assert.match(PROC, /const padTop = win\.start \* ROW_H;/);
-  assert.match(PROC, /const padBottom = Math\.max\(0, \(sortedParts\.length - win\.end\) \* ROW_H\);/);
+  assert.match(PROC, /const padBottom = Math\.max\(0, \(displayRows\.length - win\.end\) \* ROW_H\);/);
   assert.match(PROC, /style=\{\{ height: padTop \}\}/);
   assert.match(PROC, /style=\{\{ height: padBottom \}\}/);
   // Windowing arithmetic needs a known row height, so the rows carry one.
@@ -331,7 +333,7 @@ test("a drilled-to row is scrolled into the window before it is looked for", () 
   // PartsListTab finds its target with querySelector and treats a miss as "hidden by a
   // filter". With ~60 rows in the DOM, a perfectly visible row 400 down would miss and
   // report itself as filtered out — so the table puts it in the window first.
-  assert.match(PROC, /const i = sortedParts\.findIndex\(\(p\) => String\(p\.id\) === drillKey\);/);
+  assert.match(PROC, /const i = displayRows\.findIndex\(\(r\) => r\.kind === "part" && String\(r\.p\.id\) === drillKey\);/);
   assert.match(PROC, /el\.scrollTop = Math\.max\(0, i \* ROW_H - el\.clientHeight \/ 2\);/);
   assert.match(PROC, /drillKey=\{drill\.key\}/, "and the key has to reach the table");
 });

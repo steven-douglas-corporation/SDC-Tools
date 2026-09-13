@@ -6574,3 +6574,31 @@ and because every procurement date cell shares the one formatter, Purchased and
 Invoiced pick the year up too rather than sitting in the same row without one.
 Date column widths grew by the four extra characters in both the Parts List and
 the PO drawer.
+
+### 2026-09-13 follow-up: the drop-down — a part's POs unfold under its row
+
+Asked for as "drop down (expand/collapse)" the day after the side panel shipped.
+Read as: a chevron on the Parts List row that lays the SAME POs the panel lists
+out inline beneath the row, so a reader can compare a part's purchases against
+its neighbours without leaving the table. The panel stays the full view (part-
+level header, sortable, reconciliation line); the drop-down is the glance.
+
+* The chevron sits before the part number, only on rows with a purchase (a part
+  with no PO has nothing to unfold; those rows get a spacer so numbers align).
+  The Part No header carries an expand-all / collapse-all chevron.
+* One sub-row per PO — `PartPoSubRowCells` in PoDetailPanel.tsx — under the
+  parent's own columns: PO # (opens the PO drawer by supplier + number), Supplier,
+  # Subs (lines for this part on this PO), Purchased, Invoiced, Expected,
+  Received, Unit $, Purch Qty, Total $, Invoiced $, Left to Invoice, % Inv. Every
+  cell reads the group's own field; part-level columns are left blank rather than
+  repeated.
+* Windowing: the table draws PARTS INTERLEAVED WITH OPEN SUB-ROWS, each exactly
+  `ROW_H`, so `useRowWindow`, the spacers and the drill-to-row scroll all index
+  the display list. Sub-row cells truncate to one line for that reason.
+* Footer totals still sum `parts`. A sub-row is a view of money its parent
+  already counts; summing display rows would double every expanded part.
+* Expanded state is a set of part ids, session-only: a re-sort or filter keeps
+  the same parts open; reopening the job starts folded.
+
+Pinned in tests/parts-list-expand-rows.test.ts. `npx tsc --noEmit` and `npx
+eslint` clean. Not browser-verified from the agent session (credentials sign-in).

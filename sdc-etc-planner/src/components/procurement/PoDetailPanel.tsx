@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { MATCH_REASON_LABEL, MATCH_REASON_TEXT } from "@/lib/parts-match-reason";
 import type { BomPart, PoLineGroup } from "@/lib/job-bom";
 import { usd, usd2 } from "@/components/ui/format";
@@ -16,6 +16,7 @@ import {
   isEstimatedCost,
   num,
   fmtDate,
+  type PartPoGroup,
   daysBetween,
   parentLineFor,
   poCellState,
@@ -343,6 +344,7 @@ export function PartRowCells({
   now,
   onOpenPo,
   onOpenPart,
+  expand,
 }: {
   p: FlatPart;
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
@@ -351,6 +353,14 @@ export function PartRowCells({
   /** Opens the part's PO-history panel. Optional so a caller with no panel of
    *  its own (the PO drawer's table) renders the part number as plain text. */
   onOpenPart?: (p: FlatPart) => void;
+  /**
+   * The row's expand/collapse control (2026-09-13) — a chevron before the part
+   * number that folds the part's POs out INLINE under the row, one sub-row per PO
+   * (PartPoSubRowCells). Only the Parts List passes this; the PO drawer's table
+   * has one PO by definition and renders no chevron. The chevron is omitted when
+   * the part has no purchases: there is nothing to unfold.
+   */
+  expand?: { open: boolean; onToggle: () => void };
 }) {
   const parentLine = parentLineFor(p);
   const cell = (key: ColKey) => {
@@ -367,6 +377,28 @@ export function PartRowCells({
         // it -- the same shape the PO # button below already had.
         return (
           <span className="flex items-center gap-1 truncate">
+            {/* The drop-down (2026-09-13, by request): the same POs the side panel
+                lists, unfolded under the row so a reader can compare a part's
+                purchases against its neighbours without leaving the table. The
+                panel stays the full view; this is the glance. */}
+            {expand && p.poBreakdown.length > 0 ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); expand.onToggle(); }}
+                aria-expanded={expand.open}
+                aria-label={`${expand.open ? "Collapse" : "Expand"} the ${p.poBreakdown.length} PO${p.poBreakdown.length === 1 ? "" : "s"} for ${p.pn}`}
+                title={expand.open ? "Collapse POs" : `Show ${p.poBreakdown.length} PO${p.poBreakdown.length === 1 ? "" : "s"} under this row`}
+                className="shrink-0 rounded px-0.5 text-sdc-gray-400 hover:bg-sdc-blue/10 hover:text-sdc-blue-dark"
+              >
+                <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" className={`motion-interactive ${expand.open ? "rotate-90" : ""}`} aria-hidden>
+                  <path d="M4 2.5 L8 6 L4 9.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ) : expand ? (
+              // Keeps part numbers aligned down the column when some rows have a
+              // chevron and some do not.
+              <span className="w-[14px] shrink-0" aria-hidden />
+            ) : null}
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onOpenPart?.(p); }}
@@ -577,6 +609,114 @@ export function PartRowCells({
         <td
           key={c.key}
           className={`overflow-hidden border-b border-r border-sdc-border-soft px-2 py-1 align-middle ${c.align === "right" ? "text-right" : ""}`}
+        >
+          {cell(c.key)}
+        </td>
+      ))}
+    </>
+  );
+}
+
+// ── One PO, unfolded under its part's row (2026-09-13) ──────────────────────
+//
+// The inline form of PartPoPanel's table: the same PartPoGroup, the same fields,
+// laid under the parent row's OWN columns so each figure sits beneath the header
+// that names it — the PO number under PO #, its quantity under Purch Qty, its
+// price under Unit $, its total under Total $. Every cell reads the group's own
+// field (never the parent's), so a part bought at three prices shows three prices.
+//
+// Part-level columns (Qty, Desc, Required Date, Status…) are left blank on
+// purpose: repeating the parent's value down every sub-row would present one fact
+// as if it varied per PO. The one exception is the part-number cell, which names
+// the sub-row for what it is.
+//
+// Sub-rows are NOT part of the footer's arithmetic — PartsTableView sums `parts`,
+// and these rows are a view of money the parent row already counts. Counting them
+// would double every expanded part.
+export function PartPoSubRowCells({
+  p,
+  g,
+  cols,
+  onOpenPo,
+}: {
+  p: FlatPart;
+  g: PartPoGroup;
+  cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
+  onOpenPo: (supplier: string | null, poNumber: string | null) => void;
+}) {
+  const money = "font-mono text-note tabular-nums text-sdc-gray-700";
+  const date = "whitespace-nowrap font-mono text-label text-sdc-gray-700";
+  const plural = p.poBreakdown.length === 1 ? "" : "s";
+  const cell = (key: ColKey): ReactNode => {
+    switch (key) {
+      case "pn":
+        return (
+          <span className="block truncate pl-5 font-mono text-note text-sdc-muted" title={`${p.pn} — one of its ${p.poBreakdown.length} PO${plural}`}>
+            {"\u21B3 PO"}
+            {g.lineCount > 1 ? ` \u00B7 ${g.lineCount} lines` : ""}
+          </span>
+        );
+      case "supplier":
+        return (
+          <span className="flex items-center gap-1.5 truncate text-note text-sdc-gray-700" title={g.supplier ?? ""}>
+            <SupplierAvatar supplier={g.supplier ?? "\u2014"} size={14} />
+            <span className="truncate">{g.supplier || "\u2014"}</span>
+          </span>
+        );
+      case "po":
+        return g.poNumber ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpenPo(g.supplier, g.poNumber); }}
+            title={`Open PO ${g.poNumber}`}
+            className="truncate font-mono text-note font-medium text-sdc-blue hover:underline"
+          >
+            {g.poNumber}
+          </button>
+        ) : (
+          <span className="font-mono text-note text-sdc-muted">no PO</span>
+        );
+      case "subs":
+        // Lines for THIS part on THIS PO — what the parent row's count adds up.
+        return (
+          <span className={`${money} ${g.lineCount > 1 ? "" : "text-sdc-gray-400"}`} title={g.lineCount > 1 ? `${g.lineCount} lines for this part on this PO, summed here` : "One line"}>
+            {g.lineCount > 1 ? g.lineCount : "\u2014"}
+          </span>
+        );
+      case "purchased":
+        return <span className={date}>{fmtDate(g.purchaseDate)}</span>;
+      case "invoiceddate":
+        return <span className={date}>{fmtDate(g.invoicedDate)}</span>;
+      case "exp":
+        return <span className={date}>{fmtDate(g.expectedDate)}</span>;
+      case "delivered":
+        return <span className={date}>{fmtDate(g.deliveredDate)}</span>;
+      case "unit":
+        return (
+          <span className={money} title={g.unitPrice === null ? "This PO's quantity nets to zero, so it has no unit price" : `${usd(g.totalPrice)} over ${num(g.qty)} units on this PO`}>
+            {g.unitPrice === null ? "\u2014" : usd2(g.unitPrice)}
+          </span>
+        );
+      case "purchqty":
+        return <span className={money}>{num(g.qty)}</span>;
+      case "total":
+        return <span className={`${money} font-semibold`}>{usd(g.totalPrice)}</span>;
+      case "invoiced":
+        return <span className={money}>{usd(g.invoicedAmount)}</span>;
+      case "leftspend":
+        return <span className={money}>{usd(g.leftToInvoice)}</span>;
+      case "pctinv":
+        return <span className={money}>{g.totalPrice > 0 ? `${Math.round((g.invoicedAmount / g.totalPrice) * 100)}%` : g.invoicedAmount > 0 ? "100%" : ""}</span>;
+      default:
+        return null;
+    }
+  };
+  return (
+    <>
+      {cols.map((c) => (
+        <td
+          key={c.key}
+          className={`overflow-hidden whitespace-nowrap border-b border-r border-sdc-border-soft px-2 py-0 align-middle ${c.align === "right" ? "text-right" : ""}`}
         >
           {cell(c.key)}
         </td>
