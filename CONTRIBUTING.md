@@ -57,6 +57,15 @@ still matches the canonical copy in `packages/eslint-config/`.
   is one. This repo's comments are its institutional memory; `apps/reports/DEVLOG.md`
   is the model.
 
+## Workspaces and lockfiles
+
+`apps/assemblies`, `apps/build-readiness` and `apps/state-logic` are npm
+workspace members: `npm install` or `npm ci` run inside them acts on the ROOT
+`package-lock.json`, and they have no lockfile of their own. Add a dependency to
+one of them with `npm install <pkg> --workspace apps/<name>` from the root, so
+the root lock moves with it. Calendar, Shell, Reports and the Build Readiness
+client are standalone projects with their own lockfiles.
+
 ## Environment and secrets
 
 Each app reads its own `.env` from its directory. Never commit one. Add every

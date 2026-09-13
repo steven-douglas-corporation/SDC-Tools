@@ -49,7 +49,8 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: apps/assemblies/package-lock.json
+          # A workspace member: installs resolve through the ROOT lockfile.
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run lint
       - run: npm test
@@ -69,8 +70,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+          # A workspace member: installs resolve through the ROOT lockfile.
           cache-dependency-path: |
-            apps/build-readiness/package-lock.json
+            package-lock.json
             apps/build-readiness/client/package-lock.json
       - run: npm ci
       - run: npm ci --prefix client
@@ -128,7 +130,8 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: apps/state-logic/package-lock.json
+          # A workspace member: installs resolve through the ROOT lockfile.
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run lint
       - run: npm test

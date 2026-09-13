@@ -17,30 +17,24 @@ updates:
     groups:
       actions: { patterns: ["*"] }
 
+  # The root entry covers the npm WORKSPACE members too — apps/assemblies,
+  # apps/build-readiness and apps/state-logic resolve through the root lockfile
+  # (they have none of their own), so their updates must land in the root lock.
+  # PR #37 (2026-09-13) came from a per-directory entry for build-readiness: it
+  # rewrote a stale app-local lockfile, left the root lock out of sync, and every
+  # workspace app's `npm ci` failed until it was reverted.
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    open-pull-requests-limit: 2
     groups:
-      root: { patterns: ["*"] }
+      minor-and-patch: { update-types: ["minor", "patch"] }
+      majors: { update-types: ["major"] }
     ignore:
       # The nested Scheduler repo is listed as a workspace but is not ours to update here.
       - dependency-name: "sdc-scheduler"
 
-  - package-ecosystem: npm
-    directory: /apps/assemblies
-    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
-    open-pull-requests-limit: 2
-    groups:
-      minor-and-patch: { update-types: ["minor", "patch"] }
-      majors: { update-types: ["major"] }
 
-  - package-ecosystem: npm
-    directory: /apps/build-readiness
-    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
-    open-pull-requests-limit: 2
-    groups:
-      minor-and-patch: { update-types: ["minor", "patch"] }
-      majors: { update-types: ["major"] }
 
   - package-ecosystem: npm
     directory: /apps/build-readiness/client
@@ -78,13 +72,6 @@ updates:
       - dependency-name: electron
         update-types: ["version-update:semver-major"]
 
-  - package-ecosystem: npm
-    directory: /apps/state-logic
-    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
-    open-pull-requests-limit: 2
-    groups:
-      minor-and-patch: { update-types: ["minor", "patch"] }
-      majors: { update-types: ["major"] }
 
   - package-ecosystem: npm
     directory: /apps/reports
