@@ -145,7 +145,7 @@ One PM2 process, `sdc-updater-hub`, runs three independent pollers in a single N
 
 | Poller | Watches | Interval | Manual trigger | Scope of what it overwrites |
 |---|---|---|---|---|
-| `sdc-main-updater.js` | `abhikamuju36-ui/SDC-Tools` (this monorepo's `master`) | 5 min | — | Everything **except** paths owned by the two updaters below; selective `git checkout` per changed file, `git reset --soft`; rebuilds the Assemblies and Build Readiness Vite bundles when their sources change; restarts `sdc-assemblies`, `sdc-readiness`, `sdc-calendar`. Only fast-forwards — it skips the update when local `HEAD` is ahead of or diverged from the remote |
+| `sdc-main-updater.js` | `steven-douglas-corporation/SDC-Tools` (this monorepo's `master`) | 5 min | — | Everything **except** paths owned by the two updaters below; selective `git checkout` per changed file, `git reset --soft`; rebuilds the Assemblies and Build Readiness Vite bundles when their sources change; restarts `sdc-assemblies`, `sdc-readiness`, `sdc-calendar`. Only fast-forwards — it skips the update when local `HEAD` is ahead of or diverged from the remote |
 | `server-auto-update.js` (inside `SDC_Scheduler/scripts/`) | `danbelliveau2/SDC_Scheduler` `main` | 2 min | `POST :4013/trigger` | **Whole repo**, `git reset --hard origin/main` — any local uncommitted change here is destroyed within 2 minutes |
 | `server-auto-update.js` (inside `apps/state-logic/scripts/`) | `danbelliveau2/state_logic_builder` GitHub *Releases* (not every commit) | 5 min | `POST :4014/trigger` | `src/`, `public/`, `index.html` only — `server.js`/DB files/`.env` preserved |
 

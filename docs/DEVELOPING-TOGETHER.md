@@ -1,7 +1,7 @@
 # Developing SDC Tools together
 
 A working plan for two developers (Abhi and Dan) building all seven apps out of one
-repo — **`abhikamuju36-ui/SDC-Tools`** — on a box that is also production.
+repo — **`steven-douglas-corporation/SDC-Tools`** — on a box that is also production.
 
 - **Written:** 2026-09-03
 - **Status:** **Phases 0-3 are DONE** (2026-09-03). Phase 2's GitHub-side settings and
@@ -443,7 +443,7 @@ An installed copy reads its feed from `app-update.yml` baked into its own resour
 build time. Every Assemblies install out there still says:
 
 ```
-owner: abhikamuju36-ui
+owner: steven-douglas-corporation
 repo: sdc-assemblies-library
 ```
 

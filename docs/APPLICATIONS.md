@@ -20,7 +20,7 @@ Every runnable app and tooling folder in this workspace, what it does, and how i
 - **Folder:** `apps/build-readiness/`
 - **Port:** 4002
 - **Start command:** `node server/index.js` (workspace: `npm run start:readiness` from repo root)
-- **Production process:** PM2 `sdc-readiness`, updated automatically by the monorepo updater (`sdc-main-updater.js`, polls `abhikamuju36-ui/SDC-Tools` `master`, ~5 min), running inside `sdc-updater-hub`. It had its own updater until 2026-08-26 (`sdc-brr-updater.js`, pointed at a separate `Build_Readiness_Report` repo that had gone stale); that was retired because two updaters owned this directory from two different sources of truth
+- **Production process:** PM2 `sdc-readiness`, updated automatically by the monorepo updater (`sdc-main-updater.js`, polls `steven-douglas-corporation/SDC-Tools` `master`, ~5 min), running inside `sdc-updater-hub`. It had its own updater until 2026-08-26 (`sdc-brr-updater.js`, pointed at a separate `Build_Readiness_Report` repo that had gone stale); that was retired because two updaters owned this directory from two different sources of truth
 - **Dependencies:** Express, `mssql` (ETO), React/Vite frontend
 - **Primary data sources:** Total ETO (on-prem MSSQL, read-only); SDC Scheduler's `/api/integration/project-dates` (build-start/ship dates — replaced the old Smartsheet integration)
 

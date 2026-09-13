@@ -31,7 +31,7 @@ const fs           = require('fs');
 const path         = require('path');
 const { execSync } = require('child_process');
 
-const GITHUB_OWNER      = 'abhikamuju36-ui';
+const GITHUB_OWNER      = 'steven-douglas-corporation';
 const GITHUB_REPO       = 'SDC-Tools';
 const GITHUB_BRANCH     = 'master';
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;   // 5 minutes

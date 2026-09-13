@@ -6,7 +6,7 @@
  * ── First-time setup ─────────────────────────────────────────────────────────
  *   1. Install Node.js LTS  →  https://nodejs.org
  *   2. Install PM2          →  npm install -g pm2
- *   3. Clone / pull repo    →  git clone https://github.com/abhikamuju36-ui/SDC-Tools.git
+ *   3. Clone / pull repo    →  git clone https://github.com/steven-douglas-corporation/SDC-Tools.git
  *   4. Install all deps     →  npm install  (from repo root)
  *   5. Start all apps       →  pm2 start ecosystem.config.js
  *   6. Save + auto-start    →  pm2 save  &&  pm2 startup

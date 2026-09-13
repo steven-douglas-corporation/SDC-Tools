@@ -37,7 +37,7 @@ Every app owns its own local MySQL database, except Build Readiness Report (read
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/abhikamuju36-ui/SDC-Tools.git
+git clone https://github.com/steven-douglas-corporation/SDC-Tools.git
 cd SDC-Tools
 
 # 2. Install all workspace dependencies
@@ -76,7 +76,7 @@ pm2 startup   # follow printed command to auto-start on boot
 
 | Poller | Watches | Interval | Manual trigger |
 |--------|---------|----------|----------------|
-| Monorepo (`sdc-main-updater.js`) — incl. Assemblies, **Build Readiness**, Calendar | `abhikamuju36-ui/SDC-Tools` `master` | 5 min | — |
+| Monorepo (`sdc-main-updater.js`) — incl. Assemblies, **Build Readiness**, Calendar | `steven-douglas-corporation/SDC-Tools` `master` | 5 min | — |
 | SDC Scheduler | `danbelliveau2/SDC_Scheduler` `main` | 2 min | `POST :4013/trigger` |
 | State Logic Builder | `danbelliveau2/state_logic_builder` GitHub Releases | 5 min | `POST :4014/trigger` |
 

@@ -3,7 +3,7 @@
   "version": "1.0.25",
   "repository": {
     "type": "git",
-    "url": "https://github.com/abhikamuju36-ui/SDC-Tools.git"
+    "url": "https://github.com/steven-douglas-corporation/SDC-Tools.git"
   },
   "type": "commonjs",
   "main": "electron/main.js",
@@ -31,7 +31,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "abhikamuju36-ui",
+        "owner": "steven-douglas-corporation",
         "repo": "SDC-Tools",
         "channel": "assemblies",
         "releaseType": "release"

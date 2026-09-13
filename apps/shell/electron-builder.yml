@@ -19,7 +19,7 @@ directories:
 # ⚠ Set SKIP_AUTO_UPDATE=1 in the launch env to disable updater (dev / no-internet).
 publish:
   provider: github
-  owner: abhikamuju36-ui
+  owner: steven-douglas-corporation
   repo: SDC-Tools
   releaseType: release    # publish immediately — not a draft
 

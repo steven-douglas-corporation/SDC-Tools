@@ -36,7 +36,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "abhikamuju36-ui",
+      "owner": "steven-douglas-corporation",
       "repo": "SDC-Tools",
       "channel": "calendar",
       "releaseType": "release"
