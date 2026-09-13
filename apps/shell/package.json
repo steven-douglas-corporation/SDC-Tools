@@ -1,6 +1,6 @@
 {
   "name": "sdc-shell",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "SDC Tools — Electron launcher shell for all SDC apps",
   "main": "electron/main.js",
   "private": true,
