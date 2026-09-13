@@ -50,7 +50,7 @@ npm test            # run the test suite
 
 Two isolated dev variants exist for running a second instance without clobbering the first's
 build cache: `npm run dev:preview` / `dev:preview2` (each sets `NEXT_DIST_DIR` to its own
-`.next-preview*` folder). Several more launch profiles (`sdc-etc-planner-verify`, `-verify2`,
+`.next-preview*` folder). Several more launch profiles (`apps/reports-verify`, `-verify2`,
 `-verify3`, `-perf`) are defined in `.claude/launch.json` for isolated verification/performance
 work — each on its own port with its own dist directory; `-perf` specifically runs a **production
 build** (`next start`), since dev-server timings aren't meaningful for performance comparisons.

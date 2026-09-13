@@ -15,9 +15,9 @@ Five of these six ports were **not renumbered** as part of the 2026-08 monorepo 
 | 4003 | SDC Scheduler | `sdc-scheduler` | `GET /health` | Own git repo, external collaborator (Dan) |
 | 4004 | State Logic Builder | `sdc-statelogic` | `GET /health` | |
 | 4005 | SDC Calendar | `sdc-calendar` | `GET /api/health` | |
-| 4006 | SDC Reports (ETC Planner) | `sdc-etc-planner` | `GET /api/health` | Own git repo (`sdc-sheets`), separate Next.js deploy. Renumbered from 3010 — see above. |
+| 4006 | SDC Reports (ETC Planner) | `sdc-reports` | `GET /api/health` | Own git repo (`sdc-sheets`), separate Next.js deploy. Renumbered from 3010 — see above. |
 
-Power BI Dev (`SDC-PowerBI-DEV/`) has **no port** — it is not an HTTP service. It's a folder of Power BI Desktop files plus a subprocess-invoked MCP executable (`mcp-server/publish/win-x64-new/sdc-powerbi-mcp.exe`) that SDC Scheduler's `lib/hoursApi.js` spawns on demand over stdio. It never binds a port.
+Power BI Dev (`tools/powerbi/`) has **no port** — it is not an HTTP service. It's a folder of Power BI Desktop files plus a subprocess-invoked MCP executable (`mcp-server/publish/win-x64-new/sdc-powerbi-mcp.exe`) that SDC Scheduler's `lib/hoursApi.js` spawns on demand over stdio. It never binds a port.
 
 The Electron shell itself is a desktop client, not a server — it has no production listening port. Its dev-mode Vite server uses the default `5173`.
 

@@ -180,7 +180,7 @@ It checks each stage separately and names the missing one — env vars, token,
 Then:
 
 ```bash
-pm2 restart sdc-etc-planner
+pm2 restart sdc-reports
 ```
 
 Confirm the next auto-sync tick logs `[auto-sync] Actual hours (SharePoint): …`

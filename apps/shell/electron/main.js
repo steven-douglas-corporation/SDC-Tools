@@ -403,7 +403,7 @@ async function openAppWindow(appId, deepPath) {
     },
   });
 
-  // Reports (sdc-etc-planner) isn't one of the 5 apps with a shared session
+  // Reports (apps/reports) isn't one of the 5 apps with a shared session
   // cookie — it has its own separate NextAuth login. It already has a
   // purpose-built bridge FROM Scheduler for exactly this (its own
   // "open this job in Reports" links use it); drive that same bridge here

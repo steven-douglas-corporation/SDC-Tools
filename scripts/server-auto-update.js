@@ -11,7 +11,7 @@
  * It is kept because it documents the original design, and it is marked because
  * starting it would actively break the Reports app. Its only deploy step is
  * `npm run deploy`, which is `build:apps && pm2 startOrRestart` — and `build:apps`
- * builds apps/assemblies and apps/state-logic ONLY. Reports (sdc-etc-planner, 4006)
+ * builds apps/assemblies and apps/state-logic ONLY. Reports (apps/reports, 4006)
  * is a Next.js app with its own Prisma schema: it needs `prisma migrate deploy`, then
  * `prisma generate` with the app STOPPED (the running process holds a lock on the
  * query engine DLL), then `next build`. sdc-main-updater.js does exactly that in its

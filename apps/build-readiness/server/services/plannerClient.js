@@ -1,6 +1,6 @@
 'use strict';
 
-// Read-only client for the SDC Projects Reports app's (sdc-etc-planner)
+// Read-only client for the SDC Projects Reports app's (apps/reports)
 // server-to-server integration API.
 //
 // ── Why this app calls out instead of computing locally ─────────────────────

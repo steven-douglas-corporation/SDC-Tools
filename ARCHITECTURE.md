@@ -149,7 +149,7 @@ One PM2 process, `sdc-updater-hub`, runs three independent pollers in a single N
 | `server-auto-update.js` (inside `SDC_Scheduler/scripts/`) | `danbelliveau2/SDC_Scheduler` `main` | 2 min | `POST :4013/trigger` | **Whole repo**, `git reset --hard origin/main` — any local uncommitted change here is destroyed within 2 minutes |
 | `server-auto-update.js` (inside `apps/state-logic/scripts/`) | `danbelliveau2/state_logic_builder` GitHub *Releases* (not every commit) | 5 min | `POST :4014/trigger` | `src/`, `public/`, `index.html` only — `server.js`/DB files/`.env` preserved |
 
-`sdc-etc-planner` (SDC Reports) and `SDC-PowerBI-DEV` have no live auto-updater — they're deployed manually (`npm run deploy` for Reports; Power BI Desktop publish for the PBI project).
+`apps/reports` (SDC Reports) and `tools/powerbi` have no live auto-updater — they're deployed manually (`npm run deploy` for Reports; Power BI Desktop publish for the PBI project).
 
 ---
 
@@ -265,8 +265,8 @@ Centralized library/
 │   └── calendar/                    SDC Calendar (Express + React/Vite + MySQL)
 │
 ├── SDC_Scheduler/                    Own standalone repo (danbelliveau2/SDC_Scheduler) — NOT moved
-├── sdc-etc-planner/                  SDC Reports — own standalone repo (sdc-sheets) — NOT moved
-├── SDC-PowerBI-DEV/                  Power BI project — own standalone repo — NOT moved, not a service
+├── apps/reports/                  SDC Reports — own standalone repo (sdc-sheets) — NOT moved
+├── tools/powerbi/                  Power BI project — own standalone repo — NOT moved, not a service
 │
 ├── packages/
 │   └── README.md                     Convention doc; no shared code extracted yet

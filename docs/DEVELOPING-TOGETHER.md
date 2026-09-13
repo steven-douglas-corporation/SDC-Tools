@@ -96,7 +96,7 @@ New-Item -ItemType Junction -Path "D:/AI Projects/sdc-abhi/node_modules" `
 
 `apps/assemblies` also needs its own local `node_modules` junctioned.
 
-**`sdc-etc-planner` must NOT be junctioned — it needs a real install.** Next 16 builds
+**`apps/reports` must NOT be junctioned — it needs a real install.** Next 16 builds
 with Turbopack, which refuses a junctioned `node_modules` outright:
 
 ```
@@ -107,7 +107,7 @@ Symlink [project]/node_modules is invalid, it points out of the filesystem root
 fails as a hard panic rather than a warning. So in each worktree:
 
 ```bash
-cd "<worktree>/sdc-etc-planner" && npm ci        # ~45s, 622 packages
+cd "<worktree>/apps/reports" && npm ci        # ~45s, 622 packages
 npx prisma generate                              # generated code, not committed
 ```
 
@@ -117,7 +117,7 @@ with `Cannot find name 'RouteContext'`. Those are Next.js *generated* types unde
 has built. Run a build once in the worktree before trusting a typecheck:
 
 ```bash
-cd "D:/AI Projects/sdc-abhi/sdc-etc-planner" && npx next build
+cd "D:/AI Projects/sdc-abhi/apps/reports" && npx next build
 ```
 
 **Why worktrees rather than a second clone:** they share one object store, so branches are
@@ -167,8 +167,8 @@ Currently excluded by `.gitignore`, each its own repo:
 
 | App | Its repo | `.gitignore` line |
 |---|---|---|
-| Reports (`sdc-etc-planner`) | `sdc-sheets` (standalone, since folded in) | 15 |
-| PowerBI (`SDC-PowerBI-DEV`) | `SDC-PowerBI` (standalone, since folded in) | 10 |
+| Reports (`apps/reports`) | `sdc-sheets` (standalone, since folded in) | 15 |
+| PowerBI (`tools/powerbi`) | `SDC-PowerBI` (standalone, since folded in) | 10 |
 
 ### 5.1 Fix the updater plumbing FIRST
 
@@ -183,15 +183,15 @@ const FRONTEND_BUILDS = [
 'pm2 restart sdc-assemblies sdc-readiness sdc-calendar --update-env'
 ```
 
-Neither list mentions `sdc-etc-planner`. **Track the Reports app without changing this and
+Neither list mentions `apps/reports`. **Track the Reports app without changing this and
 every merge updates its source on the prod box while users keep getting the old `.next`
 build — silently, indefinitely.** That is exactly the "silently stale bundle" failure the
 updater's own comments say it was rewritten to avoid.
 
 So, in one commit, before the app is tracked:
 
-- add `{ prefix: 'sdc-etc-planner/', name: 'Reports' }` to `FRONTEND_BUILDS`
-- add `sdc-etc-planner` to the `pm2 restart` line
+- add `{ prefix: 'apps/reports/', name: 'Reports' }` to `FRONTEND_BUILDS`
+- add `apps/reports` to the `pm2 restart` line
 - consider `PROTECTED` entries for anything that must survive a checkout (`.env` is
   already gitignored, so this is likely empty — verify rather than assume)
 
@@ -212,7 +212,7 @@ cannot run it mid-cycle. Two options, and this needs deciding before Phase 3 shi
 PM2 runs Reports with an absolute `cwd`:
 
 ```js
-cwd: 'D:\\AI Projects\\Centrailized library\\sdc-etc-planner'
+cwd: 'D:\\AI Projects\\Centrailized library\\apps/reports'
 ```
 
 The usual `git subtree add` needs an empty target path, i.e. moving that directory aside —
@@ -224,14 +224,14 @@ cd "D:/AI Projects/Centrailized library"
 git remote add reports <the app's old standalone repo URL>
 git fetch reports main
 git merge -s ours --no-commit --allow-unrelated-histories reports/main
-git read-tree --prefix=sdc-etc-planner/ -u reports/main
+git read-tree --prefix=apps/reports/ -u reports/main
 # then drop .gitignore line 15, and commit
 ```
 
-History is preserved and linked. Do the same for `SDC-PowerBI-DEV`, which is lower risk —
+History is preserved and linked. Do the same for `tools/powerbi`, which is lower risk —
 it is not a PM2 app.
 
-Afterwards: delete the nested `sdc-etc-planner/.git` so there is one repo, and archive
+Afterwards: delete the nested `apps/reports/.git` so there is one repo, and archive
 `sdc-sheets` / `SDC-PowerBI` on GitHub rather than deleting them — they are the fallback if
 this goes wrong.
 
@@ -339,14 +339,14 @@ Scheduler as separate repos with their own pipelines. They need updating as part
 |---|---|---|
 | 0 | `5bb1c4d` | CI triggers on `master`. It had never run. |
 | 3a | `ee74a32` | Updater step 7b: stop → migrate → generate → build → start for Reports |
-| 3 | `1c137a4` | `SDC-PowerBI-DEV` subtree-merged in, 320 files, history linked |
-| 3 | `4e4b5ff` | `sdc-etc-planner` subtree-merged in, 792 files, history linked |
+| 3 | `1c137a4` | `tools/powerbi` subtree-merged in, 320 files, history linked |
+| 3 | `4e4b5ff` | `apps/reports` subtree-merged in, 792 files, history linked |
 | 3 | `cfe9285` | Old nested `.git` dirs archived and ignored |
 | 1 | — | Worktree at `D:/AI Projects/sdc-abhi`, `node_modules` junctioned |
 
 Verified during the move: the Reports app stayed `200` on 4006 throughout, all seven PM2
 apps still respond, `git diff --raw` found zero content differences against `90757fc`, and
-`git rev-parse --show-toplevel` from inside `sdc-etc-planner` now returns the monorepo
+`git rev-parse --show-toplevel` from inside `apps/reports` now returns the monorepo
 root.
 
 **Left to do, and it needs the GitHub UI or the `gh` CLI — neither is available on this
@@ -365,12 +365,12 @@ box:**
    Safe to archive as of 2026-09-04: every branch on both is merged into SDC-Tools, and
    the one that was not — `sdc-sheets`'s `ux/design-system`, a single unmerged commit
    from 2026-08-25 — is preserved on the `rescue/ux-design-system` branch here. Its
-   content was re-applied under `sdc-etc-planner/` rather than cherry-picked, because
+   content was re-applied under `apps/reports/` rather than cherry-picked, because
    the old repo held that app's files at the root, so the commit SHA is not an ancestor
    even though the change is.
 
    Do NOT archive `sdc-assemblies-library` or `sdc_calender`. See §11.
-5. **Review what came in unreviewed.** `sdc-etc-planner` arrived at the tip of
+5. **Review what came in unreviewed.** `apps/reports` arrived at the tip of
    `feat/split-view-and-parts-projection`: split view, the Parts Cost projection rebuild,
    the Monthly ETC red highlight. Tests pass, nothing browser-verified.
 6. **Phase 4 (the Scheduler)** — still recommended as *not yet*, for the three reasons
@@ -378,7 +378,7 @@ box:**
 
 **Two things worth deciding while this is fresh:**
 
-- `SDC-PowerBI-DEV/DEV-LOG.md`, `REDESIGN-PROMPT.md`, `ROADMAP.md`, `power bi new
+- `tools/powerbi/DEV-LOG.md`, `REDESIGN-PROMPT.md`, `ROADMAP.md`, `power bi new
   design/` and `revamp dashboard/` were untracked in the old repo and are still untracked
   here. They look like real documentation. Commit them, or add them to `.gitignore` — right
   now they are permanent `git status` noise.

@@ -6602,3 +6602,7 @@ level header, sortable, reconciliation line); the drop-down is the glance.
 
 Pinned in tests/parts-list-expand-rows.test.ts. `npx tsc --noEmit` and `npx
 eslint` clean. Not browser-verified from the agent session (credentials sign-in).
+
+## 71. Moved to `apps/reports`, pm2 `sdc-reports` (2026-09-13)
+
+The folder `sdc-etc-planner/` and the pm2 process `sdc-etc-planner` are now `apps/reports/` and `sdc-reports`, matching every other app (docs/adr/0003-reports-moves-to-apps-reports.md). Port 4006, the database, `.env` and the desktop shell's URL are unchanged. Older entries in this log keep the old spellings; they were true when written.

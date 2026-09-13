@@ -23,5 +23,4 @@ apps/calendar/frontend/xlsx.full.min.js
 
 # Not ours to format
 SDC_Scheduler/
-SDC-PowerBI-DEV/
 tools/powerbi/

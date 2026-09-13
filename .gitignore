@@ -3,26 +3,26 @@
 # directly at danbelliveau2/SDC_Scheduler for clean bi-directional sync.
 SDC_Scheduler/
 
-# ── SDC-PowerBI-DEV — TRACKED here since 2026-09-03 ─────────────────────────
+# ── tools/powerbi (was tools/powerbi until 2026-09-13) — TRACKED here since 2026-09-03 ─────────────────────────
 # It used to be ignored, as its own standalone repo (SDC-PowerBI)
 # (and before that, a broken unregistered gitlink — a fresh clone got an empty
 # folder). See docs/DEVELOPING-TOGETHER.md §5 for why it moved in. Only its
 # local-only artefacts stay ignored: the .pbix working files are large binaries, and
 # BACKUP/ and source-data/ are working data rather than source. The app's own
-# SDC-PowerBI-DEV/.gitignore came across with it and still covers .pbi cache files.
-SDC-PowerBI-DEV/BACKUP/
-SDC-PowerBI-DEV/source-data/
-SDC-PowerBI-DEV/**/*.pbix
-SDC-PowerBI-DEV/mcp-server/bin/
-SDC-PowerBI-DEV/mcp-server/obj/
-SDC-PowerBI-DEV/mcp-server/publish/
+# tools/powerbi/.gitignore came across with it and still covers .pbi cache files.
+tools/powerbi/BACKUP/
+tools/powerbi/source-data/
+tools/powerbi/**/*.pbix
+tools/powerbi/mcp-server/bin/
+tools/powerbi/mcp-server/obj/
+tools/powerbi/mcp-server/publish/
 
-# ── sdc-etc-planner (Reports) — TRACKED here since 2026-09-03 ───────────────
+# ── apps/reports (Reports; was apps/reports until 2026-09-13) — TRACKED here since 2026-09-03 ───────────────
 # It used to be ignored, as its own standalone repo (sdc-sheets).
 # See docs/DEVELOPING-TOGETHER.md §5 for why it moved in, and scripts/
 # sdc-main-updater.js step 7b for how it now deploys.
 #
-# Nothing is listed here on purpose: the app's OWN sdc-etc-planner/.gitignore came
+# Nothing is listed here on purpose: the app's OWN apps/reports/.gitignore came
 # across with it and already covers everything local. Its root-anchored patterns
 # (/node_modules, /.next/, /.next-verify*/, .env*) anchor to that directory rather
 # than to the repo root, which is exactly right for a nested ignore file.
@@ -121,15 +121,15 @@ coverage/
 
 # ── The old per-app .git directories, kept as a recovery path ────────────────
 #
-# sdc-etc-planner and SDC-PowerBI-DEV moved into this repo on 2026-09-03. Their
+# apps/reports and tools/powerbi moved into this repo on 2026-09-03. Their
 # original .git directories are RENAMED rather than deleted (7.1 MB and 596 KB), so
 # the pre-move history is still on this box if the subtree merge ever needs undoing.
 #
 # Renamed, not left in place, because a live nested .git is a footgun: `cd
-# sdc-etc-planner && git commit` would have silently committed to the old
+# apps/reports && git commit` would have silently committed to the old
 # sdc-sheets repo instead of here, and with two people working that mistake is a
 # matter of time. This monorepo is the only remote now.
 #
 # Safe to delete once the move has settled.
-sdc-etc-planner/.git-archived-sdc-sheets/
-SDC-PowerBI-DEV/.git-archived-sdc-powerbi/
+apps/reports/.git-archived-sdc-sheets/
+tools/powerbi/.git-archived-sdc-powerbi/

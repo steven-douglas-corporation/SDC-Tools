@@ -32,7 +32,7 @@ Every runnable app and tooling folder in this workspace, what it does, and how i
 - **Start command:** `node server.js` (workspace: `npm run start:scheduler` from repo root)
 - **Production process:** PM2 `sdc-scheduler`; its updater runs inside `sdc-updater-hub`
 - **Dependencies:** Express, Socket.io, `mysql2`, `mssql` (ETO), `@anthropic-ai/sdk`
-- **Primary data sources:** MySQL `sdc_scheduler` (local); Total ETO (read-only); Power BI job hours via a subprocess call to `SDC-PowerBI-DEV`'s MCP exe
+- **Primary data sources:** MySQL `sdc_scheduler` (local); Total ETO (read-only); Power BI job hours via a subprocess call to `tools/powerbi`'s MCP exe
 
 ## State Logic Builder
 
@@ -57,10 +57,10 @@ Every runnable app and tooling folder in this workspace, what it does, and how i
 ## SDC Reports (ETC Planner)
 
 - **Purpose:** Replaces three manually-maintained Excel workbooks with a live web app — Dashboard, Employees, Projects, Monthly ETC, Job Hour Details, Profitability, Hours, T&M, Build Readiness, Cash Flow Forecast.
-- **Folder:** `sdc-etc-planner/` — tracked in this monorepo since 2026-09-03 (formerly its own standalone repo, `sdc-sheets`).
+- **Folder:** `apps/reports/` — tracked in this monorepo since 2026-09-03 (formerly its own standalone repo, `sdc-sheets`).
 - **Port:** 4006 (renumbered from 3010, 2026-08-23 — see [PORTS.md](PORTS.md) for the shell-release step this still needs)
 - **Start command:** `next start -p 4006`
-- **Production process:** PM2 `sdc-etc-planner` (folded into the root `ecosystem.config.js` as part of this restructuring — previously ran from its own separate, broken `ecosystem.config.js`)
+- **Production process:** PM2 `apps/reports` (folded into the root `ecosystem.config.js` as part of this restructuring — previously ran from its own separate, broken `ecosystem.config.js`)
 - **Dependencies:** Next.js 16 (App Router, Server Actions), Prisma, `mssql` (Total ETO), `mysql2` (read-only Scheduler mirror), NextAuth v5
 - **Primary data sources:** Its own MySQL via Prisma (`DATABASE_URL`); Total ETO (read-only, mostly pre-synced); SDC Scheduler's MySQL (read-only team-roster mirror); a Paylocity Excel export on a OneDrive-synced path (`src/lib/paylocity-sources.ts`) — do not alter this logic casually, it's self-validating and was hardened after a real double-counting incident
 
@@ -77,7 +77,7 @@ Every runnable app and tooling folder in this workspace, what it does, and how i
 ## Power BI Dev
 
 - **Purpose:** Power BI Desktop report source files (job hours, profitability) plus the MCP server that lets SDC Scheduler and Claude query them live via DAX.
-- **Folder:** `SDC-PowerBI-DEV/` — tracked in this monorepo since 2026-09-03 (formerly its own standalone repo, `SDC-PowerBI`).
+- **Folder:** `tools/powerbi/` — tracked in this monorepo since 2026-09-03 (formerly its own standalone repo, `SDC-PowerBI`).
 - **Port:** none — not a service. `mcp-server/publish/win-x64-new/sdc-powerbi-mcp.exe` is a stdio MCP server, spawned on demand as a subprocess (by SDC Scheduler's `lib/hoursApi.js`, or by Claude directly) — never run as a standalone daemon.
 - **Production process:** none — no PM2 entry, nothing to keep running
 - **Dependencies:** .NET 8 (MCP server source), Power BI Desktop (`.pbix`/`.pbip` files)

@@ -1,7 +1,7 @@
 # Job Ledger Reconciliation — 8/31/26 draft vs the Reports app
 
 Reconciles the preliminary **"Job Ledger Report Template - 2026.08.31_draft.xlsx"** against
-the Reports app (`sdc-etc-planner`) on the two axes the request named: **August 2026
+the Reports app (`apps/reports`) on the two axes the request named: **August 2026
 activity** and **project total spend**.
 
 - **Date run:** 2026-08-31

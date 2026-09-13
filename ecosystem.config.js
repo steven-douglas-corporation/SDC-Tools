@@ -32,14 +32,14 @@
  * ── Ports (see docs/PORTS.md for the full registry incl. support ports) ──────
  *   sdc-assemblies   4001    sdc-readiness   4002
  *   sdc-scheduler    4003    sdc-statelogic  4004    sdc-calendar  4005
- *   sdc-etc-planner  4006
+ *   sdc-reports      4006
  *
  *   Open these ports in Windows Firewall (inbound, TCP) for LAN access.
  *
  * ── Folder layout (2026-08 restructuring) ─────────────────────────────────────
  *   apps/assemblies, apps/build-readiness, apps/state-logic, apps/calendar,
  *   apps/shell live inside this monorepo and moved here from their old flat
- *   top-level names. SDC_Scheduler, sdc-etc-planner, and SDC-PowerBI-DEV did
+ *   top-level names. SDC_Scheduler, apps/reports (then sdc-etc-planner), and tools/powerbi (then SDC-PowerBI-DEV) did
  *   NOT move — each is its own independent git repo with its own remote and
  *   deploy pipeline, so relocating them inside this monorepo wouldn't change
  *   how production gets updates for them, only the paths every reference to
@@ -227,12 +227,12 @@ module.exports = {
     // while the underlying `next start` process kept running and kept the
     // port. The replacement then crash-loops on EADDRINUSE every ~4s while the
     // OLD build keeps serving — looks fine, isn't. Prefer `npm run deploy`
-    // (from inside sdc-etc-planner/), which frees the port explicitly via
+    // (from inside apps/reports/), which frees the port explicitly via
     // scripts/free-port.mjs and fails loudly if something's still bound to it.
-    // If you do `pm2 restart sdc-etc-planner` by hand, check
-    // `pm2 logs sdc-etc-planner --err` for EADDRINUSE before trusting it.
+    // If you do `pm2 restart sdc-reports` by hand, check
+    // `pm2 logs sdc-reports --err` for EADDRINUSE before trusting it.
     {
-      name:          'sdc-etc-planner',
+      name:          'sdc-reports',
       // Serves the production build in .next. Still a single node process (no
       // npm shim) — scripts/start.mjs preflights and then loads Next's own bin
       // in-process, so PM2 supervises the real server exactly as before.
@@ -246,7 +246,9 @@ module.exports = {
       // and it reinstalls a wiped node_modules instead of dying. Full writeup
       // in that file's header.
       script:        'scripts/start.mjs',
-      cwd:           'D:\\AI Projects\\Centrailized library\\sdc-etc-planner',
+      // Relative like every other app since 2026-09-13 (ADR 0003); the process
+      // was `sdc-etc-planner` in `sdc-etc-planner/` until then.
+      cwd:           './apps/reports',
       env: {
         PORT:             '4006',
         NODE_ENV:         'production',

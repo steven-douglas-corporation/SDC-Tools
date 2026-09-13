@@ -37,7 +37,7 @@ Effort should go to payload size and client work. See §3.
 
 ---
 
-## 1. Route baseline — `sdc-etc-planner` (port 4006)
+## 1. Route baseline — `apps/reports` (port 4006)
 
 Method: from an authenticated browser session on the server, for each route,
 `fetch(route, {headers:{RSC:"1"}, cache:"no-store"})`, measuring time to first
@@ -74,7 +74,7 @@ cold vs 1,260 ms warm). Compare warm-to-warm only.
 | sdc-scheduler | 4003 | 2.0 ms | 200, 62.8 KB |
 | sdc-statelogic | 4004 | 1.3 ms | 401 unauthenticated |
 | sdc-calendar | 4005 | 2.7 ms | 200, 1.4 KB |
-| sdc-etc-planner | 4006 | 3.2 ms | 307 → /login |
+| apps/reports | 4006 | 3.2 ms | 307 → /login |
 
 Measure over `127.0.0.1`, never `localhost` — the latter adds a ~200 ms IPv6
 resolution penalty on this box and will make every service look 100× slower than
@@ -91,7 +91,7 @@ reasonable envelope for what it does.
 
 | Process | RSS | CPU | Heap used / total | Restarts | `max_memory_restart` |
 |---|---|---|---|---|---|
-| sdc-etc-planner | 236.9 MB | 2.5 % | 184.8 / 191.0 MiB | 0 | **none** → 600 M (F3) |
+| apps/reports | 236.9 MB | 2.5 % | 184.8 / 191.0 MiB | 0 | **none** → 600 M (F3) |
 | sdc-scheduler | 50.3 MB | 1.1 % | 57.8 / 60.7 MiB | 2 | 400 M |
 | sdc-readiness | 48.3 MB | 0.2 % | 31.4 / 34.1 MiB | 0 | 300 M |
 | sdc-statelogic | 48.0 MB | 0.1 % | 15.2 / 19.8 MiB | 0 | 300 M |
@@ -204,10 +204,10 @@ MSSQL query, which cannot be cached without showing a stale financial forecast
 
 **Priority:** low — one page, ELT-only audience, latency largely inherent.
 
-### F3 — `sdc-etc-planner` has no `max_memory_restart` — FIXED ✅
+### F3 — `apps/reports` has no `max_memory_restart` — FIXED ✅
 
 **Root cause:** `ecosystem.config.js` sets `max_memory_restart` on all seven
-other PM2 apps but omits it on `sdc-etc-planner` — which is by far the largest
+other PM2 apps but omits it on `apps/reports` — which is by far the largest
 process (236.9 MB, 5× any other). If it ever leaks, nothing restarts it.
 
 **Fix:** add `max_memory_restart: '600M'` (~2.5× current RSS, leaving headroom

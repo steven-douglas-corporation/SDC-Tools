@@ -219,11 +219,16 @@ async function checkAndUpdate() {
     //    the one useful thing that updater did, so it moved here rather than
     //    being lost; without it, retiring it would have traded a destructive
     //    updater for a silently stale bundle.
+    //    Calendar joined on 2026-09-13: its Vite build (`build:web`, into dist/)
+    //    had never run on the server, so production was serving the legacy
+    //    in-browser-Babel frontend/ the whole time. `script` is per entry because
+    //    Calendar's plain `build` is the Electron installer, not the web bundle.
     const FRONTEND_BUILDS = [
-      { prefix: 'apps/assemblies/', name: 'Assemblies Library' },
-      { prefix: 'apps/build-readiness/', name: 'Build Readiness' },
+      { prefix: 'apps/assemblies/', name: 'Assemblies Library', script: 'build' },
+      { prefix: 'apps/build-readiness/', name: 'Build Readiness', script: 'build' },
+      { prefix: 'apps/calendar/', name: 'Calendar', script: 'build:web' },
     ];
-    for (const { prefix, name } of FRONTEND_BUILDS) {
+    for (const { prefix, name, script } of FRONTEND_BUILDS) {
       if (!monorepoFiles.some(f => f.startsWith(prefix))) continue;
       log(`${name} changed — rebuilding frontend…`);
       // Non-fatal: a build failure must not abort the deploy before step 8's
@@ -231,13 +236,13 @@ async function checkAndUpdate() {
       // frontend error. The app keeps its previous bundle and the failure is
       // logged loudly.
       try {
-        run(`npm run build --prefix ${prefix.slice(0, -1)}`);
+        run(`npm run ${script} --prefix ${prefix.slice(0, -1)}`);
       } catch (buildErr) {
         log(`  ${name} frontend build FAILED: ${buildErr.message} — serving the previous bundle.`);
       }
     }
 
-    // 7b. The Reports app (sdc-etc-planner) — its own step, because it is not a
+    // 7b. The Reports app (apps/reports, pm2 `sdc-reports`) — its own step, because it is not a
     //     Vite bundle and cannot be deployed the same way (2026-09-03, added when
     //     the app moved into this repo).
     //
@@ -259,19 +264,19 @@ async function checkAndUpdate() {
     //     Ordering is load-bearing: stop → migrate → generate → build → start. A
     //     generate before the stop fails; a build before the generate compiles
     //     against the old client; a start before the build serves the old .next.
-    if (monorepoFiles.some(f => f.startsWith('sdc-etc-planner/'))) {
+    if (monorepoFiles.some(f => f.startsWith('apps/reports/'))) {
       log('Reports app changed — stopping it for migrate + generate + build…');
       // Run these FROM the app's own directory rather than with --schema/--prefix
       // from the repo root: Prisma resolves DATABASE_URL from the .env beside the
       // schema, and `next build` needs that same .env plus the app's own
       // node_modules. This is exactly the cwd the app's own `npm run deploy` uses,
       // so the updater and a manual deploy do the identical thing.
-      const reportsDir = path.join(REPO_DIR, 'sdc-etc-planner');
+      const reportsDir = path.join(REPO_DIR, 'apps', 'reports');
       const inApp = { cwd: reportsDir };
       try {
         // Stop first, and tolerate it not being registered yet.
         try {
-          run('pm2 stop sdc-etc-planner');
+          run('pm2 stop sdc-reports');
         } catch (stopErr) {
           log(`  pm2 stop warning: ${stopErr.message} — continuing.`);
         }
@@ -287,16 +292,16 @@ async function checkAndUpdate() {
         log('  It will be restarted on its previous build — fix and re-push.');
       }
       try {
-        run('pm2 start sdc-etc-planner');
+        run('pm2 start sdc-reports');
       } catch (startErr) {
-        log(`  pm2 start FAILED for sdc-etc-planner: ${startErr.message} — MANUAL START REQUIRED.`);
+        log(`  pm2 start FAILED for sdc-reports: ${startErr.message} — MANUAL START REQUIRED.`);
       }
     }
 
     // 8. Restart only the apps this updater owns.
     //    sdc-scheduler and sdc-statelogic have their own per-app updaters.
     //
-    //    sdc-etc-planner is deliberately absent: step 7b already stopped and started
+    //    sdc-reports is deliberately absent: step 7b already stopped and started
     //    it around its own migrate/generate/build sequence. Restarting it again here
     //    would be a second, pointless outage — and if 7b's start failed, this would
     //    paper over that failure instead of leaving the loud log line visible.

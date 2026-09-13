@@ -145,7 +145,7 @@ async function clearSdcSession() {
   await Promise.all([
     ses.cookies.remove(COOKIE_URL, 'sdc_session'),
     ses.cookies.remove(COOKIE_URL, 'scheduler_token'),
-    // Reports (sdc-etc-planner) isn't one of the 5 apps sharing sdc_session —
+    // Reports (apps/reports) isn't one of the 5 apps sharing sdc_session —
     // it's a real independent NextAuth session, established via the
     // mint-etc-sso bridge in openAppWindow(). Its cookie is non-secure and
     // host-only (same host, no Domain attribute), so it lives in this same

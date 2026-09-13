@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-19
 
-This document consolidates six parallel, read-only audits of `D:\AI Projects\sdc-etc-planner` (SDC Reports / ETC Planner — Next.js 16 + Prisma/MySQL, PM2-served on port 3010): a deployment-mechanics audit, a dependency-usage audit, a duplicate-business-logic audit, a dead-code audit, a data-source-architecture audit, and a root-level/`scripts/`-folder classification audit. No files were edited, deleted, moved, or created by any of these audits, and no state-changing git command was run. A safety checkpoint commit, **`4b74d9b` ("checkpoint: WIP snapshot before production cleanup audit")**, already exists on `main` on top of `57cb6eb` and captures everything that was modified/deleted in the working tree at the start of this project — so the repo was safe to read throughout, and this document itself is the only write this phase makes. Findings below are reported with concrete file paths and line numbers wherever the source audit provided them; anywhere an audit could not fully verify a claim, that limitation is carried forward explicitly rather than smoothed over.
+This document consolidates six parallel, read-only audits of `D:\AI Projects\apps/reports` (SDC Reports / ETC Planner — Next.js 16 + Prisma/MySQL, PM2-served on port 3010): a deployment-mechanics audit, a dependency-usage audit, a duplicate-business-logic audit, a dead-code audit, a data-source-architecture audit, and a root-level/`scripts/`-folder classification audit. No files were edited, deleted, moved, or created by any of these audits, and no state-changing git command was run. A safety checkpoint commit, **`4b74d9b` ("checkpoint: WIP snapshot before production cleanup audit")**, already exists on `main` on top of `57cb6eb` and captures everything that was modified/deleted in the working tree at the start of this project — so the repo was safe to read throughout, and this document itself is the only write this phase makes. Findings below are reported with concrete file paths and line numbers wherever the source audit provided them; anywhere an audit could not fully verify a claim, that limitation is carried forward explicitly rather than smoothed over.
 
 ---
 
@@ -14,7 +14,7 @@ This document consolidates six parallel, read-only audits of `D:\AI Projects\sdc
 npm run deploy
   = next build                              # writes to .next/ (distDir, next.config.ts:15)
     && node scripts/free-port.mjs 3010      # kills whatever holds :3010 via netstat/taskkill, exits 1 loudly if it can't
-    && pm2 restart sdc-etc-planner          # restarts the one PM2 app, which serves .next/
+    && pm2 restart sdc-reports          # restarts the one PM2 app, which serves .next/
 ```
 
 `free-port.mjs` exists only because PM2 on this Windows box doesn't reliably kill the previous `next start` process. It touches only the OS process table (`netstat`/`taskkill`) — no filesystem writes, no `fs` module, no git calls. Rollback is manual (`git revert` + redeploy); there is no automated rollback tooling.
@@ -27,7 +27,7 @@ npm run deploy
 - `src/instrumentation.ts` and `src/lib/auto-sync.ts` (the app's only interval-based background process) were read in full: purely a DB-data refresh (TotalETO/Power BI/Paylocity), zero filesystem or git interaction.
 - `docs/DEPLOYMENT.md:64-69` states there is no external cron/task scheduler — confirmed, nothing found to contradict it (Windows Task Scheduler itself, outside the repo, was not checked — out of scope for a file-level audit).
 
-**`.next-verify` / `.next-verify2` / `.next-verify3` — verdict: live, documented dev tooling, NOT stale, NOT safe to remove.** They exist because `next.config.ts:15` (`distDir: process.env.NEXT_DIST_DIR || ".next"`) lets a second/third dev server run without fighting the main one over one dist directory. Confirmed referenced in `.claude/launch.json:29,38,57` (`sdc-etc-planner-verify`/`-verify2`/`-verify3` launch configs on ports 3021/3022/3023), `.gitignore:19` (`/.next-verify*/`), `tsconfig.json:42-43,48-49,57-58`, and `docs/DEVELOPMENT.md:50-53`.
+**`.next-verify` / `.next-verify2` / `.next-verify3` — verdict: live, documented dev tooling, NOT stale, NOT safe to remove.** They exist because `next.config.ts:15` (`distDir: process.env.NEXT_DIST_DIR || ".next"`) lets a second/third dev server run without fighting the main one over one dist directory. Confirmed referenced in `.claude/launch.json:29,38,57` (`apps/reports-verify`/`-verify2`/`-verify3` launch configs on ports 3021/3022/3023), `.gitignore:19` (`/.next-verify*/`), `tsconfig.json:42-43,48-49,57-58`, and `docs/DEVELOPMENT.md:50-53`.
 
 **Ranked hypotheses for "code changes disappearing"** (no smoking gun found *inside* the deploy/build pipeline itself; strongest evidence points upstream of deployment):
 

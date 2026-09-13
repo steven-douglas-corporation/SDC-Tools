@@ -6,7 +6,7 @@
 npm run deploy
 ```
 
-This is `next build && node scripts/free-port.mjs 4006 && pm2 restart sdc-etc-planner` — always
+This is `next build && node scripts/free-port.mjs 4006 && pm2 restart sdc-reports` — always
 use this script, not a bare `pm2 restart`, for the reason in the next section.
 
 First-time bring-up on a new box (not a redeploy): `pm2 start ecosystem.config.js && pm2 save`.
@@ -26,7 +26,7 @@ purpose, because silently falling through to `pm2 restart` after a failed kill i
 this bug reaches production unnoticed.
 
 If you ever restart by hand instead of via `npm run deploy`: immediately run
-`pm2 logs sdc-etc-planner --err` and check for `EADDRINUSE`. If in doubt whether the new build
+`pm2 logs sdc-reports --err` and check for `EADDRINUSE`. If in doubt whether the new build
 actually went live, compare `.next/BUILD_ID` on disk against the build id embedded in the
 served HTML.
 
@@ -70,7 +70,7 @@ from zero; there's nothing external to reconfigure.
 
 ## Post-deployment verification
 
-1. `pm2 logs sdc-etc-planner --err` — confirm no `EADDRINUSE` loop.
+1. `pm2 logs sdc-reports --err` — confirm no `EADDRINUSE` loop.
 2. Compare `.next/BUILD_ID` against the build id in the served page's HTML, to confirm the new
    build is actually the one being served (not the PM2-didn't-die failure mode above).
 3. Hit `/api/health` — expect `{status:"ok", app:"sdc-projects-reports"}`. Note this endpoint
