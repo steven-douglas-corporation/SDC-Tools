@@ -93,7 +93,8 @@ test("receivedDate reads the same two facts that decide RECEIVED status", () => 
 test("the Delivered Date column is wired to receivedDate and to nothing else", () => {
   const panel = strip(read("components/procurement/PoDetailPanel.tsx"));
 
-  assert.match(panel, /\{ key: "delivered", label: "Delivered Date"/, "the column must be declared in ALL_COLS");
+  // "Received Date" since 2026-09-13; the KEY stays "delivered" so saved column sets survive.
+  assert.match(panel, /\{ key: "delivered", label: "Received Date"/, "the column must be declared in ALL_COLS");
 
   // Sort accessor — the one place a wrong field would silently reorder the table.
   assert.match(
@@ -160,7 +161,7 @@ test("the From/To range can filter on Delivered, reading the same field the colu
     /dateType === "delivered" \? p\.receivedDate/,
     "the delivered range must filter on p.receivedDate",
   );
-  assert.match(job, /\{ value: "delivered", label: "Delivered" \}/, "the segmented control must offer it");
+  assert.match(job, /\{ value: "delivered", label: "Received" \}/, "the segmented control must offer it");
 
   // Selecting it has to light up Clear, or a range nobody can see is stuck on.
   assert.match(job, /dateType !== "purchase"/, "filtersActive must still treat a non-default date mode as an active filter");
@@ -177,4 +178,19 @@ test("Delivered Date sits with the other date columns, in the requested order", 
     ["purchased", "req", "exp", "delivered"],
     "the request asked for Purchased | Required Date | Expected Date | Delivered Date",
   );
+});
+
+// ── Dates carry a two-digit year (2026-09-13, by request) ───────────────────
+//
+// "Jan 23" is ambiguous on a table that routinely spans a year boundary. Every
+// procurement date cell goes through fmtDate, so the three requested columns
+// (Required, Expected, Received) and their neighbours all read the same way.
+test("fmtDate prints month, day and a two-digit year", async () => {
+  const { fmtDate } = await import("../src/lib/po-detail");
+  // Noon local, so the day cannot roll over a timezone boundary in the test.
+  assert.equal(fmtDate("2026-01-23T12:00:00"), "Jan 23 '26");
+  assert.equal(fmtDate("2025-12-31T12:00:00"), "Dec 31 '25");
+  assert.equal(fmtDate("2030-07-04T12:00:00"), "Jul 4 '30");
+  assert.equal(fmtDate(null), "—");
+  assert.equal(fmtDate("not a date"), "—");
 });

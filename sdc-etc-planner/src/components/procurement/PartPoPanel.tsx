@@ -139,7 +139,7 @@ export function PartPoPanel({
             <Stat label="Purchased Qty" value={part.poBreakdown.length ? num(part.purchasedQty) : "—"} />
             <Stat label="Avg Unit $" value={part.effectiveUnitPrice === null ? "—" : usd2(part.effectiveUnitPrice)} />
             <Stat label="Required" value={fmtDate(part.requiredDate)} />
-            <Stat label="Delivered" value={fmtDate(part.receivedDate)} />
+            <Stat label="Received" value={fmtDate(part.receivedDate)} />
             <Stat label="POs" value={num(part.poBreakdown.length)} />
           </div>
 
@@ -172,7 +172,7 @@ export function PartPoPanel({
                   {th("left", "Left to Invoice", "right")}
                   {th("purchased", "Purchased")}
                   {th("expected", "Expected")}
-                  {th("delivered", "Delivered")}
+                  {th("delivered", "Received")}
                 </tr>
               </thead>
               <tbody>

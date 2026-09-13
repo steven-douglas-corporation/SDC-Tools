@@ -163,11 +163,17 @@ export function num(n: number): string {
 }
 
 // Compact date — "Dec 14". Formats a passed ISO string only. "—" for empty/bad.
+// "Jan 23 '26" — month, day and a two-digit year (2026-09-13, by request: the
+// three Parts List date columns read without a year, and a procurement table
+// routinely spans one). Every procurement date cell goes through here, so the
+// Purchased and Invoiced columns pick the year up too rather than sitting in the
+// same row as three dated neighbours without one.
 export function fmtDate(s: string | null | undefined): string {
   if (!s) return "—";
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const monthDay = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `${monthDay} '${String(d.getFullYear() % 100).padStart(2, "0")}`;
 }
 
 // Days between two ISO dates (b − a), or null if either is missing/invalid.

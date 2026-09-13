@@ -227,7 +227,10 @@ export const ALL_COLS: { key: ColKey; label: string; align?: "right"; title?: st
   //
   // NOT tblReceiverLog.DateCreated: that is when the receipt was keyed in, and it
   // differs from the real receipt date on 262 rows (backdated receiving).
-  { key: "delivered", label: "Delivered Date", title: "When the part actually arrived — MAX(tblReceiverLog.Date), or the inventory pull's fulfilment date for a part issued from stock. Blank until something is received." },
+  // Labelled "Received Date" since 2026-09-13 (by request) - the same word the
+  // RECEIVED status and receivedQty already use; the key stays `delivered` so a
+  // stored column set keeps working.
+  { key: "delivered", label: "Received Date", title: "When the part was actually received — MAX(tblReceiverLog.Date), or the inventory pull's fulfilment date for a part issued from stock. Blank until something is received." },
   { key: "lead", label: "Lead" },
   { key: "due", label: "Due" },
   { key: "unit", label: "Unit $", align: "right" },
@@ -606,10 +609,11 @@ const PO_PANEL_COL_WIDTH: Partial<Record<ColKey, number>> = {
   pn: 110,
   desc: 200,
   mfr: 90,
-  purchased: 72,
-  invoiceddate: 68,
-  req: 78,
-  exp: 78,
+  // Widened 2026-09-13 for the two-digit year ("Jan 23 '26").
+  purchased: 78,
+  invoiceddate: 76,
+  req: 84,
+  exp: 84,
   delivered: 84,
   unit: 64,
   total: 68,

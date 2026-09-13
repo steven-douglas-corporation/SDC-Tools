@@ -1315,11 +1315,13 @@ const DEFAULT_COL_WIDTH: Record<ColKey, number> = {
   // Narrow on purpose: it holds a single digit on all but a handful of rows
   // (job 1116: 748 rows with purchases, 63 of them on more than one PO).
   subs: 62,
-  purchased: 80,
-  invoiceddate: 64,
-  req: 84,
-  exp: 84,
-  // Wider than req/exp: "Delivered Date" is the longest header in the date group,
+  // Dates read "Jan 23 '26" since 2026-09-13, so each date column carries the
+  // extra four characters.
+  purchased: 84,
+  invoiceddate: 72,
+  req: 88,
+  exp: 88,
+  // Wider than req/exp: "Received Date" is the longest header in the date group,
   // and at text-micro it needs the room its neighbours don't.
   delivered: 96,
   lead: 60,
@@ -1675,7 +1677,7 @@ function PartsListTab({
             { value: "invoice", label: "Invoiced" },
             { value: "req", label: "Req Date" },
             { value: "exp", label: "Exp Date" },
-            { value: "delivered", label: "Delivered" },
+            { value: "delivered", label: "Received" },
           ]}
         />
         <input type="date" aria-label="From date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 rounded-md border border-sdc-border bg-white px-2 text-xs text-sdc-navy outline-none focus:border-sdc-blue" />

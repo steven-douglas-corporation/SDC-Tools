@@ -6563,3 +6563,14 @@ and `npx eslint` clean on every touched file.
 
 Browser verification was not done from the agent session: the app is behind a
 credentials sign-in, and entering a password is outside what the agent will do.
+
+### 2026-09-13 follow-up: "Received Date", and a two-digit year on every date
+
+By request: the column is labelled **Received Date** (the word the RECEIVED status
+and `receivedQty` already use); the key stays `delivered` so saved column sets and
+the persisted date filter keep working. `fmtDate` now prints `Jan 23 '26` — the
+request named the three Parts List date columns (Required, Expected, Received),
+and because every procurement date cell shares the one formatter, Purchased and
+Invoiced pick the year up too rather than sitting in the same row without one.
+Date column widths grew by the four extra characters in both the Parts List and
+the PO drawer.
