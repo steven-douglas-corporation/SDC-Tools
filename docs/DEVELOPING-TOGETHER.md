@@ -167,8 +167,8 @@ Currently excluded by `.gitignore`, each its own repo:
 
 | App | Its repo | `.gitignore` line |
 |---|---|---|
-| Reports (`sdc-etc-planner`) | `abhikamuju36-ui/sdc-sheets` | 15 |
-| PowerBI (`SDC-PowerBI-DEV`) | `abhikamuju36-ui/SDC-PowerBI` | 10 |
+| Reports (`sdc-etc-planner`) | `sdc-sheets` (standalone, since folded in) | 15 |
+| PowerBI (`SDC-PowerBI-DEV`) | `SDC-PowerBI` (standalone, since folded in) | 10 |
 
 ### 5.1 Fix the updater plumbing FIRST
 
@@ -221,7 +221,7 @@ instead, which never touches the working tree:
 
 ```bash
 cd "D:/AI Projects/Centrailized library"
-git remote add reports https://github.com/abhikamuju36-ui/sdc-sheets.git
+git remote add reports <the app's old standalone repo URL>
 git fetch reports main
 git merge -s ours --no-commit --allow-unrelated-histories reports/main
 git read-tree --prefix=sdc-etc-planner/ -u reports/main

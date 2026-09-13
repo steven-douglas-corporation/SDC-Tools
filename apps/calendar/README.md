@@ -63,8 +63,8 @@ SDC Centralized Calendar/
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/abhikamuju36-ui/sdc_calender.git
-   cd sdc_calender
+   git clone https://github.com/steven-douglas-corporation/SDC-Tools.git
+   cd SDC-Tools/apps/calendar
    ```
 
 2. Open `SDC Centralized Calendar.html` in a browser **or** serve it:

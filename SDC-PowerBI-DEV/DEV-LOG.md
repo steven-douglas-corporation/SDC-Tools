@@ -8,7 +8,7 @@ Most recent entry at the top.
 ## 2026-06-03 — Environment Setup
 
 ### What Was Done
-- Cloned GitHub repo (https://github.com/abhikamuju36-ui/SDC-PowerBI.git) to `SDC-PowerBI-DEV/`
+- Cloned the Power BI repo (since folded into this monorepo, https://github.com/steven-douglas-corporation/SDC-Tools) to `SDC-PowerBI-DEV/`
 - Built MCP server exe from source (.NET 8, self-contained win-x64, 68.8 MB)
 - Authenticated MCP server as akamuju@sdcautomation.com (token cached locally)
 - Copied all Excel source files into `source-data/`

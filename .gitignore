@@ -4,7 +4,7 @@
 SDC_Scheduler/
 
 # ── SDC-PowerBI-DEV — TRACKED here since 2026-09-03 ─────────────────────────
-# It used to be ignored, as its own repo pointing at abhikamuju36-ui/SDC-PowerBI
+# It used to be ignored, as its own standalone repo (SDC-PowerBI)
 # (and before that, a broken unregistered gitlink — a fresh clone got an empty
 # folder). See docs/DEVELOPING-TOGETHER.md §5 for why it moved in. Only its
 # local-only artefacts stay ignored: the .pbix working files are large binaries, and
@@ -18,7 +18,7 @@ SDC-PowerBI-DEV/mcp-server/obj/
 SDC-PowerBI-DEV/mcp-server/publish/
 
 # ── sdc-etc-planner (Reports) — TRACKED here since 2026-09-03 ───────────────
-# It used to be ignored, as its own repo pointing at abhikamuju36-ui/sdc-sheets.
+# It used to be ignored, as its own standalone repo (sdc-sheets).
 # See docs/DEVELOPING-TOGETHER.md §5 for why it moved in, and scripts/
 # sdc-main-updater.js step 7b for how it now deploys.
 #
@@ -126,9 +126,9 @@ coverage/
 # the pre-move history is still on this box if the subtree merge ever needs undoing.
 #
 # Renamed, not left in place, because a live nested .git is a footgun: `cd
-# sdc-etc-planner && git commit` would have silently committed to abhikamuju36-ui/
-# sdc-sheets instead of here, and with two people working that mistake is a matter
-# of time. Both remotes also still exist on GitHub as the real backup.
+# sdc-etc-planner && git commit` would have silently committed to the old
+# sdc-sheets repo instead of here, and with two people working that mistake is a
+# matter of time. This monorepo is the only remote now.
 #
 # Safe to delete once the move has settled.
 sdc-etc-planner/.git-archived-sdc-sheets/

@@ -209,7 +209,7 @@ module.exports = {
     },
 
     // ── SDC Reports (ETC Planner) ────────────────────────────────────────────
-    // NOT moved — own standalone git repo (abhikamuju36-ui/sdc-sheets). Folded
+    // Formerly its own standalone git repo (sdc-sheets), tracked here since 2026-09-03. Folded
     // in from its own previously-separate ecosystem.config.js, which had a
     // broken cwd (pointed at "D:\AI Projects\sdc-etc-planner", missing the
     // "Centrailized library" segment — fixed below). Next.js auto-loads this

@@ -12,7 +12,7 @@
  *
  * ── Why Build Readiness has no updater here (2026-08-26) ───────────────────
  * There used to be a fourth: apps/build-readiness/scripts/sdc-brr-updater.js,
- * polling abhikamuju36-ui/Build_Readiness_Report every 2 minutes. It was
+ * polling the old standalone Build_Readiness_Report repo every 2 minutes. It was
  * removed, along with its dead twin server-auto-update.js, because it was a
  * live hazard rather than a deploy path:
  *

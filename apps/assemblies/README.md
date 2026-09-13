@@ -1,6 +1,6 @@
 # SDC Assemblies Library
 
-![Version](https://img.shields.io/github/v/release/abhikamuju36-ui/sdc-assemblies-library?style=for-the-badge)
+![Version](https://img.shields.io/github/v/release/steven-douglas-corporation/SDC-Tools?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Production--Ready-success?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue?style=for-the-badge)
 
@@ -33,8 +33,8 @@ A high-fidelity, high-performance CAD Assembly management system designed for en
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/abhikamuju36-ui/sdc-assemblies-library.git
-   cd sdc-assemblies-library
+   git clone https://github.com/steven-douglas-corporation/SDC-Tools.git
+   cd SDC-Tools/apps/assemblies
    ```
 
 2. **Install Dependencies**
