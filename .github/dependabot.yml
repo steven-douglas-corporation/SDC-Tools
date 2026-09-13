@@ -4,6 +4,11 @@
 #
 # Each npm project in the monorepo is listed separately because each has its
 # own lockfile and CI runs `npm ci` per app.
+#
+# Two groups per project — minor+patch, and majors — with a limit of two open
+# PRs each. The first run (2026-09-13) opened 28 single-package PRs, most of
+# them majors (React 19, Electron 44, Vite 8, ESLint 10) that each need a real
+# migration; one grouped "majors" PR per app is a to-do list, 28 PRs is noise.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -24,38 +29,50 @@ updates:
   - package-ecosystem: npm
     directory: /apps/assemblies
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    open-pull-requests-limit: 2
     groups:
       minor-and-patch: { update-types: ["minor", "patch"] }
+      majors: { update-types: ["major"] }
 
   - package-ecosystem: npm
     directory: /apps/build-readiness
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    open-pull-requests-limit: 2
     groups:
       minor-and-patch: { update-types: ["minor", "patch"] }
+      majors: { update-types: ["major"] }
 
   - package-ecosystem: npm
     directory: /apps/build-readiness/client
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    open-pull-requests-limit: 2
     groups:
       minor-and-patch: { update-types: ["minor", "patch"] }
+      majors: { update-types: ["major"] }
 
   - package-ecosystem: npm
     directory: /apps/calendar
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    open-pull-requests-limit: 2
     groups:
       minor-and-patch: { update-types: ["minor", "patch"] }
+      majors: { update-types: ["major"] }
 
   - package-ecosystem: npm
     directory: /apps/calendar/server
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    open-pull-requests-limit: 2
     groups:
       minor-and-patch: { update-types: ["minor", "patch"] }
+      majors: { update-types: ["major"] }
 
   - package-ecosystem: npm
     directory: /apps/shell
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    open-pull-requests-limit: 2
     groups:
       minor-and-patch: { update-types: ["minor", "patch"] }
+      majors: { update-types: ["major"] }
     ignore:
       # Electron majors change the sandbox and updater contract; take them deliberately.
       - dependency-name: electron
@@ -64,14 +81,18 @@ updates:
   - package-ecosystem: npm
     directory: /apps/state-logic
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    open-pull-requests-limit: 2
     groups:
       minor-and-patch: { update-types: ["minor", "patch"] }
+      majors: { update-types: ["major"] }
 
   - package-ecosystem: npm
     directory: /apps/reports
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    open-pull-requests-limit: 2
     groups:
       minor-and-patch: { update-types: ["minor", "patch"] }
+      majors: { update-types: ["major"] }
     ignore:
       # Next and Prisma majors are migrations, not updates.
       - dependency-name: next
