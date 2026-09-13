@@ -97,7 +97,22 @@ jobs:
       - run: npm ci --prefix server
       - run: npm run lint
       - run: npm test
-      - run: npm run build:web
+      # The failure tail becomes an annotation, readable from the public API
+      # without an Actions login — the same trick the Reports job uses. Added
+      # 2026-09-13 when this step failed on Linux with nothing but "exit code 1"
+      # visible from outside.
+      - name: Build web bundle
+        shell: bash
+        run: |
+          set +e
+          npm run build:web > build.log 2>&1
+          code=$?
+          tail -c 4000 build.log
+          if [ $code -ne 0 ]; then
+            msg=$(tail -n 30 build.log | paste -sd'~' - | cut -c1-1400)
+            echo "::error title=Calendar build failed::${msg}"
+          fi
+          exit $code
       - name: Server loads
         run: node --check server/server.js
 
