@@ -101,3 +101,6 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: prisma
         update-types: ["version-update:semver-major"]
+      # eslint-config-next 16.2.9 does not run on ESLint 10 (merged 2026-09-13, reverted).
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]

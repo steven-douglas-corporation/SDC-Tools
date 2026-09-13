@@ -282,6 +282,14 @@ async function checkAndUpdate() {
         }
         // migrate deploy, not migrate dev: it applies pending migrations without
         // prompting and never invents one from schema drift.
+        // Dependencies first (2026-09-13): a Dependabot merge changes package.json
+        // and the lockfile, and nothing else here installed them — the build then
+        // compiled against whatever node_modules already held. Only when the
+        // package files moved, so an ordinary source change stays a build + start.
+        if (monorepoFiles.some(f => f === 'apps/reports/package.json' || f === 'apps/reports/package-lock.json')) {
+          log('  Reports dependencies changed — npm install…');
+          run('npm install --no-audit --no-fund', inApp);
+        }
         run('npx prisma migrate deploy', inApp);
         run('npx prisma generate', inApp);
         run('npm run build', inApp);
