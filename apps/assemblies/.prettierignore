@@ -1,0 +1,15 @@
+# Build output and dependencies
+node_modules/
+client/dist/
+dist/
+dist-build/
+dist-electron/
+coverage/
+playwright-report/
+test-results/
+tests/playwright-report/
+
+# Generated
+package-lock.json
+*.min.js
+*.min.css

@@ -41,6 +41,7 @@ function isPortInUse() {
 }
 
 function startServer() {
+  // eslint-disable-next-line no-async-promise-executor -- resolve() is also called from the utilityProcess event callbacks below; converting to a plain async function is a follow-up
   return new Promise(async (resolve) => {
     if (CENTRAL_SERVER_URL) {
       console.log('[main] Probing central deployment: ' + CENTRAL_SERVER_URL);

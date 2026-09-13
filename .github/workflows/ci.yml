@@ -1,22 +1,17 @@
 name: CI — All Apps
 
-# Runs on every push and pull request.
-# Path filters ensure only the relevant job runs when a specific app changes.
+# One job per app, each running the same three commands the app defines:
+# `npm run lint`, `npm test`, and `npm run build` where the app has a build.
+# A job fails the PR on lint ERRORS and test failures; lint warnings are shown
+# in the log and do not block (see docs/adr/0005-lint-config-copied-per-app.md).
+#
+# Every app job runs on every push and PR. Path filtering was tried and
+# removed: a job that is skipped is not a "passed" required status check, so
+# branch protection would block PRs that touched only one app.
 
-# ── `master` added 2026-09-03: until now CI had never run ────────────────────
-#
-# The trigger listed `main` and `develop`. This repo's branch is `master`, and there
-# is no `main` and no `develop` — so no push matched, and no pull request could
-# target `main` to match either. Every job below has been dormant since the file was
-# written: the shell build, the app test suites, all of it.
-#
-# release.yml already had this right (`branches: [main, master]`), which is what
-# makes the omission here a slip rather than a decision — so the same belt-and-braces
-# pair is used, and `feat/**` is added alongside `feature/**` because that is the
-# prefix actually in use.
 on:
   push:
-    branches: [master, main, develop, 'feat/**', 'feature/**', 'fix/**']
+    branches: [master, main, develop, "feat/**", "feature/**", "fix/**", "chore/**"]
   pull_request:
     branches: [master, main]
 
@@ -24,204 +19,156 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  # ── Shell launcher ────────────────────────────────────────────────────────────
-  shell:
-    name: Shell — lint & build UI
-    runs-on: ubuntu-latest
-    if: |
-      contains(github.event.head_commit.modified, 'apps/shell/') ||
-      github.event_name == 'pull_request'
-    defaults:
-      run:
-        working-directory: apps/shell
+permissions:
+  contents: read
 
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  lint-configs:
+    name: Lint configs
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
-
       - uses: actions/setup-node@v4.1.0
         with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: apps/shell/package-lock.json
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Every app's eslint.config.mjs matches packages/eslint-config
+        run: node scripts/check-lint-configs.mjs
 
-      - name: Install
-        run: npm ci
-
-      - name: Build Vite UI
-        run: npm run build
-
-  # ── SDC Scheduler — NOT built here (2026-09-03) ───────────────────────────────
-  #
-  # The `scheduler` job was removed, not disabled. It could never have worked in this
-  # repo: it ran with `working-directory: SDC_Scheduler` and
-  # `cache-dependency-path: SDC_Scheduler/package-lock.json`, but SDC_Scheduler/ is
-  # gitignored here (see .gitignore) — it is its own repo,
-  # danbelliveau2/SDC_Scheduler. So actions/checkout never produced the directory and
-  # setup-node failed on the first step with "Some specified paths were not resolved,
-  # unable to cache dependencies."
-  #
-  # It went unnoticed because CI had never run at all: the trigger listed `main` and
-  # `develop` while this repo is on `master`. Turning CI on in the same commit series
-  # surfaced this within a minute, which is the whole argument for having done it.
-  #
-  # The Scheduler's CI belongs in its own repo alongside its source. If it ever moves
-  # in here (docs/DEVELOPING-TOGETHER.md §6 recommends not yet), restore this job at
-  # that point — not before.
-
-  # ── Assemblies Library ────────────────────────────────────────────────────────
   assemblies:
-    name: Assemblies Library — build client
+    name: Assemblies Library
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/assemblies
-
     steps:
       - uses: actions/checkout@v4.2.2
-
       - uses: actions/setup-node@v4.1.0
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: apps/assemblies/package-lock.json
-
-      - name: Install
-        run: npm ci
-
-      - name: Build React client
-        run: npm run build
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
         env:
           NODE_ENV: production
 
-  # ── Build Readiness ───────────────────────────────────────────────────────────
-  readiness:
-    name: Build Readiness — install & check
+  build-readiness:
+    name: Build Readiness
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/build-readiness
-
     steps:
       - uses: actions/checkout@v4.2.2
-
       - uses: actions/setup-node@v4.1.0
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: apps/build-readiness/package-lock.json
+          cache-dependency-path: |
+            apps/build-readiness/package-lock.json
+            apps/build-readiness/client/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix client
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
 
-      - name: Install
-        run: npm ci
+  calendar:
+    name: Calendar
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/calendar
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            apps/calendar/package-lock.json
+            apps/calendar/server/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix server
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build:web
+      - name: Server loads
+        run: node --check server/server.js
 
-      - name: Syntax check server
-        run: node --check server/index.js && node --check server/routes/readiness.js && node --check server/routes/bom.js
-        env:
-          # Prevents dotenv from erroring on missing .env in CI
-          NODE_ENV: test
-
-  # ── State Logic Builder ───────────────────────────────────────────────────────
-  statelogic:
-    name: State Logic Builder — build client
+  state-logic:
+    name: State Logic Builder
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/state-logic
-
     steps:
       - uses: actions/checkout@v4.2.2
-
       - uses: actions/setup-node@v4.1.0
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: apps/state-logic/package-lock.json
-
-      - name: Install
-        run: npm ci
-
-      - name: Build Vite app
-        run: npm run build
-        env:
-          NODE_ENV: production
-
-      - name: Syntax check server
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Server loads
         run: node --check server.js
 
-  # ── Reports (sdc-etc-planner) ─────────────────────────────────────────────────
-  # Added 2026-09-03, when this app moved into the repo. It carries the largest test
-  # suite of any app here (~1,970 assertions), so leaving it uncovered would have
-  # been the biggest gap in this workflow.
-  reports:
-    name: Reports — build & test
+  shell:
+    name: Shell
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: sdc-etc-planner
-
+        working-directory: apps/shell
     steps:
       - uses: actions/checkout@v4.2.2
-
       - uses: actions/setup-node@v4.1.0
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: sdc-etc-planner/package-lock.json
+          cache-dependency-path: apps/shell/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - name: Build renderer
+        run: npm run build
+
+  reports:
+    name: Reports
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/reports
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/reports/package-lock.json
+      # @azure/msal-node-extensions links against libsecret on Linux.
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-0
-      - name: Install
-        run: npm ci
-
-      # ── libsecret, or the build cannot collect page data ────────────────────
-      #
-      # THE reason this job failed 25 times out of 25 from the day CI was enabled:
-      #
-      #   Failed to collect configuration for /job-cost-explorer
-      #     [cause] Failed to load external module @azure/msal-node-extensions:
-      #             libsecret-1.so.0: cannot open shared object file
-      #
-      # lib/fabric-warehouse.ts authenticates to the Fabric warehouse with
-      # @azure/msal-node, which pulls in @azure/msal-node-extensions for persistent
-      # token caching. On Linux that binds to libsecret (the GNOME keyring); on Windows
-      # it uses the OS credential store, which is why this never appears locally and why
-      # production — a Windows box — has never hit it.
-      #
-      # `next build` evaluates the module graph while collecting page data, so the
-      # import is reached at BUILD time even though nothing signs in. Hence a build-time
-      # failure for a runtime-only dependency.
-      #
-      # Installing the library is the honest fix: it keeps the build exercising the same
-      # module graph production runs, rather than stubbing out a real dependency to make
-      # CI go green.
-      - name: Install libsecret (needed by @azure/msal-node-extensions on Linux)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libsecret-1-0
-
-      # Before the build: the Prisma client is generated code, not committed, and
-      # every server module that imports it fails to compile without it. Generate
-      # needs the schema only, not a reachable database.
-      - name: Generate Prisma client
+      - run: npm ci
+      # Generated code, not committed; needs the schema only, not a database.
+      - name: Prisma client
         run: npx prisma generate
-
-      # `next build` rather than a bare `tsc` — and the order is not incidental.
-      # tsconfig.json includes `.next/types/**/*.ts`, which are GENERATED, so a
-      # typecheck before any build fails with `Cannot find name 'RouteContext'` on the
-      # dynamic API routes. Building produces those types and typechecks in the same
-      # pass, so this one step covers both.
-      # ── Emit the failure as an ANNOTATION, not only into the log ────────────
-      #
-      # Added 2026-09-04. This job had failed 25 times out of 25 since CI was first
-      # enabled and the reason was unreachable: run logs need an authenticated token,
-      # whereas `::error::` annotations are readable from the public API. A failure now
-      # carries its own tail with it, so "why is CI red" stops requiring somebody to
-      # open the Actions tab and copy it out by hand.
-      #
-      # `set +e` plus the explicit `exit $code`: the step must still FAIL. Capturing
-      # output must never turn a broken build green, which is what a bare pipe into
-      # tail would do.
-      #
-      # `paste -sd'~'` flattens the tail onto one line, because an annotation is one
-      # line. Deliberately no backslash escapes anywhere in this block — they are
-      # awkward to get right through YAML's block scalar and buy nothing here.
+      # Blocking since 2026-09-13: the two pre-existing set-state-in-effect errors
+      # that kept this non-blocking were fixed with the Total ETO work.
+      - run: npm run lint
+      # node:test via tsx; no test imports Prisma, so no database is needed.
+      - run: npm test
+      # `next build` typechecks as it goes, and it has to come AFTER generate and
+      # BEFORE any bare `tsc`: tsconfig includes the generated `.next/types`.
+      # The failure tail is emitted as an annotation so "why is CI red" is
+      # readable from the public API without an Actions login (2026-09-04).
       - name: Build (typechecks as it goes)
         shell: bash
         run: |
@@ -240,28 +187,10 @@ jobs:
           AUTH_URL: http://localhost:3021
           AUTH_SECRET: ci-test-secret-do-not-use-in-production
 
-      # Non-blocking, deliberately, and the same `|| true` the Scheduler job used to
-      # carry. Two PRE-EXISTING errors fail this today, both the React compiler's
-      # set-state-in-effect rule and neither introduced by the move:
-      #   src/components/PartsCostDrill.tsx:152
-      #   src/components/StandardPoolPanel.tsx:174
-      # Blocking on them would make this job red on its first run, which is how a red
-      # X becomes background noise people stop reading. The output stays visible in
-      # the log; make it blocking once those two are fixed.
-      - name: Lint (non-blocking — see note)
-        run: npm run lint || true
-
-      # The suite is node:test via tsx, and no test file imports Prisma — they are
-      # pure-function and source-text guards. So this needs no database.
-      - name: Unit tests
-        run: npm test
-
-  # ── Gate: all must pass before release ───────────────────────────────────────
+  # ── One status for branch protection to require ────────────────────────────
   all-green:
     name: All checks passed
-    # `scheduler` deliberately absent — see the note where that job used to be. A
-    # `needs:` on a job that does not exist makes the whole workflow invalid.
-    needs: [assemblies, readiness, statelogic, reports]
+    needs: [lint-configs, assemblies, build-readiness, calendar, state-logic, shell, reports]
     runs-on: ubuntu-latest
     steps:
-      - run: echo "All CI jobs passed — ready to release"
+      - run: echo "All CI jobs passed"

@@ -4,7 +4,7 @@ import ImageLightbox from './ImageLightbox';
 
 function openLink(href) {
   if (!href) return;
-  const isLocalPath = /^[a-zA-Z]:/.test(href) || /^[\\\/]{2}/.test(href);
+  const isLocalPath = /^[a-zA-Z]:/.test(href) || /^[\\/]{2}/.test(href);
   if (isLocalPath) {
     if (window.electron?.openPath) {
       window.electron.openPath(href).then(res => {

@@ -1,4 +1,14 @@
 // SDC Centralized Calendar — app.jsx v3
+// Legacy in-browser build: React, ReactDOM and XLSX are vendored UMD globals, and
+// utils.js / data.js are plain <script> tags sharing this page's global scope,
+// which ESLint cannot follow. Those names are declared below; anything still
+// undefined is reported as a warning rather than an error so this legacy code
+// does not block the lint gate. The Vite build under src/ is the one that must be clean.
+/* global React, ReactDOM, XLSX */
+/* global MONTHS, MONTHS_SHORT, DOW_LONG, DOW_SHORT, DOW_MINI, HOUR_H, CATEGORIES, CATMAP, TIMEZONES */
+/* global isSameDay, ymd, parseYMD, startOfMonth, endOfMonth, addMonths, addDays, daysBetween, startOfWeek, fmtDateLong, fmtDateShort, fmtTime, timeToMin, rotateDow, getWeekNum */
+/* global expandAll, generateICS, parseICS, downloadFile, detectConflicts, layoutTimeEvents, loadUserEvents, saveUserEvents, loadPrefs, savePrefs, loadEmployees, saveEmployees */
+/* eslint no-undef: "warn", react/jsx-no-undef: ["error", { "allowGlobals": true }] */
 const APP_VERSION = '1.2.3';
 
 const { useState, useEffect, useMemo, useRef, useCallback } = React;
@@ -1329,7 +1339,7 @@ function ImportExportModal({ allEvents, userEvents, onImport, onClearPaylocity, 
 <h2>SDC Calendar — Shared Events</h2>
 <p>Open this in SDC Calendar to import: <button onclick="copyData()">Copy import data</button></p>
 <pre id="d" style="white-space:pre-wrap;word-break:break-all">${data}</pre>
-<script>function copyData(){navigator.clipboard.writeText(document.getElementById('d').textContent).then(()=>alert('Copied! Paste in Import tab.'))}<\/script>
+<script>function copyData(){navigator.clipboard.writeText(document.getElementById('d').textContent).then(()=>alert('Copied! Paste in Import tab.'))}</script>
 </body></html>`;
     downloadFile('sdc-calendar-share.html',html,'text/html');
   };

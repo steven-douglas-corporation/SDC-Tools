@@ -1,0 +1,27 @@
+# Build output and dependencies
+node_modules/
+dist/
+dist-electron/
+build/
+.next/
+.next-*/
+out/
+coverage/
+playwright-report/
+test-results/
+
+# Generated
+package-lock.json
+*.min.js
+*.min.css
+
+# Vendored / third-party sources kept verbatim
+apps/calendar/frontend/react.js
+apps/calendar/frontend/react-dom.js
+apps/calendar/frontend/babel.min.js
+apps/calendar/frontend/xlsx.full.min.js
+
+# Not ours to format
+SDC_Scheduler/
+SDC-PowerBI-DEV/
+tools/powerbi/

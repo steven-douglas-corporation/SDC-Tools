@@ -112,9 +112,12 @@ app.get('*', (_req, res) => {
 });
 
 // ─── Exportable entry point (used by Electron in-process execution) ──────────
+// Module-scoped so the EADDRINUSE retry in the uncaughtException handler below
+// can reach the same http.Server instance.
+let server = null;
 function startServer({ port } = {}) {
     const p = port || PORT;
-    const server = app.listen(p, '0.0.0.0', () => {
+    server = app.listen(p, '0.0.0.0', () => {
         logger(`[assemblies] Running at http://0.0.0.0:${p}`);
         logger(`Database: MySQL — ${process.env.MYSQL_DATABASE || 'sdc_assemblies'}@${process.env.MYSQL_HOST || 'localhost'}`);
 

@@ -1,0 +1,38 @@
+# Line endings: the repository stores LF for every text file. Editors on
+# Windows check out LF too (core.autocrlf is not required), which is what
+# stops every commit from warning "LF will be replaced by CRLF".
+* text=auto eol=lf
+
+# Windows shells need CRLF to run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary — never diff, never normalise.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.xlsx binary
+*.xlsm binary
+*.docx binary
+*.pptx binary
+*.pbix binary
+*.pbip binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.db binary
+*.sqlite binary
+
+# Generated files: collapse in diffs and PR review.
+package-lock.json -diff linguist-generated
+**/package-lock.json -diff linguist-generated
+*.min.js -diff linguist-vendored

@@ -388,6 +388,7 @@ function startServer({ port, dataDir, standardsDir, distDir } = {}) {
       let savedPath = null;
       if (result.l5x) {
         try {
+          // eslint-disable-next-line no-useless-escape -- escaped - inside a character class is harmless
           const clean = (s) => String(s || 'unnamed').replace(/[^a-zA-Z0-9_\-]/g, '_');
           const ver = result.meta?.jarvisVersion || '0';
           const date = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '');

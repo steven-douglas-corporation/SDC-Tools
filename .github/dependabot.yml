@@ -1,0 +1,82 @@
+# Dependabot keeps dependencies current with one grouped pull request per
+# package per week, so updates arrive as a reviewable batch rather than a
+# flood. Security updates are opened as soon as an advisory lands.
+#
+# Each npm project in the monorepo is listed separately because each has its
+# own lockfile and CI runs `npm ci` per app.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    groups:
+      actions: { patterns: ["*"] }
+
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    groups:
+      root: { patterns: ["*"] }
+    ignore:
+      # The nested Scheduler repo is listed as a workspace but is not ours to update here.
+      - dependency-name: "sdc-scheduler"
+
+  - package-ecosystem: npm
+    directory: /apps/assemblies
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    groups:
+      minor-and-patch: { update-types: ["minor", "patch"] }
+
+  - package-ecosystem: npm
+    directory: /apps/build-readiness
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    groups:
+      minor-and-patch: { update-types: ["minor", "patch"] }
+
+  - package-ecosystem: npm
+    directory: /apps/build-readiness/client
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    groups:
+      minor-and-patch: { update-types: ["minor", "patch"] }
+
+  - package-ecosystem: npm
+    directory: /apps/calendar
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    groups:
+      minor-and-patch: { update-types: ["minor", "patch"] }
+
+  - package-ecosystem: npm
+    directory: /apps/calendar/server
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    groups:
+      minor-and-patch: { update-types: ["minor", "patch"] }
+
+  - package-ecosystem: npm
+    directory: /apps/shell
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    groups:
+      minor-and-patch: { update-types: ["minor", "patch"] }
+    ignore:
+      # Electron majors change the sandbox and updater contract; take them deliberately.
+      - dependency-name: electron
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /apps/state-logic
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    groups:
+      minor-and-patch: { update-types: ["minor", "patch"] }
+
+  - package-ecosystem: npm
+    directory: /apps/reports
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    groups:
+      minor-and-patch: { update-types: ["minor", "patch"] }
+    ignore:
+      # Next and Prisma majors are migrations, not updates.
+      - dependency-name: next
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@prisma/client"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: prisma
+        update-types: ["version-update:semver-major"]

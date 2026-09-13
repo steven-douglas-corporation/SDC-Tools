@@ -1,0 +1,14 @@
+{
+  "printWidth": 120,
+  "singleQuote": false,
+  "semi": true,
+  "trailingComma": "all",
+  "tabWidth": 2,
+  "endOfLine": "lf",
+  "overrides": [
+    {
+      "files": ["apps/assemblies/**", "apps/build-readiness/**", "apps/calendar/**", "apps/shell/**", "apps/state-logic/**"],
+      "options": { "singleQuote": true }
+    }
+  ]
+}

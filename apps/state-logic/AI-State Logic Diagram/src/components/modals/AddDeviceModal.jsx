@@ -268,7 +268,7 @@ export function AddDeviceModal() {
           {/* Servo: axis number + positions */}
           {isServo && (
             <>
-              <label className="form-label">Axis Number (for a{nn}_ prefix)</label>
+              <label className="form-label">Axis Number (for a{'{nn}'}_ prefix)</label>
               <input
                 className="form-input"
                 type="number"

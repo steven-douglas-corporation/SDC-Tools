@@ -141,7 +141,6 @@ const STATION_TYPES = [
 // ── Visual Dial Layout (zoomable + pannable) ───────────────────────────────
 function DialVisual({ stations, selectedId, onSelectStation, sms }) {
   const count = stations.length;
-  if (count === 0) return <div className="machine-visual__empty">Add stations to see dial layout</div>;
 
   // Scale radius so stations never overlap
   const stationR = 28;
@@ -251,6 +250,10 @@ function DialVisual({ stations, selectedId, onSelectStation, sms }) {
     document.addEventListener('mousedown', handleDocClick);
     return () => document.removeEventListener('mousedown', handleDocClick);
   }, []);
+
+  // Every hook above must run on every render (0 -> 1 stations previously threw
+  // "Rendered more hooks than during the previous render"); bail out only now.
+  if (count === 0) return <div className="machine-visual__empty">Add stations to see dial layout</div>;
 
   const btnStyle = { width: 32, height: 32, borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', fontSize: 18, fontWeight: 700, color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 

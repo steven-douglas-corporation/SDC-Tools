@@ -59,7 +59,7 @@ function InlineThumbnail({ href }) {
 function openLink(href) {
   if (!href) return;
   // Local drive path (N:\... L:\...) OR UNC path (\\server\share\...)
-  const isLocalPath = /^[a-zA-Z]:/.test(href) || /^[\\\/]{2}/.test(href);
+  const isLocalPath = /^[a-zA-Z]:/.test(href) || /^[\\/]{2}/.test(href);
   if (isLocalPath) {
     if (window.electron?.openPath) {
       window.electron.openPath(href).then(res => {

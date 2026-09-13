@@ -325,6 +325,7 @@ const DIAG_LOG = path.join(__dirname, '..', 'sdc-tools-diagnostics.log');
 function _redact(text) {
   return String(text == null ? '' : text)
     .replace(/([?&](?:token|sso|code|id_token|access_token)=)[^&\s]+/gi, '$1REDACTED')
+    // eslint-disable-next-line no-control-regex -- CR/LF are the point: one diagnostic entry per line, so embedded newlines are flattened
     .replace(/[\u000d\u000a]+/g, ' ');
 }
 

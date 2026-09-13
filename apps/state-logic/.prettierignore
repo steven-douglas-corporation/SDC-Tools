@@ -1,0 +1,13 @@
+# Runtime data and reference material served or read by server.js — never reformat.
+projects/
+standards/
+plc-reference/
+public/
+# Stale pre-monorepo copy of the app kept for reference.
+AI-State Logic Diagram/
+# Build output and generated files.
+dist/
+build/
+release/
+dist-electron/
+package-lock.json

@@ -860,7 +860,7 @@ function TimelineRibbon({ job, poActions, onDrillDown }) {
                   {/* Milestone / vendor separator */}
                   <div style={{ position: 'absolute', left: 0, right: 0, top: SWIM_MS_H, height: 2, background: 'var(--border)', pointerEvents: 'none', zIndex: 3 }} />
                   {/* Vendor lane alternating backgrounds + dividers */}
-                  {swimlaneVendors.map(({ }, vi) => (
+                  {swimlaneVendors.map((_v, vi) => (
                     <div key={`vb-${vi}`} style={{ position: 'absolute', left: 0, right: 0, top: SWIM_MS_H + vi * SWIM_VH, height: SWIM_VH, background: vi % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.018)', borderBottom: '1px solid var(--border-subtle)', pointerEvents: 'none', zIndex: 1 }} />
                   ))}
 

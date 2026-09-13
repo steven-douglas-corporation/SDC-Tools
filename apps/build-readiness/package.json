@@ -8,7 +8,12 @@
     "dev": "node server/index.js",
     "dev:client": "cd client && npx vite",
     "build:client": "cd client && npx vite build",
-    "build": "npm run build:client"
+    "build": "npm run build:client",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --test tests/unit/*.test.mjs"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",
@@ -16,5 +21,13 @@
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.3",
     "mssql": "^11.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.15.0",
+    "prettier": "^3.9.6"
   }
 }

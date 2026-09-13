@@ -189,6 +189,7 @@ function extractInstructions(rungText) {
 function operandRoots(operand) {
   const roots = [], programRefs = [];
   let expectRoot = true;
+  // eslint-disable-next-line no-useless-escape -- upstream tokenizer regex; escaped / and [ inside character classes are harmless
   const re = /(S:[A-Za-z0-9\/]+)|(\\)?([A-Za-z_][A-Za-z0-9_]*)|(\d[#\w.]*|\.\d+)|([.\[\]()+\-*\/%<>=, ])|('(?:\$.|[^'$])*')/g;
   let m;
   while ((m = re.exec(operand)) !== null) {
@@ -287,6 +288,7 @@ function checkExitlessWaits(rungs, warnings) {
       .map(m => m[1])
       .filter(op => !/^Status\.State\[/.test(op))
       .filter(op => {
+        // eslint-disable-next-line no-useless-escape -- upstream regex; escaped [ inside a character class is harmless
         const root = op.split(/[.\[]/)[0];
         return !WAIT_EXEMPT_IDENTS.has(root) && !WAIT_EXEMPT_IDENTS.has(op);
       });
@@ -298,6 +300,7 @@ function checkExitlessWaits(rungs, warnings) {
     //      (e.g. XIC(q_ExtendXAxis) XIO(XAxisExtended) TON(...) rungs).
     if (srcStates.some(n => alarmCoveredStates.has(n))) continue;
     const uncovered = conditions.filter(op => {
+      // eslint-disable-next-line no-useless-escape -- upstream regex; escaped [ inside a character class is harmless
       const root = op.split(/[.\[]/)[0];
       if (timerDerived.has(root)) return false;
       return !alarmBlob.includes(root);

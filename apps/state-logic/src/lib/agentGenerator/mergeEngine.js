@@ -22,7 +22,7 @@
  * tags, or context programs. Model ops are scoped to the Target program only.
  *
  * Encoding: callers read the template with fs.readFileSync(path, 'utf8') —
- * the BOM survives as ﻿ and CRLF line endings are preserved; all
+ * the BOM survives as U+FEFF and CRLF line endings are preserved; all
  * inserted content uses \r\n. Writing the result back with 'utf8' restores
  * the exact BOM + CRLF envelope.
  *
@@ -251,6 +251,7 @@ function maskStrings(xml) {
   return { masked, store };
 }
 function unmaskStrings(xml, store) {
+  // eslint-disable-next-line no-control-regex -- \x01 is the deliberate placeholder sentinel written by maskStrings() above
   return xml.replace(/(\d+)/g, (_m, i) => store[Number(i)]);
 }
 

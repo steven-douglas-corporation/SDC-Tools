@@ -7,7 +7,13 @@
     "start": "electron .",
     "dev": "electron . --enable-logging",
     "build": "electron-builder build --windows",
-    "publish": "electron-builder build --windows -p always"
+    "publish": "electron-builder build --windows -p always",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "build:web": "vite build",
+    "test": "node --test \"tests/unit/*.test.mjs\""
   },
   "build": {
     "appId": "com.sdc.calendar",
@@ -43,8 +49,16 @@
     }
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@vitejs/plugin-react": "^4.7.0",
     "electron": "^29.0.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.15.0",
+    "prettier": "^3.9.6",
+    "vite": "^6.4.3"
   },
   "dependencies": {
     "nodemailer": "^8.0.7",

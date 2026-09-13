@@ -1,0 +1,20 @@
+# Code owners are requested for review automatically on every pull request that
+# touches their paths, and branch protection can require their approval.
+# Later rules win over earlier ones.
+
+# Everything, by default.
+*                                   @abhikamuju36-ui
+
+# Deployment, process supervision and the server updater — a mistake here takes
+# production down, so these always get a second look.
+/ecosystem.config.js                @abhikamuju36-ui
+/scripts/                           @abhikamuju36-ui
+/.github/                           @abhikamuju36-ui
+
+# The Electron shell publishes public installers; a version bump here is a release.
+/apps/shell/                        @abhikamuju36-ui
+
+# State Logic Builder is a vendored fork of danbelliveau2/state_logic_builder.
+# Its upstream author is Dan Belliveau; add his handle here once he is a member
+# of the steven-douglas-corporation organization.
+/apps/state-logic/                  @abhikamuju36-ui

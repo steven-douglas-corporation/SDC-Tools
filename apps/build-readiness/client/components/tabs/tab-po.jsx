@@ -494,7 +494,7 @@ function PoTracker({ poActions, query, highlightPoIds = [], onClearHighlight }) 
           <span style={{ fontSize: 11, color: 'var(--sdc-blue-ink)' }}>
             Showing {highlightPoIds.length} PO{highlightPoIds.length !== 1 ? 's' : ''} from Schedule Health timeline
           </span>
-          <button onClick={() => { onClearHighlight && onClearHighlight(); setExpandedPos(new Set()); }} style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--sdc-blue-ink)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
+          <button onClick={() => { onClearHighlight && onClearHighlight(); }} style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--sdc-blue-ink)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
             Clear filter ×
           </button>
         </div>

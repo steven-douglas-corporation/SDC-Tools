@@ -1,0 +1,7 @@
+# Installer assets (icons, NSIS scripts) — never lint or format.
+build/
+# Build output.
+dist/
+dist-electron/
+node_modules/
+package-lock.json

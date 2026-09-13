@@ -22,7 +22,7 @@ function ImportExportModal({ allEvents, userEvents, onImport, onClearPaylocity, 
 <h2>SDC Calendar — Shared Events</h2>
 <p>Open this in SDC Calendar to import: <button onclick="copyData()">Copy import data</button></p>
 <pre id="d" style="white-space:pre-wrap;word-break:break-all">${data}</pre>
-<script>function copyData(){navigator.clipboard.writeText(document.getElementById('d').textContent).then(()=>alert('Copied! Paste in Import tab.'))}<\/script>
+<script>function copyData(){navigator.clipboard.writeText(document.getElementById('d').textContent).then(()=>alert('Copied! Paste in Import tab.'))}</script>
 </body></html>`;
     downloadFile('sdc-calendar-share.html',html,'text/html');
   };
