@@ -146,6 +146,8 @@ type PersistedState = {
   from: string;
   to: string;
   upcomingWeek: number;
+  /** Only rows with Left to Invoice > 0. Null/negative (over-invoiced) excluded either way. */
+  onlyLeftToInvoice?: boolean;
   hiddenPartCols: ColKey[];
   /** One-shot marker: the Left to Invoice column has been revealed once (see below). */
   leftToInvoiceShown?: boolean;
@@ -199,6 +201,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
   const [dateType, setDateType] = useState<PartsDateFilter>(() => saved.dateType ?? "purchase");
   const [from, setFrom] = useState(() => saved.from ?? "");
   const [to, setTo] = useState(() => saved.to ?? "");
+  const [onlyLeftToInvoice, setOnlyLeftToInvoice] = useState<boolean>(() => saved.onlyLeftToInvoice ?? false);
   // Default hidden columns (fresh users; anyone with a stored set keeps theirs).
   // ── Why a stored set gets one forced correction (2026-09-02) ──────────────
   //
@@ -233,13 +236,13 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
   // Persist everything under one key.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const data: PersistedState = { tab, view, query, status: [...status], category, manufacturer, supplier, dateType, from, to, upcomingWeek, hiddenPartCols: [...hidden], leftToInvoiceShown: true, colWidths };
+    const data: PersistedState = { tab, view, query, status: [...status], category, manufacturer, supplier, dateType, from, to, upcomingWeek, onlyLeftToInvoice, hiddenPartCols: [...hidden], leftToInvoiceShown: true, colWidths };
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch {
       /* quota / disabled — non-fatal */
     }
-  }, [tab, view, query, status, category, manufacturer, supplier, dateType, from, to, upcomingWeek, hidden, colWidths]);
+  }, [tab, view, query, status, category, manufacturer, supplier, dateType, from, to, upcomingWeek, onlyLeftToInvoice, hidden, colWidths]);
 
   // Drill target — key = String(part.id). `nonce` bumps on every drill so the
   // Parts List effect re-fires even when the same row is targeted twice.
@@ -268,6 +271,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
       setFrom("");
       setTo("");
       setDateType("purchase");
+      setOnlyLeftToInvoice(false);
       setView("list");
       setTab("parts");
       setDrill((d) => ({ key: String(p.id), nonce: d.nonce + 1 }));
@@ -314,9 +318,10 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
     setDateType("purchase");
     setFrom("");
     setTo("");
+    setOnlyLeftToInvoice(false);
   }, []);
 
-  const partsState = { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, hidden, setHidden, upcomingWeek, setUpcomingWeek, colWidths, setColWidths, clearFilters } as const;
+  const partsState = { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, hidden, setHidden, upcomingWeek, setUpcomingWeek, colWidths, setColWidths, clearFilters } as const;
 
   // Every normalized part number in the CURRENT BOM tree — independent of
   // partsLines (which comes from TotalETO's purchasing data, not the
@@ -1301,6 +1306,8 @@ type PartsListState = {
   setFrom: (v: string) => void;
   to: string;
   setTo: (v: string) => void;
+  onlyLeftToInvoice: boolean;
+  setOnlyLeftToInvoice: (v: boolean) => void;
   hidden: Set<ColKey>;
   setHidden: (updater: (prev: Set<ColKey>) => Set<ColKey>) => void;
   upcomingWeek: number;
@@ -1388,7 +1395,7 @@ function PartsListTab({
   /** Every row regardless of scope — for the chip counts, which must not move when the scope does. */
   allParts: FlatPart[];
 }) {
-  const { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, hidden, setHidden, colWidths, setColWidths, clearFilters } = state;
+  const { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, hidden, setHidden, colWidths, setColWidths, clearFilters } = state;
   const { toast } = useToast();
   const now = useStableNow();
   // "Active" for status means the selection differs from the default (every
@@ -1508,7 +1515,8 @@ function PartsListTab({
     query !== "" ||
     dateType !== "purchase" ||
     from !== "" ||
-    to !== "";
+    to !== "" ||
+    onlyLeftToInvoice;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1581,9 +1589,14 @@ function PartsListTab({
         const hay = `${p.pn} ${p.desc} ${p.manufacturer} ${p.supplier ?? ""} ${p.parentPN} ${p.parentDesc} ${p.poNumber ?? ""} ${p.category ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
+      // leftToSpend is null uniformly (component-wide) exactly when a windowed
+      // Invoiced figure is active — see the footer's own comment — so there is
+      // nothing meaningful to filter on in that mode; a null row passes rather
+      // than being silently dropped by a filter that cannot answer the question.
+      if (onlyLeftToInvoice && p.leftToSpend !== null && !(p.leftToSpend > 0)) return false;
       return true;
     });
-  }, [parts, status, effCategory, effManufacturer, effSupplier, from, to, dateType, query, windowStatus.active]);
+  }, [parts, status, effCategory, effManufacturer, effSupplier, from, to, dateType, query, onlyLeftToInvoice, windowStatus.active]);
 
   // ── Expanded rows: a part's POs unfolded beneath it, in the table (2026-09-13) ──
   //
@@ -1720,6 +1733,23 @@ function PartsListTab({
         <FilterSelect label="Category" value={effCategory} onChange={setCategory} options={[{ value: FILTER_ALL, label: "All categories" }, ...distinct.cats.map((c) => ({ value: c, label: c }))]} />
         <FilterSelect label="Mfr" value={effManufacturer} onChange={setManufacturer} options={[{ value: FILTER_ALL, label: "All manufacturers" }, ...distinct.mfrs.map((c) => ({ value: c, label: c }))]} />
         <FilterSelect label="Supplier" value={effSupplier} onChange={setSupplier} options={[{ value: FILTER_ALL, label: "All suppliers" }, ...distinct.sups.map((c) => ({ value: c, label: c }))]} />
+
+        {/* Left to Invoice > 0 only. Meaningless while a windowed Invoiced figure
+            is active — leftToSpend is null for every row in that mode (see the
+            footer's own comment) — so the toggle is disabled rather than silently
+            doing nothing. */}
+        <button
+          type="button"
+          aria-pressed={onlyLeftToInvoice}
+          disabled={windowStatus.active}
+          onClick={() => setOnlyLeftToInvoice(!onlyLeftToInvoice)}
+          title={windowStatus.active ? "Not meaningful for a windowed Invoiced $ figure" : "Show only parts with money still left to invoice"}
+          className={`flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+            onlyLeftToInvoice ? "border-sdc-blue bg-sdc-blue-light text-sdc-blue-dark" : "border-sdc-border bg-white text-sdc-navy hover:bg-sdc-blue-light"
+          }`}
+        >
+          Left to invoice
+        </button>
 
         <span className="mx-1 h-5 w-px bg-sdc-border" aria-hidden />
 
