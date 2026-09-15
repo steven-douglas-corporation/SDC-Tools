@@ -1228,11 +1228,11 @@ function PartsDetailTable({
 // financial columns now, beside Total $ and Invoiced $, rather than an optional
 // extra behind the Columns menu.
 //
-// "subs" (# Subs) and "purchqty" (Purch Qty) joined the default-VISIBLE set
-// 2026-09-10. "# Subs" replaces the "+N" badge that used to sit inside the PO
-// cell, so hiding it by default would simply delete information the table
-// already showed; "Purch Qty" is the quantity Unit $ multiplies by, and a money
-// row that cannot be checked is the thing this change exists to fix.
+// "purchqty" (Purch Qty) joined the default-VISIBLE set 2026-09-10 — it is the
+// quantity Unit $ multiplies by, and a money row that cannot be checked is the
+// thing this change exists to fix. ("subs" / "# Subs" joined alongside it that
+// same day, then was retired 2026-09-15 back into the PO # cell itself — see
+// that column's ALL_COLS comment.)
 //
 // "delivered" (Delivered Date) joined the default-VISIBLE set 2026-09-10, beside
 // Required/Expected Date — the three read as one group and the request was for
@@ -1312,10 +1312,8 @@ const DEFAULT_COL_WIDTH: Record<ColKey, number> = {
   category: 130,
   mfr: 115,
   supplier: 130,
-  po: 72,
-  // Narrow on purpose: it holds a single digit on all but a handful of rows
-  // (job 1116: 748 rows with purchases, 63 of them on more than one PO).
-  subs: 62,
+  // Wide enough for "N POs" (2026-09-15), not just a bare PO number.
+  po: 84,
   // Dates read "Jan 23 '26" since 2026-09-13, so each date column carries the
   // extra four characters.
   purchased: 84,
@@ -1579,6 +1577,33 @@ function PartsListTab({
     });
   }, [parts, status, effCategory, effManufacturer, effSupplier, from, to, dateType, query, windowStatus.active]);
 
+  // ── Expanded rows: a part's POs unfolded beneath it, in the table (2026-09-13) ──
+  //
+  // Lifted here from PartsTableView (2026-09-15) so the "expand/collapse all"
+  // control can live in this toolbar, above the table, as a real labelled button
+  // rather than a chevron buried in the Part No column header. Held as the set of
+  // expanded part IDS, not row indexes, so a re-sort or a filter change keeps the
+  // same parts open. Session-only on purpose: an expansion is a glance, not a
+  // layout preference, and reopening the job should start folded.
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
+  const toggleExpanded = useCallback((id: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  // Off `filtered`, not a sorted copy — which ids are expandable doesn't depend
+  // on sort order, and computing it here (rather than in PartsTableView, after
+  // its own sort) is what lets the toolbar button exist without also lifting
+  // the sort itself up a level.
+  const expandableIds = useMemo(() => filtered.filter((p) => p.poBreakdown.length > 0).map((p) => p.id), [filtered]);
+  const allOpen = expandableIds.length > 0 && expandableIds.every((id) => expanded.has(id));
+  const toggleAll = useCallback(() => {
+    setExpanded(allOpen ? new Set() : new Set(expandableIds));
+  }, [allOpen, expandableIds]);
+
   // A windowed Invoiced figure means something different from the lifetime one
   // ALL_COLS's static label describes (that array also drives the Columns-
   // visibility menu, so it has to stay mode-agnostic) — a per-render override
@@ -1661,6 +1686,26 @@ function PartsListTab({
           </details>
         )}
 
+        {/* Expand/collapse every part's POs at once (table mode only — Card view
+            has no inline PO drop-down). A real toolbar button (2026-09-15),
+            replacing a chevron that used to sit inside the Part No column
+            header — no more discoverable than the per-row one the whole-row
+            click was added to fix. */}
+        {view === "list" && expandableIds.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleAll}
+            aria-expanded={allOpen}
+            title={allOpen ? "Collapse every part's POs" : `Show every part's POs under its row (${expandableIds.length} parts with purchases)`}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-sdc-border bg-white px-3 text-xs font-medium text-sdc-navy hover:bg-sdc-blue-light"
+          >
+            <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" className={`motion-interactive ${allOpen ? "rotate-90" : ""}`} aria-hidden>
+              <path d="M4 2.5 L8 6 L4 9.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {allOpen ? "Collapse all POs" : "Expand all POs"}
+          </button>
+        )}
+
         <span className="mx-1 h-5 w-px bg-sdc-border" aria-hidden />
 
         <StatusFilter value={status} onChange={setStatus} />
@@ -1720,7 +1765,7 @@ function PartsListTab({
           No parts match the current filters.
         </p>
       ) : view === "list" ? (
-        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} scope={scope} setScope={setScope} drillKey={drill.key} />
+        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} scope={scope} setScope={setScope} drillKey={drill.key} expanded={expanded} toggleExpanded={toggleExpanded} />
       ) : (
         <PartsCardView parts={filtered} vendors={vendors} onCopy={onCopy} onOpenPo={onOpenPo} />
       )}
@@ -1838,21 +1883,27 @@ function PartsTableView({
   scope,
   setScope,
   drillKey,
+  expanded,
+  toggleExpanded,
 }: {
   parts: FlatPart[];
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
-  // ── Why this is onCopy and not onPartClick (2026-09-10) ──────────────────
+  // ── Why the row click toggles expand, not copy (2026-09-15) ───────────────
   //
-  // The row used to call `drillToPart`, which clears every filter, switches to
-  // List view and scroll-flashes the target. That is exactly right when you
-  // arrive from the Assemblies tree or a risk card — it guarantees the row you
-  // asked for is actually on screen. Called from a Parts List row, it could only
-  // ever throw away the filters you had set in order to "find" the row you were
-  // already looking at and had just clicked.
+  // Used to call `onCopy(p.pn, p.pn)` (2026-09-10's decision, see the old note
+  // here) — the row used to call `drillToPart`, which cleared every filter,
+  // switched to List view and scroll-flashed the target, and was replaced with
+  // a copy-to-clipboard because a Parts List row clicking itself into "found"
+  // was pointless. That reasoning stopped applying once the PO drop-down
+  // shipped (2026-09-13): its chevron is a few px wide, and "click anywhere on
+  // the row" is the expected way to open a disclosure control this small. The
+  // part number and PO # cells still stopPropagation to their own destinations
+  // (onOpenPart / onOpenPo below), so this row click only ever fires for
+  // everything else on the row.
   //
-  // So the row keeps the useful half, copying the part number, and matches
-  // PartsCardView beside it, which already took onCopy for the same reason. The
-  // part number itself is now the real destination (onOpenPart).
+  // Copy didn't just disappear, though (2026-09-15) — it moved to its own
+  // hover-only icon button next to the part number (PartRowCells' `onCopy`),
+  // so the shortcut survives without competing with the row's own click.
   onCopy: (text: string, label?: string) => void;
   onOpenPart: (p: FlatPart) => void;
   onOpenPo: (supplier: string | null, poNumber: string | null) => void;
@@ -1876,6 +1927,9 @@ function PartsTableView({
    * the row into the window first, and the parent's own timeout then finds it.
    */
   drillKey: string;
+  /** Owned by PartsListTab now (2026-09-15) — see the note above `displayRows`. */
+  expanded: ReadonlySet<number>;
+  toggleExpanded: (id: number) => void;
 }) {
   const widthOf = (key: ColKey) => colWidths[key] ?? DEFAULT_COL_WIDTH[key];
   const totalWidth = cols.reduce((s, c) => s + widthOf(c.key), 0);
@@ -1890,32 +1944,20 @@ function PartsTableView({
 
   // ── Expanded rows: a part's POs unfolded beneath it (2026-09-13) ──────────
   //
-  // The drop-down the requester asked for after the side panel shipped. Held as
-  // the set of expanded part IDS, not row indexes, so a re-sort or a filter
-  // change keeps the same parts open. Session-only on purpose: an expansion is a
-  // glance, not a layout preference, and reopening the job should start folded.
+  // The drop-down the requester asked for after the side panel shipped. `expanded`
+  // and `toggleExpanded` are owned by PartsListTab (2026-09-15), not here — the
+  // "expand/collapse all" control moved out of this table's header into a real
+  // toolbar button above it, which needs the same state PartRowCells' per-row
+  // chevron does. Held as the set of expanded part IDS, not row indexes, so a
+  // re-sort or a filter change keeps the same parts open. Session-only on
+  // purpose: an expansion is a glance, not a layout preference, and reopening
+  // the job should start folded.
   //
   // The rows the table draws are then PARTS INTERLEAVED WITH PO SUB-ROWS, every
   // one exactly ROW_H tall — which is what lets the windowing arithmetic below
   // keep treating "row N" as N * ROW_H. A sub-row that could grow taller than its
   // parent would drift the window against the scrollbar; PartPoSubRowCells
   // truncates every cell to one line for exactly that reason.
-  const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
-  const toggleExpanded = useCallback((id: number) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-  // Only rows with something to unfold count — a part with no purchases has no
-  // chevron, so "all open" must not wait on it.
-  const expandableIds = useMemo(() => sortedParts.filter((p) => p.poBreakdown.length > 0).map((p) => p.id), [sortedParts]);
-  const allOpen = expandableIds.length > 0 && expandableIds.every((id) => expanded.has(id));
-  const toggleAll = useCallback(() => {
-    setExpanded(allOpen ? new Set() : new Set(expandableIds));
-  }, [allOpen, expandableIds]);
   type DisplayRow = { kind: "part"; p: FlatPart } | { kind: "po"; p: FlatPart; g: PartPoGroup };
   const displayRows = useMemo<DisplayRow[]>(() => {
     const rows: DisplayRow[] = [];
@@ -2077,23 +2119,10 @@ function PartsTableView({
                       this case, see its own doc comment) is embedded inside it
                       rather than replacing it wholesale. */}
                   <span className="flex items-center gap-1">
-                    {/* Expand / collapse every row at once. Lives in the Part No
-                        header because that is the column the per-row chevrons sit
-                        in, so the control is beside the thing it controls. */}
-                    {c.key === "pn" && expandableIds.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); toggleAll(); }}
-                        aria-expanded={allOpen}
-                        aria-label={allOpen ? "Collapse all PO rows" : "Expand all PO rows"}
-                        title={allOpen ? "Collapse every part's POs" : `Show every part's POs under its row (${expandableIds.length} parts with purchases)`}
-                        className="shrink-0 rounded px-0.5 text-white/70 hover:bg-white/15 hover:text-white"
-                      >
-                        <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" className={`motion-interactive ${allOpen ? "rotate-90" : ""}`} aria-hidden>
-                          <path d="M4 2.5 L8 6 L4 9.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                    )}
+                    {/* Expand/collapse-all moved to a real toolbar button above
+                        the table (2026-09-15) — see PartsListTab. It used to be
+                        a chevron tucked into this header, no bigger a target
+                        than the per-row one the whole-row click was added for. */}
                     <SortableColumnHeader
                       label={<span className="block truncate">{c.label}</span>}
                       sortKey={c.key}
@@ -2143,18 +2172,23 @@ function PartsTableView({
               // status at a glance. Precedence: drill-flash (inline style, set
               // imperatively) > the status tint's hover > the status tint.
               const rowBg = STATUS_ROW_BG[p.st.key];
+              const expandable = p.poBreakdown.length > 0;
               return (
                 <tr
                   key={`${p.id}-${i}`}
                   data-part-key={String(p.id)}
                   data-pn={p.pn}
                   data-part-id={p.id}
-                  onClick={() => onCopy(p.pn, p.pn)}
-                  title="Copy part # · click the part number for its PO history"
+                  onClick={expandable ? () => toggleExpanded(p.id) : undefined}
+                  title={
+                    expandable
+                      ? `${expanded.has(p.id) ? "Collapse" : "Expand"} this row's ${p.poBreakdown.length} PO${p.poBreakdown.length === 1 ? "" : "s"} · click the part number for its PO history`
+                      : "Click the part number for its PO history"
+                  }
                   // The height the windowing arithmetic assumes. Every cell already
                   // truncates to one line, so this fixes what was true by convention.
                   style={{ height: ROW_H }}
-                  className={`group cursor-pointer ${rowBg}`}
+                  className={`group ${expandable ? "cursor-pointer" : ""} ${rowBg}`}
                 >
                   <PartRowCells
                     p={p}
@@ -2162,6 +2196,7 @@ function PartsTableView({
                     now={now}
                     onOpenPo={onOpenPo}
                     onOpenPart={onOpenPart}
+                    onCopy={onCopy}
                     expand={{ open: expanded.has(p.id), onToggle: () => toggleExpanded(p.id) }}
                   />
                 </tr>

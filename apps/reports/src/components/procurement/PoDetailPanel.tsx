@@ -173,7 +173,6 @@ export type ColKey =
   | "mfr"
   | "supplier"
   | "po"
-  | "subs"
   | "purchased"
   | "invoiceddate"
   | "req"
@@ -198,16 +197,21 @@ export const ALL_COLS: { key: ColKey; label: string; align?: "right"; title?: st
   { key: "category", label: "Category" },
   { key: "mfr", label: "Mfr" },
   { key: "supplier", label: "Supplier" },
-  { key: "po", label: "PO #" },
-  // ── "# Subs", replacing the "+N" badge inside the PO cell (2026-09-10) ────
+  // ── "# Subs" retired, the PO cell itself says "N POs" now (2026-09-15) ────
   //
-  // The badge said the same thing, but said it inside another column's cell:
-  // it could not be sorted, could not be filtered, could not be hidden, and
-  // read as decoration on the PO number rather than as a fact about the row.
-  // Worse, it put a count where a reader expects part of the PO identifier.
-  // Its own column is sortable like everything else — "show me the parts bought
-  // the most times" is now a click.
-  { key: "subs", label: "# Subs", align: "right", title: "Additional purchase lines rolled into this row beyond the PO shown. 0 means this row is a single purchase. Click the part number to see them all." },
+  // "# Subs" (2026-09-10) moved a "+N" badge that used to live inside this cell
+  // out to its own sortable column — which fixed sortability but not the
+  // confusion: a bare "PO #" cell for a multi-PO part still read as if it were
+  // the row's only purchase order, with the "there's more" fact sitting in a
+  // SEPARATE column a reader had to already know to check. Worse, "# Subs"
+  // counted purchase LINES, not distinct POs — a part bought twice on one PO
+  // and a part bought on two different POs both showed the same number, so the
+  // count didn't even answer "how many POs" reliably.
+  //
+  // Now the PO cell answers its own question: exactly one PO shows that PO
+  // (unchanged), and more than one shows "N POs" instead of picking one to
+  // display as if it were authoritative — see the "po" case below.
+  { key: "po", label: "PO #" },
   { key: "purchased", label: "Purchased" },
   { key: "invoiceddate", label: "Invoiced" },
   { key: "req", label: "Required Date", title: "eps.RequiredDate — when the part is needed" },
@@ -298,8 +302,6 @@ export function partsListSortColumns(now: number): SortColumns<FlatPart, ColKey>
     // already sort last in both directions, which is the right place for
     // "there is no PO" regardless of why.
     po: { type: "id", value: (p) => p.poNumber },
-    // The count the cell prints, so sorting matches what is on screen.
-    subs: { type: "number", value: (p) => Math.max(0, p.lineCount - 1) },
     purchased: { type: "date", value: (p) => p.purchasedDate },
     invoiceddate: { type: "date", value: (p) => p.invoicedDate },
     req: { type: "date", value: (p) => p.requiredDate },
@@ -345,6 +347,7 @@ export function PartRowCells({
   onOpenPo,
   onOpenPart,
   expand,
+  onCopy,
 }: {
   p: FlatPart;
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
@@ -361,6 +364,17 @@ export function PartRowCells({
    * the part has no purchases: there is nothing to unfold.
    */
   expand?: { open: boolean; onToggle: () => void };
+  /**
+   * A hover-only copy-to-clipboard button after the part number (2026-09-15).
+   * The row itself used to do this on click, until the row's whole surface
+   * became the expand/collapse control (too small a target as just the
+   * chevron) — this gets the shortcut back without the two colliding: it is
+   * its own button, invisible until the row is hovered (`group-hover`, so the
+   * caller's `<tr>` needs `className="group"`), and stopPropagation keeps a
+   * click on it from also toggling the row. Optional so callers with no
+   * `onCopy` of their own (the PO drawer's table) render no icon at all.
+   */
+  onCopy?: (text: string, label?: string) => void;
 }) {
   const parentLine = parentLineFor(p);
   const cell = (key: ColKey) => {
@@ -408,6 +422,20 @@ export function PartRowCells({
               {p.pn}
             </button>
             <ReleaseBadge p={p} />
+            {onCopy && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onCopy(p.pn, p.pn); }}
+                title={`Copy ${p.pn}`}
+                aria-label={`Copy part number ${p.pn}`}
+                className="shrink-0 rounded p-0.5 text-sdc-gray-400 opacity-0 hover:bg-sdc-blue/10 hover:text-sdc-blue-dark group-hover:opacity-100"
+              >
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
+                  <rect x="5.5" y="5.5" width="8" height="8" rx="1.2" />
+                  <path d="M3.5 10.5 h-1 a1 1 0 0 1 -1 -1 v-7 a1 1 0 0 1 1 -1 h7 a1 1 0 0 1 1 1 v1" />
+                </svg>
+              </button>
+            )}
           </span>
         );
       case "desc":
@@ -431,22 +459,33 @@ export function PartRowCells({
         const cell = poCellState(p);
         switch (cell.kind) {
           case "po":
-            return (
-              <span className="flex min-w-0 items-baseline gap-1">
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onOpenPo(p.supplier, p.poNumber); }}
-                  title={p.lineCount > 1 ? `View ${cell.po} — the newest of ${p.lineCount} purchases on this row` : "View PO"}
-                  className="min-w-0 truncate text-left font-mono text-note font-medium text-sdc-blue hover:underline"
-                >
-                  {cell.po}
-                </button>
-                {/* The "+5" badge that lived here until 2026-09-10 moved out to
-                    its own "# Subs" column. It answered the right question — this
-                    row sums several purchases — from the wrong place: inside the
-                    PO cell it read as part of the PO number, and could not be
-                    sorted or hidden. */}
+            // ── More than one PO: say so, don't pick one to show (2026-09-15) ──
+            //
+            // Used to always show `cell.po` (job-bom-rules.ts's makePart picks
+            // whichever PO line came first for this item) labelled "the newest"
+            // in a hover tooltip — which was only ever true by construction, not
+            // by anything the reader could see, and asserted it about a PO
+            // number sitting there with no visual sign it was one of several.
+            // p.poBreakdown.length (not p.lineCount — see the ALL_COLS note above
+            // this replaced) is the actual distinct-PO count: a part bought
+            // twice as two lines on ONE po still reads as a single, ordinary PO
+            // cell below, exactly as it should.
+            return p.poBreakdown.length > 1 ? (
+              <span
+                className="truncate text-note font-semibold text-sdc-blue-dark"
+                title={`${p.poBreakdown.length} purchase orders for this part — click the part number, or anywhere on the row, to see all of them`}
+              >
+                {p.poBreakdown.length} POs
               </span>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenPo(p.supplier, p.poNumber); }}
+                title="View PO"
+                className="min-w-0 truncate text-left font-mono text-note font-medium text-sdc-blue hover:underline"
+              >
+                {cell.po}
+              </button>
             );
           case "stock":
             return <span className="text-label font-semibold text-sdc-green-text" title={`Pulled from inventory (${num(p.pullQty)} issued) — no purchase order needed`}>STOCK</span>;
@@ -466,17 +505,6 @@ export function PartRowCells({
               </span>
             );
         }
-      }
-      case "subs": {
-        const subs = Math.max(0, p.lineCount - 1);
-        return (
-          <span
-            className={`whitespace-nowrap font-mono text-note tabular-nums ${subs > 0 ? "font-semibold text-sdc-blue-dark" : "text-sdc-gray-400"}`}
-            title={subs > 0 ? `${p.lineCount} purchase lines across ${p.poBreakdown.length} PO${p.poBreakdown.length > 1 ? "s" : ""} \u2014 the PO column shows the newest. Click the part number for all of them.` : "A single purchase"}
-          >
-            {subs > 0 ? subs : "\u2014"}
-          </span>
-        );
       }
       case "purchased":
         // The newest of the group, flagged as such rather than presented as the date
@@ -665,23 +693,30 @@ export function PartPoSubRowCells({
         );
       case "po":
         return g.poNumber ? (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onOpenPo(g.supplier, g.poNumber); }}
-            title={`Open PO ${g.poNumber}`}
-            className="truncate font-mono text-note font-medium text-sdc-blue hover:underline"
-          >
-            {g.poNumber}
-          </button>
+          <span className="flex min-w-0 items-baseline gap-1">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onOpenPo(g.supplier, g.poNumber); }}
+              title={`Open PO ${g.poNumber}`}
+              className="min-w-0 truncate text-left font-mono text-note font-medium text-sdc-blue hover:underline"
+            >
+              {g.poNumber}
+            </button>
+            {/* One PO can carry the same part on more than one line — same badge
+                PartPoPanel.tsx's side drawer uses for the identical fact ("# Subs"
+                used to answer this at the parent-row level; retired 2026-09-15,
+                see the ALL_COLS note). */}
+            {g.lineCount > 1 && (
+              <span
+                title={`${g.lineCount} lines for this part on this PO, summed here`}
+                className="shrink-0 rounded bg-sdc-blue/10 px-1 text-micro font-semibold tabular-nums text-sdc-blue-dark"
+              >
+                {g.lineCount} lines
+              </span>
+            )}
+          </span>
         ) : (
           <span className="font-mono text-note text-sdc-muted">no PO</span>
-        );
-      case "subs":
-        // Lines for THIS part on THIS PO — what the parent row's count adds up.
-        return (
-          <span className={`${money} ${g.lineCount > 1 ? "" : "text-sdc-gray-400"}`} title={g.lineCount > 1 ? `${g.lineCount} lines for this part on this PO, summed here` : "One line"}>
-            {g.lineCount > 1 ? g.lineCount : "\u2014"}
-          </span>
         );
       case "purchased":
         return <span className={date}>{fmtDate(g.purchaseDate)}</span>;
