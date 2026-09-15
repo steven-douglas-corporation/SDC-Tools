@@ -28,6 +28,7 @@ import {
   makePoGroup,
   flattenBomParts,
   poCellState,
+  partsOnPo,
   NO_PO_KEY,
   type FlatPart,
   type PartPoGroup,
@@ -526,12 +527,19 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
     (sup: string | null, poNumber: string | null) => {
       const supKey = sup ?? "Unknown supplier";
       const poKey = poNumber ?? NO_PO_KEY;
-      const poParts = parts.filter((p) => (p.supplier ?? "Unknown supplier") === supKey && (p.poNumber ?? NO_PO_KEY) === poKey);
-      if (!poParts.length) return;
+      // Through partsOnPo, not a bare displayed-PO match: a part shows only its
+      // NEWEST purchase (see flattenBomParts), so a click on an OLDER PO it was
+      // also bought on used to match nothing here and silently do nothing.
+      // partsOnPo looks through every part's poBreakdown instead.
+      const poParts = partsOnPo(parts, sup, poNumber);
+      if (!poParts.length) {
+        toast(`No purchases found on PO ${poKey} for ${supKey}.`, "info");
+        return;
+      }
       const authoritative = findAuthoritativePo(bom.vendors, poNumber);
       setPoPanel({ supplier: supKey, po: makePoGroup(poKey, poParts), authoritative });
     },
-    [parts, bom.vendors],
+    [parts, bom.vendors, toast],
   );
 
   // Open the PO side panel from an ALREADY-BUILT PoGroup, rather than
@@ -2063,22 +2071,24 @@ function PartsTableView({
   // windowStatus.active — see JobProcurement's enrich()), so the footer skips
   // summing them in that case rather than silently summing nulls-as-zero into
   // a number that would look real but mean nothing.
+  // No `unit` accumulator — a sum of per-unit PRICES is not a price of
+  // anything (unlike Total $, which is genuinely additive money). The footer's
+  // Unit $ cell is blank instead of a number nobody asked to compute.
   const tot = parts.reduce(
     (a, p) => {
       a.qty += p.qty;
-      a.unit += p.unitPrice;
       a.total += p.totalPrice;
       a.invoiced += p.invoicedAmount;
       if (p.leftToSpend !== null) a.left += p.leftToSpend;
       return a;
     },
-    { qty: 0, unit: 0, total: 0, invoiced: 0, left: 0 },
+    { qty: 0, total: 0, invoiced: 0, left: 0 },
   );
   const totPct = windowStatus.active ? null : tot.total > 0 ? Math.round((tot.invoiced / tot.total) * 100) : tot.invoiced > 0 ? 100 : 0;
   const footCell = (key: ColKey, idx: number): string => {
     switch (key) {
       case "qty": return num(tot.qty);
-      case "unit": return usd(tot.unit);
+      case "unit": return "—";
       case "total": return usd(tot.total);
       case "invoiced": return usd(tot.invoiced);
       case "pctinv": return totPct === null ? "—" : `${totPct}%`;

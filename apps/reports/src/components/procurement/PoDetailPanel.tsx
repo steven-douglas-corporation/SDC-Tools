@@ -20,6 +20,7 @@ import {
   daysBetween,
   parentLineFor,
   poCellState,
+  scopePartToPo,
   type FlatPart,
   type PoGroup,
   type DrillablePart,
@@ -480,7 +481,10 @@ export function PartRowCells({
             ) : (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenPo(p.supplier, p.poNumber); }}
+                // cell.po, not p.poNumber: they can differ (p.poId is the
+                // fallback poCellState reads when there's no purchase line at
+                // all), and the cell must always open the PO it's printing.
+                onClick={(e) => { e.stopPropagation(); onOpenPo(p.supplier, cell.po); }}
                 title="View PO"
                 className="min-w-0 truncate text-left font-mono text-note font-medium text-sdc-blue hover:underline"
               >
@@ -815,7 +819,11 @@ export function PoPanel({
   const cols = useMemo(() => ALL_COLS.filter((c) => PO_PANEL_COL_KEYS.includes(c.key)), []);
   const sortColumns = useMemo(() => partsListSortColumns(nowMs), [nowMs]);
   const lineSort = useColumnSort<ColKey>();
-  const sortedParts = sortRows(po.parts, lineSort.sort, sortColumns);
+  // Each part AS IT STANDS ON THIS PO, not its lifetime figures — a part bought
+  // on several POs used to show its whole lifetime total/invoiced/etc under
+  // every one of them, which double-counted the same money across drawers.
+  const scopedParts = useMemo(() => po.parts.map((p) => scopePartToPo(p, supplier, po.poNumber)), [po.parts, supplier, po.poNumber]);
+  const sortedParts = sortRows(scopedParts, lineSort.sort, sortColumns);
   // Sum of the pinned widths above — the table's own width, so `table-fixed`
   // has a real number to divide among the `<colgroup>` below rather than
   // shrinking every column proportionally to fit whatever the drawer
@@ -856,16 +864,19 @@ export function PoPanel({
     let expected: string | null = null;
     let value = 0;
     let invoicedTotal = 0;
-    for (const p of po.parts) {
+    for (const p of scopedParts) {
       if (p.purchasedDate && (!purchased || p.purchasedDate.slice(0, 10) < purchased.slice(0, 10))) purchased = p.purchasedDate;
       if (p.requiredDate && (!required || p.requiredDate.slice(0, 10) < required.slice(0, 10))) required = p.requiredDate;
       if (p.expectedDate && (!expected || p.expectedDate.slice(0, 10) > expected.slice(0, 10))) expected = p.expectedDate;
-      value += (p.unitPrice || 0) * (p.qty || 0);
+      // This PO's own purchased value — not BOM unitPrice x qty, which is the
+      // part's REQUIREMENT estimate and can be wildly wrong for a part bought
+      // more than once (it would count the same BOM qty on every PO's drawer).
+      value += p.totalPrice || 0;
       invoicedTotal += p.invoicedAmount || 0;
     }
     const pct = po.total ? Math.round((po.received / po.total) * 100) : 0;
     return { purchased, required, expected, value, invoicedTotal, pct };
-  }, [po]);
+  }, [scopedParts, po.total, po.received]);
 
   const badge = po.pastDue
     ? { label: "PAST DUE", cls: "bg-sdc-red-bg text-sdc-red-text" }
