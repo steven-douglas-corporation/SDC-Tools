@@ -1589,11 +1589,18 @@ function PartsListTab({
         const hay = `${p.pn} ${p.desc} ${p.manufacturer} ${p.supplier ?? ""} ${p.parentPN} ${p.parentDesc} ${p.poNumber ?? ""} ${p.category ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      // leftToSpend is null uniformly (component-wide) exactly when a windowed
-      // Invoiced figure is active — see the footer's own comment — so there is
-      // nothing meaningful to filter on in that mode; a null row passes rather
-      // than being silently dropped by a filter that cannot answer the question.
-      if (onlyLeftToInvoice && p.leftToSpend !== null && !(p.leftToSpend > 0)) return false;
+      // Per ORDER, not per part (2026-09-15): p.leftToSpend is the row's
+      // BLENDED total across every PO the part was bought on, and an
+      // over-invoiced PO's negative figure can cancel out a genuinely open
+      // one in that sum — a part could read leftToSpend <= 0 overall while
+      // one specific PO still owes money. poBreakdown carries each PO's own
+      // leftToInvoice, so "does this part have an order still owed" is
+      // answered per-order and then OR'd, not by the row's single number.
+      // leftToSpend (and so leftToInvoice) is null uniformly, component-wide,
+      // exactly when a windowed Invoiced figure is active — nothing meaningful
+      // to filter on in that mode, so a row passes rather than being silently
+      // dropped by a filter that cannot answer the question.
+      if (onlyLeftToInvoice && !windowStatus.active && !p.poBreakdown.some((g) => g.leftToInvoice > 0)) return false;
       return true;
     });
   }, [parts, status, effCategory, effManufacturer, effSupplier, from, to, dateType, query, onlyLeftToInvoice, windowStatus.active]);
@@ -1624,6 +1631,23 @@ function PartsListTab({
   const toggleAll = useCallback(() => {
     setExpanded(allOpen ? new Set() : new Set(expandableIds));
   }, [allOpen, expandableIds]);
+
+  // Turning "Left to invoice" ON auto-unfolds every qualifying part (2026-09-15,
+  // by request) — the whole point of the filter is "show me what's still owed",
+  // and that answer lives on the PO sub-rows, not the part row's blended total.
+  // One-directional: turning the filter back OFF does not re-collapse anything,
+  // so a row the user expanded by hand (or left open before the toggle) stays
+  // exactly as they left it — the toggle only ever OPENS on the way in.
+  //
+  // Adjusted DURING render, not in a useEffect: this repo's lint blocks
+  // setState-in-effect (2026-09-13, see ci.yml), and this is the React-docs
+  // pattern for "react to a prop/state transition" without the extra
+  // effect-triggered render pass — track the last-seen value and compare.
+  const [prevOnlyLeftToInvoice, setPrevOnlyLeftToInvoice] = useState(onlyLeftToInvoice);
+  if (onlyLeftToInvoice !== prevOnlyLeftToInvoice) {
+    setPrevOnlyLeftToInvoice(onlyLeftToInvoice);
+    if (onlyLeftToInvoice) setExpanded((prev) => new Set([...prev, ...expandableIds]));
+  }
 
   // A windowed Invoiced figure means something different from the lifetime one
   // ALL_COLS's static label describes (that array also drives the Columns-
@@ -1803,7 +1827,7 @@ function PartsListTab({
           No parts match the current filters.
         </p>
       ) : view === "list" ? (
-        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} scope={scope} setScope={setScope} drillKey={drill.key} expanded={expanded} toggleExpanded={toggleExpanded} />
+        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} scope={scope} setScope={setScope} drillKey={drill.key} expanded={expanded} toggleExpanded={toggleExpanded} onlyLeftToInvoice={onlyLeftToInvoice} />
       ) : (
         <PartsCardView parts={filtered} vendors={vendors} onCopy={onCopy} onOpenPo={onOpenPo} />
       )}
@@ -1923,6 +1947,7 @@ function PartsTableView({
   drillKey,
   expanded,
   toggleExpanded,
+  onlyLeftToInvoice,
 }: {
   parts: FlatPart[];
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
@@ -1968,6 +1993,8 @@ function PartsTableView({
   /** Owned by PartsListTab now (2026-09-15) — see the note above `displayRows`. */
   expanded: ReadonlySet<number>;
   toggleExpanded: (id: number) => void;
+  /** Drives the auto-sort effect below and the PO sub-row filter in `displayRows`. */
+  onlyLeftToInvoice: boolean;
 }) {
   const widthOf = (key: ColKey) => colWidths[key] ?? DEFAULT_COL_WIDTH[key];
   const totalWidth = cols.reduce((s, c) => s + widthOf(c.key), 0);
@@ -1979,6 +2006,20 @@ function PartsTableView({
   const sort = useColumnSort<ColKey>();
   const sortColumns = useMemo(() => partsListSortColumns(now), [now]);
   const sortedParts = sortRows(parts, sort.sort, sortColumns);
+
+  // Turning "Left to invoice" ON also sorts by it, descending — the biggest
+  // open amounts first, which is the point of turning the filter on in the
+  // first place. One-directional, like the auto-expand: turning the filter
+  // back off leaves whatever sort the user has since chosen alone.
+  //
+  // Adjusted DURING render, not in a useEffect — see PartsListTab's identical
+  // pattern (and its comment) for why: this repo's lint blocks setState calls
+  // inside effects.
+  const [prevOnlyLeftToInvoice, setPrevOnlyLeftToInvoice] = useState(onlyLeftToInvoice);
+  if (onlyLeftToInvoice !== prevOnlyLeftToInvoice) {
+    setPrevOnlyLeftToInvoice(onlyLeftToInvoice);
+    if (onlyLeftToInvoice) sort.setSort({ key: "leftspend", direction: "desc" });
+  }
 
   // ── Expanded rows: a part's POs unfolded beneath it (2026-09-13) ──────────
   //
@@ -2001,10 +2042,20 @@ function PartsTableView({
     const rows: DisplayRow[] = [];
     for (const p of sortedParts) {
       rows.push({ kind: "part", p });
-      if (expanded.has(p.id)) for (const g of p.poBreakdown) rows.push({ kind: "po", p, g });
+      if (expanded.has(p.id)) {
+        // Per order, not per part (2026-09-15): a part shown under "Left to
+        // invoice" is guaranteed to have at least one qualifying PO (see
+        // PartsListTab's `filtered`), but its OTHER, already-settled POs are
+        // not what the filter was asked for — unfolding it must not show them
+        // back beside the one(s) that actually still owe money.
+        for (const g of p.poBreakdown) {
+          if (onlyLeftToInvoice && !(g.leftToInvoice > 0)) continue;
+          rows.push({ kind: "po", p, g });
+        }
+      }
     }
     return rows;
-  }, [sortedParts, expanded]);
+  }, [sortedParts, expanded, onlyLeftToInvoice]);
 
   // Sorted FIRST, then sliced — so page 1 is the top of the sort rather than the
   // first fifty rows re-sorted among themselves. The signature resets the page

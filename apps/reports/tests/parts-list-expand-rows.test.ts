@@ -48,7 +48,7 @@ test("display rows interleave each open part with its PO groups, in poBreakdown 
   const job = strip(read("components/JobProcurement.tsx"));
   assert.match(
     job,
-    /for \(const p of sortedParts\) \{\s*rows\.push\(\{ kind: "part", p \}\);\s*if \(expanded\.has\(p\.id\)\) for \(const g of p\.poBreakdown\) rows\.push\(\{ kind: "po", p, g \}\);/,
+    /for \(const p of sortedParts\) \{\s*rows\.push\(\{ kind: "part", p \}\);\s*if \(expanded\.has\(p\.id\)\) \{\s*[\s\S]*?for \(const g of p\.poBreakdown\) \{\s*[\s\S]*?rows\.push\(\{ kind: "po", p, g \}\);/,
     "sub-rows must follow their parent and come from poBreakdown, the same source the side panel uses",
   );
   // Expanded state is keyed by part id, so a re-sort keeps the same parts open.
