@@ -91,7 +91,8 @@ test("the chevron appears only where there is something to unfold, and the PO dr
   assert.match(panel, /aria-expanded=\{expand\.open\}/, "the state must be announced, not only drawn");
   const job = strip(read("components/JobProcurement.tsx"));
   assert.match(job, /expand=\{\{ open: expanded\.has\(p\.id\), onToggle: \(\) => toggleExpanded\(p\.id\) \}\}/, "the Parts List wires the chevron");
-  // Expand-all lives in the Part No header, and only counts parts that can open.
-  assert.match(job, /c\.key === "pn" && expandableIds\.length > 0 && \(/);
-  assert.match(job, /sortedParts\.filter\(\(p\) => p\.poBreakdown\.length > 0\)\.map\(\(p\) => p\.id\)/);
+  // Expand-all moved out of the Part No header into a real toolbar button
+  // above the table (2026-09-15), and only counts parts that can open.
+  assert.match(job, /view === "list" && expandableIds\.length > 0 && \(/, "the expand-all button must be list-mode only");
+  assert.match(job, /filtered\.filter\(\(p\) => p\.poBreakdown\.length > 0\)\.map\(\(p\) => p\.id\)/, "expandableIds must be computed before sorting, not after");
 });

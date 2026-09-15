@@ -7,9 +7,12 @@ import { join } from "node:path";
 //
 // Three things the Parts List now promises, none of which a type can enforce:
 //
-//   1. The "+N" badge is gone from the PO cell and is a real column ("# Subs").
-//      It was a count living inside another column's cell — unsortable,
-//      unhideable, and easily read as part of the PO number.
+//   1. The PO # cell states its own multiplicity ("N POs") rather than
+//      picking one PO to show as if it were the row's only purchase. This
+//      superseded "# Subs" (2026-09-10, retired 2026-09-15): that column
+//      counted purchase LINES offset by one, which conflated "bought twice on
+//      one PO" with "bought on two different POs" and needed a hover tooltip
+//      to be legible at all — see the test below.
 //
 //   2. Unit $ x Purch Qty === Total $. That identity needs BOTH new columns:
 //      `qty` is the BOM REQUIREMENT (eps.ItemQty) and is load-bearing for
@@ -32,15 +35,18 @@ const strip = (raw: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 
-test("the +N badge is gone from the PO cell, and # Subs is a real column", () => {
+test("# Subs is retired, and the PO cell states its own multiplicity instead", () => {
   const panel = strip(read("components/procurement/PoDetailPanel.tsx"));
 
-  assert.doesNotMatch(panel, /\+\{p\.lineCount - 1\}/, "the badge must not come back inside the PO cell");
-  assert.match(panel, /\{ key: "subs", label: "# Subs"/, "# Subs must be declared in ALL_COLS");
-  assert.match(panel, /subs: \{ type: "number", value: \(p\) => Math\.max\(0, p\.lineCount - 1\) \}/, "it must be sortable on the count it prints");
-  // Sortable AND hideable follow from being in ALL_COLS, which drives the
-  // header, the body, the footer and the Columns menu from one list.
-  assert.match(panel, /case "subs": \{/, "PartRowCells must render it");
+  assert.doesNotMatch(panel, /"subs"/, "# Subs must not exist anywhere — not in ColKey, ALL_COLS, or a case label");
+  assert.doesNotMatch(panel, /\+\{p\.lineCount - 1\}/, "the old badge must not come back inside the PO cell either");
+  // More than one PO: plain text, not a button — a click must fall through to
+  // the row's own expand toggle rather than picking one PO to navigate to.
+  assert.match(panel, /return p\.poBreakdown\.length > 1 \? \(/, "the po case must branch on the real distinct-PO count");
+  assert.match(panel, /\{p\.poBreakdown\.length\} POs/, "it must say how many, not just that there are more");
+  // Exactly one PO (regardless of how many LINES are on it — see FR-103 in the
+  // ETC fixture) keeps the original clickable single-PO number unchanged.
+  assert.match(panel, /title="View PO"/, "a single PO keeps its own number as a real link");
 });
 
 test("Unit $ x Purch Qty = Total $ is derived, not recomputed", () => {
@@ -117,14 +123,15 @@ test("a unit price keeps its cents; totals stay whole dollars", () => {
   assert.match(panel, /\{p\.totalPrice > 0 \? usd\(p\.totalPrice\) : /, "Total $ keeps the whole-dollar convention");
 });
 
-test("both new columns ship visible, and need no stored-state migration", () => {
+test("Purch Qty ships visible, and needs no stored-state migration", () => {
   const job = strip(read("components/JobProcurement.tsx"));
   const hidden = job.match(/DEFAULT_HIDDEN_COLS: ColKey\[\] = \[([^\]]*)\]/);
   assert.ok(hidden, "DEFAULT_HIDDEN_COLS must still exist");
-  assert.doesNotMatch(hidden[1], /"subs"/, "# Subs replaces a badge that was always visible");
   assert.doesNotMatch(hidden[1], /"purchqty"/, "Purch Qty is what makes the money row checkable");
   // Every column needs a width or the fixed-layout table collapses it.
-  for (const key of ["subs", "purchqty"]) {
-    assert.match(job, new RegExp(`DEFAULT_COL_WIDTH: Record<ColKey, number> = \\{[\\s\\S]*?${key}:\\s*\\d+`), `${key} needs a default width`);
-  }
+  assert.match(job, /DEFAULT_COL_WIDTH: Record<ColKey, number> = \{[\s\S]*?purchqty:\s*\d+/, "purchqty needs a default width");
+  // "subs" must not have snuck back into the exhaustive width map either — it
+  // isn't a ColKey any more, so TypeScript itself would catch it here, but a
+  // regex-based source guard is what actually runs in this file's style.
+  assert.doesNotMatch(job, /DEFAULT_COL_WIDTH: Record<ColKey, number> = \{[\s\S]*?\bsubs:\s*\d+/, "subs must not have a width — it isn't a column any more");
 });
