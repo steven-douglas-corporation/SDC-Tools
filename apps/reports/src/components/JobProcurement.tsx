@@ -1736,7 +1736,9 @@ function PartsListTab({
             replacing a chevron that used to sit inside the Part No column
             header — no more discoverable than the per-row one the whole-row
             click was added to fix. */}
-        {view === "list" && expandableIds.length > 0 && (
+        {/* Hidden while "Left to invoice" is on: there is no parent row left
+            to expand/collapse — every qualifying PO already shows, always. */}
+        {view === "list" && !onlyLeftToInvoice && expandableIds.length > 0 && (
           <button
             type="button"
             onClick={toggleAll}
@@ -2041,8 +2043,27 @@ function PartsTableView({
   const displayRows = useMemo<DisplayRow[]>(() => {
     const rows: DisplayRow[] = [];
     for (const p of sortedParts) {
-      rows.push({ kind: "part", p });
-      if (expanded.has(p.id)) {
+      // ── Trial (2026-09-15): no parent row at all under "Left to invoice" ──
+      //
+      // The parent row's Total $/Invoiced $/Left to Invoice are the part's
+      // BLENDED figures across every PO it was ever bought on — including
+      // ones already fully paid — which is exactly the wrong number to show
+      // beside a filter whose entire point is "what specifically is still
+      // owed." A part with one paid-off PO and one open one showed $366/$114
+      // on its own row while the one child worth looking at read $252/$0 —
+      // two different answers to the same question. Skipping the parent
+      // leaves only the correctly-SCOPED child figures on screen.
+      //
+      // Known gap, left alone for this trial: PartPoSubRowCells still leaves
+      // Mfr/Required Date/Status blank (those were only ever filled in on the
+      // parent) — those columns just go empty for now rather than being
+      // backfilled or recomputed per PO.
+      if (!onlyLeftToInvoice) rows.push({ kind: "part", p });
+      // Not gated on `expanded` when the parent is hidden — there is no
+      // chevron left to toggle it from, so "children of a part with no
+      // visible parent" would otherwise mean nothing renders at all whenever
+      // `expanded` doesn't (yet) contain this id.
+      if (onlyLeftToInvoice || expanded.has(p.id)) {
         // Per order, not per part (2026-09-15): a part shown under "Left to
         // invoice" is guaranteed to have at least one qualifying PO (see
         // PartsListTab's `filtered`), but its OTHER, already-settled POs are

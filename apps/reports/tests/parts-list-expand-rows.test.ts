@@ -46,10 +46,21 @@ test("the window and the spacers are measured over display rows, every one ROW_H
 
 test("display rows interleave each open part with its PO groups, in poBreakdown order", () => {
   const job = strip(read("components/JobProcurement.tsx"));
+  const start = job.indexOf("const displayRows = useMemo");
+  const body = job.slice(start, job.indexOf("}, [sortedParts, expanded, onlyLeftToInvoice]);", start));
+  assert.ok(start >= 0 && body.length > 0, "displayRows must exist");
+  // The part row is skipped entirely under "Left to invoice" (2026-09-15
+  // trial) — its Total $/Invoiced $/Left to Invoice are the part's BLENDED
+  // figures across every PO, including already-settled ones, which is the
+  // wrong number beside a filter whose whole point is "what's still owed".
+  assert.match(body, /if \(!onlyLeftToInvoice\) rows\.push\(\{ kind: "part", p \}\);/, "the parent row must be conditional on the filter");
+  // Sub-rows are no longer gated on `expanded` alone — with the parent
+  // hidden there is no chevron left to toggle it from.
+  assert.match(body, /if \(onlyLeftToInvoice \|\| expanded\.has\(p\.id\)\) \{/, "sub-rows must show unconditionally under the filter");
   assert.match(
-    job,
-    /for \(const p of sortedParts\) \{\s*rows\.push\(\{ kind: "part", p \}\);\s*if \(expanded\.has\(p\.id\)\) \{\s*[\s\S]*?for \(const g of p\.poBreakdown\) \{\s*[\s\S]*?rows\.push\(\{ kind: "po", p, g \}\);/,
-    "sub-rows must follow their parent and come from poBreakdown, the same source the side panel uses",
+    body,
+    /for \(const g of p\.poBreakdown\) \{\s*[\s\S]*?rows\.push\(\{ kind: "po", p, g \}\);/,
+    "sub-rows must come from poBreakdown, the same source the side panel uses",
   );
   // Expanded state is keyed by part id, so a re-sort keeps the same parts open.
   assert.match(job, /useState<ReadonlySet<number>>\(\(\) => new Set\(\)\)/);
@@ -93,6 +104,6 @@ test("the chevron appears only where there is something to unfold, and the PO dr
   assert.match(job, /expand=\{\{ open: expanded\.has\(p\.id\), onToggle: \(\) => toggleExpanded\(p\.id\) \}\}/, "the Parts List wires the chevron");
   // Expand-all moved out of the Part No header into a real toolbar button
   // above the table (2026-09-15), and only counts parts that can open.
-  assert.match(job, /view === "list" && expandableIds\.length > 0 && \(/, "the expand-all button must be list-mode only");
+  assert.match(job, /view === "list" && !onlyLeftToInvoice && expandableIds\.length > 0 && \(/, "the expand-all button must be list-mode only, and hidden once there's no parent left to expand");
   assert.match(job, /filtered\.filter\(\(p\) => p\.poBreakdown\.length > 0\)\.map\(\(p\) => p\.id\)/, "expandableIds must be computed before sorting, not after");
 });
