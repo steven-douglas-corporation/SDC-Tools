@@ -2254,7 +2254,7 @@ function PartsTableView({
                     style={{ height: ROW_H }}
                     className="bg-sdc-gray-50 hover:bg-sdc-blue-light/40"
                   >
-                    <PartPoSubRowCells p={row.p} g={row.g} cols={cols} onOpenPo={onOpenPo} />
+                    <PartPoSubRowCells p={row.p} g={row.g} cols={cols} onOpenPo={onOpenPo} showPartIdentity={onlyLeftToInvoice} />
                   </tr>
                 );
               }

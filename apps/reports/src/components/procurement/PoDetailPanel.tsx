@@ -670,11 +670,21 @@ export function PartPoSubRowCells({
   g,
   cols,
   onOpenPo,
+  showPartIdentity,
 }: {
   p: FlatPart;
   g: PartPoGroup;
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
   onOpenPo: (supplier: string | null, poNumber: string | null) => void;
+  /**
+   * Carries the parent's Part No + Desc onto this sub-row instead of the
+   * generic "↳ PO" (2026-09-15, by request). Skimming a long list of
+   * auto-expanded sub-rows (the "Left to invoice" filter's whole point) with
+   * every Part No cell reading the same "↳ PO" loses which part each
+   * order belongs to the moment it scrolls past its parent row. Optional, off
+   * by default, so ordinary manual expansion keeps the lighter original label.
+   */
+  showPartIdentity?: boolean;
 }) {
   const money = "font-mono text-note tabular-nums text-sdc-gray-700";
   const date = "whitespace-nowrap font-mono text-label text-sdc-gray-700";
@@ -682,12 +692,20 @@ export function PartPoSubRowCells({
   const cell = (key: ColKey): ReactNode => {
     switch (key) {
       case "pn":
-        return (
+        return showPartIdentity ? (
+          <span className="block truncate pl-5 font-mono text-note font-semibold text-sdc-navy" title={`${p.pn} — one of its ${p.poBreakdown.length} PO${plural}`}>
+            {"↳ "}{p.pn}
+          </span>
+        ) : (
           <span className="block truncate pl-5 font-mono text-note text-sdc-muted" title={`${p.pn} — one of its ${p.poBreakdown.length} PO${plural}`}>
-            {"\u21B3 PO"}
-            {g.lineCount > 1 ? ` \u00B7 ${g.lineCount} lines` : ""}
+            {"↳ PO"}
+            {g.lineCount > 1 ? ` · ${g.lineCount} lines` : ""}
           </span>
         );
+      case "desc":
+        return showPartIdentity ? (
+          <span className="block truncate text-note text-sdc-gray-600" title={p.desc}>{p.desc || "—"}</span>
+        ) : null;
       case "supplier":
         return (
           <span className="flex items-center gap-1.5 truncate text-note text-sdc-gray-700" title={g.supplier ?? ""}>
