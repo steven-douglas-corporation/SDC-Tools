@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useReducer, useState, useTransition } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 import { JobStatusJobSelect } from "@/components/JobStatusJobSelect";
 import { TmKpiSummary } from "@/components/TmKpiSummary";
@@ -90,9 +90,8 @@ export function TmReportClient({
   /** Only the three Power BI dollar cards failed — hours still render normally. */
   partsError: string | null;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  // Pane-aware (2026-09-14) — the T&M tab's own params, wherever it is rendered.
+  const url = usePaneUrl();
 
   // One state value instead of three (`openDrill`/`drillRows`/`drillError`
   // used to be separate `useState`s — see tm-drawer-state.ts's header for the
@@ -200,12 +199,12 @@ export function TmReportClient({
     // the numbers jumped to a period nobody asked for. Ignoring incomplete input
     // leaves the committed range in place until a valid replacement exists.
     if (!isValidCalendarDate(value)) return;
-    const currentQs = searchParams.toString();
+    const currentQs = url.searchKey;
     const qs = nextParams(currentQs);
     qs.set(key, value);
     const q = qs.toString();
     notePendingParams(currentQs, q);
-    router.push(`${pathname}?${q}`, { scroll: false });
+    url.push(qs, { scroll: false });
   }
 
   const detailState = tmDrawerRowState(drawer);

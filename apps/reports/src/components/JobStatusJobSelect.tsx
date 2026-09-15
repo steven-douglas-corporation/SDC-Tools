@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 import { INPUT } from "@/components/ui/classnames";
 
@@ -32,9 +32,8 @@ function groupOf(j: JobOpt): string {
 }
 
 export function JobStatusJobSelect({ jobs, selected }: { jobs: JobOpt[]; selected: string[] }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  // Pane-aware (2026-09-14) — the T&M tab's own params, wherever it is rendered.
+  const url = usePaneUrl();
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [query, setQuery] = useState("");
 
@@ -104,14 +103,14 @@ export function JobStatusJobSelect({ jobs, selected }: { jobs: JobOpt[]; selecte
   // rather than deleting the param, so "nothing selected" (→ all jobs) is
   // distinguishable from "no selection made yet" the same way JobSelect does.
   function apply(next: string[]) {
-    const currentQs = searchParams.toString();
+    const currentQs = url.searchKey;
     const qs = nextParams(currentQs);
     qs.set("jobs", next.join(","));
     qs.delete("statuses"); // drop the legacy separate-status param
     qs.delete("job");
     const q = qs.toString();
     notePendingParams(currentQs, q);
-    router.push(`${pathname}?${q}`, { scroll: false });
+    url.push(qs, { scroll: false });
   }
 
   function toggleJob(jobId: string) {

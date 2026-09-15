@@ -209,6 +209,10 @@ export async function readHoursFeed(opts?: { onlyMonth?: string }): Promise<Hour
     knownJobNumbers: known,
     onlyMonth: wanted,
   });
+  // A manual segment whose employee name matches more than one roster row is not
+  // guessed at (2026-09-14): it comes back as a rejected punch so the Undefined
+  // Hours drill shows it, instead of landing under whichever namesake came last.
+  rejected.push(...manual.rejected);
   const rows = manual.rows.length > 0 ? [...officialRows, ...manual.rows] : officialRows;
   for (const [k, v] of manualContractorPoolHours(manual.rows)) {
     poolHours.set(k, (poolHours.get(k) ?? 0) + v);
@@ -243,6 +247,9 @@ export async function readHoursFeed(opts?: { onlyMonth?: string }): Promise<Hour
       : "") +
     (manual.suppressed.length > 0
       ? ` ${manual.suppressed.reduce((s2, x) => s2 + x.hours, 0).toFixed(2)}h of manual contractor hours suppressed — Paylocity now covers those days.`
+      : "") +
+    (manual.ambiguousEmployees.length > 0
+      ? ` ${manual.ambiguousEmployees.length} manual contractor segment(s) name an employee the roster lists more than once and were NOT counted (listed under Undefined Hours).`
       : "") +
     (manual.unknownJobs.length > 0
       ? ` ${manual.unknownJobs.length} manual contractor segment(s) name a job the app does not know and were NOT counted.`

@@ -4,14 +4,20 @@ import { isSdcCustomer } from "@/lib/job-filters";
 import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
 import {
   calcHoursLeft,
+  confirmedNewEtc,
   effectiveNewEtc,
   isValidMonth,
   newEtcDiff,
   newEtcSeedText,
+  partsCostCellState,
+  partsCostDiff,
+  partsCostEffectiveNewEtc,
   round2,
   suggestNewEtc,
   type NewEtcCellState,
+  type PartsCostLive,
 } from "@/lib/etc";
+import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
 import type { CellValue, SheetColumn, SheetSpec } from "@/lib/export/sheet";
 
 // ── The Monthly ETC grid, as a spreadsheet (§24.4) ────────────────────────────
@@ -137,22 +143,30 @@ export async function buildEtcExport(
       const prior = Number(entry.priorEtc);
       const worked = round2(Number(entry.hoursWorked));
       const left = calcHoursLeft(prior, worked);
-      const state: NewEtcCellState = {
-        priorEtc: prior,
-        hoursWorked: worked,
-        draft: entry.newEtcDraft != null ? Number(entry.newEtcDraft) : null,
-        confirmed: entry.submittedAt != null ? round2(Number(entry.newEtc)) : null,
-        cleared: entry.newEtcClearedAt != null,
-        locked: !entry.needsReview,
-        monthComplete: true,
-        precision: money ? "exact" : "whole",
-      };
+      // `confirmed` is confirmedNewEtc — the ONE predicate (isConfirmedEntry) the grid,
+      // validation and the freeze read (2026-09-14). Parts Cost goes through the one
+      // Parts rule; the export has no upstream read, so the live halves are passed as
+      // unknown and the rule falls through exactly as for blank halves — every other
+      // rung (frozen, draft, cleared, confirmed) resolves from the row's own columns.
+      const partsLive: PartsCostLive = { breakoutInScope: showsPartsBreakout(month), breakoutSum: null };
+      const state: NewEtcCellState = money
+        ? partsCostCellState(entry, partsLive, { locked: !entry.needsReview, monthComplete: true })
+        : {
+            priorEtc: prior,
+            hoursWorked: worked,
+            draft: entry.newEtcDraft != null ? Number(entry.newEtcDraft) : null,
+            confirmed: confirmedNewEtc(entry),
+            cleared: entry.newEtcClearedAt != null,
+            locked: !entry.needsReview,
+            monthComplete: true,
+            precision: "whole",
+          };
       // What the cell shows — blank included. NOT effectiveNewEtc, which falls back to
       // the suggestion because that is what a blank would SUBMIT as; the export is a
       // picture of the sheet, and a blank cell is information.
       const seed = newEtcSeedText(state);
       const shown: number | null = seed.trim() === "" ? null : Number(seed);
-      const diff = newEtcDiff(entry);
+      const diff = money ? partsCostDiff(entry, partsLive) : newEtcDiff(entry);
       if (shown === null && worked !== 0 && entry.needsReview) needsCount++;
       row.push(prior, worked, left, shown, diff);
       addTotal(i, prior);
@@ -161,7 +175,7 @@ export async function buildEtcExport(
       // The New ETC total sums what the month would SUBMIT as (effectiveNewEtc), which
       // is what the grid's own total row does — a column of blanks would otherwise total
       // to less than the month is planned at.
-      addTotal(i + 3, effectiveNewEtc(entry));
+      addTotal(i + 3, money ? partsCostEffectiveNewEtc(entry, partsLive) : effectiveNewEtc(entry));
       addTotal(i + 4, diff);
       i += 5;
     };

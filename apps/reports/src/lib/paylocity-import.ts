@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { APP_VERSION } from "@/lib/app-version";
 import { round2 } from "@/lib/etc";
 import { readHoursFeed, aggregateUndefined, countsAsUndefined, type HoursFeed } from "@/lib/hours-feed";
+import { undefinedKpiFigures } from "@/lib/unattributed-hours";
 import { WorkbookError, SHEET_NAME, type RejectedPunch } from "@/lib/paylocity-workbook";
 
 // ── One Paylocity import, from file identity to audit row (§42.5, §42.20) ───
@@ -131,9 +132,15 @@ export async function recordUndefinedHours(
   // sight, because it always presents as "nearly right".
   const rounded = rejected.map((r) => ({ ...r, hours: round2(r.hours) }));
 
+  // HoursImportIssue keeps every counted row (it is the per-label ledger). The figure
+  // that goes on the import record, though, is the KPI card's — computed by the card's
+  // own rule (undefinedKpiFigures: rows that round to 0 are out), so
+  // PaylocityImport.undefinedHours and the ETC page can no longer disagree about one
+  // file version. They did, by exactly those sub-half-hour punches, until 2026-09-14.
   const issues = aggregateUndefined(rounded);
-  const kpiHours = issues.reduce((s, i) => s + i.hours, 0);
-  const kpiRows = issues.reduce((s, i) => s + i.rows, 0);
+  const kpi = undefinedKpiFigures(rounded);
+  const kpiHours = kpi.hours;
+  const kpiRows = kpi.entries;
 
   // Every rejection is stored, counted or not — §42.7 forbids silently dropping
   // unmatched rows, and "correctly excluded" is still an answer somebody may need.

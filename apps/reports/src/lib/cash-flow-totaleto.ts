@@ -1,4 +1,5 @@
 import { TOTALETO_TIMEOUT, withTotalEto } from "@/lib/totaleto-connection";
+import { glPostedAp, sageFirstJoin, PO_LINE_ORDERED_AMOUNT } from "@/lib/gl-posted-sql";
 
 // ── Raw Total ETO extraction for Cash Flow Forecast (2026-08-19) ────────────
 //
@@ -167,11 +168,15 @@ export async function fetchArForecastRows(): Promise<ArForecastRow[]> {
   }, { requestTimeout: TOTALETO_TIMEOUT.cashFlow, feed: "cash_flow.ar_forecast" });
 }
 
-// The exact GL-posted rule sync-totaleto.ts's own AP reconciliation uses
-// (APDocDoNotExport) — an AP document excluded from the GL never belongs in
-// a cash-outgoing forecast any more than it belongs in the actual-spend
-// figures that rule already protects.
-const GL_POSTED_AP = "ISNULL(APBD.APDocDoNotExport, 0) = 0";
+// The exact GL-posted rule sync-totaleto.ts's own AP reconciliation uses — an AP
+// document that never reaches the GL never belongs in a cash-outgoing forecast
+// any more than it belongs in the actual-spend figures that rule already
+// protects. Shared through lib/gl-posted-sql.ts (2026-09-14) because the copy
+// that lived here was the PRE-2026-09-04 spelling: it excluded every flagged
+// document, while Parts Actual had since learned that a flagged Sage-first
+// vendor's document (the company credit card) is paid and posted. `SFC` is the
+// tblCompany alias the predicate reads the vendor name through.
+const GL_POSTED_AP = glPostedAp("SFC");
 const AP_LINE_AMOUNT = "(APDD.APDocQty * APDD.APDocUnitPrice * (1 - APDD.APDocItemPctDisc) * APBD.APDocCurrRate)";
 
 export async function fetchApForecastRows(): Promise<ApForecastRow[]> {
@@ -183,6 +188,7 @@ export async function fetchApForecastRows(): Promise<ApForecastRow[]> {
         SUM(${AP_LINE_AMOUNT}) AS Amount
       FROM tblAPDocumentDetails APDD WITH(NOLOCK)
       JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
+      ${sageFirstJoin("SFC")}
       WHERE ${GL_POSTED_AP}
         AND APDD.ProjectID IS NOT NULL
         AND ISNULL(APDD.Archived, 0) = 0
@@ -193,6 +199,10 @@ export async function fetchApForecastRows(): Promise<ApForecastRow[]> {
 }
 
 // Remaining (uninvoiced) commitment per PO line = ordered value minus
+// whatever of that SAME line has already become an AP document. Both sides in
+// the same currency (2026-09-14): OrderedAmount carries PurchaseCurrRate the
+// way the invoiced side has always carried APDocCurrRate — see
+// PO_LINE_ORDERED_AMOUNT in lib/gl-posted-sql.ts. It is the ordered value minus
 // whatever of that SAME line has already become an AP document
 // (tblAPDocumentDetails.PurchaseDetailID is the join back to the PO line
 // that AP invoice line fulfills). Deliberately simpler than job-bom.ts's full
@@ -206,7 +216,7 @@ export async function fetchPoForecastRows(): Promise<PoForecastRow[]> {
       SELECT
         POD.ProjectID AS ProjectID,
         ISNULL(POD.DateRequired, POH.PurchaseDateRequired) AS DueDate,
-        (POD.PurchaseQty * POD.PurchasePrice) AS OrderedAmount,
+        ${PO_LINE_ORDERED_AMOUNT} AS OrderedAmount,
         ISNULL(AP.InvoicedAmount, 0) AS InvoicedAmount
       FROM tblPurchaseOrderDetails POD WITH(NOLOCK)
       JOIN tblPurchaseOrderHeader POH WITH(NOLOCK) ON POH.PurchaseOrderID = POD.PurchaseOrderID
@@ -214,6 +224,7 @@ export async function fetchPoForecastRows(): Promise<PoForecastRow[]> {
         SELECT SUM(${AP_LINE_AMOUNT}) AS InvoicedAmount
         FROM tblAPDocumentDetails APDD WITH(NOLOCK)
         JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
+        ${sageFirstJoin("SFC")}
         WHERE APDD.PurchaseDetailID = POD.PurchaseDetailID AND ${GL_POSTED_AP}
       ) AP
       WHERE ISNULL(POD.Archived, 0) = 0 AND POD.ProjectID IS NOT NULL

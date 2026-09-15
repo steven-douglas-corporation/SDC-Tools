@@ -64,6 +64,10 @@ export type RefreshOutcome =
       month: string | null;
       // Set when this refresh also STARTED a new ETC month — see the note in the body.
       seededMonth: string | null;
+      // Set when starting the month was ATTEMPTED and failed for a reason other than
+      // "not seedable" (2026-09-14) — a DB error, a permission check, a bug. Optional,
+      // and absent on every pass where there was nothing to seed or seeding worked.
+      seedingError?: string;
       // The latest work date now covered, "YYYY-MM-DD" (§43). The completion message
       // states it because the app reads Lisa's file directly while the Power BI report
       // reads a semantic model that refreshes separately — so the two are routinely at
@@ -74,6 +78,20 @@ export type RefreshOutcome =
     }
   | { ok: false; reason: "locked"; runningSince: string | null; holder: string | null }
   | { ok: false; reason: "error"; message: string; refreshId: string };
+
+// ── "Not seedable" is the only seeding error a refresh may swallow ──────────
+//
+// startMonth's guard (etc-actions.ts assertMonthSeedable) throws exactly two
+// sentences for the expected, silent case — the previous month is still open, or
+// the requested month is out of order. Everything else it can throw is a real
+// failure (MySQL down, a permission refusal, a bug in seeding) and used to vanish
+// into the same `catch {}`, so a month that failed to start looked identical to a
+// month that had no reason to. Matched on the message because the guard throws
+// plain Errors; the two fragments are the stable part of each sentence.
+export function isNotSeedableError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /is still in progress|must be started in order/i.test(message);
+}
 
 // ── The lock ────────────────────────────────────────────────────────────────
 //
@@ -387,6 +405,7 @@ export async function refreshAllData(input: {
   // out of turn. A "not seedable" outcome is expected and silent, because on almost
   // every click there is nothing to start.
   let seededMonth: string | null = null;
+  let seedingError: string | undefined;
   if (input.trigger === "manual") {
     try {
       const { startMonth } = await import("@/lib/etc-actions");
@@ -400,9 +419,15 @@ export async function refreshAllData(input: {
           seededMonth = next;
         }
       }
-    } catch {
-      // Not seedable (out of order, previous month still open, nothing to seed): the
-      // normal case, and not something to report as a refresh failure.
+    } catch (err) {
+      // Not seedable (out of order, previous month still open): the normal case, and
+      // not something to report as a refresh failure. ANYTHING ELSE is a real failure
+      // to start a month and is surfaced — in the log, the audit row and the result —
+      // rather than swallowed with it (see isNotSeedableError).
+      if (!isNotSeedableError(err)) {
+        seedingError = err instanceof Error ? err.message : String(err);
+        console.error("[refresh] starting the next ETC month FAILED (the refresh itself continues):", err);
+      }
     }
   }
 
@@ -504,7 +529,7 @@ export async function refreshAllData(input: {
       `${input.trigger === "manual" ? `${input.userName ?? "A user"} refreshed` : "Scheduled refresh of"} all application data ` +
       `in ${Math.round(durationMs / 100) / 10}s — ${result.steps.filter((s) => s.status === "ok").length}/${SYNC_SOURCES.length} sources ok` +
       (failed.length > 0 ? `, ${failed.length} FAILED (${failed.map((f) => f.label).join(", ")})` : ""),
-    metadata: { refreshId, trigger: input.trigger, month: result.month, seededMonth, durationMs, steps: result.steps },
+    metadata: { refreshId, trigger: input.trigger, month: result.month, seededMonth, seedingError, durationMs, steps: result.steps },
   }).catch(() => {});
 
   // Read back rather than threaded through the sync steps: `hours_actual` is the one
@@ -533,6 +558,7 @@ export async function refreshAllData(input: {
     failedLabels: failed.map((f) => f.label),
     month: result.month,
     seededMonth,
+    ...(seedingError ? { seedingError } : {}),
     hoursThrough,
   };
 }

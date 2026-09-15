@@ -53,6 +53,11 @@ function releaseRow(parsed: ParsedProjectRelease) {
 // manager's dates are never overwritten. Nothing here is touched by the
 // TotalETO/Power BI syncs, so no manual-edit guard is needed.
 export async function uploadProjectRelease(jobId: number, formData: FormData) {
+  // Same gate as createJobFromRelease below — this replaces a job's release
+  // document and can set Job.poStartDate, and until 2026-09-14 it was reachable
+  // by any signed-in role (no check at all).
+  await assertProjectsEditable();
+  if (!Number.isInteger(jobId) || jobId <= 0) throw new Error(`Invalid job id "${jobId}".`);
   const parsed = await parseUpload(formData);
   const job = await prisma.job.findUnique({
     where: { id: jobId },
@@ -79,6 +84,8 @@ export async function uploadProjectRelease(jobId: number, formData: FormData) {
 }
 
 export async function deleteProjectRelease(jobId: number) {
+  await assertProjectsEditable();
+  if (!Number.isInteger(jobId) || jobId <= 0) throw new Error(`Invalid job id "${jobId}".`);
   const existing = await prisma.projectRelease.findUnique({ where: { jobId }, select: { fileName: true } });
   await prisma.projectRelease.deleteMany({ where: { jobId } });
   await logAudit({

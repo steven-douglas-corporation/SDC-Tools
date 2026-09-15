@@ -91,14 +91,37 @@ async function resolveWhere(filters: HoursFilters) {
   return buildHoursWhere(filters, deptEmployeeIds);
 }
 
+// ── `groupBy`, never `distinct` (2026-09-14) ────────────────────────────────
+//
+// Prisma implements `findMany({ distinct })` CLIENT-SIDE: it fetches every matching row
+// and de-duplicates in JS. On this table that is ~29k rows per call, and this file made
+// six such calls on every Hours page render — three here with no `where` at all, three
+// more in queryHoursSummary. `groupBy` is a real SQL GROUP BY, so the database returns
+// one row per distinct value. Result shapes are unchanged.
+async function distinctJobPks(where?: Prisma.JobHoursDetailWhereInput): Promise<number[]> {
+  const g = await prisma.jobHoursDetail.groupBy({ by: ["jobId"], where });
+  return g.map((r) => r.jobId);
+}
+async function distinctSections(where?: Prisma.JobHoursDetailWhereInput): Promise<string[]> {
+  const g = await prisma.jobHoursDetail.groupBy({ by: ["section"], where });
+  return g.map((r) => r.section);
+}
+async function distinctEmployeeIds(where?: Prisma.JobHoursDetailWhereInput): Promise<string[]> {
+  const g = await prisma.jobHoursDetail.groupBy({ by: ["employeeId"], where });
+  return g.map((r) => r.employeeId);
+}
+
 /** The filter menus' own option lists — only values actually present in the punch table. */
 export async function getHoursFilterOptions(): Promise<HoursFilterOptions> {
-  const [jobRows, sectionRows, employeeIdRows, employees] = await Promise.all([
-    prisma.jobHoursDetail.findMany({ distinct: ["jobId"], select: { job: { select: { jobId: true, jobName: true } } } }),
-    prisma.jobHoursDetail.findMany({ distinct: ["section"], select: { section: true } }),
-    prisma.jobHoursDetail.findMany({ distinct: ["employeeId"], select: { employeeId: true } }),
+  const [jobPks, sectionCodes, employeeIds, employees] = await Promise.all([
+    distinctJobPks(),
+    distinctSections(),
+    distinctEmployeeIds(),
     prisma.employee.findMany({ where: { paylocityId: { not: null } }, select: { paylocityId: true, name: true, department: true } }),
   ]);
+  // The job join used to ride along on the distinct read; groupBy cannot select a
+  // relation, so the names come from one lookup over the distinct pks instead.
+  const jobRows = await prisma.job.findMany({ where: { id: { in: jobPks } }, select: { jobId: true, jobName: true } });
 
   const employeeById = new Map(employees.map((e) => [e.paylocityId!, e]));
 
@@ -108,15 +131,14 @@ export async function getHoursFilterOptions(): Promise<HoursFilterOptions> {
   // job id's suffix reaches double digits. localeCompare's own numeric mode
   // gets that case right for both plain numeric AND SVC-style ids alike.
   const jobs = jobRows
-    .map((r) => ({ jobId: r.job.jobId, jobName: r.job.jobName }))
+    .map((r) => ({ jobId: r.jobId, jobName: r.jobName }))
     .sort((a, b) => a.jobId.localeCompare(b.jobId, undefined, { numeric: true }));
 
-  const sections = sectionRows
-    .map((r) => ({ code: r.section, name: SECTION_NAME.get(r.section) ?? r.section }))
+  const sections = sectionCodes
+    .map((code) => ({ code, name: SECTION_NAME.get(code) ?? code }))
     .sort((a, b) => a.code.localeCompare(b.code));
 
-  const employeeList = employeeIdRows
-    .map((r) => r.employeeId)
+  const employeeList = employeeIds
     .map((id) => {
       const e = employeeById.get(id);
       return { employeeId: id, name: e?.name ?? `#${id}`, department: e?.department?.trim() || "—" };
@@ -362,9 +384,10 @@ export async function queryHoursSummary(filters: HoursFilters): Promise<HoursSum
   const where = await resolveWhere(filters);
   const [agg, jobs, employees, sections] = await Promise.all([
     prisma.jobHoursDetail.aggregate({ where, _sum: { hours: true } }),
-    prisma.jobHoursDetail.findMany({ where, distinct: ["jobId"], select: { jobId: true } }),
-    prisma.jobHoursDetail.findMany({ where, distinct: ["employeeId"], select: { employeeId: true } }),
-    prisma.jobHoursDetail.findMany({ where, distinct: ["section"], select: { section: true } }),
+    // GROUP BY in the database, not Prisma's client-side `distinct` — see distinctJobPks.
+    distinctJobPks(where),
+    distinctEmployeeIds(where),
+    distinctSections(where),
   ]);
   return {
     totalHours: Number(agg._sum.hours ?? 0),

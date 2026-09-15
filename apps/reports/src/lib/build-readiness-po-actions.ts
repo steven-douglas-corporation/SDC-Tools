@@ -5,7 +5,7 @@ import { getJobBom } from "@/lib/job-bom";
 import type { PoLineGroup } from "@/lib/job-bom";
 import { getJobPartsCost } from "@/lib/sync-totaleto";
 import { withTimeoutOrNull, UPSTREAM_BUDGET_MS } from "@/lib/with-timeout";
-import { flattenBomParts, makePoGroup, findAuthoritativePo, NO_PO_KEY, type PoGroup } from "@/lib/po-detail";
+import { flattenBomParts, makePoGroup, findAuthoritativePo, partsOnPo, supplierKey, type PoGroup } from "@/lib/po-detail";
 
 // ── Build Readiness's Upcoming Unlocks → the shared PO detail drawer ─────────
 //
@@ -38,8 +38,14 @@ export async function loadPoDetailForJob(jobId: string, supplier: string | null,
   if (!bom) return { ok: false, reason: "unavailable" };
 
   const parts = flattenBomParts(bom, partsCost?.lines ?? []);
-  const supKey = supplier ?? "Unknown supplier";
-  const poParts = parts.filter((p) => (p.supplier ?? "Unknown supplier") === supKey && (p.poNumber ?? NO_PO_KEY) === poNumber);
+  // The snapshot stores the supplier as Total ETO spells it ("Steven Douglas
+  // Corp.") while FlatPart.supplier is normalized ("Steven Douglas Corp (SDC)"),
+  // so a raw equality never matched an SDC row (2026-09-14). `partsOnPo`
+  // normalizes both sides, and resolves the PO through every part's breakdown
+  // groups rather than the single PO a row displays — a part bought on this PO
+  // and later on another shows the newer one, and was "not-found" here.
+  const supKey = supplierKey(supplier);
+  const poParts = partsOnPo(parts, supplier, poNumber);
   if (!poParts.length) return { ok: false, reason: "not-found" };
 
   const authoritative = findAuthoritativePo(bom.vendors, poNumber);

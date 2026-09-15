@@ -1,3 +1,5 @@
+import { rawCodesFoldingInto } from "@/lib/sections";
+
 // ── One filter model for every Monthly ETC drill-through (§73) ────────────────
 //
 // The drills already shared a rollup (groupHoursRows) and a design (ui/Drill.tsx), and
@@ -184,4 +186,32 @@ export function dateBounds(rows: DrillFilterRow[]): { min: string; max: string }
     if (!max || d > max) max = d;
   }
   return { min, max };
+}
+
+// ── Seeding the Section filter from a FOLDED column code (2026-09-14) ─────────
+//
+// JobHoursDashboard opens HoursDetailPanel from a section BAR, whose code is an app
+// column (40-211 "Machine Testing — ME & CE"). The rows it filters are getJobHoursDetail's,
+// whose `section` is the RAW Paylocity pair — and the bar's figure is the FOLD of every
+// raw code onto that column (actual-hours.ts, via mapPunchToColumns). Seeding the filter
+// with the bare column code therefore matched only punches literally booked to 40-211
+// and silently dropped 40-311/40-312/40-313/40-515/40-516/40-518: the 634h Machine
+// Testing bar opened a panel showing ~149h, and because Clear filters returns to the
+// seed (useDrillFilters), the rest was unreachable from inside the panel.
+//
+// This is the same bug class actual-hours.ts, hours-explorer.ts and every other punch
+// consumer already fixed: anything that narrows JobHoursDetail by a standardized code
+// must widen through rawCodesFoldingInto first. Intersected with the codes the detail
+// actually holds, so the seeded selection is exactly the menu options it ticks — a
+// value the menu does not offer would count as a filter nobody could see or untick.
+//
+// A detail whose sections are ALREADY folded (getEtcMonthHoursDetail, the Monthly ETC
+// drill) is unaffected: its raw-only codes are never present, so the intersection is the
+// seed itself. Null when the seed matches nothing, which is how the panel has always
+// read "no seed" (it used to check `detail.sections.some(...)` inline).
+export function seedSectionFilter(initialSection: string | null | undefined, availableCodes: readonly string[]): string[] | null {
+  if (!initialSection) return null;
+  const available = new Set(availableCodes);
+  const seeded = rawCodesFoldingInto([initialSection]).filter((code) => available.has(code));
+  return seeded.length > 0 ? seeded : null;
 }

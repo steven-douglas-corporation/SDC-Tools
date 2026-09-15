@@ -256,8 +256,11 @@ export function JobDrillPanel({
                   <td className="px-3 py-1.5 whitespace-nowrap">
                     {/* The one link that still leaves the page — and it is a
                         deliberate destination the user asked for by clicking a
-                        job number, not a side effect of opening the drill. */}
-                    <Link href={`/jobs/${encodeURIComponent(r.jobId)}`} className="font-medium text-sdc-blue hover:underline">
+                        job number, not a side effect of opening the drill.
+                        Addressed by the Prisma pk (`jobPk`), which is what
+                        /jobs/[id] looks up — the same pattern jobs/page.tsx's
+                        own list uses — while the TEXT stays the job number. */}
+                    <Link href={`/jobs/${r.jobPk}`} className="font-medium text-sdc-blue hover:underline">
                       {r.jobId}
                     </Link>
                   </td>

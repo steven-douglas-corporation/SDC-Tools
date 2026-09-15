@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import {
   computeKpis,
   buildProjectRows,
@@ -58,9 +58,8 @@ export function CashFlowClient({
   asOf: AsOf;
   compareAsOf: AsOf | null;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  // Pane-aware (2026-09-14) — the Cash Flow tab's own params, wherever it is rendered.
+  const url = usePaneUrl();
 
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [planning, setPlanning] = useState<PlanningTarget | null>(null);
@@ -81,9 +80,9 @@ export function CashFlowClient({
   const readOnly = asOf.kind !== "current"; // historical snapshots are immutable — no drill line-items, no editing
 
   function setParam(key: string, value: string) {
-    const qs = new URLSearchParams(searchParams.toString());
+    const qs = new URLSearchParams(url.searchKey);
     qs.set(key, value);
-    router.push(`${pathname}?${qs.toString()}`);
+    url.push(qs);
   }
 
   async function openPlanning(row: ProjectFlowRow) {

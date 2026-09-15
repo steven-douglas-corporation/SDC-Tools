@@ -5,6 +5,20 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { registerUser, changePassword } from "./actions";
+import { safeRelativePath } from "@/lib/safe-redirect";
+
+// Where a successful sign-in lands. proxy.ts sets `?callbackUrl=<path+query>`
+// when it bounces an unauthenticated request here; before 2026-09-14 this form
+// ignored it and always pushed "/", so a deep link (a Scheduler job link, a
+// bookmarked filtered view) was lost at the login step. Read at submit time
+// from window.location rather than via useSearchParams — that hook needs a
+// Suspense boundary in the (not-owned-here) page, and a value read once at
+// click time is exactly as fresh. Sanitised by the same helper the SSO route
+// uses, so a crafted callbackUrl can only ever land somewhere on this origin.
+function postLoginDestination(): string {
+  if (typeof window === "undefined") return "/";
+  return safeRelativePath(new URLSearchParams(window.location.search).get("callbackUrl"));
+}
 
 type Mode = "signin" | "signup" | "change";
 
@@ -52,13 +66,22 @@ export default function LoginForm() {
           setError(res.error);
           return;
         }
+        // A self-registered account starts DEACTIVATED (login/actions.ts) —
+        // signing in now would only fail with "invalid password", which is the
+        // wrong message. Say what actually has to happen next.
+        if (res.pendingActivation) {
+          setMode("signin");
+          setPassword("");
+          setNotice("Account created. An administrator needs to activate it before you can sign in.");
+          return;
+        }
       }
       const res = await signIn("credentials", { email, password, redirect: false });
       if (res?.error) {
         setError(mode === "signup" ? "Account created, but sign-in failed. Try signing in." : "Invalid email or password.");
         return;
       }
-      router.push("/");
+      router.push(postLoginDestination());
       router.refresh();
     } finally {
       setBusy(false);

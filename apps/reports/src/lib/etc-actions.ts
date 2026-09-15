@@ -1,7 +1,9 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
+  assertMonthNotLocked,
   isMonthLocked,
   round2,
   nextMonth,
@@ -15,7 +17,7 @@ import { resolveLeftToInvoice, partsNewEtc } from "@/lib/left-to-invoice";
 import { readPartsEtcBreakout } from "@/lib/parts-etc-breakout";
 import { derivePriorEtcForMonth, cascadePriorEtcForward } from "@/lib/etc-prior-etc";
 import { seedMonthRows } from "@/lib/etc-seeding";
-import { etcActiveJobFilter } from "@/lib/job-filters";
+import { getEtcMonthJobIds } from "@/lib/etc-month-jobs";
 import { assertActionPermission } from "@/lib/require-permission";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION, SECTIONS } from "@/lib/sections";
 import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
@@ -118,29 +120,40 @@ function believedNumberOrNull(believedStored: string | null): number | null {
   return Number.isFinite(n) ? round2(n) : null;
 }
 
-// Deletes unsubmitted entries the grid can never render — either the job no
-// longer qualifies (completed, deactivated, or type-invalidated since
-// seeding), or the section isn't one the grid tracks (relics from before the
-// section list matched the real sheet). The app-side equivalent of the
-// sheet's Refresh deleting rows for jobs gone from the source. Confirmed
+// Deletes unsubmitted entries the grid can never render — either the job is not
+// in this month's job universe (completed, deactivated, or type-invalidated since
+// seeding, for the live month), or the section isn't one the grid tracks (relics
+// from before the section list matched the real sheet). The app-side equivalent
+// of the sheet's Refresh deleting rows for jobs gone from the source. Confirmed
 // history (needsReview=false) is never pruned.
+//
+// The universe is getEtcMonthJobIds (2026-09-14) — the SAME query the grid renders
+// from, validation scopes to and the freeze prunes by. This used etcActiveJobFilter
+// directly, which for the live month is the same set; on a REOPENED historical
+// month it was today's roster, so a refresh there would have deleted the real rows
+// of every job completed since (the 2026-07-14 incident, from a different door).
 async function pruneStaleEntries(month: string): Promise<number> {
-  const qualifying = await prisma.job.findMany({ where: etcActiveJobFilter, select: { id: true } });
+  const { ids } = await getEtcMonthJobIds(month);
   // Zero qualifying jobs means something is wrong upstream (empty Job table,
   // broken filter) — `notIn: []` would delete EVERY unsubmitted entry. Bail.
-  if (qualifying.length === 0) return 0;
+  if (ids.size === 0) return 0;
   const result = await prisma.etcEntry.deleteMany({
     where: {
       month,
       needsReview: true,
       OR: [
-        { jobId: { notIn: qualifying.map((j) => j.id) } },
+        { jobId: { notIn: [...ids] } },
         { section: { notIn: [...ETC_TRACKED_CODES, PARTS_COST_SECTION] } },
       ],
     },
   });
   return result.count;
 }
+
+// One deferred draft write. Built as a thunk over the TRANSACTION client rather
+// than as a `prisma.etcEntry.update(...)` promise, so the batch can re-check the
+// month's lock inside the same transaction that applies it (see below).
+type DraftWrite = (tx: Prisma.TransactionClient) => Promise<unknown>;
 
 // Seeds one EtcEntry per Active job's EstimatedHours section for `month`, carrying
 // Prior ETC forward from the previous month's confirmed New ETC (or the original
@@ -289,6 +302,18 @@ export async function saveAllNewEtcDrafts(
     },
   });
 
+  // ── A locked month takes no draft (2026-09-14) ────────────────────────────
+  //
+  // There was no lock check here at all. The per-row loop skipped frozen rows, so
+  // a cell WITH a row could not be written — but a cell with no row yet
+  // (`newEtcCreate__…`) went through the upsert below and created a
+  // `needsReview: true` row. A tab rendered before the submission posts one on
+  // blur; one pending row flips isMonthLocked to false; the receipt vanishes and
+  // the next month cannot be started. Refused up front, with a message that says
+  // what to do, and re-checked inside the write transaction because a submission
+  // can land between here and there.
+  assertMonthNotLocked(month, entries);
+
   // `field` is the form-field name the posting client used, kept for the audit
   // metadata — it is the difference between "entry 50337 changed" and "this specific
   // input on this specific page changed", which is what a support question about a
@@ -305,7 +330,7 @@ export async function saveAllNewEtcDrafts(
   // `field` is the posted form-field name, so the client can keep exactly those
   // cells dirty instead of re-baselining a value that was never written.
   const conflicts: { field: string; entryId: number; believedStored: string; actuallyStored: string; wanted: string }[] = [];
-  const writes = [];
+  const writes: DraftWrite[] = [];
   // Does this month split Parts Cost New ETC into Left to Invoice + Left to Purchase?
   // Same rule the grid renders by, so the server writes what the page shows.
   const breakoutInScope = showsPartsBreakout(month);
@@ -476,8 +501,8 @@ export async function saveAllNewEtcDrafts(
     if (sum !== currentDraft) {
       changes.push({ entryId: entry.id, field: `newEtcOverride__${entry.id}`, from: currentDraft, to: sum });
     }
-    writes.push(
-      prisma.etcEntry.update({
+    writes.push((tx) =>
+      tx.etcEntry.update({
         where: { id: entry.id },
         data: {
           // An entry equal to the computed default is stored as NULL, not as itself:
@@ -626,8 +651,8 @@ export async function saveAllNewEtcDrafts(
         from: currentDraft ?? believedNumberOrNull(believedStored),
         to: null,
       });
-      writes.push(
-        prisma.etcEntry.update({
+      writes.push((tx) =>
+        tx.etcEntry.update({
           where: { id: entry.id },
           data: { newEtcDraft: null, newEtcClearedAt: new Date() },
         }),
@@ -643,8 +668,8 @@ export async function saveAllNewEtcDrafts(
     if (nextDraft === currentDraft && !currentCleared) continue;
 
     changes.push({ entryId: entry.id, from: currentDraft, to: nextDraft, field });
-    writes.push(
-      prisma.etcEntry.update({
+    writes.push((tx) =>
+      tx.etcEntry.update({
         where: { id: entry.id },
         data: {
           newEtcDraft: nextDraft,
@@ -713,8 +738,8 @@ export async function saveAllNewEtcDrafts(
       // cell, and Submit is what confirms it.
       createdCount++;
       createdChanges.push({ jobId: jobPk, section, to: intent.value, field });
-      writes.push(
-        prisma.etcEntry.upsert({
+      writes.push((tx) =>
+        tx.etcEntry.upsert({
           where: { jobId_section_month: { jobId: jobPk, section, month } },
           update: { newEtcDraft: intent.value, newEtcClearedAt: null },
           create: {
@@ -758,8 +783,8 @@ export async function saveAllNewEtcDrafts(
         from: storedDraft ?? believedNumberOrNull(believedStored),
         to: null,
       });
-      writes.push(
-        prisma.etcEntry.update({
+      writes.push((tx) =>
+        tx.etcEntry.update({
           where: { id: already.id },
           data: { newEtcDraft: null, newEtcClearedAt: new Date() },
         }),
@@ -769,8 +794,8 @@ export async function saveAllNewEtcDrafts(
 
     if (storedDraft === intent.value && !storedCleared) continue; // already what we would write
     changes.push({ entryId: already.id, from: storedDraft, to: intent.value, field });
-    writes.push(
-      prisma.etcEntry.update({
+    writes.push((tx) =>
+      tx.etcEntry.update({
         where: { id: already.id },
         data: { newEtcDraft: intent.value, newEtcClearedAt: null },
       }),
@@ -783,7 +808,19 @@ export async function saveAllNewEtcDrafts(
   const clearedCount = changes.filter((c) => c.to === null).length;
 
   if (writes.length > 0 || conflicts.length > 0 || invalidFields.length > 0) {
-    if (writes.length > 0) await prisma.$transaction(writes);
+    if (writes.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        // ── The lock, re-checked where it counts ──────────────────────────────
+        //
+        // The check at the top of this action read the month before any work was
+        // done; a submission can commit between that read and this write, and the
+        // creates below would then put a pending row into a month that has just
+        // locked. Same rule, same message, evaluated against the rows this
+        // transaction sees — so the create path cannot race its way past it.
+        assertMonthNotLocked(month, await tx.etcEntry.findMany({ where: { month }, select: { needsReview: true } }));
+        for (const write of writes) await write(tx);
+      });
+    }
 
     // ── Per-cell change history + the live notification (2026-08-04) ──────────
     //

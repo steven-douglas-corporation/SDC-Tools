@@ -425,10 +425,14 @@ test("the submission derives Parts Cost New ETC from the two halves — and free
   // means "the manager's override" and nothing else, so a frozen default would light up
   // the manually-adjusted highlight on rows nobody had touched.
   const report = readFileSync(join(process.cwd(), "src", "lib", "monthly-report.ts"), "utf8");
-  assert.match(report, /const breakoutSum = partsNewEtc\(resolvedInvoice, purchase\);/, "both halves, or nothing");
-  // The two halves still come first; the rest of the rule (draft, then the figure a
-  // REOPENED row was confirmed at, then the suggestion) lives in lib/etc.ts since §69.
-  assert.match(report, /const newEtc =\s*breakoutSum \?\?\s*newEtcForSubmission\(\{/);
+  assert.match(report, /breakoutSum: partsNewEtc\(resolvedInvoice, purchase\)/, "both halves, or nothing");
+  // The halves no longer come FIRST (2026-09-14): they are one input to the one Parts
+  // rule in lib/etc.ts — frozen, draft, cleared, the figure a REOPENED row was
+  // confirmed at, and only then the live sum. Taking the live sum first is what let a
+  // no-edit re-submission of a reopened month replace a manager's signed Parts figure
+  // with whatever the invoices had drifted to.
+  assert.match(report, /newEtc = partsCostEffectiveNewEtc\(entry, live\);/);
+  assert.ok(!/breakoutSum \?\?\s*newEtcForSubmission/.test(report), "the live sum must not outrank the confirmed figure");
   assert.match(report, /resolveLeftToInvoice\(\{/, "through the shared rule, not a private copy");
   // `newEtc` is the frozen figure, as it always was — and the override column is left
   // exactly as the manager left it.

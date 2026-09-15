@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 import { INPUT } from "@/components/ui/classnames";
 import { groupSelectionState, nextSelectionForGroup } from "@/lib/job-select-groups";
@@ -50,9 +50,10 @@ function groupRank(name: string): [number, string] {
 }
 
 export function JobSelect({ jobs, selected }: { jobs: JobOpt[]; selected: string[] }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  // Pane-aware (2026-09-14): inside a workspace tab, picking a job used to push
+  // `jobs=` bare at "/w", which decodes to no tabs at all. usePaneUrl writes this
+  // tab's own `jobs` and leaves every other tab alone.
+  const url = usePaneUrl();
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [query, setQuery] = useState("");
 
@@ -97,10 +98,11 @@ export function JobSelect({ jobs, selected }: { jobs: JobOpt[]; selected: string
     const ids = stored.split(",").map((s) => s.trim()).filter(Boolean);
     rememberJobHoursSelection(ids);
     try { window.localStorage.removeItem(JOB_HOURS_SELECTION_LEGACY_KEY); } catch { /* ignore */ }
-    const sp = new URLSearchParams(window.location.search);
+    // The PAGE's own params — in a pane, window.location.search is the whole /w URL.
+    const sp = new URLSearchParams(url.searchKey);
     if (sp.has("jobs") || sp.has("job") || ids.length === 0) return;
     sp.set("jobs", ids.join(","));
-    router.replace(`${pathname}?${sp.toString()}`);
+    url.replace(sp);
     // Run once on mount — a stored value only matters for the initial landing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -159,7 +161,7 @@ export function JobSelect({ jobs, selected }: { jobs: JobOpt[]; selected: string
     // regularly lands before the first has committed — and until it does,
     // useSearchParams still reports the older query string. See
     // lib/url-params.ts.
-    const currentQs = searchParams.toString();
+    const currentQs = url.searchKey;
     const qs = nextParams(currentQs);
     qs.set("jobs", next.join(","));
     qs.delete("job"); // drop the legacy single-job param
@@ -169,7 +171,7 @@ export function JobSelect({ jobs, selected }: { jobs: JobOpt[]; selected: string
     rememberJobHoursSelection(next);
     const q = qs.toString();
     notePendingParams(currentQs, q);
-    router.push(`${pathname}?${q}`, { scroll: false });
+    url.push(qs, { scroll: false });
   }
 
   // Add or remove one job, keeping the order the list is shown in so the chips

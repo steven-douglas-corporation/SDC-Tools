@@ -49,6 +49,12 @@ type Lane = {
   // starting a second one (§32.3 "no duplicate network request for one action").
   inFlightKey: string | null;
   inFlightPromise: Promise<unknown> | null;
+  // The `issued` id of the in-flight request, so a JOINER can be judged by the same
+  // rule as the owner: its answer is current only while that id is still the newest
+  // thing issued in the lane. See the note in sequenced() — the earlier joiner check
+  // read `issued === applied`, which abandonLane deliberately makes true, so a
+  // joiner returned ok:true for a request the lane had just been told to forget.
+  inFlightId: number;
 };
 
 const lanes = new Map<string, Lane>();
@@ -56,7 +62,7 @@ const lanes = new Map<string, Lane>();
 function lane(name: string): Lane {
   let l = lanes.get(name);
   if (!l) {
-    l = { issued: 0, applied: 0, inFlightKey: null, inFlightPromise: null };
+    l = { issued: 0, applied: 0, inFlightKey: null, inFlightPromise: null, inFlightId: 0 };
     lanes.set(name, l);
   }
   return l;
@@ -95,13 +101,19 @@ export async function sequenced<T>(
   // this does NOT bump `issued` — joining is not a new request, so it cannot
   // invalidate the one it is joining.
   if (l.inFlightKey === key && l.inFlightPromise) {
+    const joinedId = l.inFlightId;
     try {
       const value = (await l.inFlightPromise) as T;
-      // Still checked against `applied`: the shared request may have been
-      // superseded by a THIRD, different request while we were waiting on it.
-      if (l.issued !== l.applied && l.inFlightKey !== key) return { ok: false, reason: "stale" };
+      // Judged by the owner's rule: the answer is current only while the request we
+      // joined is still the newest thing issued in this lane. A THIRD, different
+      // request bumps `issued`; so does abandonLane — and the earlier check here
+      // (`issued !== applied && inFlightKey !== key`) passed after an abandon,
+      // because abandonLane sets applied = issued. That let a joiner apply a result
+      // the lane had explicitly been told to forget.
+      if (joinedId !== l.issued) return { ok: false, reason: "stale" };
       return { ok: true, value, deduped: true };
     } catch (error) {
+      if (joinedId !== l.issued) return { ok: false, reason: "stale" };
       return { ok: false, reason: "error", error };
     }
   }
@@ -110,6 +122,7 @@ export async function sequenced<T>(
   const promise = work();
   l.inFlightKey = key;
   l.inFlightPromise = promise;
+  l.inFlightId = id;
 
   try {
     const value = await promise;
@@ -151,6 +164,7 @@ export function abandonLane(laneName: string): void {
   l.applied = l.issued;
   l.inFlightKey = null;
   l.inFlightPromise = null;
+  l.inFlightId = 0;
 }
 
 /** Whether a lane currently has a request running — for a section-level spinner. */

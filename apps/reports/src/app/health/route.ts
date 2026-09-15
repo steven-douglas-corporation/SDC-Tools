@@ -10,8 +10,13 @@
 //
 // Must stay listed in proxy.ts's matcher exclusions alongside `api/health`, or
 // it goes straight back to redirecting to the login form.
+//
+// Same database probe as /api/health (lib/health-probe.ts) — the two paths must
+// never disagree about whether the app is up.
+import { probeDatabase, healthResponse } from "@/lib/health-probe";
+
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return Response.json({ status: "ok", app: "sdc-projects-reports" });
+export async function GET() {
+  return healthResponse(await probeDatabase());
 }

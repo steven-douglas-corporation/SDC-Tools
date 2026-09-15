@@ -1,7 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, effectiveNewEtc, isNewEtcDecided, newEtcDiff, round2 } from "@/lib/etc";
+import { calcHoursLeft, isPartsCostDecided, partsCostDiff, partsCostEffectiveNewEtc, round2, type PartsCostLive } from "@/lib/etc";
+import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
 
 // ── The drill behind the "Parts spent" card, one row per JOB ─────────────────
 //
@@ -59,21 +60,34 @@ export type PartsSpentDetail = {
   quietJobs: number;
 };
 
-export async function getPartsSpentDetail(month: string, jobIds: number[]): Promise<PartsSpentDetail> {
+// `partsBreakoutSums` — the live Left to Invoice + Left to Purchase per job PK, when
+// the caller has it. The card this drill sits behind reads it (getEtcMonthKpis), so
+// the drill takes the same input or the two could disagree on an open undecided row.
+export async function getPartsSpentDetail(
+  month: string,
+  jobIds: number[],
+  partsBreakoutSums: ReadonlyMap<number, number | null> = new Map(),
+): Promise<PartsSpentDetail> {
   const empty: PartsSpentDetail = {
     rows: [],
     totals: { prior: 0, spent: 0, left: 0, newEtc: 0, diff: 0 },
     quietJobs: 0,
   };
   if (jobIds.length === 0) return empty;
+  const breakoutInScope = showsPartsBreakout(month);
 
   const entries = await prisma.etcEntry.findMany({
     where: { month, section: PARTS_COST_SECTION, jobId: { in: jobIds } },
+    // newEtcClearedAt / submittedAt: without them the confirmed rung of the Parts
+    // rule silently never fired here, and this drill disagreed with the Parts KPI
+    // card it opens from on every reopened month (2026-09-14).
     select: {
       priorEtc: true,
       hoursWorked: true,
       newEtc: true,
       newEtcDraft: true,
+      newEtcClearedAt: true,
+      submittedAt: true,
       needsReview: true,
       job: { select: { id: true, jobId: true, jobName: true } },
     },
@@ -84,8 +98,9 @@ export async function getPartsSpentDetail(month: string, jobIds: number[]): Prom
   for (const e of entries) {
     const prior = Number(e.priorEtc);
     const spent = Number(e.hoursWorked);
-    const newEtc = effectiveNewEtc(e);
-    const decided = isNewEtcDecided(e);
+    const live: PartsCostLive = { breakoutInScope, breakoutSum: partsBreakoutSums.get(e.job.id) ?? null };
+    const newEtc = partsCostEffectiveNewEtc(e, live);
+    const decided = isPartsCostDecided(e, live);
     // Nothing spent, nothing planned, no budget — a row that exists because the month
     // was seeded, not because anything happened. Counted, not listed.
     if (spent === 0 && prior === 0 && newEtc === 0) {
@@ -100,7 +115,7 @@ export async function getPartsSpentDetail(month: string, jobIds: number[]): Prom
       spent: round2(spent),
       left: round2(calcHoursLeft(prior, spent)),
       newEtc: round2(newEtc),
-      diff: round2(newEtcDiff(e)),
+      diff: round2(partsCostDiff(e, live)),
       decided,
     });
   }

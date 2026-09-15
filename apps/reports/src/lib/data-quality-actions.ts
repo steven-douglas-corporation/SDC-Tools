@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { SECTIONS } from "@/lib/sections";
+import { assertActionPermission } from "@/lib/require-permission";
 
 // Employee drill-through for the Data Quality tab.
 //
@@ -42,6 +43,13 @@ export type EmployeePunchDetail = {
 };
 
 export async function getEmployeePunches(employeeId: string): Promise<EmployeePunchDetail> {
+  // Server Actions are reachable by anyone who can POST to the app, not only by
+  // the component that renders the button (see require-permission.ts). This one
+  // returns a named person's complete punch history, and until 2026-09-14 it
+  // had no check at all. It is hosted on the Dashboard's Data Quality tab
+  // (DataQualityPanel, rendered by (app)/page.tsx), so it needs exactly what
+  // that page needs: dashboard:view.
+  await assertActionPermission("dashboard:view");
   const [employee, punches] = await Promise.all([
     prisma.employee.findFirst({ where: { paylocityId: employeeId }, select: { name: true, department: true } }),
     prisma.jobHoursDetail.findMany({

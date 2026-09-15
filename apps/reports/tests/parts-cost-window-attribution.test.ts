@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normPn, attributeInvoicedWindow } from "../src/lib/parts-cost-window-attribution";
+import { normPn, attributeInvoicedWindow, collectBomPartNumbers } from "../src/lib/parts-cost-window-attribution";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
+import type { BomNode } from "../src/lib/job-bom-rules";
 
 // parts-cost-window-attribution.ts is the I/O-free half of the Parts List
 // invoiced-window fix — no DB, no React, so (unlike everything else touching
@@ -178,4 +179,50 @@ test("does not dedupe repeat invoice events for the same part — both are summe
   ];
   const { byPartNumber } = attributeInvoicedWindow(lines, bomOf("A"));
   assert.equal(byPartNumber.get("A"), 20);
+});
+
+// ── collectBomPartNumbers walks node.self as well as node.parts (2026-09-14) ──
+//
+// A "Both Assembly and Contents" assembly is itself a thing to buy (BomNode.self)
+// and has its own Parts List row, but JobProcurement.tsx's inline set-builder read
+// `node.parts` only — so in a windowed Invoiced view an invoice against that
+// assembly's own number was "not in the BOM" and fell to the unattached total.
+
+test("collectBomPartNumbers includes a node's own self-buy part number, its parts, and its children's", () => {
+  const stats = { total: 0, received: 0, noPO: 0, ordered: 0, stock: 0, pct: 0 };
+  const bomPart = (id: number, pn: string) => ({
+    id, pn, desc: "", manufacturer: "", qty: 1, poQty: 0, receivedQty: 0, unitPrice: 0, costBasis: "none" as const, source: "po" as const,
+    release: "contentsOnly" as const, isAssembly: false, pullQty: 0, requiredDate: null, expectedDate: null, originalDate: null,
+    revisedDate: null, poDate: null, receivedDate: null, status: "ordered" as const, hold: false, supplier: null, poId: null, packetId: null, packetLabel: null,
+  });
+  const node = (key: string, self: ReturnType<typeof bomPart> | null, parts: ReturnType<typeof bomPart>[], children: BomNode[] = []): BomNode => ({
+    key, id: key, depth: 1, label: key, pn: key, desc: "", isAssembly: true, release: self ? "bothAssemblyAndContents" : "contentsOnly",
+    self, packetId: null, packetLabel: null, children, parts, stats, totalCost: 0, totalPartQty: 0, nestedAssemblies: 0,
+  });
+  const roots = [
+    node("section", null, [bomPart(1, "loose-1")], [
+      node("1116-DB-000", bomPart(2, "1116-DB-000"), [bomPart(3, " sub  a ")], [
+        node("1116-DB-100", bomPart(4, "1116-DB-100"), []),
+      ]),
+    ]),
+  ];
+  const set = collectBomPartNumbers(roots);
+  assert.deepEqual([...set].sort(), ["1116-DB-000", "1116-DB-100", "LOOSE-1", "SUB A"]);
+});
+
+test("an invoice against a self-buy assembly's own number attributes to its row rather than the unattached total", () => {
+  const stats = { total: 0, received: 0, noPO: 0, ordered: 0, stock: 0, pct: 0 };
+  const self = {
+    id: 2, pn: "1116-DB-000", desc: "", manufacturer: "", qty: 1, poQty: 0, receivedQty: 0, unitPrice: 0, costBasis: "none" as const, source: "po" as const,
+    release: "bothAssemblyAndContents" as const, isAssembly: true, pullQty: 0, requiredDate: null, expectedDate: null, originalDate: null,
+    revisedDate: null, poDate: null, receivedDate: null, status: "ordered" as const, hold: false, supplier: null, poId: null, packetId: null, packetLabel: null,
+  };
+  const roots: BomNode[] = [{
+    key: "s", id: 1, depth: 0, label: "s", pn: "", desc: "", isAssembly: false, release: "contentsOnly", self: null, packetId: null, packetLabel: null,
+    children: [{ key: "a", id: "a", depth: 1, label: "a", pn: "1116-DB-000", desc: "", isAssembly: true, release: "bothAssemblyAndContents", self, packetId: null, packetLabel: null, children: [], parts: [], stats, totalCost: 0, totalPartQty: 0, nestedAssemblies: 0 }],
+    parts: [], stats, totalCost: 0, totalPartQty: 0, nestedAssemblies: 1,
+  }];
+  const result = attributeInvoicedWindow([line({ partNumber: "1116-DB-000", invoicedAmount: 1430 })], collectBomPartNumbers(roots));
+  assert.equal(result.byPartNumber.get("1116-DB-000"), 1430);
+  assert.equal(result.unattachedAmount, 0);
 });

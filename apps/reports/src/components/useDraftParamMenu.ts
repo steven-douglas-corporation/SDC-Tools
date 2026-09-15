@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 import { usePendingWatchdog } from "@/components/usePendingWatchdog";
 import { useTransition } from "react";
@@ -113,9 +113,10 @@ export function useDraftParamsMenu<K extends string>({
   buildParams: (draft: Record<K, string[]>, qs: URLSearchParams) => void;
   debounceMs?: number;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  // Pane-aware (2026-09-14): the page's own path and params, and a push that lands
+  // in THIS tab's namespace when the menu is rendered inside the workspace. On a
+  // plain page it is usePathname/useSearchParams/router.push exactly as before.
+  const url = usePaneUrl();
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [pending, startTransition] = useTransition();
   // See the note on the returned `pending` below. `pending` itself is still used for the
@@ -211,7 +212,7 @@ export function useDraftParamsMenu<K extends string>({
     // while the first is still rendering would rebuild the URL without the
     // first one and silently revert it. That window is the normal case now that
     // every tick navigates. See lib/url-params.ts.
-    const current = searchParams.toString();
+    const current = url.searchKey;
     const qs = nextParams(current);
     buildParams(draft, qs);
     const q = qs.toString();
@@ -224,7 +225,7 @@ export function useDraftParamsMenu<K extends string>({
     setPushedKeys((prev) => [...prev.slice(-7), draftKey]);
     notePendingParams(current, q); // before the push, so the next tick sees it
     startTransition(() => {
-      router.push(q ? `${pathname}?${q}` : pathname, { scroll: false });
+      url.push(qs, { scroll: false });
     });
   }
 

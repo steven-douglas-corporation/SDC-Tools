@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 
 // ── The Dashboard's ONE month control, as a hook (2026-08-28) ───────────────
@@ -38,9 +38,11 @@ export function shiftMonth(month: string, months: number): string {
 }
 
 export function useDashboardMonth(month: string): DashboardMonthNav {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  // Pane-aware (2026-09-14): inside a workspace or split pane this writes the
+  // pane's OWN `m` key and re-encodes the host URL; on the plain page it is the
+  // bare `?m=` it always was. Writing `${pathname}?m=` from a pane left the
+  // workspace entirely.
+  const url = usePaneUrl();
   const [pending, startTransition] = useTransition();
   // `month` is a server prop and cannot change until the new page commits, so a
   // controlled <select> would snap back to the old month for the whole
@@ -53,13 +55,13 @@ export function useDashboardMonth(month: string): DashboardMonthNav {
     // See lib/url-params.ts: useSearchParams still reports the pre-navigation
     // value while a change is in flight, so building straight from it can revert
     // whatever the Data Quality tab or another control set a moment ago.
-    const currentQs = searchParams.toString();
+    const currentQs = url.searchKey;
     const qs = nextParams(currentQs);
     qs.set("m", ym);
     const q = qs.toString();
     notePendingParams(currentQs, q);
     startTransition(() => {
-      router.push(`${pathname}?${q}`, { scroll: false });
+      url.push(qs, { scroll: false });
     });
   };
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import Link from "next/link";
 import {
   computeJobCost,
@@ -245,10 +245,11 @@ export function JobCostExplorer({
   // (MonthYearSelect) already uses. asOf/asOfOptions come from props, not
   // local state, precisely because the server is the one source of truth for
   // "what does this snapshot look like".
-  const router = useRouter();
-  const pathname = usePathname();
+  // Pane-aware (2026-09-14): inside a workspace tab this used to push `?asOf=` bare
+  // at "/w". usePaneUrl writes this tab's own `asOf` and stays in the workspace.
+  const url = usePaneUrl();
   function handleAsOfChange(value: string) {
-    router.push(value === "current" ? pathname : `${pathname}?asOf=${value}`);
+    url.push(value === "current" ? {} : { asOf: value });
   }
   function formatAsOfOption(d: string): string {
     const [y, m, day] = d.split("-");

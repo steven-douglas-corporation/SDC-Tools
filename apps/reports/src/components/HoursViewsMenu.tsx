@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { useToast } from "@/components/ui/Toast";
 import { TOOLBAR_BTN, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { type SharedView, publishHoursView, deleteSharedHoursView, renameSharedHoursView } from "@/lib/hours-saved-views-actions";
@@ -17,6 +18,7 @@ import {
   fixupDefaultPointer,
   type MyViews,
   type DefaultPointer,
+  type ViewConfig,
 } from "@/lib/hours-saved-views";
 
 // "Views ▾" for the Hours tab — a filter/group-by/sort combination, saved and reused.
@@ -32,13 +34,21 @@ import {
 
 export function HoursViewsMenu({ sharedViews }: { sharedViews: SharedView[] }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  // Pane-aware (2026-09-14): applying a view used to push `/hours?…`, which inside a
+  // workspace tab navigated OUT of the workspace; snapshotting read
+  // window.location.search, which in a pane is the whole /w URL rather than this
+  // page's params. usePaneUrl gives the Hours tab's own params and a push that stays
+  // in its namespace. `router` remains only for router.refresh() after a server action.
+  const url = usePaneUrl();
   const { toast } = useToast();
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [mine, setMine] = useState<MyViews>({});
   const [defaultPtr, setDefaultPtr] = useState<DefaultPointer | null>(null);
   const [busy, setBusy] = useState(false);
-  const activeName = searchParams.get("view");
+  const activeName = url.searchParams.get("view");
+  /** The page's own params for a view — what hrefForView puts after `/hours?`. */
+  const paramsForView = (config: ViewConfig, name: string) =>
+    new URL(hrefForView(config, name), "http://local").searchParams;
 
   useEffect(() => {
     const myViews = parseMyViews(window.localStorage.getItem(HOURS_MY_VIEWS_KEY));
@@ -56,8 +66,8 @@ export function HoursViewsMenu({ sharedViews }: { sharedViews: SharedView[] }) {
     // Auto-apply the personal default — but ONLY on a bare visit (no params at all).
     // Any param, even a stray `?page=2`, means the user arrived via an explicit
     // bookmark/shared link, which must never be silently overridden.
-    if (window.location.search === "" && ptr && myViews[ptr.name]) {
-      router.replace(hrefForView(myViews[ptr.name], ptr.name));
+    if (url.searchKey === "" && ptr && myViews[ptr.name]) {
+      url.replace(paramsForView(myViews[ptr.name], ptr.name));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -103,7 +113,7 @@ export function HoursViewsMenu({ sharedViews }: { sharedViews: SharedView[] }) {
     );
     if (!name || !name.trim()) return;
     const clean = name.trim();
-    writeMine({ ...mine, [clean]: snapshotFromSearch(window.location.search) });
+    writeMine({ ...mine, [clean]: snapshotFromSearch(url.searchKey) });
     toast(`Saved view "${clean}"`);
     close();
   }
@@ -186,7 +196,7 @@ export function HoursViewsMenu({ sharedViews }: { sharedViews: SharedView[] }) {
         {sharedViews.length > 0 && sec("Shared")}
         {sharedViews.map((v) => (
           <div key={v.name} className="flex items-center gap-1 px-2 py-0.5">
-            <button type="button" onClick={() => router.push(hrefForView(v.config, v.name))} className={rowBtn}>
+            <button type="button" onClick={() => url.push(paramsForView(v.config, v.name))} className={rowBtn}>
               {v.name}
               {v.owner ? <span className="text-label text-sdc-gray-400"> · {v.owner}</span> : null}
             </button>
@@ -223,7 +233,7 @@ export function HoursViewsMenu({ sharedViews }: { sharedViews: SharedView[] }) {
                 >
                   {isDefault ? "⚑" : "⚐"}
                 </button>
-                <button type="button" onClick={() => router.push(hrefForView(mine[name], name))} className={rowBtn}>
+                <button type="button" onClick={() => url.push(paramsForView(mine[name], name))} className={rowBtn}>
                   {name}
                 </button>
                 <button type="button" title="Rename this view" className={iconBtn} onClick={() => handleRenameMine(name)}>

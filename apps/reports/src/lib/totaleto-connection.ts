@@ -1,4 +1,5 @@
 import "server-only";
+import { AsyncLocalStorage } from "node:async_hooks";
 import sql from "mssql";
 import {
   recordTotalEtoAttempt,
@@ -80,20 +81,46 @@ export function totalEtoConfig(requestTimeout: number = TOTALETO_TIMEOUT.sync): 
     options: { trustServerCertificate: true, encrypt: false },
     connectionTimeout: 15_000,
     requestTimeout,
-    // ── Bounded, and idle connections handed back ────────────────────────────
-    //
-    // mssql's defaults are max 10 / min 0 / idle 30s. `min: 0` is the important one
-    // and is kept: pools below are long-lived, so anything above zero would hold
-    // connections on the SQL box for the life of the process. With zero, an idle pool
-    // holds nothing and the next query reopens as needed.
-    //
-    // max is lowered to 5 because there are now a handful of pools (one per distinct
-    // requestTimeout) rather than one: 5 x a few pools is a sane ceiling on what this
-    // app can hold against Total ETO, and no query path here needs more than a
-    // handful of concurrent connections (the widest fan-out in the app is 6, and it
-    // is spread across pools).
-    pool: { max: 5, min: 0, idleTimeoutMillis: 30_000 },
+    pool: poolSettingsFor(requestTimeout),
   };
+}
+
+// ── Bounded, idle connections handed back, and waiting is not "exhausted" ───
+//
+// mssql's defaults are max 10 / min 0 / idle 30s. `min: 0` is the important one
+// and is kept: pools are long-lived, so anything above zero would hold connections
+// on the SQL box for the life of the process. With zero, an idle pool holds nothing
+// and the next query reopens as needed.
+//
+// ── Why max went back from 5 to 10, and why acquireTimeoutMillis is set (2026-09-14)
+//
+// max had been lowered to 5 on the reasoning that "the widest fan-out in the app is
+// 6, and it is spread across pools". It was not spread: the BOM walk issued its six
+// queries in parallel on the ONE 120s pool, and the Build Readiness pass ran six of
+// those walks at once — 36 acquires against 5 connections. tarn (mssql's pool) hands
+// a queued acquire a bare TimeoutError after its default 30s, which classifyTotalEto
+// reports as pool_exhausted, which is "transient", so each walk was retried three
+// times, each retry queuing six more acquires. The walk then swallowed the failure
+// and returned an empty BOM, and the dashboard wrote "No BOM" for jobs that have one.
+//
+// Two things fix that at this layer (the fan-out itself is bounded in job-bom.ts and
+// build-readiness-sync.ts so workers x per-job queries <= this max):
+//
+//   * max 10 per pool — mssql's own default; a handful of pools x 10 is still a small
+//     ceiling against a production SQL Server, and it is what the fan-out arithmetic
+//     in build-readiness-sync.ts is checked against (tests/build-readiness-sync.test.ts).
+//   * acquireTimeoutMillis ABOVE the pool's requestTimeout. A caller queued behind a
+//     busy connection is waiting for a query that may legitimately run up to
+//     requestTimeout; giving up before that is not "the pool is exhausted", it is
+//     "we stopped waiting", and reporting it as exhaustion is what sent the retries
+//     piling in. So the acquire window is requestTimeout plus the connection-open
+//     budget: a queued caller outlives one full query ahead of it before it gives up.
+export const POOL_MAX = 10;
+const ACQUIRE_MARGIN_MS = 15_000; // = connectionTimeout: the time a fresh connection may take to open
+
+/** The per-pool settings for a given requestTimeout. Pure, so a test can pin the arithmetic. */
+export function poolSettingsFor(requestTimeout: number): { max: number; min: number; idleTimeoutMillis: number; acquireTimeoutMillis: number } {
+  return { max: POOL_MAX, min: 0, idleTimeoutMillis: 30_000, acquireTimeoutMillis: requestTimeout + ACQUIRE_MARGIN_MS };
 }
 
 // ── The failure taxonomy (widened 2026-09-09) ───────────────────────────────
@@ -138,6 +165,14 @@ export type TotalEtoFailure =
    * ETO query failed against SERVER-APP1" and sent the reader to the wrong system.
    */
   | "app_write"
+  /**
+   * The CALLER stopped waiting — a refresh step's budget or a per-job timeout ran
+   * out — and the in-flight request was cancelled on its behalf (see
+   * runWithTotalEtoAbort). Not a Total ETO fault, and never retried: the caller
+   * has already moved on, and the point of the abort is that nothing keeps
+   * running behind its back.
+   */
+  | "aborted"
   /** Anything else — a genuine bug in our own code, most likely. */
   | "other";
 
@@ -191,6 +226,10 @@ export function classifyTotalEto(error: unknown, context?: { authenticated?: boo
   const message = error instanceof Error ? error.message : String(error);
 
   // ── Ours before theirs ────────────────────────────────────────────────────
+  // A cancelled request is the caller's decision, not the server's. mssql raises
+  // ECANCEL when Request.cancel() lands mid-query; TotalEtoAbortedError is what
+  // withTotalEto throws itself when the signal was already aborted.
+  if (code === "ECANCEL" || code === "EABORT" || name === "TotalEtoAbortedError" || name === "AbortError") return "aborted";
   // A binding fault must never be reported as a Total ETO problem: it fails in
   // ~15ms without touching the network, and calling it "Total ETO failed" is
   // what sent a five-day investigation looking at credentials and firewalls.
@@ -280,6 +319,8 @@ export function describeTotalEtoFailure(error: unknown, context?: { authenticate
         `Total ETO returned the rows; writing them into this app's own database failed. ` +
         `The fault is in the app database (MySQL) or the write itself, not in Total ETO. Retrying cannot help until that is fixed. (${raw})`
       );
+    case "aborted":
+      return `This Total ETO query was cancelled because the step that asked for it ran out of its own time budget — the query was stopped rather than left running. Not a Total ETO fault. (${raw})`;
     default:
       // Only claim Total ETO when there is driver evidence for it. Without a code
       // this is an unrecognised error from somewhere inside a step that happens to
@@ -474,9 +515,11 @@ export async function closeTotalEtoPools(): Promise<void> {
 //
 // Three attempts, 0.5s then 2s apart. Small enough that a manual refresh which
 // hits one blip still finishes inside the button's own 300s ceiling and the step
-// timeout above it (45s in auto-sync.ts — three attempts of a 30s query would
-// exceed that, which is correct: the step timeout is the outer bound and it fails
-// the step honestly rather than letting a lane run long).
+// budget above it (auto-sync.ts's stepBudgetFor — three attempts of a 30s query
+// would exceed the 45s default, which is correct: the step budget is the outer
+// bound and it fails the step honestly rather than letting a lane run long. Since
+// 2026-09-14 that budget also ABORTS the attempt in flight — see
+// runWithTotalEtoAbort below — so "abandoned" means stopped, not orphaned).
 //
 // Retried only for the kinds in TRANSIENT. A rejected login, a schema error or a
 // parameter-binding fault is retried zero times — the answer will not change, and
@@ -498,9 +541,105 @@ export type TotalEtoRunOptions = {
   requestTimeout?: number;
   /** Override the retry budget. 1 disables retrying (used by the preflight below). */
   attempts?: number;
+  /**
+   * Cancels the work: no further attempt starts, an in-flight request is cancelled,
+   * and a result that arrives after the abort is thrown away rather than returned.
+   * Usually supplied ambiently via runWithTotalEtoAbort instead of here.
+   */
+  signal?: AbortSignal;
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// ── An abandoned step must actually stop (2026-09-14) ───────────────────────
+//
+// auto-sync.ts's step budget used to note that "the abandoned work is NOT cancelled
+// — a promise cannot be", and reasoned that a late completion was harmless because
+// every write is an idempotent upsert. It is not harmless: the budget was 45s and
+// parts_cost's two queries carry a 180s requestTimeout with three retries, so a
+// slow-but-working Total ETO had the step recorded as failed, the pass finish, the
+// RefreshLock RELEASED — and then the orphaned syncPartsCost came back and upserted
+// EtcEntry rows concurrently with whatever the next pass was writing.
+//
+// The step cannot reach the query to cancel it: it calls syncPartsCost, which calls
+// getPartsCostBookedByJob, which calls withTotalEto — three files, and only the last
+// is this one. So the signal travels AMBIENTLY, on an AsyncLocalStorage that follows
+// the await chain through the intermediate modules unchanged. withTotalEto reads it,
+// and honours it three ways: it refuses to start an attempt once aborted, it cancels
+// the mssql Request in flight (Request.cancel() -> tedious connection.cancel(), which
+// frees the pooled connection too), and it throws instead of returning rows that
+// arrive after the abort — which is the part that stops the write.
+//
+// AsyncLocalStorage is Node-only, as is everything else in this file (mssql).
+const abortScope = new AsyncLocalStorage<AbortSignal>();
+
+/**
+ * Runs `work` with `signal` as the ambient abort for every withTotalEto call made
+ * anywhere beneath it — however many modules deep — without threading a parameter
+ * through code that does not know about Total ETO.
+ */
+export function runWithTotalEtoAbort<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+  return abortScope.run(signal, work);
+}
+
+/** The abort signal in effect for the current async chain, if any. */
+export function currentTotalEtoAbort(): AbortSignal | undefined {
+  return abortScope.getStore();
+}
+
+export class TotalEtoAbortedError extends Error {
+  readonly code = "EABORT";
+  constructor(feed: string, reason: unknown) {
+    super(`Total ETO query "${feed}" was cancelled by its caller: ${reason instanceof Error ? reason.message : String(reason ?? "aborted")}`);
+    this.name = "TotalEtoAbortedError";
+  }
+}
+
+const CANCELLABLE = ["query", "batch", "execute"] as const;
+
+/**
+ * The pool, with every Request it hands out wired to `signal`: an abort cancels the
+ * statement in flight. The listener is removed when the statement settles, so a
+ * long-lived signal (a whole refresh step) does not accumulate one per query.
+ *
+ * A Proxy rather than a subclass because mssql's ConnectionPool is the thing callers
+ * hold, and `sql.Int` etc. must keep binding against the SAME module instance — see
+ * the pool-ownership note above; nothing about the pool itself is changed.
+ */
+function abortablePool(pool: sql.ConnectionPool, signal: AbortSignal): sql.ConnectionPool {
+  return new Proxy(pool, {
+    get(target, prop) {
+      if (prop !== "request") {
+        // Read off the real pool (getters like `connected` run against it, not the proxy).
+        const value = Reflect.get(target, prop) as unknown;
+        return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+      }
+      return () => {
+        const req = target.request();
+        for (const method of CANCELLABLE) {
+          const original = (req[method] as (...a: unknown[]) => unknown).bind(req);
+          (req as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
+            const result = original(...args);
+            if (result && typeof (result as Promise<unknown>).then === "function") {
+              const onAbort = () => {
+                try {
+                  req.cancel();
+                } catch {
+                  /* already finished — nothing to cancel */
+                }
+              };
+              signal.addEventListener("abort", onAbort, { once: true });
+              const detach = () => signal.removeEventListener("abort", onAbort);
+              (result as Promise<unknown>).then(detach, detach);
+            }
+            return result;
+          };
+        }
+        return req;
+      };
+    },
+  });
+}
 
 /**
  * Runs `work` against the shared pool, with diagnostics and bounded retries.
@@ -519,6 +658,7 @@ export async function withTotalEto<T>(
   const requestTimeout = opts.requestTimeout ?? TOTALETO_TIMEOUT.sync;
   const feed = opts.feed ?? "unlabelled";
   const attemptsAllowed = Math.max(1, opts.attempts ?? RETRY.attempts);
+  const signal = opts.signal ?? currentTotalEtoAbort();
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= attemptsAllowed; attempt++) {
@@ -527,13 +667,21 @@ export async function withTotalEto<T>(
     let queryStarted = false;
 
     try {
-      const pool = await totalEtoPool(requestTimeout);
+      // Once the caller has given up, no attempt may start — including a retry the
+      // previous iteration decided on before the abort landed.
+      if (signal?.aborted) throw new TotalEtoAbortedError(feed, signal.reason);
+      const rawPool = await totalEtoPool(requestTimeout);
+      const pool = signal ? abortablePool(rawPool, signal) : rawPool;
       // Opening the pool IS the authentication: tedious resolves, connects and
       // logs in before `connect()` settles. Past this line the credentials and
       // the network are known good for this attempt.
       authenticated = true;
       queryStarted = true;
       const value = await work(pool);
+      // Rows that arrive after the abort are discarded, not returned: the caller has
+      // already recorded this step as failed and released its lock, so letting the
+      // value through is exactly the orphaned write this exists to prevent.
+      if (signal?.aborted) throw new TotalEtoAbortedError(feed, signal.reason);
       recordTotalEtoAttempt({
         at: new Date(startedAt).toISOString(),
         feed,
@@ -618,6 +766,7 @@ export async function withTotalEto<T>(
 export function totalEtoFailureStage(kind: TotalEtoFailure, authenticated?: boolean): TotalEtoStage {
   if (kind === "app_write") return "commit";
   if (kind === "transformation") return "transform";
+  if (kind === "aborted") return "query";
   if (kind === "pool_exhausted") return "connect";
   if (kind === "login_rejected" || kind === "dns" || kind === "network" || kind === "server_unavailable" || kind === "connect_timeout") {
     return "authenticate";

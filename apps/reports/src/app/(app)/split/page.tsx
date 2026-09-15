@@ -60,7 +60,7 @@ export default async function SplitPage({ searchParams }: { searchParams: Promis
   return (
     <SplitViewShell
       state={state}
-      left={<PaneView pane={state.l} />}
+      left={<PaneView pane={state.l} scope={{ pane: "l" }} />}
       right={
         clash ? (
           <div className="p-6">
@@ -74,7 +74,7 @@ export default async function SplitPage({ searchParams }: { searchParams: Promis
             />
           </div>
         ) : (
-          <PaneView pane={state.r} />
+          <PaneView pane={state.r} scope={{ pane: "r" }} />
         )
       }
     />

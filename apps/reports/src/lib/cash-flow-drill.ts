@@ -1,5 +1,6 @@
 import sql from "mssql";
 import { TOTALETO_TIMEOUT, withTotalEto } from "@/lib/totaleto-connection";
+import { glPostedAp, sageFirstJoin, PO_LINE_ORDERED_AMOUNT } from "@/lib/gl-posted-sql";
 
 // Record-level drill-through behind one Cash Flow cell — CURRENT only. A
 // stored snapshot keeps only the aggregated (project, month, category)
@@ -97,6 +98,11 @@ export type ApDrillRow = {
 };
 
 const AP_LINE_AMOUNT = "(APDD.APDocQty * APDD.APDocUnitPrice * (1 - APDD.APDocItemPctDisc) * APBD.APDocCurrRate)";
+// The one GL-posted rule (lib/gl-posted-sql.ts), the same predicate
+// cash-flow-totaleto.ts's aggregates apply — a drill row must never appear
+// under a cell whose total excluded it, or vice versa. `SFC` is the tblCompany
+// alias it reads the vendor through.
+const GL_POSTED_AP = glPostedAp("SFC");
 
 export async function fetchApDrillRows(projectId: string): Promise<ApDrillRow[]> {
   return withTotalEto(async (pool) => {
@@ -111,8 +117,9 @@ export async function fetchApDrillRows(projectId: string): Promise<ApDrillRow[]>
           SUM(${AP_LINE_AMOUNT}) AS Amount
         FROM tblAPDocumentDetails APDD WITH(NOLOCK)
         JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
+        ${sageFirstJoin("SFC")}
         WHERE APDD.ProjectID = @projectId
-          AND ISNULL(APBD.APDocDoNotExport, 0) = 0
+          AND ${GL_POSTED_AP}
           AND ISNULL(APDD.Archived, 0) = 0
         GROUP BY APBD.APDocNumber, APBD.APDocDate, APBD.APDocDueDate
         ORDER BY APBD.APDocDueDate
@@ -145,7 +152,7 @@ export async function fetchPoDrillRows(projectId: string): Promise<PoDrillRow[]>
         SELECT
           POH.PurchaseOrderID AS PoNumber,
           ISNULL(POD.DateRequired, POH.PurchaseDateRequired) AS ExpectedDate,
-          (POD.PurchaseQty * POD.PurchasePrice) AS OrderedAmount,
+          ${PO_LINE_ORDERED_AMOUNT} AS OrderedAmount,
           ISNULL(AP.InvoicedAmount, 0) AS InvoicedAmount
         FROM tblPurchaseOrderDetails POD WITH(NOLOCK)
         JOIN tblPurchaseOrderHeader POH WITH(NOLOCK) ON POH.PurchaseOrderID = POD.PurchaseOrderID
@@ -153,7 +160,8 @@ export async function fetchPoDrillRows(projectId: string): Promise<PoDrillRow[]>
           SELECT SUM(${AP_LINE_AMOUNT}) AS InvoicedAmount
           FROM tblAPDocumentDetails APDD WITH(NOLOCK)
           JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
-          WHERE APDD.PurchaseDetailID = POD.PurchaseDetailID AND ISNULL(APBD.APDocDoNotExport, 0) = 0
+          ${sageFirstJoin("SFC")}
+          WHERE APDD.PurchaseDetailID = POD.PurchaseDetailID AND ${GL_POSTED_AP}
         ) AP
         WHERE POD.ProjectID = @projectId AND ISNULL(POD.Archived, 0) = 0
         ORDER BY ExpectedDate

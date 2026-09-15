@@ -53,8 +53,12 @@ import { prisma } from "@/lib/prisma";
 // ignore comment tells the tracer "don't try to resolve this expression as a
 // file dependency at all", which is correct here: nothing this reads is ever
 // a project file that bundling could need.
-const INVENTORY_FOLDER =
-  process.env.JOB_COST_INVENTORY_FOLDER?.trim() || "C:/Users/akamuju/Steven Douglas Corp/Finance - General";
+//
+// No default folder since 2026-09-14: unset used to mean one person's OneDrive
+// folder under C:/Users/akamuju, read silently. It now means the step is skipped
+// with the reason on its freshness row (the `{ skip }` state this sync already
+// models), so a missing .env key is visible on the dashboard, not papered over.
+const INVENTORY_FOLDER: string | null = process.env.JOB_COST_INVENTORY_FOLDER?.trim() || null;
 
 // A sheet counts as an inventory snapshot only if its name contains "inventory"
 // (case-insensitive) AND carries a M.D.YY-ish date. The "contains inventory" half
@@ -180,13 +184,15 @@ export function readInventorySheet(ws: ExcelJS.Worksheet): InventoryRow[] {
 }
 
 export async function syncJobCostInventorySnapshots(): Promise<string | { skip: string }> {
+  const folder = INVENTORY_FOLDER;
+  if (!folder) return { skip: "JOB_COST_INVENTORY_FOLDER is not set in .env — the inventory workbook folder must be configured; there is no default path." };
   let fileNames: string[];
   try {
-    fileNames = (await fs.readdir(/* turbopackIgnore: true */ INVENTORY_FOLDER)).filter(isRealWorkbook);
+    fileNames = (await fs.readdir(/* turbopackIgnore: true */ folder)).filter(isRealWorkbook);
   } catch (err) {
-    return { skip: `inventory folder not reachable (${INVENTORY_FOLDER}): ${err instanceof Error ? err.message : String(err)}` };
+    return { skip: `inventory folder not reachable (${folder}): ${err instanceof Error ? err.message : String(err)}` };
   }
-  if (fileNames.length === 0) return { skip: `no *inventory*.xlsx file found in ${INVENTORY_FOLDER}` };
+  if (fileNames.length === 0) return { skip: `no *inventory*.xlsx file found in ${folder}` };
 
   let filesRead = 0;
   let sheetsMatched = 0;
@@ -194,7 +200,7 @@ export async function syncJobCostInventorySnapshots(): Promise<string | { skip: 
   const fileErrors: string[] = [];
 
   for (const fileName of fileNames) {
-    const filePath = path.join(/* turbopackIgnore: true */ INVENTORY_FOLDER, fileName);
+    const filePath = path.join(/* turbopackIgnore: true */ folder, fileName);
     try {
       const wb = new ExcelJS.Workbook();
       await wb.xlsx.readFile(/* turbopackIgnore: true */ filePath);

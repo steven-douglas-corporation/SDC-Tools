@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { requestLiveRefresh, requestThrottledLiveRefresh } from "@/components/LiveRefresh";
 import { applyRemoteEtcValues } from "@/lib/etc-remote-values";
+import { heldToReannounce, suspendHeld } from "@/lib/presence-held";
 import {
   setRealtimeStatus,
   subscribeRealtimeStatus,
@@ -57,27 +58,34 @@ export type ChangeEvent = {
   system?: boolean;
 };
 
-// ── This tab's identity ─────────────────────────────────────────────────────
+// ── This tab's identity: one id per CONNECTION (2026-09-14) ─────────────────
+//
 // Per TAB, not per user: one manager with the grid open twice is two editors, and
 // closing one window must not clear the indicator the other is holding.
-// sessionStorage (not localStorage) is exactly per-tab and survives a reload, so a
-// refresh reclaims its own presence rather than orphaning it.
-const SESSION_KEY = "sdc-realtime-session";
-
-function tabSessionId(): string {
-  if (typeof window === "undefined") return "";
-  let id = window.sessionStorage.getItem(SESSION_KEY);
-  if (!id) {
-    id = `s_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-    window.sessionStorage.setItem(SESSION_KEY, id);
-  }
-  return id;
+//
+// It used to live in sessionStorage so a reload would "reclaim its own presence".
+// That is the copy sessionStorage makes on the browser's Duplicate Tab, and it is
+// also what a reconnect after sleep reused — so two live streams shared one id. The
+// hub keyed both its subscription map and its presence by that id: the older
+// stream's cancel() then deleted the NEWER stream's subscription and released its
+// cells. The tab said "live" and heard nothing (see realtime-hub.ts subscribe).
+//
+// A fresh id per EventSource connection makes the collision impossible from this
+// side. Nothing is lost by it: the old connection's cells are released by ITS
+// cancel() on the server (or the TTL), and the cells this tab is still editing are
+// re-announced under the new id as soon as the new stream opens — see `onopen`.
+function mintSessionId(): string {
+  return `s_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 }
 
 // ── Presence store ──────────────────────────────────────────────────────────
 let presenceByCell = new Map<string, PresenceEntry[]>();
 const presenceListeners = new Set<() => void>();
 let mySessionId = "";
+// Ids this tab has used before. Until the server has released an old connection's
+// cells (its cancel, or the 30s TTL) they are still in the broadcast, and they are
+// this user's own — not a colleague's — so they must not be drawn as one.
+const myPastSessionIds = new Set<string>();
 
 function emitPresence() {
   for (const l of presenceListeners) l();
@@ -87,8 +95,9 @@ function setPresence(entries: PresenceEntry[]) {
   const next = new Map<string, PresenceEntry[]>();
   for (const e of entries) {
     // A user's own indicator is not shown to themselves — they know they are in the
-    // cell. Filtered here rather than in each component so there is one rule.
-    if (e.sessionId === mySessionId) continue;
+    // cell. Filtered here rather than in each component so there is one rule. Past
+    // ids too: a cell held under the previous connection is still ours.
+    if (e.sessionId === mySessionId || myPastSessionIds.has(e.sessionId)) continue;
     const list = next.get(e.cellKey);
     if (list) list.push(e);
     else next.set(e.cellKey, [e]);
@@ -120,7 +129,10 @@ type CellRef = { tab: string; rowRef: string; columnName: string; cellKey: strin
 const heldRefs = new Map<string, CellRef>();
 
 function post(body: Record<string, unknown>, viaBeacon = false): void {
-  const payload = JSON.stringify({ ...body, sessionId: mySessionId || tabSessionId() });
+  // No id yet (a cell focused before the provider's effect ran): mint one now; the
+  // stream will connect under it.
+  if (!mySessionId) mySessionId = mintSessionId();
+  const payload = JSON.stringify({ ...body, sessionId: mySessionId });
   const url = "/api/realtime/presence";
   // sendBeacon survives the page going away, which a fetch does not — this is what
   // makes "closed the tab" release the cell rather than waiting out the TTL.
@@ -176,6 +188,30 @@ function releaseEverything(viaBeacon: boolean): void {
   post({ action: "leaveAll" }, viaBeacon);
 }
 
+// ── Hidden, then visible again, with the cell still focused (2026-09-14) ─────
+//
+// Hiding the browser tab releases every held cell (right: an inactive user must not
+// claim one — spec 3). Nothing re-claimed them on `→ visible`, so a manager who
+// alt-tabbed to Excel and back mid-edit had, as far as everyone else could see, left
+// the cell — permanently, until they blurred and refocused it. The held set is
+// remembered on hide and re-announced on show; lib/presence-held.ts decides which
+// entries, from where focus is when the tab comes back.
+let suspended: Map<string, CellRef> = new Map();
+
+function suspendForHide(viaBeacon: boolean): void {
+  suspended = suspendHeld(heldRefs);
+  releaseEverything(viaBeacon);
+}
+
+function resumeAfterShow(): void {
+  if (suspended.size === 0) return;
+  const active = typeof document !== "undefined" ? (document.activeElement as HTMLInputElement | null) : null;
+  const focusedKey = active && "name" in active && active.name ? active.name : null;
+  const refs = heldToReannounce(suspended, focusedKey);
+  suspended = new Map();
+  for (const ref of refs) beginEditingCell(ref);
+}
+
 // ── Change notifications ────────────────────────────────────────────────────
 // A queue, not a single slot: spec 5 requires multiple notifications to be queued
 // or grouped rather than replacing each other. Bounded, because a bulk sync can
@@ -226,13 +262,20 @@ export function RealtimeProvider() {
   const retryRef = useRef(0);
 
   useEffect(() => {
-    mySessionId = tabSessionId();
     let source: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
+    let connections = 0;
 
     const connect = () => {
       if (closed) return;
+      // A fresh id for every connection AFTER the first. The first keeps whatever a
+      // cell focused before this effect ran already posted under (see post()), so
+      // that claim is not orphaned; a RE-connect must not reuse an id the server may
+      // still hold a stream for — see the note on mintSessionId.
+      if (connections > 0 && mySessionId) myPastSessionIds.add(mySessionId);
+      if (connections > 0 || !mySessionId) mySessionId = mintSessionId();
+      connections++;
       source = new EventSource(`/api/realtime/stream?sessionId=${encodeURIComponent(mySessionId)}`);
 
       source.onopen = () => {
@@ -243,6 +286,10 @@ export function RealtimeProvider() {
         // correct again — the cells adopt only what the user has not diverged from
         // (see LiveRefresh), so this cannot disturb typing.
         requestLiveRefresh();
+        // The cells this tab is still editing were claimed under the previous
+        // connection's id, which the server releases with that connection. Re-claim
+        // them under this one, or a colleague sees the indicator vanish mid-edit.
+        for (const ref of heldRefs.values()) post({ action: "enter", ...ref });
       };
 
       source.onmessage = (ev) => {
@@ -312,7 +359,9 @@ export function RealtimeProvider() {
     // visibilitychange for the "became inactive" case.
     const onPageHide = () => releaseEverything(true);
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") releaseEverything(true);
+      // Hidden: release, but remember. Visible: re-claim what is still being edited.
+      if (document.visibilityState === "hidden") suspendForHide(true);
+      else resumeAfterShow();
     };
     window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVisibility);
@@ -322,6 +371,7 @@ export function RealtimeProvider() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       window.removeEventListener("pagehide", onPageHide);
       document.removeEventListener("visibilitychange", onVisibility);
+      suspended = new Map();
       releaseEverything(false);
       source?.close();
       setStatus("connecting");

@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { customerBucket } from "../src/lib/dashboard-job-drill";
 import { NO_CUSTOMER, ACTIVE_JOB_WHERE, VALID_JOB_TYPES } from "../src/lib/job-filters";
 
@@ -59,4 +61,25 @@ test("HeadStart is NOT active — it must never appear in a drill", () => {
   // separate row under the type chart, so folding it in here would both
   // double-count it and break the foot to the Active Jobs total.
   assert.notEqual(ACTIVE_JOB_WHERE.status, "HeadStart");
+});
+
+// ── The job-number link addresses the job by its Prisma pk (2026-09-14) ─────
+//
+// /jobs/[id] does `prisma.job.findUnique({ where: { id: Number(id) } })` — the row
+// id, not the Total ETO job number. JobDrillPanel linked `/jobs/${r.jobId}` with
+// the job NUMBER, so "1150" opened row 1150 (a different job, or nothing). The
+// drill row now carries the pk alongside the number it displays, the same
+// pattern jobs/page.tsx's own list uses (`href={`/jobs/${job.id}`}`).
+
+test("JobDrillRow carries the Prisma pk, filled from the job's `id`", () => {
+  const src = readFileSync(join(import.meta.dirname, "..", "src", "lib", "dashboard-job-drill.ts"), "utf8");
+  assert.match(src, /export type JobDrillRow = \{[\s\S]*?jobPk: number;[\s\S]*?jobId: string;/, "jobPk is on the row type");
+  assert.match(src, /jobPk: j\.id,\s*jobId: j\.jobId,/, "and is the Prisma row id, next to the displayed job number");
+});
+
+test("the panel links the job number to /jobs/<pk>, never to /jobs/<job number>", () => {
+  const src = readFileSync(join(import.meta.dirname, "..", "src", "components", "dashboard", "JobDrillPanel.tsx"), "utf8");
+  assert.match(src, /href=\{`\/jobs\/\$\{r\.jobPk\}`\}/);
+  assert.doesNotMatch(src, /\/jobs\/\$\{encodeURIComponent\(r\.jobId\)\}/);
+  assert.doesNotMatch(src, /\/jobs\/\$\{r\.jobId\}/);
 });

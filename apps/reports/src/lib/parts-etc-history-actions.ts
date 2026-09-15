@@ -63,6 +63,9 @@ export async function loadPartsEtcHistory(jobIds: number[]): Promise<PartsEtcMon
         hoursWorked: true,
         newEtc: true,
         newEtcDraft: true,
+        // Both read by effectiveNewEtc's confirmed rung (2026-09-14): a reopened
+        // month's figure is the manager's confirmed one, not the carry-forward.
+        newEtcClearedAt: true,
         needsReview: true,
         submittedAt: true,
         enteredBy: { select: { name: true } },

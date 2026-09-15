@@ -21,7 +21,28 @@ import {
   monthOfDate,
   startsInMonth,
   redrivenDraft,
+  isConfirmedEntry,
+  confirmedNewEtc,
+  historyConfirmedAt,
+  isHistoryConfirmedAt,
+  assertMonthNotLocked,
+  partsCostCellState,
+  partsCostEffectiveNewEtc,
+  isPartsCostDecided,
+  partsCostDiff,
+  newEtcSeedText,
+  newEtcForSubmission,
+  type NewEtcEntryLike,
 } from "../src/lib/etc";
+
+// ── Fixture helper ──────────────────────────────────────────────────────────
+//
+// effectiveNewEtc / newEtcDiff / isNewEtcDecided read newEtcClearedAt and submittedAt
+// since 2026-09-14 (the confirmed rung). A test that describes a row by its five
+// classic fields gets the two flags as "never cleared, never submitted", which is
+// what every row below meant before the flags existed.
+type ClassicRow = { needsReview: boolean; newEtcDraft: number | null; newEtc: number; priorEtc: number; hoursWorked: number };
+const row = (r: Partial<NewEtcEntryLike> & ClassicRow): NewEtcEntryLike => ({ newEtcClearedAt: null, submittedAt: null, ...r });
 
 test("calcHoursLeft: prior minus worked, may go negative", () => {
   assert.equal(calcHoursLeft(100, 40), 60);
@@ -193,30 +214,30 @@ test("isSafeForLiveEtcSync: a month further in the future than 'next' is unsafe 
 test("newEtcDiff: an untouched cell has no variance, whatever is left", () => {
   // Prior 100, worked 40 -> 60 left, but nobody has planned it. 0 means
   // "contributes nothing"; the CELL renders empty — see EtcSectionCells.
-  assert.equal(newEtcDiff({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 100, hoursWorked: 40 }), 0);
+  assert.equal(newEtcDiff(row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 100, hoursWorked: 40 })), 0);
 });
 
 test("newEtcDiff: an untouched cell with NO hours worked has no variance either", () => {
-  assert.equal(newEtcDiff({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 100, hoursWorked: 0 }), 0);
+  assert.equal(newEtcDiff(row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 100, hoursWorked: 0 })), 0);
 });
 
 test("newEtcDiff: a DECIDED cell reports its real overrun", () => {
   // Prior 20, worked 50 -> 30 past the estimate; the manager plans 10 more.
   // -30 − 10 = -40.
-  assert.equal(newEtcDiff({ needsReview: true, newEtcDraft: 10, newEtc: 0, priorEtc: 20, hoursWorked: 50 }), -40);
+  assert.equal(newEtcDiff(row({ needsReview: true, newEtcDraft: 10, newEtc: 0, priorEtc: 20, hoursWorked: 50 })), -40);
 });
 
 test("newEtcDiff: a typed New ETC is clamped at 0, never negative", () => {
   // "max(entered, 0)" — a negative plan is not a plan, and letting one through
   // would make Diff read HIGHER than Hours Left.
-  assert.equal(newEtcDiff({ needsReview: true, newEtcDraft: -5, newEtc: 0, priorEtc: 100, hoursWorked: 40 }), 60);
+  assert.equal(newEtcDiff(row({ needsReview: true, newEtcDraft: -5, newEtc: 0, priorEtc: 100, hoursWorked: 40 })), 60);
 });
 
 test("newEtcDiff: typing the suggestion is what makes a cell read on-plan", () => {
   // The same cell as the first test, once a manager accepts the 60. This is the
   // pair that shows the column is now reporting DECISIONS: 60 unaccounted before,
   // 0 after.
-  assert.equal(newEtcDiff({ needsReview: true, newEtcDraft: 60, newEtc: 0, priorEtc: 100, hoursWorked: 40 }), 0);
+  assert.equal(newEtcDiff(row({ needsReview: true, newEtcDraft: 60, newEtc: 0, priorEtc: 100, hoursWorked: 40 })), 0);
 });
 
 test("newEtcDiff: an untouched OVERSPENT cell still reports nothing", () => {
@@ -224,40 +245,40 @@ test("newEtcDiff: an untouched OVERSPENT cell still reports nothing", () => {
   // silent about it. The overrun is already visible in Hours Left (-30); Diff is
   // about decisions. This is the exact case the 2026-08-02 rule existed to
   // surface here, given up knowingly when the column became decisions-only.
-  assert.equal(newEtcDiff({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 20, hoursWorked: 50 }), 0);
+  assert.equal(newEtcDiff(row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 20, hoursWorked: 50 })), 0);
 });
 
 test("newEtcDiff: never returns null", () => {
   // The column and every total now render it unconditionally, so a null here
   // would print as NaN rather than as a dash.
   const cases = [
-    { needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 0, hoursWorked: 0 },
-    { needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 20, hoursWorked: 50 },
-    { needsReview: false, newEtcDraft: null, newEtc: 5, priorEtc: 20, hoursWorked: 5 },
+    row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 0, hoursWorked: 0 }),
+    row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 20, hoursWorked: 50 }),
+    row({ needsReview: false, newEtcDraft: null, newEtc: 5, priorEtc: 20, hoursWorked: 5 }),
   ];
   for (const c of cases) assert.equal(typeof newEtcDiff(c), "number");
 });
 
 test("newEtcDiff: a saved draft is a decision, and is compared", () => {
   // Prior 100, worked 40 -> 60 left; the manager says 80, so 20 over.
-  assert.equal(newEtcDiff({ needsReview: true, newEtcDraft: 80, newEtc: 0, priorEtc: 100, hoursWorked: 40 }), -20);
+  assert.equal(newEtcDiff(row({ needsReview: true, newEtcDraft: 80, newEtc: 0, priorEtc: 100, hoursWorked: 40 })), -20);
 });
 
 test("newEtcDiff: a submitted cell is compared against its confirmed value", () => {
-  assert.equal(newEtcDiff({ needsReview: false, newEtcDraft: null, newEtc: 50, priorEtc: 100, hoursWorked: 40 }), 10);
+  assert.equal(newEtcDiff(row({ needsReview: false, newEtcDraft: null, newEtc: 50, priorEtc: 100, hoursWorked: 40 })), 10);
 });
 
 test("newEtcDiff: a decided cell that matches what's left is on plan", () => {
-  assert.equal(newEtcDiff({ needsReview: true, newEtcDraft: 60, newEtc: 0, priorEtc: 100, hoursWorked: 40 }), 0);
+  assert.equal(newEtcDiff(row({ needsReview: true, newEtcDraft: 60, newEtc: 0, priorEtc: 100, hoursWorked: 40 })), 0);
 });
 
 test("effectiveNewEtc: forecast still uses the suggestion when undecided", () => {
   // The Total New ETC column is a forecast of what submitting now would write,
   // so it DOES include the suggestion — only the variance excludes it.
-  assert.equal(effectiveNewEtc({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 100, hoursWorked: 40 }), 60);
-  assert.equal(effectiveNewEtc({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 20, hoursWorked: 50 }), 0);
-  assert.equal(effectiveNewEtc({ needsReview: true, newEtcDraft: 15, newEtc: 0, priorEtc: 20, hoursWorked: 5 }), 15);
-  assert.equal(effectiveNewEtc({ needsReview: false, newEtcDraft: 15, newEtc: 7, priorEtc: 20, hoursWorked: 5 }), 7);
+  assert.equal(effectiveNewEtc(row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 100, hoursWorked: 40 })), 60);
+  assert.equal(effectiveNewEtc(row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 20, hoursWorked: 50 })), 0);
+  assert.equal(effectiveNewEtc(row({ needsReview: true, newEtcDraft: 15, newEtc: 0, priorEtc: 20, hoursWorked: 5 })), 15);
+  assert.equal(effectiveNewEtc(row({ needsReview: false, newEtcDraft: 15, newEtc: 7, priorEtc: 20, hoursWorked: 5 })), 7);
 });
 
 // ── The zero-hours carry-forward, pinned at every level it is consumed ──────
@@ -272,17 +293,17 @@ test("effectiveNewEtc: forecast still uses the suggestion when undecided", () =>
 // composition could have regressed while suggestNewEtc stayed green.
 test("carry-forward: a zero-hours cell forecasts its prior, not zero", () => {
   // What the grid totals sum and what Submit would write.
-  assert.equal(effectiveNewEtc({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 80, hoursWorked: 0 }), 80);
-  assert.equal(effectiveNewEtc({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 12, hoursWorked: 0 }), 12);
+  assert.equal(effectiveNewEtc(row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 80, hoursWorked: 0 })), 80);
+  assert.equal(effectiveNewEtc(row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 12, hoursWorked: 0 })), 12);
   // A prior of 0 carries 0 forward — the rule, not an absence of one.
-  assert.equal(effectiveNewEtc({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 0, hoursWorked: 0 }), 0);
+  assert.equal(effectiveNewEtc(row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 0, hoursWorked: 0 })), 0);
 });
 
 test("carry-forward: the exact prior survives, unrounded", () => {
   // The BOX displays a whole number, but the forecast and the submitted value must
   // keep the stored figure — rounding here would shave hours off a month's balance
   // every time it carried forward.
-  assert.equal(effectiveNewEtc({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 40.5, hoursWorked: 0 }), 40.5);
+  assert.equal(effectiveNewEtc(row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 40.5, hoursWorked: 0 })), 40.5);
   assert.equal(suggestNewEtc(40.5, 0), 40.5);
 });
 
@@ -291,22 +312,185 @@ test("carry-forward: an explicit draft still wins — the one designed exception
   // that has to survive. Worth pinning, because 11 of July's zero-hours cells carried
   // an explicit 0 draft written in a single batch on 2026-08-03 — the mechanism is
   // legitimate even when a particular write was not.
-  assert.equal(effectiveNewEtc({ needsReview: true, newEtcDraft: 0, newEtc: 0, priorEtc: 80, hoursWorked: 0 }), 0);
-  assert.equal(effectiveNewEtc({ needsReview: true, newEtcDraft: 55, newEtc: 0, priorEtc: 0, hoursWorked: 0 }), 55);
+  assert.equal(effectiveNewEtc(row({ needsReview: true, newEtcDraft: 0, newEtc: 0, priorEtc: 80, hoursWorked: 0 })), 0);
+  assert.equal(effectiveNewEtc(row({ needsReview: true, newEtcDraft: 55, newEtc: 0, priorEtc: 0, hoursWorked: 0 })), 55);
   // And an explicit 0 counts as a decision, so nothing re-suggests over it.
-  assert.equal(isNewEtcDecided({ needsReview: true, newEtcDraft: 0 }), true);
+  assert.equal(isNewEtcDecided(row({ needsReview: true, newEtcDraft: 0, newEtc: 0, priorEtc: 80, hoursWorked: 0 })), true);
 });
 
 test("carry-forward: no hours worked means no variance to report", () => {
   // Diff must stay silent on a carried-forward cell: nothing was spent, so there is
   // nothing to be over or under by.
-  assert.equal(newEtcDiff({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 80, hoursWorked: 0 }), 0);
+  assert.equal(newEtcDiff(row({ needsReview: true, newEtcDraft: null, newEtc: 0, priorEtc: 80, hoursWorked: 0 })), 0);
 });
 
-test("isNewEtcDecided: draft or submitted, nothing else", () => {
-  assert.equal(isNewEtcDecided({ needsReview: true, newEtcDraft: null }), false);
-  assert.equal(isNewEtcDecided({ needsReview: true, newEtcDraft: 0 }), true); // an explicit zero IS a decision
-  assert.equal(isNewEtcDecided({ needsReview: false, newEtcDraft: null }), true);
+test("isNewEtcDecided: frozen, a draft, or a confirmed figure — a clear undoes the last", () => {
+  const base = { newEtc: 60, priorEtc: 80, hoursWorked: 20 };
+  assert.equal(isNewEtcDecided(row({ ...base, needsReview: true, newEtcDraft: null })), false);
+  assert.equal(isNewEtcDecided(row({ ...base, needsReview: true, newEtcDraft: 0 })), true); // an explicit zero IS a decision
+  assert.equal(isNewEtcDecided(row({ ...base, needsReview: false, newEtcDraft: null })), true);
+  // ── The confirmed rung (2026-09-14) ───────────────────────────────────────
+  // A reopened row with no new edit holds the figure it was confirmed at; the cell
+  // shows it (newEtcSeedText) and effectiveNewEtc returns it, so it IS decided —
+  // this used to say false and every server-rendered Diff on a reopened month read 0
+  // until hydration.
+  const AT = new Date("2026-09-11T19:09:35Z");
+  assert.equal(isNewEtcDecided(row({ ...base, needsReview: true, newEtcDraft: null, submittedAt: AT })), true);
+  // Deliberately cleared after the reopen: blank on screen, so undecided.
+  assert.equal(isNewEtcDecided(row({ ...base, needsReview: true, newEtcDraft: null, submittedAt: AT, newEtcClearedAt: AT })), false);
+  // A draft saved after the clear un-clears it.
+  assert.equal(isNewEtcDecided(row({ ...base, needsReview: true, newEtcDraft: 5, submittedAt: AT, newEtcClearedAt: AT })), true);
+  // A never-submitted row's clear is just an empty cell.
+  assert.equal(isNewEtcDecided(row({ ...base, needsReview: true, newEtcDraft: null, newEtcClearedAt: AT })), false);
+});
+
+test("isNewEtcDecided agrees with effectiveNewEtc/newEtcSeedText on every state that shows a figure", () => {
+  // The precedence is the SAME chain: whenever the seed text is a figure the row is
+  // decided, and whenever it is blank (with hours booked) the row is not.
+  const AT = new Date("2026-09-11T19:09:35Z");
+  const shape = { newEtc: 160, priorEtc: 148, hoursWorked: 54.5 };
+  for (const newEtcDraft of [null, 175, 0]) {
+    for (const submittedAt of [null, AT]) {
+      for (const newEtcClearedAt of [null, AT]) {
+        const r = row({ ...shape, needsReview: true, newEtcDraft, submittedAt, newEtcClearedAt });
+        const shown = newEtcSeedText({
+          priorEtc: r.priorEtc as number,
+          hoursWorked: r.hoursWorked as number,
+          draft: newEtcDraft,
+          confirmed: confirmedNewEtc(r),
+          cleared: newEtcClearedAt != null,
+          locked: false,
+          monthComplete: true,
+        });
+        assert.equal(isNewEtcDecided(r), shown !== "", JSON.stringify({ newEtcDraft, submittedAt: !!submittedAt, cleared: !!newEtcClearedAt }));
+        if (shown !== "") assert.equal(effectiveNewEtc(r), Number(shown));
+      }
+    }
+  }
+});
+
+// ── isConfirmedEntry / confirmedNewEtc — THE predicate (2026-09-14) ─────────
+//
+// Four readers spelled "is this row's newEtc confirmed" four ways; the page added a
+// "historical month" allowance the freeze did not make. One function now.
+test("isConfirmedEntry: a frozen row is confirmed by definition, an open row only if it was submitted", () => {
+  const AT = new Date("2026-09-11T19:09:35Z");
+  assert.equal(isConfirmedEntry({ needsReview: false, submittedAt: null }), true); // Power BI history, pre-backfill
+  assert.equal(isConfirmedEntry({ needsReview: false, submittedAt: AT }), true);
+  assert.equal(isConfirmedEntry({ needsReview: true, submittedAt: AT }), true); // reopened
+  assert.equal(isConfirmedEntry({ needsReview: true, submittedAt: null }), false); // never submitted — the seed in newEtc is not a decision
+});
+
+test("confirmedNewEtc: the stored figure at Decimal(10,2), or null", () => {
+  const AT = new Date("2026-09-11T19:09:35Z");
+  assert.equal(confirmedNewEtc({ needsReview: true, submittedAt: AT, newEtc: "12.344" }), 12.34);
+  assert.equal(confirmedNewEtc({ needsReview: false, submittedAt: null, newEtc: 400 }), 400);
+  assert.equal(confirmedNewEtc({ needsReview: true, submittedAt: null, newEtc: 148 }), null);
+});
+
+test("effectiveNewEtc reads a frozen history row's stored figure whether or not it was ever stamped", () => {
+  // The Power BI backfill wrote needsReview:false rows with no submittedAt. Locked, they
+  // are their stored newEtc — never re-derived.
+  assert.equal(effectiveNewEtc(row({ needsReview: false, newEtcDraft: null, newEtc: 77, priorEtc: 100, hoursWorked: 0 })), 77);
+});
+
+// ── historyConfirmedAt — the stamp history rows are confirmed at ────────────
+test("historyConfirmedAt: the last millisecond of the month, UTC, and recognisable as such", () => {
+  assert.equal(historyConfirmedAt("2026-08").toISOString(), "2026-08-31T23:59:59.999Z");
+  assert.equal(historyConfirmedAt("2026-12").toISOString(), "2026-12-31T23:59:59.999Z"); // year rollover
+  assert.equal(historyConfirmedAt("2024-02").toISOString(), "2024-02-29T23:59:59.999Z"); // leap year
+  assert.equal(isHistoryConfirmedAt("2026-08", historyConfirmedAt("2026-08")), true);
+  // A real freeze happens at some wall-clock instant, never exactly here — so the sync's
+  // ownership rule can tell its own rows from an app submission.
+  assert.equal(isHistoryConfirmedAt("2026-08", new Date("2026-09-11T19:09:35Z")), false);
+  assert.equal(isHistoryConfirmedAt("2026-08", null), false);
+  // Another month's stamp is not this month's.
+  assert.equal(isHistoryConfirmedAt("2026-07", historyConfirmedAt("2026-08")), false);
+  assert.equal(isHistoryConfirmedAt("banana", historyConfirmedAt("2026-08")), false);
+});
+
+// ── assertMonthNotLocked — the draft save's gate (2026-09-14) ───────────────
+test("assertMonthNotLocked: refuses a fully-submitted month, lets anything else through", () => {
+  assert.throws(() => assertMonthNotLocked("2026-08", [{ needsReview: false }, { needsReview: false }]), /2026-08 is submitted and locked/);
+  assert.doesNotThrow(() => assertMonthNotLocked("2026-08", [{ needsReview: false }, { needsReview: true }]));
+  assert.doesNotThrow(() => assertMonthNotLocked("2026-08", [])); // never started is not locked
+});
+
+// ── The Parts Cost rule: ONE function, five readers (2026-09-14) ────────────
+//
+// Frozen -> stored; draft -> draft; cleared -> blank; confirmed -> confirmed; and only
+// for an OPEN, otherwise-undecided row, the live Left to Invoice + Left to Purchase.
+const AUG = { breakoutInScope: true, breakoutSum: 61_705 };
+const AT = new Date("2026-09-11T19:09:35Z");
+const partsBase = { newEtc: 59_000, priorEtc: 80_000, hoursWorked: 12_500 };
+
+test("parts rule: a confirmed Parts figure does not drift with live invoices", () => {
+  // The manager signed $59,000; since the reopen the halves add to $61,705.
+  const r = row({ ...partsBase, needsReview: true, newEtcDraft: null, submittedAt: AT });
+  assert.equal(partsCostEffectiveNewEtc(r, AUG), 59_000);
+  assert.equal(newEtcSeedText(partsCostCellState(r, AUG, { locked: false, monthComplete: true })), "59000");
+  assert.equal(isPartsCostDecided(r, AUG), true);
+  assert.equal(partsCostDiff(r, AUG), 80_000 - 12_500 - 59_000);
+});
+
+test("parts rule: a frozen row is its stored figure, whatever the halves add to", () => {
+  const r = row({ ...partsBase, needsReview: false, newEtcDraft: null, submittedAt: AT });
+  assert.equal(partsCostEffectiveNewEtc(r, AUG), 59_000);
+  assert.equal(partsCostEffectiveNewEtc(r, { breakoutInScope: true, breakoutSum: 1 }), 59_000);
+  assert.equal(newEtcSeedText(partsCostCellState(r, AUG, { locked: true, monthComplete: true })), "59000");
+});
+
+test("parts rule: an OPEN undecided row shows the live breakout, and blank when a half is blank", () => {
+  const r = row({ ...partsBase, needsReview: true, newEtcDraft: null });
+  assert.equal(partsCostEffectiveNewEtc(r, AUG), 61_705);
+  assert.equal(newEtcSeedText(partsCostCellState(r, AUG, { locked: false, monthComplete: true })), "61705");
+  assert.equal(isPartsCostDecided(r, AUG), true);
+  // A blank half: no sum, so nothing stands in — yellow, and the suggestion is what
+  // a submission would write (partsBase: 80,000 − 12,500 = 67,500).
+  const none = { breakoutInScope: true, breakoutSum: null };
+  assert.equal(newEtcSeedText(partsCostCellState(r, none, { locked: false, monthComplete: true })), "");
+  assert.equal(isPartsCostDecided(r, none), false);
+  assert.equal(partsCostDiff(r, none), 0);
+  assert.equal(partsCostEffectiveNewEtc(r, none), 67_500);
+  // Off a breakout month the live sum is never consulted.
+  assert.equal(partsCostEffectiveNewEtc(r, { breakoutInScope: false, breakoutSum: 61_705 }), 67_500);
+});
+
+test("parts rule: a saved draft wins over the live sum, and a clear beats a confirmed figure", () => {
+  // The save writes the halves' sum into the draft; the draft is the manager's last
+  // edit and holds until a half moves again (the client re-derives on movement only).
+  assert.equal(partsCostEffectiveNewEtc(row({ ...partsBase, needsReview: true, newEtcDraft: 60_000 }), AUG), 60_000);
+  // A pre-breakout typed New ETC (both halves null) is a figure a manager typed: the
+  // grid seeds it, validation counts it, the freeze writes it — the same answer
+  // everywhere, where the grid used to render it blank/yellow.
+  assert.equal(newEtcSeedText(partsCostCellState(row({ ...partsBase, needsReview: true, newEtcDraft: 60_000 }), { breakoutInScope: true, breakoutSum: null }, { locked: false, monthComplete: true })), "60000");
+  // Cleared after a reopen: blank on screen, submits as the suggestion.
+  const cleared = row({ ...partsBase, needsReview: true, newEtcDraft: null, submittedAt: AT, newEtcClearedAt: AT });
+  assert.equal(newEtcSeedText(partsCostCellState(cleared, AUG, { locked: false, monthComplete: true })), "");
+  assert.equal(isPartsCostDecided(cleared, AUG), false);
+  assert.equal(partsCostEffectiveNewEtc(cleared, AUG), 67_500);
+});
+
+test("parts rule: what the freeze writes is what the cell shows, for every state that shows a figure", () => {
+  for (const newEtcDraft of [null, 60_000, 0]) {
+    for (const submittedAt of [null, AT]) {
+      for (const newEtcClearedAt of [null, AT]) {
+        for (const breakoutSum of [null, 61_705]) {
+          const r = row({ ...partsBase, needsReview: true, newEtcDraft, submittedAt, newEtcClearedAt });
+          const live = { breakoutInScope: true, breakoutSum };
+          const state = partsCostCellState(r, live, { locked: false, monthComplete: true });
+          const shown = newEtcSeedText(state);
+          const frozen = partsCostEffectiveNewEtc(r, live);
+          if (shown !== "") assert.equal(frozen, Number(shown), JSON.stringify({ newEtcDraft, submittedAt: !!submittedAt, cleared: !!newEtcClearedAt, breakoutSum }));
+          // And the freeze is newEtcForSubmission over the same state — no Parts-only chain.
+          assert.equal(
+            frozen,
+            newEtcForSubmission({ draft: state.draft, confirmed: state.confirmed, cleared: state.cleared, priorEtc: partsBase.priorEtc, hoursWorked: partsBase.hoursWorked }),
+          );
+        }
+      }
+    }
+  }
 });
 
 // ── Prior ETC carry-forward source ──────────────────────────────────────────

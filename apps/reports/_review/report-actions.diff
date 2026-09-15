@@ -1,0 +1,75 @@
+diff --git a/apps/reports/src/lib/monthly-report-actions.ts b/apps/reports/src/lib/monthly-report-actions.ts
+index c6deec6..44daad0 100644
+--- a/apps/reports/src/lib/monthly-report-actions.ts
++++ b/apps/reports/src/lib/monthly-report-actions.ts
+@@ -239,32 +239,36 @@ export async function submitMonthlyReport(
+     };
+   }
+ 
+-  // Read the Standard rows BEFORE the transaction: they are pure reads (and one of
+-  // them crosses into the pool ledger), and holding row locks while computing fees
+-  // would keep the grid waiting for no reason.
+-  let standardRows: Awaited<ReturnType<typeof loadStandardSheetRows>>;
+-  try {
+-    standardRows = await loadStandardSheetRows(month);
+-  } catch (err) {
+-    const message = err instanceof Error ? err.message : "Could not compute the Standard Sheet rows.";
+-    await recordSubmission({
+-      submissionId: input.submissionId, month, userId, userName, status: "failed",
+-      sections: SECTIONS, validation, failureReason: message,
+-      confirmedAt, startedAt, completedAt: new Date(),
+-    });
+-    return { ok: false, reason: "error", message, submissionId: input.submissionId };
+-  }
+-
+   // ── One transaction, every section ────────────────────────────────────────
+   //
+   // Either the month is finalised or nothing is. This is the property the two old
+   // buttons could not have: an ETC freeze that succeeded while the fee snapshot failed
+   // used to leave the month permanently half-submitted, and no later action noticed.
++  //
++  // ── The fee rows are computed IN here, after the freeze (2026-09-14) ──────
++  //
++  // They used to be read before the transaction ("pure reads, don't hold locks
++  // while computing fees"). That let the two halves of one click see two different
++  // months: an autosave landing between the read and the freeze reached the entries
++  // and not the snapshot, and the read went through effectiveNewEtc while the freeze
++  // went through newEtcForSubmission — which disagreed on a reopened row (§69). The
++  // Standard Sheet then rendered a submitted month from a snapshot the grid beside
++  // it did not agree with.
++  //
++  // Computed from `tx` AFTER submitEtcEntriesInTx, every row it sums is already
++  // frozen, and a frozen row's effective New ETC IS its stored newEtc. The snapshot
++  // therefore equals the freeze by construction rather than by two functions
++  // agreeing. The lock cost is a few hundred milliseconds of fee arithmetic inside a
++  // transaction that already holds the month's rows; the pool read stays on the
++  // shared client (loadEffectivePools takes no tx) and is not written here.
+   let entriesSubmitted = 0;
++  let standardRowCount = 0;
+   try {
+     await prisma.$transaction(
+       async (tx) => {
+         entriesSubmitted = await submitEtcEntriesInTx(tx, month, userId);
++        const standardRows = await loadStandardSheetRows(month, tx);
++        standardRowCount = standardRows.length;
+         await tx.standardSheetSnapshot.deleteMany({ where: { month } });
+         if (standardRows.length > 0) {
+           await tx.standardSheetSnapshot.createMany({
+@@ -353,7 +357,7 @@ export async function submitMonthlyReport(
+     entityId: month,
+     summary:
+       `Submitted ${monthLabel(month)} report — ${entriesSubmitted} ETC entr${entriesSubmitted === 1 ? "y" : "ies"}, ` +
+-      `${standardRows.length} Standard Sheet row(s)` +
++      `${standardRowCount} Standard Sheet row(s)` +
+       (cascade.entriesUpdated > 0 ? ` — carried forward into ${cascade.monthsUpdated.join(", ")}` : "") +
+       (cascadeError ? ` — WARNING: cascade to later months failed (${cascadeError}); re-run it for ${month} manually` : ""),
+     // §26.15 — everything the audit record is asked to carry that is not already a
+@@ -385,7 +389,7 @@ export async function submitMonthlyReport(
+       submittedAt: completedAt.toISOString(),
+       submissionId: input.submissionId,
+       entriesSubmitted,
+-      standardRows: standardRows.length,
++      standardRows: standardRowCount,
+     },
+   };
+ }

@@ -47,6 +47,7 @@ export function PartsCostNewEtcCell({
   hint,
   locked,
   derived = false,
+  frozen = false,
 }: {
   name: string;
   // Published to lib/etc-live-totals.ts so this cell's dollars reach Total ETC $
@@ -91,6 +92,14 @@ export function PartsCostNewEtcCell({
   // False before August 2026, where the breakout columns do not exist and the cell is
   // typed exactly as it always was (lib/parts-breakout-scope.ts).
   derived?: boolean;
+  // ── The month is SUBMITTED (2026-09-14) ───────────────────────────────────
+  //
+  // Distinct from `locked`, which is also true for a read-only ROLE on an open month.
+  // A frozen month's Parts figure is the stored newEtc and nothing else; the live
+  // recalculation below must not run at all, or the cell keeps moving with Total
+  // ETO's invoices on a month that was signed off (page ~:1116 fetched the live
+  // breakout regardless of the lock, and this cell re-derived from it).
+  frozen?: boolean;
 }) {
   const [value, setValue] = useState(initialValue);
   const [focused, setFocused] = useState(false);
@@ -136,18 +145,34 @@ export function PartsCostNewEtcCell({
   // tracker is what puts that name into the autosave payload — so a change in either
   // half persists the new sum through the same mechanism as before.
   //
-  // `applied` is what stops the mount pass from dirtying the cell. The first apply()
-  // recomputes the same figure the server already rendered, and calling
-  // updateEtcField with it before registerEtcField below has run would land on an
-  // unregistered name — which the tracker treats as an edit, marking every Parts Cost
-  // row unsaved on page load. Reporting only genuine MOVEMENT makes this effect
-  // independent of the order the effects happen to run in.
-  const applied = useRef(initialValue);
+  // ── The server's seed is the figure until a HALF MOVES (2026-09-14) ───────
+  //
+  // The seed follows the one Parts rule (lib/etc.ts partsCostCellState): frozen,
+  // draft, cleared, CONFIRMED, and only for an open undecided row the live sum. This
+  // effect used to compare the mount-time live sum against the seed and, when they
+  // differed, replace the seed and dirty the cell — which on a reopened month put a
+  // figure the manager had not signed into the box (the halves' live sum, drifted by
+  // later invoices), and on a locked month kept the frozen figure moving on screen.
+  // The first pass now only RECORDS the halves' sum as the baseline; the box keeps
+  // the seed. A later publish with a DIFFERENT sum is a genuine edit to a half (or a
+  // colleague's, adopted by the half's own cell), and that is what recomputes.
+  //
+  // `applied` starting as null (not the seed) is what makes the first pass a no-op
+  // whatever the seed says, and calling updateEtcField only on real movement keeps
+  // this independent of the order the effects run in — an unregistered name would
+  // otherwise read as an edit and mark every Parts Cost row unsaved on load.
+  //
+  // A FROZEN month never subscribes: nothing may move a submitted figure.
+  const applied = useRef<string | null>(null);
   useEffect(() => {
-    if (!derived) return;
+    if (!derived || frozen) return;
     const apply = () => {
       const sum = readPartsBreakoutSum(jobId);
       const next = sum == null ? "" : String(round2(sum));
+      if (applied.current === null) {
+        applied.current = next;
+        return;
+      }
       if (applied.current === next) return;
       applied.current = next;
       setValue(next);
@@ -158,7 +183,7 @@ export function PartsCostNewEtcCell({
     // this effect runs and there would otherwise be no event left to catch.
     apply();
     return subscribeEtcLiveTotals(apply);
-  }, [derived, jobId, name]);
+  }, [derived, frozen, jobId, name]);
 
   // A fresh server render retires the realtime patch — a full payload is newer and
   // more complete than any single event. Same rule, same reason as EtcSectionCells.

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { logAuditFor } from "@/lib/audit";
 import { verifySchedulerSsoToken, consumeSchedulerSsoNonce } from "@/lib/scheduler-sso";
 import { currentTokenVersion } from "@/lib/token-revocation";
+import { currentUserRole } from "@/lib/session-role";
 import { isCompanyEmail } from "@/lib/company-email";
 import { nameFromEmail } from "@/lib/name-from-email";
 import { fetchSchedulerPasswordHash } from "@/lib/scheduler-link";
@@ -138,9 +139,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // uses (`req.authUser.token_version || 0`), so deploying this does
         // NOT force-log-out every already-signed-in person for free; only an
         // ACTUAL revoke (which starts everyone else, and itself, at 0) does.
-        const current = await currentTokenVersion(Number(token.sub));
+        const userId = Number(token.sub);
+        const current = await currentTokenVersion(userId);
         const tokenVersion = typeof token.tokenVersion === "number" ? token.tokenVersion : 0;
         if (current === null || current !== tokenVersion) return null;
+
+        // Role refresh (2026-09-14). `token.role` used to be written once, at
+        // sign-in, and never again — so an admin changing someone's role on
+        // /admin/users did nothing to that person's open session, demotion
+        // included, until they happened to sign out. The role now comes from
+        // the database on every request (cached 60s, same as the version
+        // check above — see session-role-cache.ts for the cost argument), so
+        // the session claim can never disagree with the User row for longer
+        // than that. `null` here means the row is gone, deactivated, or holds
+        // a role this build does not know — every one of those ends the
+        // session rather than continuing on a stale claim. (setUserRole also
+        // bumps tokenVersion, so the usual admin path ends the old session
+        // immediately via the check above; this is the backstop for every
+        // other way a role can change.)
+        const role = await currentUserRole(userId);
+        if (role === null) return null;
+        token.role = role;
       }
       return token;
     },

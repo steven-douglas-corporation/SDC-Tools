@@ -10,6 +10,15 @@ export const ROUTE_PERMISSIONS: readonly { path: string; permission: Permission 
   { path: "/tm", permission: "tm:view" },
   { path: "/build-readiness", permission: "build-readiness:view" },
   { path: "/quoted", permission: "projects:view" },
+  // Added 2026-09-14. /jobs (the job list) and /jobs/[id] (one job's quoted vs
+  // actual cost, ETC entries, task assignments) show the same cost figures as
+  // /quoted, so they take the same permission — and until this entry existed
+  // permissionForPath returned null for them, meaning proxy.ts let ANY
+  // signed-in role through, ALL included. Every role that holds dashboard:view
+  // (whose cards link here) also holds projects:view, so no dashboard link
+  // starts dead-ending because of this. There is no sidebar item for /jobs, so
+  // the (app) layout's visibleHrefs picking it up changes nothing visible.
+  { path: "/jobs", permission: "projects:view" },
   { path: "/etc", permission: "monthly-etc:view" },
   { path: "/hours", permission: "hours:view" },
   { path: "/employees", permission: "employees:view" },

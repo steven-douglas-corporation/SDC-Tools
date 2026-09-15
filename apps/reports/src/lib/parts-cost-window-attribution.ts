@@ -1,4 +1,5 @@
 import type { PartsCostLine } from "@/lib/sync-totaleto";
+import type { BomNode } from "@/lib/job-bom-rules";
 
 // ── Window-scoped invoiced attribution for the Parts List tab ──────────────
 //
@@ -22,6 +23,34 @@ import type { PartsCostLine } from "@/lib/sync-totaleto";
 // so both files share one definition instead of two that could drift.
 export function normPn(s: string | null | undefined): string {
   return (s ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+}
+
+/**
+ * Every normalized part number a BOM tree carries as a requirement — the
+ * `bomPartNumbers` argument `attributeInvoicedWindow` takes.
+ *
+ * Includes each node's `self` (2026-09-14). A "Both Assembly and Contents"
+ * assembly is itself one of the things to buy (job-bom-rules.ts: BomNode.self),
+ * and flattenBomParts gives it a Parts List row. JobProcurement.tsx built this set
+ * from `node.parts` alone, so an invoice against such an assembly's own number
+ * resolved to a part number "not in the BOM" and fell into the unattached total
+ * in a windowed Invoiced view — its row sat at $0 while the footer carried the
+ * money as unattributable. Shared here so the set and the flattener walk the same
+ * tree the same way.
+ */
+export function collectBomPartNumbers(roots: readonly BomNode[]): Set<string> {
+  const set = new Set<string>();
+  const add = (pn: string) => {
+    const key = normPn(pn);
+    if (key) set.add(key);
+  };
+  const walk = (node: BomNode) => {
+    if (node.self) add(node.self.pn);
+    for (const p of node.parts) add(p.pn);
+    for (const c of node.children) walk(c);
+  };
+  for (const section of roots) walk(section);
+  return set;
 }
 
 export type WindowAttribution = {

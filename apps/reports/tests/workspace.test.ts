@@ -32,6 +32,8 @@ import {
   type Workspace,
 } from "../src/lib/workspace";
 import { SPLIT_ROUTES, isExclusive } from "../src/lib/split-view";
+import { paneAllowed } from "../src/lib/pane-permissions";
+import { needsRender, sidebarClick, workspaceSignature } from "../src/lib/workspace";
 
 // ── The workspace model ──────────────────────────────────────────────────────
 //
@@ -662,7 +664,9 @@ test("each pane streams on its own, so a hidden tab cannot hold up the active on
     WROUTE.indexOf("<Suspense key={id}"),
     WROUTE.indexOf("</Suspense>", WROUTE.indexOf("<Suspense key={id}")),
   );
-  assert.match(boundary, /<PaneView pane=\{tab\} \/>/, "and the pane must render inside it");
+  // `scope={{ tabId: id }}` was added 2026-09-14 so the pane-aware URL writer knows
+  // its tab without inferring it; the assertion is about WHERE PaneView renders.
+  assert.match(boundary, /<PaneView pane=\{tab\}[^>]*\/>/, "and the pane must render inside it");
 });
 
 // ── The sidebar/tab-strip interaction audit ─────────────────────────────────
@@ -821,12 +825,137 @@ test("a page the sidebar cannot host still navigates normally", () => {
 test("permission-hidden pages cannot be reached through stale tab state", () => {
   // The tab strip is chrome: it never widens what a user may see. Each pane renders the
   // page body, which still starts with its own requirePagePermission, so a tab restored
-  // from a URL for a page the user has since lost renders that page's refusal rather
-  // than its content.
+  // from a URL for a page the user has since lost renders a refusal rather than its
+  // content.
   assert.match(WROUTE, /requirePagePermission\(\)/);
-  const paneView = readFileSync(join(process.cwd(), "src", "components", "PaneView.tsx"), "utf8");
+  const paneView = stripComments(readFileSync(join(process.cwd(), "src", "components", "PaneView.tsx"), "utf8"));
   assert.ok(
-    !/requirePagePermission|assertPermission/.test(stripComments(paneView)),
-    "PaneView must not add its own check — the page body is the one gate",
+    !/requirePagePermission|assertPermission|redirect\(/.test(paneView),
+    "PaneView must not add its own gate or redirect — the page body is the one gate",
   );
+  // ── And the refusal stays INSIDE the pane (2026-09-14) ─────────────────────
+  // requirePagePermission refuses with redirect(), which from inside one pane
+  // navigates the whole document away from /w — every other tab with it. PaneView
+  // pre-checks the same list the sidebar filters on and renders the refusal in place,
+  // so losing one page (or restoring a URL with one) cannot eject the workspace. The
+  // rule itself is behavioural and pinned in tests/pane-permissions.test.ts.
+  assert.match(paneView, /paneAllowed\(pane\.path, permittedRoutePaths\(session\?\.user\?\.role\)\)/);
+  assert.match(paneView, /You no longer have access to this page/);
+  // A role that can see nothing gets nothing; a route outside the permitted set is refused.
+  assert.equal(paneAllowed("/etc", []), false);
+  assert.equal(paneAllowed("/etc", ["/etc"]), true);
+  assert.equal(paneAllowed("/etc", ["/hours", "/quoted"]), false);
+});
+
+// ── A sidebar click while split lands in the ACTIVE pane (2026-09-14) ─────────
+//
+// REPORTED: in a split, clicking a page in the sidebar did nothing visible. The click
+// handler (useWorkspaceActions.openExistingTab) called openTab, which adds/activates a
+// tab but never touches `split`, and the shell shows only the two split tabs — so the
+// tab it opened was mounted and invisible. The <Link>'s own href (useSplitNav.hrefFor)
+// had computed the right answer — navigate the active pane — all along. Both call
+// lib/workspace.ts's sidebarClick now.
+
+function splitWorkspace() {
+  let ws = openTab(EMPTY_WORKSPACE, "/etc", { month: "2026-08" }, { newInstance: true });
+  ws = openTab(ws, "/job-hours", { jobs: "1101" }, { newInstance: true });
+  const right = ws.active;
+  ws = activateTab(ws, ws.tabs[0].id);
+  return enterSplit(ws, right); // ETC (t1, active, left) | Job Details (t2, right)
+}
+
+test("split: a click on a page open in neither pane re-routes the ACTIVE pane", () => {
+  const ws = splitWorkspace();
+  const next = sidebarClick(ws, "/hours");
+  assert.equal(next.tabs.length, 2, "no hidden third tab");
+  assert.equal(tabById(next, ws.split!.left)?.path, "/hours", "the active (left) pane now shows Hours");
+  assert.equal(tabById(next, ws.split!.right)?.path, "/job-hours", "the other pane is untouched");
+  assert.deepEqual(next.split, ws.split, "the split itself is unchanged");
+  assert.equal(needsRender(ws, next), true, "a re-routed pane has content the server has not rendered");
+  // The href and the action agree by construction — same function.
+  assert.equal(workspaceHref(next), workspaceHref(sidebarClick(ws, "/hours")));
+});
+
+test("split: a click on the page already in the ACTIVE pane is a no-op", () => {
+  const ws = splitWorkspace();
+  assert.equal(sidebarClick(ws, "/etc"), ws);
+  assert.equal(needsRender(ws, sidebarClick(ws, "/etc")), false);
+});
+
+test("split: a click on the page showing in the OTHER pane activates that pane, not a copy", () => {
+  const ws = splitWorkspace();
+  const next = sidebarClick(ws, "/job-hours");
+  assert.equal(next.active, ws.split!.right);
+  assert.equal(next.tabs.length, 2);
+  assert.deepEqual(next.split, ws.split);
+  assert.equal(needsRender(ws, next), false, "already rendered — a visibility change only");
+});
+
+test("split: a click that names a job re-points the pane AND carries the job", () => {
+  const ws = splitWorkspace(); // active pane is ETC
+  const next = sidebarClick(ws, "/job-hours", { jobs: "1148" });
+  // Job Details is in the OTHER pane: activate it, with the requested job.
+  assert.equal(next.active, ws.split!.right);
+  assert.equal(tabById(next, ws.split!.right)?.params.jobs, "1148");
+});
+
+test("not split: sidebarClick IS openTab — resume or open, never a duplicate", () => {
+  let ws = openTab(EMPTY_WORKSPACE, "/etc", {}, { newInstance: true });
+  ws = openTab(ws, "/hours", {}, { newInstance: true });
+  assert.deepEqual(sidebarClick(ws, "/etc"), openTab(ws, "/etc"));
+  assert.deepEqual(sidebarClick(ws, "/quoted"), openTab(ws, "/quoted"));
+  assert.equal(sidebarClick(ws, "/admin/users"), ws, "unhostable routes are refused, as openTab refuses them");
+});
+
+test("needsRender: a new tab, a re-route and a params change need the router; a switch does not", () => {
+  const ws = splitWorkspace();
+  assert.equal(needsRender(ws, ws), false);
+  assert.equal(needsRender(ws, activateTab(ws, ws.split!.right)), false, "activating is a visibility toggle");
+  assert.equal(needsRender(ws, exitSplit(ws)), false, "leaving the split renders nothing new");
+  assert.equal(needsRender(ws, openTab(ws, "/hours", {}, { newInstance: true })), true);
+  assert.equal(needsRender(ws, navigateTab(ws, ws.active, "/hours")), true);
+  assert.equal(needsRender(ws, setTabParams(ws, ws.active, { month: "2026-09" })), true, "a new month is new content");
+  assert.equal(needsRender(ws, closeTab(ws, ws.split!.right)), false, "closing renders nothing new");
+});
+
+test("the action and the href builder both go through sidebarClick", () => {
+  assert.match(ACTIONS, /const routed = sidebarClick\(workspace, path\);/);
+  assert.match(ACTIONS, /needsRender\(workspace, routed\)/, "a re-routed pane must navigate");
+  assert.match(NAV, /return workspaceHref\(sidebarClick\(workspace, href\)\);/);
+  assert.ok(!/navigateTab\(workspace, sidebarTarget\(workspace\), href\)/.test(NAV), "the second implementation is gone");
+});
+
+// ── The server prop reseeds on ANY difference that matters (2026-09-14) ──────
+//
+// WorkspaceShell adopted the server's workspace only when the id~path signature
+// changed, so a /w URL differing only in `a=`, `s=` or a tab's params (Back after a
+// month change, a pasted link) left the live workspace stale.
+
+test("workspaceSignature changes with the active tab, the split and a tab's params", () => {
+  const ws = splitWorkspace();
+  const sig = workspaceSignature(ws);
+  assert.notEqual(workspaceSignature(activateTab(ws, ws.split!.right)), sig, "a= differs");
+  assert.notEqual(workspaceSignature(exitSplit(ws)), sig, "s= differs");
+  assert.notEqual(workspaceSignature(setTabParams(ws, ws.active, { month: "2026-09" })), sig, "t1.month differs");
+  assert.notEqual(workspaceSignature(setSplitRatio(ws, 70)), sig, "r= differs");
+  assert.notEqual(workspaceSignature(openTab(ws, "/hours", {}, { newInstance: true })), sig, "the tab set differs");
+});
+
+test("workspaceSignature ignores MRU — interaction history must never reseed the shell", () => {
+  let ws = openTab(EMPTY_WORKSPACE, "/etc", {}, { newInstance: true });
+  ws = openTab(ws, "/hours", {}, { newInstance: true });
+  ws = openTab(ws, "/quoted", {}, { newInstance: true });
+  const a = activateTab(ws, ws.tabs[0].id);
+  // Same tabs, same active, different MRU history behind it.
+  const b = activateTab(activateTab(a, ws.tabs[1].id), ws.tabs[0].id);
+  assert.notDeepEqual(a.mru, b.mru, "the histories really do differ");
+  assert.equal(workspaceSignature(a), workspaceSignature(b));
+});
+
+test("workspaceSignature is stable through the URL — a round trip is not a change", () => {
+  const ws = setSplitRatio(splitWorkspace(), 63);
+  const reread = decodeWorkspace(Object.fromEntries(new URLSearchParams(encodeWorkspace(ws))));
+  assert.equal(workspaceSignature(reread), workspaceSignature(ws));
+  assert.match(SHELL, /const signature = workspaceSignature\(serverWs\);/);
+  assert.ok(!/serverWs\.tabs\.map\(\(t\) => `\$\{t\.id\}~\$\{t\.path\}`\)/.test(SHELL), "the id~path-only signature is gone");
 });

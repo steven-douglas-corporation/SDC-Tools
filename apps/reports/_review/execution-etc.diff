@@ -1,0 +1,79 @@
+diff --git a/apps/reports/src/lib/execution-etc.ts b/apps/reports/src/lib/execution-etc.ts
+index 81e37a6..401bcaf 100644
+--- a/apps/reports/src/lib/execution-etc.ts
++++ b/apps/reports/src/lib/execution-etc.ts
+@@ -1,5 +1,7 @@
+ import { prisma } from "@/lib/prisma";
+-import { effectiveNewEtc, round2 } from "@/lib/etc";
++import { effectiveNewEtc, partsCostEffectiveNewEtc, round2 } from "@/lib/etc";
++import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
++import type { EtcDb } from "@/lib/etc-month-jobs";
+ import { ETC_SECTIONS, ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
+ 
+ const SECTION_BILLING_GROUP = new Map(ETC_SECTIONS.map((s) => [s.code, s.billingGroup]));
+@@ -24,13 +26,40 @@ export function isInStandardFeesAllocation(job: { billable: boolean; excludedFro
+ //
+ // `month` scopes the rollup to one ETC month, mirroring how the workbook's
+ // Managers Fill Out always holds exactly one month's working state.
+-export async function getExecutionEtcByJob(jobIds: number[], month: string): Promise<Map<number, ExecutionEtc>> {
++//
++// `opts.partsBreakoutSums` (2026-09-14) is the live Left to Invoice + Left to
++// Purchase per job PK, for callers that hold it (the Monthly ETC page): the Parts
++// Cost rung reads it through partsCostEffectiveNewEtc, the ONE Parts rule. Callers
++// without the upstream read omit it and the rule falls through as for blank halves.
++// `opts.db` lets the freeze roll the month up INSIDE its own transaction, after the
++// rows are frozen — so the fee snapshot is built from exactly the figures written.
++export async function getExecutionEtcByJob(
++  jobIds: number[],
++  month: string,
++  opts: { partsBreakoutSums?: ReadonlyMap<number, number | null>; db?: EtcDb } = {},
++): Promise<Map<number, ExecutionEtc>> {
+   const result = new Map<number, ExecutionEtc>();
+   if (jobIds.length === 0) return result;
++  const db = opts.db ?? prisma;
++  const breakoutInScope = showsPartsBreakout(month);
+ 
+-  const entries = await prisma.etcEntry.findMany({
++  const entries = await db.etcEntry.findMany({
+     where: { jobId: { in: jobIds }, month },
+-    select: { jobId: true, section: true, newEtc: true, newEtcDraft: true, needsReview: true, priorEtc: true, hoursWorked: true },
++    // submittedAt / newEtcClearedAt are what effectiveNewEtc needs to return a
++    // REOPENED row's confirmed figure instead of the carry-forward suggestion
++    // (2026-09-14). Without them selected this rollup fed the fee snapshot last
++    // month's leftovers for every cell a manager had signed off and not retyped.
++    select: {
++      jobId: true,
++      section: true,
++      newEtc: true,
++      newEtcDraft: true,
++      newEtcClearedAt: true,
++      submittedAt: true,
++      needsReview: true,
++      priorEtc: true,
++      hoursWorked: true,
++    },
+   });
+ 
+   for (const e of entries) {
+@@ -47,13 +76,17 @@ export async function getExecutionEtcByJob(jobIds: number[], month: string): Pro
+     // same rule that could silently drift from the original the moment one
+     // was edited and not the other (found while auditing the Parts Cost
+     // projection formula; identical behavior before and after this change).
+-    const value = effectiveNewEtc(e);
+     if (e.section === PARTS_COST_SECTION) {
+-      totals.parts += value;
++      // The Parts rule (lib/etc.ts): frozen, draft, cleared, confirmed, then — only
++      // for an open undecided row — the live sum of the two halves.
++      totals.parts += partsCostEffectiveNewEtc(e, {
++        breakoutInScope,
++        breakoutSum: opts.partsBreakoutSums?.get(e.jobId) ?? null,
++      });
+     } else if (SECTION_BILLING_GROUP.get(e.section) === "Engineering") {
+-      totals.engineering += value;
++      totals.engineering += effectiveNewEtc(e);
+     } else {
+-      totals.shop += value;
++      totals.shop += effectiveNewEtc(e);
+     }
+     result.set(e.jobId, totals);
+   }

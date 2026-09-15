@@ -172,8 +172,20 @@ export function tabTitle(ws: Workspace, id: TabId, opts?: { detailed?: boolean }
   return hint ? `${base} — ${hint}` : base;
 }
 
-/** Every route the tab bar's "+" can offer. */
-export const openableRoutes = () => SPLIT_ROUTES;
+/**
+ * Every route the tab bar's "+" can offer.
+ *
+ * `permitted` is the role's visible paths — the same list the sidebar filters on
+ * (app/(app)/layout.tsx's `visibleHrefs`, published through lib/permitted-routes-store).
+ * Null means "not known yet" and offers everything, which is the state of the first
+ * client render before the sidebar has published; it is never "nothing".
+ *
+ * Offering a route the role cannot see used to open a tab whose page body then
+ * called redirect() from inside the pane — ejecting the whole workspace. See
+ * lib/pane-permissions.ts.
+ */
+export const openableRoutes = (permitted?: readonly string[] | null) =>
+  permitted == null ? SPLIT_ROUTES : SPLIT_ROUTES.filter((r) => permitted.some((p) => normalizePath(p) === r.path));
 
 // ── MRU ─────────────────────────────────────────────────────────────────────
 
@@ -441,6 +453,85 @@ export function setSplitRatio(ws: Workspace, ratio: number): Workspace {
  */
 export function sidebarTarget(ws: Workspace): TabId {
   return ws.active;
+}
+
+/**
+ * What a plain sidebar click does to the workspace — THE rule, in one place.
+ *
+ * REPORTED 2026-09-14: in a split, a sidebar click opened a tab nobody could see.
+ * useWorkspaceActions.openExistingTab called openTab, which adds or activates a tab
+ * but never touches `split` — and WorkspaceShell shows only the two split tabs. So
+ * the click looked like it did nothing, while the <Link>'s own href (useSplitNav's
+ * hrefFor, which the click preventDefault()ed) had computed the right answer all
+ * along: navigate the ACTIVE pane. The two disagreed because they were two
+ * implementations. Both call this now.
+ *
+ *   not split                        openTab — resume the MRU instance or open one
+ *   split, active pane already on    nothing to do
+ *     that route
+ *   split, the OTHER pane is on it   activate that pane — the page the user asked
+ *                                    for is already on screen; making both panes
+ *                                    show it would be the surprising reading
+ *   split, otherwise                 navigateTab on the active pane, leaving the
+ *                                    other pane alone (the /split contract)
+ *
+ * The one pairing that is refused (Monthly ETC beside Monthly ETC) is the caller's
+ * to check with pairingRefusal, because the useful answer there — leave the
+ * workspace and open the page full width — is a navigation, not a workspace.
+ */
+export function sidebarClick(ws: Workspace, path: string, params: Record<string, string> = {}): Workspace {
+  const p = normalizePath(path);
+  if (!isSplittable(p)) return ws;
+  if (!ws.split) return openTab(ws, p, params);
+  const target = sidebarTarget(ws);
+  if (tabById(ws, target)?.path === p) {
+    return Object.keys(pickParams(p, params)).length > 0 ? setTabParams(ws, target, params) : ws;
+  }
+  const other = ws.split.left === target ? ws.split.right : ws.split.left;
+  if (tabById(ws, other)?.path === p) {
+    const next = Object.keys(pickParams(p, params)).length > 0 ? setTabParams(ws, other, params) : ws;
+    return activateTab(next, other);
+  }
+  return navigateTab(ws, target, p, params);
+}
+
+/**
+ * Does `next` contain a pane /w has never rendered — a new tab, or an existing tab
+ * pointed at a different route or different params?
+ *
+ * The one question `commit` has to answer: resuming a mounted tab is a visibility
+ * toggle, but a pane whose content does not exist yet needs the router. Comparing
+ * tab COUNT (the earlier rule) missed the re-route case: navigateTab keeps the
+ * count and changes the page, and the stale pane sat there showing the old route.
+ */
+export function needsRender(prev: Workspace, next: Workspace): boolean {
+  if (prev === next) return false;
+  const seen = new Map(prev.tabs.map((t) => [t.id, t]));
+  return next.tabs.some((t) => {
+    const before = seen.get(t.id);
+    return !before || before.path !== t.path || !sameParams(before.params, t.params);
+  });
+}
+
+function sameParams(a: Record<string, string>, b: Record<string, string>): boolean {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every((k) => a[k] === b[k]);
+}
+
+/**
+ * Everything the SERVER's copy of a workspace can differ in that the client should
+ * adopt: the tab set, each tab's params, the active tab and the split.
+ *
+ * WorkspaceShell reseeds its local state from the server prop only when this
+ * changes. It used to compare `id~path` alone, so a /w URL differing only in `a=`,
+ * `s=` or a tab's params (Back/Forward, a pasted link, a control that navigated)
+ * left the live workspace stale. MRU is excluded on purpose: it is interaction
+ * history, the encoder omits it when it says nothing, and it must never be a
+ * reason to throw away the user's current tab.
+ */
+export function workspaceSignature(ws: Workspace): string {
+  return encodeWorkspace({ ...ws, mru: [] });
 }
 
 // ── URL ─────────────────────────────────────────────────────────────────────

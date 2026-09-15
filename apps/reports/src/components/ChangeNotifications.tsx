@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { dismissAllChanges, dismissChange, useRealtimeChanges, useRealtimeStatus } from "@/components/RealtimeProvider";
 import { useExitList } from "@/components/useMotion";
+import { reconcileTimers } from "@/lib/notification-timers";
 
 // The change-notification banner (spec 5).
 //
@@ -106,20 +107,56 @@ export function ChangeNotifications() {
 
   // ── They expire on their own ──────────────────────────────────────────────
   //
-  // One timer per render pass over the current groups, cleared on the next — not a timer
-  // per card held across renders, which would leak on a stack that changes every few
-  // seconds. A refused change is never scheduled: it is the one card that is asking for
-  // a decision, so it waits for one.
+  // One timer PER CARD, started when the card first becomes visible and left alone
+  // until the card goes (2026-09-14). The previous version scheduled a fresh set of
+  // timers on every change of `groups` and cleared the old set — and `groups` is
+  // rebuilt on EVERY incoming event, so each event restarted every card's seven
+  // seconds from zero and nothing ever expired while changes kept arriving.
+  //
+  // The members a card stands for can grow after its timer started (the same cell
+  // edited again), so the timer reads the CURRENT members when it fires rather than
+  // the ones it was created with — otherwise the card would reappear a frame later
+  // showing the newer event. A refused change is never scheduled: it is the one card
+  // that is asking for a decision, so it waits for one.
+  const timers = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; members: typeof changes }>());
   useEffect(() => {
-    const expiring = groups.filter((g) => !g.refused).slice(0, VISIBLE);
-    if (expiring.length === 0) return;
-    const timers = expiring.map((g) =>
-      setTimeout(() => {
-        for (const m of g.members) dismissChange(m.changeId, m.rowRef, m.columnName);
-      }, AUTO_DISMISS_MS),
+    const expiring = new Map(
+      groups
+        .filter((g) => !g.refused)
+        .slice(0, VISIBLE)
+        .map((g) => [`${g.head.tab}|${g.head.rowRef}|${g.head.columnName}`, g] as const),
     );
-    return () => timers.forEach(clearTimeout);
+    const running = timers.current;
+    const { start, stop } = reconcileTimers(running.keys(), expiring.keys());
+    for (const key of stop) {
+      clearTimeout(running.get(key)!.timer);
+      running.delete(key);
+    }
+    for (const [key, g] of expiring) {
+      const entry = running.get(key);
+      if (entry) {
+        entry.members = g.members; // keep the dismissal complete; do NOT touch the timer
+        continue;
+      }
+      if (!start.includes(key)) continue;
+      const created = {
+        members: g.members,
+        timer: setTimeout(() => {
+          running.delete(key);
+          for (const m of created.members) dismissChange(m.changeId, m.rowRef, m.columnName);
+        }, AUTO_DISMISS_MS),
+      };
+      running.set(key, created);
+    }
   }, [groups]);
+  // Only on unmount: nothing here may run on a groups change, or the timers restart.
+  useEffect(() => {
+    const running = timers.current;
+    return () => {
+      for (const { timer } of running.values()) clearTimeout(timer);
+      running.clear();
+    };
+  }, []);
 
   const shown = groups.slice(0, VISIBLE);
   // Counted in CELLS, matching what the cards are — "+2 more changes" beside three cards

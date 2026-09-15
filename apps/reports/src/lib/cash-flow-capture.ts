@@ -11,6 +11,22 @@ import { getValidProjectIds } from "@/lib/cash-flow";
 
 export type CashFlowCaptureResult = { captured: boolean; snapshotId: number; lineCount: number; reason: string };
 
+// ── The calendar day a snapshot is filed under (2026-09-14) ─────────────────
+//
+// Was `new Date(ts.toISOString().slice(0, 10))` — the UTC day. This server runs
+// UTC-4, so a refresh at 20:00 or later local filed its snapshot under TOMORROW,
+// and the "prior month-end" lookup (CashFlowSnapshot.snapshotDate, an indexed
+// DATE column) missed the last capture of the month on the evening it was made.
+//
+// The day is taken in the app's own "today" convention — local server time,
+// exactly as lib/etc.ts's currentMonth() does for "what month is it" — and then
+// stored as midnight UTC of THAT date, because a Prisma @db.Date column keeps
+// the UTC date part of the Date it is handed. Pure, so a 21:00 local timestamp
+// can be checked in a test.
+export function snapshotDateFor(ts: Date): Date {
+  return new Date(Date.UTC(ts.getFullYear(), ts.getMonth(), ts.getDate()));
+}
+
 export async function captureCashFlowSnapshot(actorEmail: string | null): Promise<CashFlowCaptureResult> {
   const sourceRefreshTimestamp = new Date();
   const [estimates, arRows, apRows, poRows, etcAllocations, validIds] = await Promise.all([
@@ -46,9 +62,9 @@ export async function captureCashFlowSnapshot(actorEmail: string | null): Promis
     return { captured: false, snapshotId: latest.id, lineCount: latest.lineCount, reason: "forecast unchanged since the last snapshot" };
   }
 
-  // Midnight UTC of today's calendar date — the "As Of: <date>"/"prior
+  // Midnight UTC of today's LOCAL calendar date — the "As Of: <date>"/"prior
   // month-end" lookups key on this, not on the precise capture time.
-  const snapshotDate = new Date(sourceRefreshTimestamp.toISOString().slice(0, 10));
+  const snapshotDate = snapshotDateFor(sourceRefreshTimestamp);
 
   const snapshotId = await insertSnapshot({ snapshotDate, sourceRefreshTimestamp, createdBy: actorEmail, contentHash, lines });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { TOOLBAR_BTN, TOOLBAR_BTN_MUTED } from "@/components/ui/classnames";
 import { HOURS_FILTER_PARAMS } from "@/lib/hours-filters";
 
@@ -25,8 +25,10 @@ import { HOURS_FILTER_PARAMS } from "@/lib/hours-filters";
 // The param list is imported, not written out here, so a filter added later
 // cannot quietly become one this button fails to clear.
 export function HoursClearFiltersButton({ activeCount }: { activeCount: number }) {
-  const router = useRouter();
-  const pathname = usePathname();
+  // Pane-aware (2026-09-14): inside a workspace tab this used to push the bare
+  // pathname — "/w" — which decodes to an EMPTY workspace and emptied every tab.
+  // usePaneUrl writes the Hours tab's own params, wherever the button is rendered.
+  const url = usePaneUrl();
   const [pending, startTransition] = useTransition();
   const nothingToClear = activeCount === 0;
 
@@ -40,9 +42,10 @@ export function HoursClearFiltersButton({ activeCount }: { activeCount: number }
       aria-label={nothingToClear ? "Clear filters (nothing to clear)" : `Clear all ${activeCount} filters`}
       onClick={() =>
         startTransition(() => {
-          // pathname, with no query at all — every filter param is in the query,
-          // so this is the page's own default view by construction.
-          router.push(pathname, { scroll: false });
+          // No query at all — every filter param is in the query, so this is the
+          // page's own default view by construction. In a pane, "no query" means
+          // this TAB's params cleared and every other tab untouched.
+          url.push({}, { scroll: false });
         })
       }
       className={`${TOOLBAR_BTN} ${TOOLBAR_BTN_MUTED} disabled:cursor-not-allowed disabled:opacity-45 ${pending ? "opacity-60" : ""}`}

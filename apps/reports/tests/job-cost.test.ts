@@ -1,11 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   DEFAULT_RATES,
   computeJobCost,
   isUtilityJob,
   laborForType,
   rateForYear,
+  partsCostForProfit,
+  jobCostTotals,
+  type JobCostComputed,
   type JobCostRow,
 } from "../src/lib/job-cost";
 
@@ -114,6 +119,7 @@ test("computeJobCost: ETC (future) hours always cost at the default rate, never 
     etcShopHours: 0,
     etcPartsCost: 0,
     partCost: 0,
+    partInvoiced: 0, // parts must contribute nothing here — see partsCostForProfit
     salesPrice: 0,
     completeDate: null,
   });
@@ -141,6 +147,7 @@ test("computeJobCost: margin is profit as a percentage of sales", () => {
     etcShopHours: 0,
     etcPartsCost: 0,
     partCost: 200,
+    partInvoiced: 200, // fully GL-posted, nothing open — so y is simply 200
     completeDate: null,
   });
   const c = computeJobCost(row, DEFAULT_RATES, {}, undefined);
@@ -155,4 +162,109 @@ test("isUtilityJob matches the known clearing/placeholder IDs and blank IDs, not
   assert.equal(isUtilityJob(""), true);
   assert.equal(isUtilityJob("   "), true);
   assert.equal(isUtilityJob("1200"), false);
+});
+
+// ── Parts in the profit line: no double-count of the open PO balance (2026-09-14) ──
+//
+// `partCost` (Parts Purchased) = GL-posted actual + every open PO's uninvoiced
+// balance. `etcPartsCost` (Parts New ETC) = leftToInvoice + leftToPurchase since
+// 2026-08 — and leftToInvoice IS that open balance. `partCost + etcPartsCost`
+// therefore subtracted the open balance twice on every non-Complete job. Profit
+// now subtracts the Parts Cost card's projection: actual + max(open, New ETC).
+
+test("partsCostForProfit: actual 100k, open PO 50k, New ETC 70k (50k LTI + 20k LTP) -> 170k, not 220k", () => {
+  const r = partsCostForProfit({ partCost: 150_000, partInvoiced: 100_000, status: "Active" }, 70_000);
+  assert.equal(r.actual, 100_000);
+  assert.equal(r.committedNotPosted, 50_000);
+  assert.equal(r.projected, 170_000);
+});
+
+test("partsCostForProfit: a stale New ETC below the open balance cannot drag the figure under what is committed", () => {
+  // ETC 30k says "30k left", but 50k is already on order: the floor holds at
+  // actual + open = 150k (parts-cost-financials-shared.ts's projectionResidual).
+  assert.equal(partsCostForProfit({ partCost: 150_000, partInvoiced: 100_000, status: "Active" }, 30_000).projected, 150_000);
+  // No ETC month at all: still actual + open, never actual alone.
+  assert.equal(partsCostForProfit({ partCost: 150_000, partInvoiced: 100_000, status: "Active" }, null).projected, 150_000);
+});
+
+test("partsCostForProfit: a Complete job subtracts GL-posted actual only", () => {
+  assert.equal(partsCostForProfit({ partCost: 150_000, partInvoiced: 100_000, status: "Complete" }, 70_000).projected, 100_000);
+});
+
+test("partsCostForProfit: with no GL-posted figure at all the commitment stands in, never a silent zero", () => {
+  const r = partsCostForProfit({ partCost: 150_000, partInvoiced: null, status: "Active" }, null);
+  assert.equal(r.actual, 150_000);
+  assert.equal(r.projected, 150_000);
+  assert.equal(partsCostForProfit({ partCost: null, partInvoiced: null, status: "Active" }, 5_000).projected, 5_000);
+});
+
+test("computeJobCost: profit subtracts the projected parts figure and exposes it as partsProjected", () => {
+  const row = baseRow({
+    salesPrice: 1_000_000,
+    hoursByYear: {},
+    engineeringHours: 0,
+    shopHours: 0,
+    etcEngHours: 0,
+    etcShopHours: 0,
+    partCost: 150_000,
+    partInvoiced: 100_000,
+    etcPartsCost: 70_000,
+    completeDate: null,
+  });
+  const c = computeJobCost(row, DEFAULT_RATES, {}, undefined);
+  assert.equal(c.partsProjected, 170_000);
+  // x = PM 10% + Mfg 10% of sales = 200k; y = 170k
+  assert.equal(c.profit, 1_000_000 - 200_000 - 170_000);
+  // The columns keep their honest meanings: Purchased is still commitment.
+  assert.equal(c.partCost, 150_000);
+  assert.equal(c.partInvoiced, 100_000);
+  assert.equal(c.etcPartsCost, 70_000);
+});
+
+// ── The export's totals row never sums a percentage ─────────────────────────
+
+function computed(o: Partial<JobCostComputed>): JobCostComputed {
+  return { ...baseRow(), pmCost: 0, mfgCost: 0, laborCost: 0, partsProjected: 0, profit: null, margin: null, ...o };
+}
+
+test("jobCostTotals: margin is Σprofit ÷ Σsales, not Σ of the row margins", () => {
+  const rows = [
+    computed({ salesPrice: 100, profit: 50, margin: 50 }),
+    computed({ salesPrice: 900, profit: 90, margin: 10 }),
+  ];
+  const t = jobCostTotals(rows, ["salesPrice", "profit", "margin"]);
+  assert.equal(t.salesPrice, 1000);
+  assert.equal(t.profit, 140);
+  assert.ok(Math.abs((t.margin ?? NaN) - 14) < 1e-9, `140 / 1000 = 14 — the old code printed 60; got ${t.margin}`);
+});
+
+test("jobCostTotals: percentComplete is sales-weighted, and blank when nothing can weight it", () => {
+  const rows = [
+    computed({ salesPrice: 100, percentComplete: 100 }),
+    computed({ salesPrice: 900, percentComplete: 0 }),
+    computed({ salesPrice: null, percentComplete: 100 }), // no weight — ignored
+  ];
+  assert.equal(jobCostTotals(rows, ["percentComplete"]).percentComplete, 10);
+  assert.equal(jobCostTotals([computed({ salesPrice: null, percentComplete: 50 })], ["percentComplete"]).percentComplete, null);
+  assert.equal(jobCostTotals([], ["margin", "percentComplete"]).margin, null);
+});
+
+test("jobCostTotals: additive columns sum (null as 0); text, dates and unknown keys are blank", () => {
+  const rows = [computed({ actualHours: 10, partCost: 5, profit: 1 }), computed({ actualHours: null, partCost: 7, profit: -3 })];
+  const t = jobCostTotals(rows, ["actualHours", "partCost", "profit", "customerName", "startDate", "status", "somethingNew"]);
+  assert.equal(t.actualHours, 10);
+  assert.equal(t.partCost, 12);
+  assert.equal(t.profit, -2);
+  assert.equal(t.customerName, null);
+  assert.equal(t.startDate, null);
+  assert.equal(t.status, null);
+  assert.equal(t.somethingNew, null, "a key this function does not know is not assumed additive");
+});
+
+test("the export action checks the page's own permission and totals through jobCostTotals", () => {
+  const src = readFileSync(join(import.meta.dirname, "..", "src", "lib", "export", "job-cost-export.ts"), "utf8");
+  assert.match(src, /await assertActionPermission\("profitability:view"\);/, "the same permission /job-cost-explorer is gated on");
+  assert.match(src, /rows = validRows\(rows\);/, "the audit row's count is the count of VALIDATED rows");
+  assert.match(src, /jobCostTotals\(rows, cols\)/);
+  assert.doesNotMatch(src, /const sum = \(k: string\) => rows\.reduce/, "the sum-everything-numeric totals row is gone");
 });

@@ -39,10 +39,26 @@ export function cycleSortState<K extends string>(current: SortState<K>, key: K):
 // fallback otherwise, so a non-numeric id (a part number, "ABC-123") still sorts
 // sensibly rather than comparing as NaN. Same rule as compareJobIds in lib/job-filters.ts,
 // applied generically rather than re-implemented per column.
+//
+// ── Numeric values sort as a block BEFORE non-numeric ones (2026-09-14) ─────────
+//
+// "Numeric when both parse, lexical otherwise" is not a total order once a column
+// mixes the two. Real PO numbers do — job 1106 carries the PO `1106 correction`
+// beside `105137` and `979` — and on that column the old rule cycled:
+// 105137 < "1106 correction" (lexical), "1106 correction" < 979 (lexical), but
+// 979 < 105137 (numeric). Array.prototype.sort is not defined on an inconsistent
+// comparator, so the order it produced depended on the engine and the input order.
+// Now every numeric value precedes every non-numeric one, numerics compare
+// numerically among themselves and the rest lexically among themselves — three
+// disjoint rules that together are one total order.
 function compareIds(a: string, b: string): number {
   const na = Number(a);
   const nb = Number(b);
-  if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+  const aNumeric = Number.isFinite(na);
+  const bNumeric = Number.isFinite(nb);
+  if (aNumeric && bNumeric) return na - nb;
+  if (aNumeric) return -1;
+  if (bNumeric) return 1;
   return a.localeCompare(b);
 }
 

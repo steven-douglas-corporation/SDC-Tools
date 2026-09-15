@@ -5,10 +5,19 @@ import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 import { recordChanges, classifyChange } from "@/lib/change-log";
 import { CELL_SPECS, parseCell } from "@/lib/cell-rules";
+import { assertProjectsEditable } from "@/lib/projects-edit-mode";
 
 // Task assignments mirror the sheet's "ME Name" columns (slots 1-11).
+//
+// Both writes below are gated on projects:edit via assertProjectsEditable()
+// (2026-09-14) — the same guard every other Projects-tab write uses
+// (createJobFromRelease, saveQuotedHours). They are bound to forms on the
+// job page, but a Server Action is callable by anyone who can POST to the
+// app regardless of which page rendered it, and until this they were the
+// only job-data writes with no permission check at all.
 
 export async function saveJobTask(jobId: number, slot: number | null, formData: FormData) {
+  await assertProjectsEditable();
   if (!Number.isInteger(jobId) || jobId <= 0) throw new Error(`Invalid job id "${jobId}".`);
   const taskName = String(formData.get("taskName") ?? "").trim();
   if (!taskName) throw new Error("Task name is required.");
@@ -76,6 +85,8 @@ export async function saveJobTask(jobId: number, slot: number | null, formData: 
 }
 
 export async function deleteJobTask(id: number, _formData: FormData) {
+  await assertProjectsEditable();
+  if (!Number.isInteger(id) || id <= 0) throw new Error(`Invalid task id "${id}".`);
   const task = await prisma.jobTask.delete({ where: { id } });
   await logAudit({
     action: "jobtask.delete",

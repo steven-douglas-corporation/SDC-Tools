@@ -1,7 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { runDax } from "@/lib/powerbi-client";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, suggestNewEtc, round2, hasPublishedHistory, groupStandardFeesRows } from "@/lib/etc";
+import {
+  calcHoursLeft,
+  suggestNewEtc,
+  round2,
+  hasPublishedHistory,
+  groupStandardFeesRows,
+  historyConfirmedAt,
+  isHistoryConfirmedAt,
+} from "@/lib/etc";
 import { queryWarehouse } from "@/lib/fabric-warehouse";
 import { fetchEtcPeriods } from "@/lib/etc-period";
 
@@ -71,14 +79,32 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
   const candidates = (await fetchEtcPeriods()).map((p) => ({ name: p.name, month: p.month }));
 
   // App-owned months, per the ownership rule above.
-  const ownedRows = await prisma.etcEntry.findMany({
-    where: {
-      OR: [{ submittedAt: { not: null } }, { enteredById: { not: null } }, { newEtcDraft: { not: null } }, { needsReview: true }],
-    },
-    distinct: ["month"],
-    select: { month: true },
-  });
+  //
+  // ── A history stamp is not an app submission (2026-09-14) ─────────────────
+  //
+  // Rows this function writes now carry `submittedAt = historyConfirmedAt(month)`
+  // (see addRow), so that isConfirmedEntry — the one predicate the grid, the freeze,
+  // validation and the export read — holds for history exactly as it does for a
+  // month closed in the app. Read naively, that stamp would make every PBI-owned
+  // month app-owned on the NEXT run and the sync would never converge again. So a
+  // submittedAt equal to the month's own history instant is recognised as this
+  // function's signature and ignored here; any other submittedAt is what it always
+  // was — a real in-app freeze — and still owns the month.
+  const [ownedRows, stampedRows] = await Promise.all([
+    prisma.etcEntry.findMany({
+      where: { OR: [{ enteredById: { not: null } }, { newEtcDraft: { not: null } }, { needsReview: true }] },
+      distinct: ["month"],
+      select: { month: true },
+    }),
+    prisma.etcEntry.groupBy({
+      by: ["month", "submittedAt"],
+      where: { submittedAt: { not: null } },
+    }),
+  ]);
   const appOwned = new Set(ownedRows.map((r) => r.month));
+  for (const r of stampedRows) {
+    if (!isHistoryConfirmedAt(r.month, r.submittedAt)) appOwned.add(r.month);
+  }
 
   const jobs = await prisma.job.findMany({ select: { id: true, jobId: true } });
   const jobByJobId = new Map(jobs.map((j) => [j.jobId, j]));
@@ -222,6 +248,7 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
       hoursLeftCalc: number;
       newEtc: number;
       needsReview: boolean;
+      submittedAt: Date;
     }[] = [];
 
     const addRow = (rawJobId: string | null, section: string, r: { PriorEtc: number | null; NewEtc: number | null; Left: number | null }) => {
@@ -259,6 +286,19 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
         hoursLeftCalc: round2(calcHoursLeft(priorEtc, hoursWorked)),
         newEtc,
         needsReview: false,
+        // ── Stamped as confirmed (2026-09-14) ─────────────────────────────────
+        //
+        // These rows are closed history — `needsReview: false` has always said so —
+        // but they were written without a submittedAt, and that column is what
+        // isConfirmedEntry (lib/etc.ts) reads once a month is REOPENED. Reopening a
+        // backfilled month therefore showed every cell pre-filled from newEtc (the
+        // page guessed from the month's position) while validation demanded a figure
+        // for each one and the freeze re-derived the zero-hour cells at priorEtc.
+        // The freeze stamps the instant it ran; history is stamped with the instant
+        // its period closed. Deterministic, so re-running converges, and
+        // recognisable, so it does not make the month app-owned (see the ownership
+        // read above). Existing rows: scripts/backfill-etc-submitted-at.ts.
+        submittedAt: historyConfirmedAt(period.month),
       });
     };
 

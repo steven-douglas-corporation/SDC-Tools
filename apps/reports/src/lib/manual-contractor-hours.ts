@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { poolCategoryForPunch } from "@/lib/sections";
 import type { JobHoursRow, PoolHoursByMonth } from "@/lib/job-hours-source";
+import type { RejectedPunch } from "@/lib/paylocity-workbook";
 
 // ── Manual contractor punches, merged into the ONE hours feed ────────────────
 //
@@ -54,11 +55,68 @@ export type ManualContractorMerge = {
   suppressed: { employeeName: string; workDate: string; hours: number; segments: number }[];
   /** Manual segments whose job number the app does not know — reported, never emitted. */
   unknownJobs: { employeeName: string; workDate: string; jobNumber: string; hours: number }[];
+  /**
+   * Manual segments whose timecard NAME matches more than one roster row and cannot
+   * be attributed without guessing — reported here AND as `rejected` punches, never
+   * emitted under either candidate. See resolveContractorEmployeeId.
+   */
+  ambiguousEmployees: { employeeName: string; workDate: string; candidates: string[]; hours: number }[];
+  /**
+   * The same ambiguous segments in the feed's own rejection shape (EMPLOYEE_NOT_MAPPED),
+   * so readHoursFeed can append them to `rejected` and the Undefined Hours drill shows
+   * them as unattributed alongside the workbook's rejections — visibly in need of a
+   * fix, rather than silently filed under the wrong person. Not counted toward the KPI
+   * (countsTowardKpi: false): the KPI's definition is job-number faults.
+   */
+  rejected: RejectedPunch[];
   /** For the provenance line, so a reader can see manual hours are in play. */
   totalHours: number;
 };
 
+// ── Resolving a timecard name to ONE employee id (2026-09-14) ───────────────
+//
+// This used to be `new Map(employees.map((e) => [name.toLowerCase(), e.paylocityId]))`
+// over the whole roster — last-writer-wins, so two rows sharing a name (a rehire, a
+// namesake, a leaver kept for history) silently sent every segment to whichever row
+// happened to be read last, and the dedup against the official feed compared on that
+// id too. Wrong person, wrong dedup, and nothing said so.
+//
+// The rule now: no roster match keeps the id seeded with the punch (the contractor has
+// no Paylocity id yet — the designed case); exactly one match uses it; several matches
+// prefer the single ACTIVE row, because a leaver's row is history and a timecard is
+// current work; anything still ambiguous is NOT guessed — the caller records it as a
+// rejected punch and skips it. Pure and exported so the rule table is tested directly.
+export type ContractorIdCandidate = { paylocityId: string; active: boolean };
+export type ContractorIdResolution = { kind: "resolved"; employeeId: string } | { kind: "ambiguous"; candidates: string[] };
+
+export function resolveContractorEmployeeId(candidates: readonly ContractorIdCandidate[], seededId: string): ContractorIdResolution {
+  if (candidates.length === 0) return { kind: "resolved", employeeId: seededId };
+  if (candidates.length === 1) return { kind: "resolved", employeeId: candidates[0].paylocityId };
+  const active = candidates.filter((c) => c.active);
+  if (active.length === 1) return { kind: "resolved", employeeId: active[0].paylocityId };
+  return { kind: "ambiguous", candidates: candidates.map((c) => c.paylocityId) };
+}
+
+/** Roster rows keyed by the normalised name a timecard is matched on. */
+export function contractorCandidatesByName(employees: readonly { name: string; paylocityId: string | null; active: boolean }[]): Map<string, ContractorIdCandidate[]> {
+  const byName = new Map<string, ContractorIdCandidate[]>();
+  for (const e of employees) {
+    if (!e.paylocityId) continue;
+    const key = normalizeName(e.name);
+    const list = byName.get(key);
+    const candidate = { paylocityId: e.paylocityId, active: e.active };
+    if (list) list.push(candidate);
+    else byName.set(key, [candidate]);
+  }
+  return byName;
+}
+
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
 type PunchRow = {
+  id: number;
   employeeName: string;
   paylocityId: string;
   workDate: Date;
@@ -69,7 +127,7 @@ type PunchRow = {
   location: string;
 };
 
-const EMPTY: ManualContractorMerge = { rows: [], suppressed: [], unknownJobs: [], totalHours: 0 };
+const EMPTY: ManualContractorMerge = { rows: [], suppressed: [], unknownJobs: [], ambiguousEmployees: [], rejected: [], totalHours: 0 };
 
 /**
  * Reads the active manual contractor punches and turns them into feed rows.
@@ -89,19 +147,20 @@ export async function mergeManualContractorHours(opts: {
   // holds node_modules/.prisma open, so ManualContractorPunch has no generated
   // type yet — the same standing constraint RolePermission lives with.
   const punches = await prisma.$queryRaw<PunchRow[]>`
-    SELECT employeeName, paylocityId, workDate, jobNumber, machineSec, functionId, hours, location
+    SELECT id, employeeName, paylocityId, workDate, jobNumber, machineSec, functionId, hours, location
     FROM ManualContractorPunch
     WHERE active = true
     ORDER BY workDate, employeeName, startTime
   `;
   if (punches.length === 0) return EMPTY;
 
-  // Name -> the id that Employee row currently holds. This is the hook that makes
-  // the dedup start working the moment a real Paylocity id is filled in.
-  const employees = await prisma.$queryRaw<{ name: string; paylocityId: string | null }[]>`
-    SELECT name, paylocityId FROM Employee WHERE paylocityId IS NOT NULL
+  // Name -> the roster rows that carry it, with `active` so a namesake can be told
+  // apart from a leaver (resolveContractorEmployeeId). This is the hook that makes the
+  // dedup start working the moment a real Paylocity id is filled in.
+  const employees = await prisma.$queryRaw<{ name: string; paylocityId: string | null; active: boolean }[]>`
+    SELECT name, paylocityId, active FROM Employee WHERE paylocityId IS NOT NULL
   `;
-  const idByName = new Map(employees.map((e) => [e.name.trim().toLowerCase(), e.paylocityId!]));
+  const candidatesByName = contractorCandidatesByName(employees);
 
   // Every (employee id, day) the OFFICIAL feed carries. Built from the rows just
   // read, so this is never stale.
@@ -110,6 +169,8 @@ export async function mergeManualContractorHours(opts: {
   const rows: JobHoursRow[] = [];
   const suppressedBy = new Map<string, { employeeName: string; workDate: string; hours: number; segments: number }>();
   const unknownJobs: ManualContractorMerge["unknownJobs"] = [];
+  const ambiguousEmployees: ManualContractorMerge["ambiguousEmployees"] = [];
+  const rejected: RejectedPunch[] = [];
   let totalHours = 0;
 
   for (const p of punches) {
@@ -117,10 +178,33 @@ export async function mergeManualContractorHours(opts: {
     const month = iso.slice(0, 7);
     if (opts.onlyMonth && month !== opts.onlyMonth) continue;
 
-    // The CURRENT id for this person, falling back to the one seeded with the row.
-    const employeeId = idByName.get(p.employeeName.trim().toLowerCase()) ?? p.paylocityId;
     const hours = Number(p.hours);
     if (!Number.isFinite(hours) || hours <= 0) continue;
+
+    // The CURRENT id for this person, falling back to the one seeded with the row —
+    // or, when the name matches several roster rows and neither `active` nor count
+    // settles it, no id at all: the segment is surfaced as unattributed rather than
+    // booked under whichever row happened to be read last.
+    const resolution = resolveContractorEmployeeId(candidatesByName.get(normalizeName(p.employeeName)) ?? [], p.paylocityId);
+    if (resolution.kind === "ambiguous") {
+      ambiguousEmployees.push({ employeeName: p.employeeName, workDate: iso, candidates: resolution.candidates, hours });
+      rejected.push({
+        month,
+        reason: "EMPLOYEE_NOT_MAPPED",
+        label: p.employeeName,
+        workDate: new Date(`${iso}T00:00:00.000Z`),
+        // The seeded id, so the drill still names the card the segment came from.
+        employeeId: p.paylocityId,
+        section: `${p.machineSec}-${p.functionId}`,
+        hours,
+        // The workbook's sourceRow is a sheet row; a manual segment's nearest
+        // equivalent is its ManualContractorPunch id.
+        sourceRow: p.id,
+        countsTowardKpi: false,
+      });
+      continue;
+    }
+    const employeeId = resolution.employeeId;
 
     if (officialDays.has(`${employeeId}|${iso}`)) {
       const key = `${employeeId}|${iso}`;
@@ -159,7 +243,7 @@ export async function mergeManualContractorHours(opts: {
     totalHours += hours;
   }
 
-  return { rows, suppressed: [...suppressedBy.values()], unknownJobs, totalHours };
+  return { rows, suppressed: [...suppressedBy.values()], unknownJobs, ambiguousEmployees, rejected, totalHours };
 }
 
 /** Pool tally for the merged rows — same rule, same raw phase/function, as the workbook's. */

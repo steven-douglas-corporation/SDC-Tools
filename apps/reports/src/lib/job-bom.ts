@@ -1,6 +1,13 @@
 import "server-only";
 import sql from "mssql";
-import { totalEtoConfig, TOTALETO_TIMEOUT, withTotalEto, describeTotalEtoFailure } from "@/lib/totaleto-connection";
+import {
+  totalEtoConfig,
+  TOTALETO_TIMEOUT,
+  withTotalEto,
+  describeTotalEtoFailure,
+  classifyTotalEto,
+  type TotalEtoFailure,
+} from "@/lib/totaleto-connection";
 import {
   type BomContext,
   type BomNode,
@@ -31,8 +38,12 @@ import {
 // what covers it and what it costs lives in `job-bom-rules.ts` — read that file's
 // header first; it explains BOM release status (Assembly Only / Both / Contents
 // Only), why "no PO" is not the same as "missing", and the cost fallback chain.
-// Kept defensive/fail-soft throughout: an unknown job or a query error yields an
-// empty JobBom.
+// `getJobBom` is fail-soft — an unknown job or a query error yields an empty
+// JobBom — because every page that renders a BOM already handles "empty" and
+// none of them wants an error channel threaded through its components. The one
+// caller that MUST tell the two apart, the Build Readiness pass (it persists the
+// answer as "No BOM" or "failed" for everybody to read), uses `getJobBomResult`,
+// which carries the distinction. See that function's own note.
 
 export type { BomStats, BomPart, BomNode, ReleaseStatus, PartSource, CostBasis } from "./job-bom-rules";
 
@@ -80,6 +91,58 @@ export type JobBom = {
   rowCount: number;
   vendors: Vendor[]; // authoritative supplier → PO line rollups (fail-soft: [])
 };
+
+/**
+ * A BOM read that says whether it worked. `bom` is always present — on failure it
+ * is the empty JobBom `getJobBom` would have returned — so a caller that does not
+ * care can keep rendering, and a caller that does (the Build Readiness pass) can
+ * write "failed" instead of "No BOM".
+ */
+export type JobBomResult =
+  | { ok: true; bom: JobBom }
+  | { ok: false; bom: JobBom; kind: TotalEtoFailure; reason: string };
+
+// ── How many of the six BOM queries run at once (2026-09-14) ─────────────────
+//
+// All six used to go out in one Promise.all, on the one 120s pool. That is six
+// connections per job; the Build Readiness pass ran six jobs at once; the pool
+// held five. The queue behind it timed out, was classified as pool_exhausted,
+// retried three times (each retry queuing six more), and the walk then returned
+// an empty BOM — which the dashboard stored as "No BOM" for jobs that have one.
+//
+// Two at a time, heavy statements first: BOM_SQL and PO_SQL carry the correlated
+// subqueries and are the ~100s of a slow job; the other four return in
+// milliseconds and run behind them. build-readiness-sync.ts sizes its worker count
+// against this number so workers x queries never exceeds the pool
+// (tests/build-readiness-sync.test.ts pins the arithmetic).
+export const BOM_QUERY_CONCURRENCY = 2;
+export const BOM_QUERY_COUNT = 6;
+
+/**
+ * Runs `tasks` with at most `limit` in flight, preserving result order. Rejects
+ * with the first failure (the remaining tasks that have not started are skipped),
+ * which is what a BOM walk wants: five good result sets and one missing one is not
+ * a BOM.
+ */
+export async function runBounded<T>(tasks: readonly (() => Promise<T>)[], limit: number): Promise<T[]> {
+  const results = new Array<T>(tasks.length);
+  let next = 0;
+  let failed: { error: unknown } | null = null;
+  async function worker(): Promise<void> {
+    while (!failed) {
+      const i = next++;
+      if (i >= tasks.length) return;
+      try {
+        results[i] = await tasks[i]();
+      } catch (error) {
+        failed ??= { error };
+        throw error;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, tasks.length)) }, () => worker()));
+  return results;
+}
 
 // Total ETO connection — same server/db/creds as sync-totaleto.ts. DO NOT CHANGE.
 // The connection config moved to lib/totaleto-connection.ts (2026-09-01):
@@ -346,8 +409,8 @@ function buildVendors(rows: PoRow[]): Vendor[] {
 
 // ---------- Entry point ----------
 
-export async function getJobBom(jobId: string): Promise<JobBom> {
-  const empty: JobBom = {
+function emptyBom(jobId: string): JobBom {
+  return {
     jobId: String(jobId),
     roots: [],
     grandTotalCost: 0,
@@ -355,10 +418,26 @@ export async function getJobBom(jobId: string): Promise<JobBom> {
     rowCount: 0,
     vendors: [],
   };
+}
+
+/**
+ * The fail-soft read every page uses: a failure is logged with its diagnosis and
+ * rendered as an empty BOM, exactly as before. Callers that must NOT confuse the
+ * two use getJobBomResult.
+ */
+export async function getJobBom(jobId: string): Promise<JobBom> {
+  return (await getJobBomResult(jobId)).bom;
+}
+
+export async function getJobBomResult(jobId: string): Promise<JobBomResult> {
+  const empty = emptyBom(jobId);
 
   const numericJob = Number(String(jobId).replace(/[^0-9]/g, ""));
-  if (!Number.isFinite(numericJob) || numericJob === 0) return empty;
-  if (!config.user || !config.password) return empty;
+  if (!Number.isFinite(numericJob) || numericJob === 0) return { ok: true, bom: empty };
+  if (!config.user || !config.password) {
+    // Not a Total ETO fault and not an empty BOM either: the app cannot ask. Said so.
+    return { ok: false, bom: empty, kind: "login_rejected", reason: "TOTALETO_DB_USER / TOTALETO_DB_PASSWORD are not configured" };
+  }
 
   let specs: SpecRow[] = [];
   let tops: TopRow[] = [];
@@ -377,16 +456,14 @@ export async function getJobBom(jobId: string): Promise<JobBom> {
     // from THIS module's copy of mssql, and only withTotalEto/totalEtoPool guarantee
     // a pool built by the same copy (see that file's note on the parameter-binding
     // failure this class of mistake caused).
-    const [specR, topR, bomR, poR, pullR, procR] = await withTotalEto(
-      async (pool) =>
-        Promise.all([
-          pool.request().input("job", sql.Int, numericJob).query(SPECS_SQL),
-          pool.request().input("job", sql.Int, numericJob).query(TOP_SQL),
-          pool.request().input("job", sql.Int, numericJob).query(BOM_SQL),
-          pool.request().input("job", sql.Int, numericJob).query(PO_SQL),
-          pool.request().input("job", sql.Int, numericJob).query(PULLS_SQL),
-          pool.request().input("job", sql.Int, numericJob).query(PROCESS_SQL),
-        ]),
+    //
+    // BOM_QUERY_CONCURRENCY at a time, not all six at once — see that constant.
+    // Heavy statements lead so the light ones queue behind them, not the reverse.
+    const [bomR, poR, specR, topR, pullR, procR] = await withTotalEto(
+      async (pool) => {
+        const q = (statement: string) => () => pool.request().input("job", sql.Int, numericJob).query(statement);
+        return runBounded([q(BOM_SQL), q(PO_SQL), q(SPECS_SQL), q(TOP_SQL), q(PULLS_SQL), q(PROCESS_SQL)], BOM_QUERY_CONCURRENCY);
+      },
       { requestTimeout: TOTALETO_TIMEOUT.bom, feed: "job_bom.walk" },
     );
     specs = specR.recordset as SpecRow[];
@@ -403,15 +480,16 @@ export async function getJobBom(jobId: string): Promise<JobBom> {
     // including the parameter-binding one that broke Parts cost for five days —
     // showed as a clean, confident, wrong answer.
     //
-    // The return value is unchanged (every caller expects a JobBom, and inventing
-    // an error channel through several components is a bigger change than this
-    // finding warrants), but the reason now reaches the log with its diagnosis
-    // rather than being discarded.
-    console.error(`[job-bom] job ${jobId}: BOM read failed, returning an EMPTY bom. ${describeTotalEtoFailure(error)}`);
-    return empty;
+    // The bom is still the empty one — every page caller renders it as before —
+    // but the result now SAYS it failed (2026-09-14), so the Build Readiness pass
+    // can persist "failed" rather than "No BOM", and the reason reaches the log
+    // with its diagnosis rather than being discarded.
+    const reason = describeTotalEtoFailure(error);
+    console.error(`[job-bom] job ${jobId}: BOM read failed, returning an EMPTY bom. ${reason}`);
+    return { ok: false, bom: empty, kind: classifyTotalEto(error), reason };
   }
 
-  if (bomRows.length === 0) return empty;
+  if (bomRows.length === 0) return { ok: true, bom: empty };
 
   const ctx: BomContext = {
     poIndex: buildPoIndex(poRows),
@@ -516,5 +594,5 @@ export async function getJobBom(jobId: string): Promise<JobBom> {
   const grandTotalCost = roots.reduce((s, n) => s + n.totalCost, 0);
   const grandTotalPartQty = roots.reduce((s, n) => s + n.totalPartQty, 0);
 
-  return { jobId: String(jobId), roots, grandTotalCost, grandTotalPartQty, rowCount, vendors };
+  return { ok: true, bom: { jobId: String(jobId), roots, grandTotalCost, grandTotalPartQty, rowCount, vendors } };
 }

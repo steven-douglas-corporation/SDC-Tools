@@ -168,7 +168,15 @@ test("the corrected join only ever recovers a spelling of a part the BOM already
   // the exact key hit, recovery never ran, and the hyphen lines stayed orphaned.
   assert.match(PO, /const exactLines = \(lineIndex\.get\(normPn\(p\.pn\)\)/);
   assert.match(PO, /const pnLines = collected\.length > 0 \? collected : null;/);
-  assert.match(PO, /if \(!altLookup\.has\(alt\.key\)\) altLookup\.set/, "first writer wins — an exact key is never displaced");
+  // A BOM part's exact key never enters the recovery index (2026-09-14). The
+  // earlier "first writer wins" rule registered exact keys too, so whether the
+  // hyphen lines above were recovered depended on which spelling SQL returned
+  // first — tests/parts-list-po-drawer.test.ts runs both orders. Excluding BOM
+  // keys is what makes "only a spelling of a part the BOM already has" hold
+  // regardless of order: the index holds ONLY non-BOM spellings, looked up by a
+  // BOM part's own transforms.
+  assert.match(PO, /if \(shareCount\.has\(key\)\) continue;/, "a BOM part's exact key is not a recovery candidate");
+  assert.doesNotMatch(PO, /if \(!altLookup\.has\(alt\.key\)\) altLookup\.set/, "first-writer-wins is gone — it made recovery depend on SQL row order");
 });
 
 test("matched and non-BOM rows are disjoint by construction", () => {

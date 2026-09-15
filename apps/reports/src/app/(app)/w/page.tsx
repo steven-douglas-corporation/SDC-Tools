@@ -121,7 +121,7 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
             Renders nothing and logs nothing unless ?tabdebug=1. See
             components/PaneLifecycleProbe.tsx. */}
         <PaneLifecycleProbe tabId={id} page={tab.path} />
-        <PaneView pane={tab} />
+        <PaneView pane={tab} scope={{ tabId: id }} />
       </Suspense>
     );
   }

@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { validJobTypeFilter, VALID_JOB_TYPES, compareJobIds } from "@/lib/job-filters";
 import { PageTitle } from "@/components/ui/Typography";
 import { BUTTON_PRIMARY, PAGE_SHELL, card } from "@/components/ui/classnames";
+import { requirePagePermission } from "@/lib/require-permission";
 
 const STATUS_FILTERS = [
   { key: "all", label: "All", status: undefined },
@@ -14,6 +15,13 @@ const STATUS_FILTERS = [
 ];
 
 export async function JobsView({ params }: { params: { q?: string; status?: string; type?: string; customer?: string } }) {
+  // In the view body, not only the route wrapper below, so a /split pane gets
+  // the same gate (split/page.tsx relies on each view checking for itself).
+  // projects:view — this list shows the same job/customer data as /quoted and
+  // links into /jobs/[id], which shows the same cost figures. Until 2026-09-14
+  // neither route was in ROUTE_PERMISSIONS and neither page checked anything
+  // beyond "signed in".
+  await requirePagePermission("projects:view");
   const { q, status, type, customer } = params;
 
   const where: Prisma.JobWhereInput = { ...validJobTypeFilter };

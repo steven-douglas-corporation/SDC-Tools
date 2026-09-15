@@ -5,7 +5,8 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSplitNav } from "@/components/useSplitNav";
 import { tabById } from "@/lib/workspace";
-import { closePaneHref } from "@/lib/split-view";
+import { exitSplitPlan } from "@/lib/exit-split";
+import { publishPermittedRoutes } from "@/lib/permitted-routes-store";
 import { useWorkspaceActions } from "@/components/useWorkspaceActions";
 import { NavItemMenu, NavItemMenuButton, type NavMenuAnchor } from "@/components/NavItemMenu";
 import { decideCrossAppNav, insideShell, reportCrossAppNavError } from "@/lib/shell-cross-app-nav";
@@ -391,6 +392,17 @@ export default function Sidebar({
   const visibleGroups = [...GROUPS, ADMIN_GROUP]
     .map((g) => ({ ...g, items: g.items.filter((i) => visibleHrefs.includes(i.href)) }))
     .filter((g) => g.items.length > 0);
+
+  // The SAME list, shared with the workspace's tab bar so its "+" and Split View
+  // pickers offer exactly the pages this sidebar shows — a route offered there and
+  // refused by the page body used to eject the whole workspace. The tab bar is on the
+  // other side of the layout/page boundary, hence a store rather than a prop; see
+  // lib/permitted-routes-store.ts.
+  useEffect(() => {
+    publishPermittedRoutes(visibleHrefs);
+    // Keyed by content: the layout hands down a fresh array every server render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleHrefs.join(",")]);
 
   // User-chosen link order (localStorage, per browser). useSyncExternalStore
   // rather than reading storage in render — that would hydrate differently from
@@ -1021,9 +1033,23 @@ export default function Sidebar({
             <button
               type="button"
               onClick={() => {
+                // ── Which layout's split this is (2026-09-14) ──────────────────
+                //
+                // `isSplit` is true for BOTH a /split pair and a /w workspace split,
+                // but `splitNav.state` exists only on /split — so this used to
+                // dereference null in the workspace and throw. lib/exit-split.ts
+                // decides: the workspace ends its split as a state change through
+                // the same centralized action the tab bar uses (no navigation, both
+                // panes stay mounted); /split ends it by navigating to the surviving
+                // pane's own route. The pane you are working in survives either way.
+                const plan = exitSplitPlan(splitNav.workspace, splitNav.state);
+                if (!plan) return;
+                if (plan.kind === "workspace") {
+                  tabs.exitSplitView();
+                  return;
+                }
                 if (isEtcDirty() && !window.confirm("You have unsaved New ETC changes that haven't been saved. Leave this page anyway?")) return;
-                // The pane you are working in is the one that survives.
-                router.push(closePaneHref(splitNav.state!, splitNav.state!.active === "l" ? "r" : "l"));
+                router.push(plan.href);
               }}
               title="Close split view (Ctrl+\) — the active pane fills the window"
               className={`motion-interactive flex h-[30px] w-full items-center justify-center gap-[7px] rounded-[7px] bg-[#123A63] text-xs whitespace-nowrap text-[#DCE8F5] shadow-[inset_0_0_0_1px_#1E568F] hover:bg-[#17497C] ${

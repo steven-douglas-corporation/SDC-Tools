@@ -1,8 +1,12 @@
 import { prisma } from "@/lib/prisma";
-import { suggestNewEtc, calcHoursLeft, currentMonth } from "@/lib/etc";
+import { suggestNewEtc, calcHoursLeft, currentMonth, isMonthLocked } from "@/lib/etc";
 import { SECTIONS } from "@/lib/sections";
 import { revalidatePath } from "next/cache";
 import { notFound } from "next/navigation";
+import { requirePagePermission, assertActionPermission } from "@/lib/require-permission";
+import { logAudit } from "@/lib/audit";
+import { recordChanges, classifyChange, type CellChange } from "@/lib/change-log";
+import { parseAddEntryInput, parseConfirmEntryInput, parseOverrideHoursInput, parseRowId } from "@/lib/job-detail-input";
 import { PageTitle, SectionTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PillLinks } from "@/components/ui/PillLinks";
@@ -25,6 +29,43 @@ const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
+// ── Helpers for the page's inline server actions ────────────────────────────
+// Module-scoped on purpose: an inline "use server" function may capture plain
+// values from the component (jobId, jobNumber), which Next serialises and
+// encrypts into the action's bound arguments — but it cannot capture another
+// function. So anything the actions share lives here and takes what it needs
+// as parameters.
+
+// A month is locked once every entry in it has been submitted (lib/etc.ts's
+// isMonthLocked, the same test etc-actions.ts uses). A submitted month's
+// figures are what the monthly report was built from, so nothing here may
+// change them; Monthly ETC's Reopen Month is the deliberate way back in.
+async function assertEtcMonthUnlocked(month: string): Promise<void> {
+  const rows = await prisma.etcEntry.findMany({ where: { month }, select: { needsReview: true } });
+  if (isMonthLocked(rows)) {
+    throw new Error(`${month} has been submitted and is locked — reopen it from Monthly ETC before changing its entries.`);
+  }
+}
+
+const sectionLabel = (code: string) => SECTION_NAME_BY_CODE.get(code) ?? code;
+
+function etcCell(rowRef: string, columnName: string, previousValue: string | null, newValue: string | null, entityId: number | string): CellChange {
+  return {
+    tab: "Monthly ETC",
+    rowRef,
+    columnName,
+    previousValue,
+    newValue,
+    changeType: classifyChange(previousValue, newValue),
+    entityType: "EtcEntry",
+    entityId,
+  };
+}
+
+// Prisma Decimals and plain numbers both go through Number() so "60.00" and 60
+// compare equal in the changed-cell filter below.
+const asText = (v: number | { toString(): string } | null | undefined) => (v == null ? null : String(Number(v)));
+
 export default async function JobDetailPage({
   params,
   searchParams,
@@ -32,12 +73,19 @@ export default async function JobDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ month?: string; tab?: string }>;
 }) {
+  // Same permission as /quoted and /jobs — this page shows the same quoted vs
+  // actual cost figures. Until 2026-09-14 it had no check beyond "signed in".
+  await requirePagePermission("projects:view");
   const { id } = await params;
   const { month: monthParam, tab: tabParam } = await searchParams;
   const jobId = Number(id);
   if (!Number.isInteger(jobId)) notFound();
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) notFound();
+  // The human job number, for audit rows and change banners (the PK means
+  // nothing to a reader). Captured once so the actions below close over a
+  // plain string rather than the nullable `job`.
+  const jobNumber = job.jobId;
 
   const tab: TabKey = (TABS.find((t) => t.key === tabParam)?.key ?? "etc") as TabKey;
 
@@ -69,64 +117,186 @@ export default async function JobDetailPage({
   const needsReviewCount = entries.filter((e) => e.needsReview).length;
   const totalWorked = entries.reduce((sum, e) => sum + Number(e.hoursWorked), 0);
 
+  // ── The four inline writes (hardened 2026-09-14) ──────────────────────────
+  //
+  // These are bound straight to forms below, but a Server Action is callable by
+  // anyone who can POST to the app regardless of which page rendered it (see
+  // require-permission.ts). Until this they had no permission check, wrote to
+  // a LOCKED month as freely as an open one, accepted NaN from a blank field,
+  // took any row id at all, and left no audit trail — the only ETC writes in
+  // the app with none of the four. Each now:
+  //   * requires monthly-etc:edit, the permission the Monthly ETC grid's own
+  //     writes take (etc-actions.ts);
+  //   * refuses a month that is locked (every entry submitted — lib/etc.ts's
+  //     isMonthLocked, the same test etc-actions uses), because a submitted
+  //     month's figures are what the monthly report was built from;
+  //   * validates its input via lib/job-detail-input.ts (finite numbers, a
+  //     real month, a positive row id) and checks the row belongs to THIS job;
+  //   * records the change via logAudit + recordChanges like every other write.
+
+  // (Helpers live at module scope — assertEtcMonthUnlocked, etcCell, asText —
+  // because an inline "use server" function may close over serialisable VALUES
+  // like jobId/jobNumber, but not over other functions.)
+
   async function addEntry(formData: FormData) {
     "use server";
-    const section = String(formData.get("section"));
-    const priorEtc = Number(formData.get("priorEtc"));
-    const hoursWorked = Number(formData.get("hoursWorked") || 0);
-    const entryMonth = String(formData.get("month"));
+    await assertActionPermission("monthly-etc:edit");
+    const { section, priorEtc, hoursWorked, month: entryMonth } = parseAddEntryInput((k) => formData.get(k));
+    await assertEtcMonthUnlocked(entryMonth);
     const suggested = suggestNewEtc(priorEtc, hoursWorked);
+    const hoursLeftCalc = calcHoursLeft(priorEtc, hoursWorked);
 
-    await prisma.etcEntry.upsert({
+    const before = await prisma.etcEntry.findUnique({
       where: { jobId_section_month: { jobId, section, month: entryMonth } },
-      update: { priorEtc, hoursWorked, hoursLeftCalc: calcHoursLeft(priorEtc, hoursWorked), newEtc: suggested },
-      create: {
-        jobId,
-        section,
-        month: entryMonth,
-        priorEtc,
-        hoursWorked,
-        hoursLeftCalc: calcHoursLeft(priorEtc, hoursWorked),
-        newEtc: suggested,
-        needsReview: true,
-      },
+      select: { id: true, priorEtc: true, hoursWorked: true, newEtc: true },
+    });
+    const saved = await prisma.etcEntry.upsert({
+      where: { jobId_section_month: { jobId, section, month: entryMonth } },
+      update: { priorEtc, hoursWorked, hoursLeftCalc, newEtc: suggested },
+      create: { jobId, section, month: entryMonth, priorEtc, hoursWorked, hoursLeftCalc, newEtc: suggested, needsReview: true },
+      select: { id: true },
+    });
+
+    const label = sectionLabel(section);
+    await recordChanges(
+      [
+        etcCell(jobNumber, `Prior ETC (${label})`, asText(before?.priorEtc), asText(priorEtc), saved.id),
+        etcCell(jobNumber, `Hours Worked (${label})`, asText(before?.hoursWorked), asText(hoursWorked), saved.id),
+        etcCell(jobNumber, `New ETC (${label})`, asText(before?.newEtc), asText(suggested), saved.id),
+      ].filter((c) => c.previousValue !== c.newValue),
+      { action: "etc.jobPage.saveSection" },
+    );
+    await logAudit({
+      action: "etc.jobPage.saveSection",
+      entityType: "EtcEntry",
+      entityId: saved.id,
+      summary: `${before ? "Updated" : "Added"} ETC section ${section} for job ${jobNumber}, ${entryMonth}`,
+      metadata: { jobId, section, month: entryMonth, priorEtc, hoursWorked, newEtc: suggested, created: !before },
     });
     revalidatePath(`/jobs/${jobId}`);
   }
 
   async function confirmEntry(formData: FormData) {
     "use server";
-    const entryId = Number(formData.get("entryId"));
-    const newEtc = Number(formData.get("newEtc"));
+    await assertActionPermission("monthly-etc:edit");
+    const { entryId, newEtc } = parseConfirmEntryInput((k) => formData.get(k));
+    const entry = await prisma.etcEntry.findUnique({
+      where: { id: entryId },
+      select: { jobId: true, section: true, month: true, newEtc: true, needsReview: true },
+    });
+    if (!entry || entry.jobId !== jobId) throw new Error("That ETC entry no longer exists on this job.");
+    await assertEtcMonthUnlocked(entry.month);
+
     await prisma.etcEntry.update({
       where: { id: entryId },
       data: { newEtc, needsReview: false, submittedAt: new Date() },
+    });
+
+    const label = sectionLabel(entry.section);
+    await recordChanges(
+      [
+        etcCell(jobNumber, `New ETC (${label})`, asText(entry.newEtc), asText(newEtc), entryId),
+        ...(entry.needsReview ? [etcCell(jobNumber, `Status (${label})`, "Needs review", "Confirmed", entryId)] : []),
+      ].filter((c) => c.previousValue !== c.newValue),
+      { action: "etc.jobPage.confirmSection" },
+    );
+    await logAudit({
+      action: "etc.jobPage.confirmSection",
+      entityType: "EtcEntry",
+      entityId: entryId,
+      summary: `Confirmed New ETC ${newEtc} for job ${jobNumber} ${entry.section}, ${entry.month}`,
+      metadata: { jobId, section: entry.section, month: entry.month, before: asText(entry.newEtc), after: newEtc },
     });
     revalidatePath(`/jobs/${jobId}`);
   }
 
   // Mirrors the legacy "Actual Hours Override" tab: lets someone correct a
-  // month's Power BI-synced hours by hand when the upstream feed is wrong
-  // (e.g. Paylocity coded time to "Not Defined" instead of the real job).
-  // syncActualHoursFromPowerBi() skips overridden rows on future syncs.
+  // month's synced hours by hand when the upstream feed is wrong (e.g.
+  // Paylocity coded time to "Not Defined" instead of the real job). The sync
+  // skips overridden rows on future passes.
   async function overrideMonthlyActualHours(formData: FormData) {
     "use server";
-    const rowId = Number(formData.get("rowId"));
-    const newHours = Number(formData.get("newHours"));
-    const note = String(formData.get("note") || "").trim() || null;
+    await assertActionPermission("monthly-etc:edit");
+    const { rowId, newHours, note } = parseOverrideHoursInput((k) => formData.get(k));
+    const row = await prisma.jobMonthlyActualHours.findUnique({
+      where: { id: rowId },
+      select: { jobId: true, month: true, actualHours: true },
+    });
+    if (!row || row.jobId !== jobId) throw new Error("That actual-hours row no longer exists on this job.");
+    // Actual hours feed the month's Hours Worked, so a submitted month's row is
+    // as frozen as its ETC entries.
+    await assertEtcMonthUnlocked(row.month);
+
     await prisma.jobMonthlyActualHours.update({
       where: { id: rowId },
       data: { actualHours: newHours, overridden: true, overriddenNote: note, overriddenAt: new Date() },
+    });
+
+    await recordChanges(
+      [
+        {
+          tab: "Job Details",
+          rowRef: jobNumber,
+          columnName: `Actual Hours (${row.month})`,
+          previousValue: asText(row.actualHours),
+          newValue: asText(newHours),
+          changeType: classifyChange(asText(row.actualHours), asText(newHours)),
+          entityType: "JobMonthlyActualHours",
+          entityId: rowId,
+        },
+      ].filter((c) => c.previousValue !== c.newValue),
+      { action: "actualHours.override" },
+    );
+    await logAudit({
+      action: "actualHours.override",
+      entityType: "JobMonthlyActualHours",
+      entityId: rowId,
+      summary: `Overrode ${row.month} actual hours for job ${jobNumber}: ${asText(row.actualHours)} → ${newHours}${note ? ` (${note})` : ""}`,
+      metadata: { jobId, month: row.month, before: asText(row.actualHours), after: newHours, note },
     });
     revalidatePath(`/jobs/${jobId}`);
   }
 
   async function revertOverride(formData: FormData) {
     "use server";
-    const rowId = Number(formData.get("rowId"));
+    await assertActionPermission("monthly-etc:edit");
+    const rowId = parseRowId((k) => formData.get(k));
+    const row = await prisma.jobMonthlyActualHours.findUnique({
+      where: { id: rowId },
+      select: { jobId: true, month: true, actualHours: true, overridden: true, overriddenNote: true },
+    });
+    if (!row || row.jobId !== jobId) throw new Error("That actual-hours row no longer exists on this job.");
+    if (!row.overridden) return; // nothing to revert
+    await assertEtcMonthUnlocked(row.month);
+
+    // The stored value stays until the next sync replaces it — clearing the
+    // flag is what lets the sync write this row again.
     await prisma.jobMonthlyActualHours.update({
       where: { id: rowId },
       data: { overridden: false, overriddenNote: null, overriddenAt: null },
+    });
+
+    await recordChanges(
+      [
+        {
+          tab: "Job Details",
+          rowRef: jobNumber,
+          columnName: `Actual Hours Override (${row.month})`,
+          previousValue: `${asText(row.actualHours)}${row.overriddenNote ? ` (${row.overriddenNote})` : ""}`,
+          newValue: null,
+          changeType: "removed",
+          entityType: "JobMonthlyActualHours",
+          entityId: rowId,
+        },
+      ],
+      { action: "actualHours.revertOverride" },
+    );
+    await logAudit({
+      action: "actualHours.revertOverride",
+      entityType: "JobMonthlyActualHours",
+      entityId: rowId,
+      summary: `Reverted ${row.month} actual-hours override for job ${jobNumber} (next sync restores the synced value)`,
+      metadata: { jobId, month: row.month, overriddenValue: asText(row.actualHours), note: row.overriddenNote },
     });
     revalidatePath(`/jobs/${jobId}`);
   }

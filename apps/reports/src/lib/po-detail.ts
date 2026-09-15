@@ -82,7 +82,12 @@ export function poCellState(
 ): PoCellState {
   // FIRST, so a PO row that covers nothing cannot present as covered.
   if (isUncoveredPart(p)) return { kind: "none", stalePo: p.poNumber ?? p.poId ?? null };
-  const po = p.poId ?? p.poNumber;
+  // `poNumber` first (2026-09-14): on a FlatPart it is the PO of the newest
+  // purchase line — the same line the row's supplier and purchased date come from
+  // (see flattenBomParts) — while `poId` is the BOM's own PO line, which job-bom.ts
+  // orders by supplier NAME, so it is the alphabetically-first vendor's PO rather
+  // than the current one. A raw BomPart has no poNumber and still reads poId.
+  const po = p.poNumber ?? p.poId;
   if (po) return { kind: "po", po: String(po) };
   if (p.source === "stock") return { kind: "stock" };
   if (p.source === "process") return { kind: "process" };
@@ -490,14 +495,21 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
   // Every alternate is a deterministic transform of a BOM part's OWN number and is
   // only accepted when it resolves to a part number the BOM already has, so this
   // recovers spellings of the same part — it never invents a match between two
-  // genuinely different numbers. First writer wins, so a BOM part's exact key can
-  // never be displaced by another part's looser one.
+  // genuinely different numbers.
+  //
+  // Built BELOW, after `shareCount` has walked the BOM, from purchase-line keys
+  // that are NOT themselves BOM part numbers (2026-09-14). The first version
+  // registered every key's alternates first-writer-wins, and the exact spelling's
+  // OWN alternate competed with the misspelling's for the same slot: with
+  // `MASTN20_325` (BOM, exact) and `MASTN20-325` (hyphen, lines only) both
+  // folding to `MASTN20325`, whichever SQL happened to return first claimed the
+  // slot. If the exact key won, the lookup handed the part its own exact lines
+  // (already counted, skipped) and the hyphen lines stayed orphaned — so whether
+  // $635 of job 1101 was recovered depended on row order. A BOM part's exact key
+  // never enters this map now, so it cannot shadow a spelling that needs recovery,
+  // and two non-BOM spellings folding to one key are merged rather than the
+  // second dropped.
   const altLookup = new Map<string, PartsCostLine[]>();
-  for (const [key, lines] of lineIndex) {
-    for (const alt of alternateKeys(key)) {
-      if (!altLookup.has(alt.key)) altLookup.set(alt.key, lines);
-    }
-  }
   const usedLines = new Set<PartsCostLine>();
   // Lines taken by a RECOVERY specifically. An exact-key claim is unconditional
   // (two BOM rows sharing a part number are both entitled to it, and `shareOf`
@@ -561,6 +573,17 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
   }
   const shareOf = (pn: string) => shareCount.get(normPn(pn)) || 1;
 
+  // The recovery index — see altLookup's own comment above for why BOM keys are
+  // excluded and collisions merged.
+  for (const [key, lines] of lineIndex) {
+    if (shareCount.has(key)) continue;
+    for (const alt of alternateKeys(key)) {
+      const existing = altLookup.get(alt.key);
+      if (existing) existing.push(...lines);
+      else altLookup.set(alt.key, [...lines]);
+    }
+  }
+
   const enrich = (p: BomPart, parentPN: string, parentDesc: string, sectionId: string, sectionLabel: string) => {
     if (seen.has(p.id)) return;
     seen.add(p.id);
@@ -621,7 +644,23 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     // not-yet-ordered parts inflating a figure compared against actual PO spend.
     const matchReason: MatchReason = !pnLines ? "no-purchase" : (recovered ?? "matched");
     if (pnLines) for (const l of pnLines) usedLines.add(l);
-    const line = pnLines?.[0] ?? null;
+    // ── The display fields come from ONE line: the newest purchase (2026-09-14) ──
+    //
+    // `line` was `pnLines[0]` — the newest EXACT line, or the first recovered one
+    // when there were no exact lines — and it supplied only the dates and the
+    // category, while PO # and supplier preferred the BOM's own PO line
+    // (`p.poId`, `p.supplier`). job-bom.ts's poIndex takes `[0]` of a list
+    // ORDERED BY supplier name, so on a part bought from two vendors the row wore
+    // the alphabetically-first vendor's PO and name beside the newest purchase's
+    // date — three cells describing two different purchases, and DEVLOG §70's
+    // "PO # = newest purchase line's PO" did not hold. The newest line across
+    // every spelling now supplies PO #, supplier, purchased and invoiced dates and
+    // category together, and the BOM PO line is the fallback only when the part
+    // has no purchase lines at all. Ties on date keep the exact-key line, which
+    // sorts first.
+    const line = pnLines
+      ? pnLines.reduce((best, l) => ((l.purchaseDate ?? "") > (best.purchaseDate ?? "") ? l : best), pnLines[0])
+      : null;
     // ── Vendor names normalized here, once (2026-09-03) ────────────────────
     //
     // This is the single point every Parts List consumer reads through — the table,
@@ -634,7 +673,11 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     // lib/vendor-normalize.ts holds the mapping and the two lookalikes it refuses to
     // merge. The RAW value is untouched on the underlying PartsCostLine, so anything
     // reconciling against Total ETO still can.
-    const supplier = normalizeVendor(p.supplier ?? line?.supplier ?? null);
+    //
+    // From the newest purchase line when there is one, the BOM's PO line otherwise
+    // — the same source `poNumber` and `purchasedDate` below use, so the three
+    // cells describe one purchase.
+    const supplier = normalizeVendor(line ? line.supplier : p.supplier);
     // ── EVERY PO line for this part, not just the newest (2026-09-02) ────────
     //
     // This read `line.totalPrice` — the single newest PO line — as the part's cost.
@@ -694,7 +737,8 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       category: line?.category ?? null,
       purchasedDate: line?.purchaseDate ?? null,
       invoicedDate: line?.invoicedDate ?? null,
-      poNumber: p.poId ?? line?.poNumber ?? null,
+      // Same line as the two dates above and `supplier` — see `line`.
+      poNumber: line ? line.poNumber : (p.poId ?? null),
       supplier,
       leadDays: daysBetween(line?.purchaseDate ?? null, p.expectedDate),
       st: partStatus(p, now),
@@ -901,7 +945,80 @@ export function makePoGroup(poKey: string, poParts: FlatPart[]): PoGroup {
   }
   const pastDue = poParts.some((p) => p.st.key === "overdue");
   const status: PoGroup["status"] = isNoPo ? "noPO" : received >= total ? "received" : "ordered";
-  return { poKey, poNumber: isNoPo ? null : poParts[0].poNumber, parts: poParts, received, total, expected, status, pastDue };
+  // The PO number is the KEY, not `poParts[0].poNumber` (2026-09-14): since
+  // `partsOnPo` resolves a PO through every part's breakdown groups, the first
+  // part's own displayed PO can be a different (newer) one.
+  return { poKey, poNumber: isNoPo ? null : poKey, parts: poParts, received, total, expected, status, pastDue };
+}
+
+// ── Resolving one PO across the buy-list (2026-09-14) ───────────────────────
+//
+// A part carries ONE displayed PO (its newest purchase) but may have been bought
+// on several — `poBreakdown` lists them all. The PO drawer used to find its parts
+// by `p.supplier === sup && p.poNumber === po`, so a part bought on POs A (older)
+// and B (newer) was only ever found under B: clicking A from the part panel or an
+// unfolded sub-row (both of which hand over A's supplier + number) matched
+// nothing, and the caller returned in silence. These helpers look through the
+// groups instead, and the drawer then shows each part at THAT PO's own figures
+// (`scopePartToPo`) rather than its lifetime totals under a single PO's heading.
+
+/** What a part with no supplier is shown and keyed as. */
+export const UNKNOWN_SUPPLIER = "Unknown supplier";
+
+/** One comparable key per supplier: normalized spelling, or the unknown bucket. */
+export function supplierKey(supplier: string | null | undefined): string {
+  const n = normalizeVendor(supplier);
+  return n == null || n === UNKNOWN_SUPPLIER ? UNKNOWN_SUPPLIER : n;
+}
+
+/** The part's group for this supplier + PO, if it was bought on it. */
+export function findPoGroup(p: FlatPart, supplier: string | null, poNumber: string): PartPoGroup | undefined {
+  const sup = supplierKey(supplier);
+  return p.poBreakdown.find((g) => g.poNumber === poNumber && supplierKey(g.supplier) === sup);
+}
+
+/**
+ * Every part with a purchase on this supplier + PO — through the breakdown
+ * groups, not the single displayed PO. A part whose displayed PO matches but
+ * whose groups do not (a part with no purchase lines, showing the BOM's own PO
+ * line) is still included, so a PO that is raised but not yet in the purchase
+ * pipeline can be opened. A null PO number is the "parts without PO" bucket per
+ * supplier, exactly as before.
+ */
+export function partsOnPo(parts: readonly FlatPart[], supplier: string | null, poNumber: string | null): FlatPart[] {
+  const sup = supplierKey(supplier);
+  if (poNumber == null) return parts.filter((p) => p.poNumber == null && supplierKey(p.supplier) === sup);
+  return parts.filter((p) => (p.poNumber === poNumber && supplierKey(p.supplier) === sup) || findPoGroup(p, supplier, poNumber) !== undefined);
+}
+
+/**
+ * The part as it stands on ONE PO: money, quantity, unit price, line count and
+ * purchase/invoice dates from that PO's own group, everything BOM-side (Qty,
+ * description, required/expected/received dates, status) unchanged.
+ *
+ * Unchanged when the part has no group for the PO (nothing bought on it — its
+ * figures are already the BOM estimate) and for the no-PO bucket, whose groups
+ * are per-line extra costs with no single PO to scope to.
+ */
+export function scopePartToPo(p: FlatPart, supplier: string | null, poNumber: string | null): FlatPart {
+  if (poNumber == null) return p;
+  const g = findPoGroup(p, supplier, poNumber);
+  if (!g) return p;
+  return {
+    ...p,
+    poNumber: g.poNumber,
+    supplier: g.supplier,
+    purchasedDate: g.purchaseDate,
+    invoicedDate: g.invoicedDate,
+    totalPrice: g.totalPrice,
+    invoicedAmount: g.invoicedAmount,
+    pctInvoiced: g.totalPrice > 0 ? Math.round((g.invoicedAmount / g.totalPrice) * 100) : g.invoicedAmount > 0 ? 100 : 0,
+    leftToSpend: g.leftToInvoice,
+    lineCount: g.lineCount,
+    poBreakdown: [g],
+    purchasedQty: g.qty,
+    effectiveUnitPrice: g.unitPrice,
+  };
 }
 
 // Matches a real PO ("PO 1234") against a bare int and a zero-padded string
@@ -924,16 +1041,25 @@ export function findAuthoritativePo(vendors: Vendor[] | undefined, poNumber: str
 // Authoritative supplier rollup (received / itemCount across all the
 // supplier's POs), matched by vendor name. Undefined when the supplier has no
 // PO data.
+//
+// Both sides normalized (2026-09-14). The card's `supplier` is a FlatPart's —
+// already through normalizeVendor, so SDC reads "Steven Douglas Corp (SDC)" —
+// while `Vendor.name` is Total ETO's raw `CName` ("Steven Douglas Corp."). A raw
+// comparison never matched the SDC card, which silently fell back to the
+// BOM-derived bar. Several raw vendor rows can fold to one normalized name, so
+// they are summed rather than the first one taken.
 export function authoritativeVendorRollup(vendors: Vendor[] | undefined, supplier: string): { received: number; itemCount: number; pct: number } | undefined {
   if (!vendors?.length) return undefined;
-  const key = supplier.trim().toLowerCase();
-  const v = vendors.find((x) => x.name.trim().toLowerCase() === key);
-  if (!v) return undefined;
+  const key = supplierKey(supplier).toLowerCase();
+  const matched = vendors.filter((x) => supplierKey(x.name).toLowerCase() === key);
+  if (!matched.length) return undefined;
   let received = 0;
   let itemCount = 0;
-  for (const po of v.pos) {
-    received += po.received;
-    itemCount += po.itemCount;
+  for (const v of matched) {
+    for (const po of v.pos) {
+      received += po.received;
+      itemCount += po.itemCount;
+    }
   }
   if (itemCount === 0) return undefined;
   return { received, itemCount, pct: Math.round((received / itemCount) * 100) };

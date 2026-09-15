@@ -224,3 +224,76 @@ test("a rejected login short-circuits the lane; a blip does not", () => {
   assert.match(s, /login\.kind === "login_rejected"/, "only a rejected login blocks the lane");
   assert.equal((s.match(/if \(blocked\) throw new Error\(blocked\);/g) ?? []).length, 4, "all four sources honour it");
 });
+
+// ── An abandoned step must actually stop (2026-09-14) ───────────────────────
+//
+// auto-sync.ts's step budget used to abandon a slow step and let it run on; the
+// orphaned syncPartsCost then upserted EtcEntry AFTER the RefreshLock was released.
+// The budget now aborts, and the abort travels ambiently to withTotalEto through the
+// modules in between (syncPartsCost -> getPartsCostBookedByJob) that know nothing
+// about it.
+import {
+  runWithTotalEtoAbort,
+  currentTotalEtoAbort,
+  withTotalEto,
+  TotalEtoAbortedError,
+  totalEtoFailureStage,
+} from "../src/lib/totaleto-connection";
+
+test("a cancelled request is classified as 'aborted' — the caller's decision, not a Total ETO fault, and never retried", () => {
+  assert.equal(classifyTotalEto(Object.assign(new Error("Canceled."), { code: "ECANCEL" })), "aborted");
+  assert.equal(classifyTotalEto(new TotalEtoAbortedError("parts_cost.booked_by_job", new Error("budget"))), "aborted");
+  assert.ok(!isTransientTotalEto("aborted"), "retrying an abort would be exactly the orphaned work the abort exists to stop");
+  assert.match(describeTotalEtoFailure(new TotalEtoAbortedError("x", "budget")), /cancelled because the step .* ran out of its own time budget/);
+  assert.equal(totalEtoFailureStage("aborted"), "query");
+});
+
+test("the abort signal is ambient: visible three awaits deep, and absent outside the scope", async () => {
+  const controller = new AbortController();
+  // Stand-ins for syncPartsCost -> getPartsCostBookedByJob -> withTotalEto.
+  const deepest = async () => currentTotalEtoAbort();
+  const middle = async () => {
+    await Promise.resolve();
+    return deepest();
+  };
+  const outer = async () => {
+    await new Promise((r) => setTimeout(r, 1));
+    return middle();
+  };
+  assert.equal(await runWithTotalEtoAbort(controller.signal, outer), controller.signal);
+  assert.equal(currentTotalEtoAbort(), undefined, "nothing leaks past the scope");
+  // Two scopes do not see each other's signal.
+  const other = new AbortController();
+  const [a, b] = await Promise.all([runWithTotalEtoAbort(controller.signal, outer), runWithTotalEtoAbort(other.signal, outer)]);
+  assert.equal(a, controller.signal);
+  assert.equal(b, other.signal);
+});
+
+test("withTotalEto refuses to start once its caller has given up — no pool, no retry", async () => {
+  // An already-aborted scope: the attempt must fail before it reaches the network
+  // (this test has no Total ETO to reach), and must not be retried three times.
+  const controller = new AbortController();
+  controller.abort(new Error("step budget of 45s ran out"));
+  let attempts = 0;
+  const started = Date.now();
+  await assert.rejects(
+    () =>
+      runWithTotalEtoAbort(controller.signal, () =>
+        withTotalEto(
+          async () => {
+            attempts++;
+            return 1;
+          },
+          { feed: "test.aborted" },
+        ),
+      ),
+    (e: unknown) => {
+      assert.ok(e instanceof TotalEtoAbortedError, `expected TotalEtoAbortedError, got ${String(e)}`);
+      assert.match(e.message, /test\.aborted/);
+      assert.match(e.message, /45s ran out/, "the caller's reason is carried");
+      return true;
+    },
+  );
+  assert.equal(attempts, 0, "work must never run once aborted");
+  assert.ok(Date.now() - started < 400, "no retry delays (0.5s + 2s) may be spent on an abort");
+});

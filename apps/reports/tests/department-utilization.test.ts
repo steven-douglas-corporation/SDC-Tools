@@ -139,3 +139,89 @@ test("a blank Travel cell stays blank — \"not known\", never \"Concord\"", () 
   assert.equal(normalizeTravel(""), "");
   assert.equal(normalizeTravel("   "), "");
 });
+
+// ── An employeeId with no roster row keeps its hours (2026-09-14) ───────────
+//
+// The population query can only return Employee rows, so a punch whose id has no row
+// at all used to be `continue`d past in both folds of getDepartmentUtilization and its
+// hours vanished from every figure — silently, and from the very report whose header
+// describes losing 670h to a narrower version of the same mistake. The arithmetic is
+// now a pure function over loaded inputs, so this can be driven with in-memory rows.
+
+import { computeDepartmentUtilization, UNASSIGNED_DEPARTMENT_KEY, UNASSIGNED_DEPARTMENT_TITLE } from "../src/lib/department-utilization";
+
+const JULY_15 = day("2026-07-15");
+const punch = (employeeId: string, hours: number, rawSection = "10", jobId = "1130") => ({
+  employeeId,
+  rawSection,
+  workDate: JULY_15,
+  hours,
+  travelHours: null,
+  job: { jobId },
+});
+const mechEngineer = (paylocityId: string, name: string) => ({
+  paylocityId,
+  name,
+  department: "Mechanical Engineering",
+  discipline: null,
+  team: "mech",
+  billingGroup: "Engineering",
+  active: true,
+});
+
+test("a punch whose employeeId has no Employee row is kept under a synthetic '#id' person, not dropped", () => {
+  const result = computeDepartmentUtilization({
+    month: "2026-07",
+    workingDays: 22,
+    employees: [mechEngineer("100605", "Known Person")],
+    closeDates: new Map([["1130", null]]),
+    punches: [punch("100605", 8), punch("999999", 6), punch("999999", 2, "80")],
+  });
+
+  const unknown = result.employees.find((e) => e.employeeId === "999999");
+  assert.ok(unknown, "the unmatched id must still produce an employee row");
+  assert.equal(unknown.name, "#999999", "named the way every other page names an unmatched id");
+  assert.equal(unknown.departmentKey, UNASSIGNED_DEPARTMENT_KEY);
+  assert.equal(unknown.departmentTitle, UNASSIGNED_DEPARTMENT_TITLE);
+  assert.equal(unknown.actualHours, 8);
+  assert.equal(unknown.billableActive, 6);
+  assert.equal(unknown.billableService, 2);
+  assert.equal(unknown.inUtilizationScope, false, "a data-quality state, never a utilization department");
+  assert.equal(unknown.active, false);
+
+  // Every punch hour is accounted for somewhere in the employee list.
+  const listed = result.employees.reduce((s, e) => s + e.actualHours, 0);
+  assert.equal(listed, 16);
+});
+
+test("the synthetic person is not an ETC department row and does not move the card's total", () => {
+  const result = computeDepartmentUtilization({
+    month: "2026-07",
+    workingDays: 22,
+    employees: [mechEngineer("100605", "Known Person")],
+    closeDates: new Map([["1130", null]]),
+    punches: [punch("100605", 8), punch("999999", 6)],
+  });
+  assert.ok(!result.departments.some((d) => d.key === UNASSIGNED_DEPARTMENT_KEY), "Unassigned is not an ETC card key");
+  const mech = result.departments.find((d) => d.key === "mech");
+  assert.ok(mech);
+  assert.equal(mech.actualHours, 8);
+  assert.equal(mech.employees, 1);
+  assert.equal(result.total.actualHours, 8);
+  assert.equal(result.total.employees, 1);
+});
+
+test("a known employee is untouched by the synthetic pass", () => {
+  // The pass only ADDS people for ids the roster lacks; it must never shadow a real row.
+  const result = computeDepartmentUtilization({
+    month: "2026-07",
+    workingDays: 22,
+    employees: [mechEngineer("100605", "Known Person")],
+    closeDates: new Map([["1130", null]]),
+    punches: [punch("100605", 8)],
+  });
+  const known = result.employees.find((e) => e.employeeId === "100605");
+  assert.equal(known?.name, "Known Person");
+  assert.equal(known?.departmentKey, "mech");
+  assert.equal(known?.active, true);
+});

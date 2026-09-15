@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { monthWindowUtc, effectiveNewEtc, isNewEtcDecided, newEtcDiff, calcHoursLeft, round2 } from "../src/lib/etc";
+import { monthWindowUtc, effectiveNewEtc, isNewEtcDecided, newEtcDiff, calcHoursLeft, round2, type NewEtcEntryLike } from "../src/lib/etc";
+
+// Rows here are "never cleared, never submitted" unless a test says otherwise — the
+// two flags effectiveNewEtc / isNewEtcDecided / newEtcDiff read since 2026-09-14.
+const row = (r: Omit<NewEtcEntryLike, "newEtcClearedAt" | "submittedAt"> & Partial<NewEtcEntryLike>): NewEtcEntryLike => ({
+  newEtcClearedAt: null,
+  submittedAt: null,
+  ...r,
+});
 
 // Money Spent Month (§41.28). The SQL itself needs a live TotalETO connection and is
 // proven by scripts/parts-spent-recon.ts against the Total ETO pivot (31 of 35 jobs to
@@ -80,7 +88,7 @@ test("a credit makes Money Spent negative, and Money Left exceeds the budget", (
 
 test("an undecided cell contributes nothing to Diff, and Diff is never Money Left", () => {
   // `needsReview: true` with no draft is the yellow, untouched cell.
-  const blank = { needsReview: true, priorEtc: 10000, hoursWorked: 2500, newEtc: 0, newEtcDraft: null };
+  const blank = row({ needsReview: true, priorEtc: 10000, hoursWorked: 2500, newEtc: 0, newEtcDraft: null });
   assert.equal(isNewEtcDecided(blank), false);
   // effectiveNewEtc still answers "what would this month be if submitted as-is", which is
   // the suggestion — that is what carries forward into next month's Prior ETC.
@@ -97,12 +105,12 @@ test("even an OVERSPENT undecided cell reports no variance", () => {
   // overspent-but-untouched cell into an invented overrun. Measured 2026-07-31, that was
   // -1,065 of Engineering's -1,071 with exactly ONE of 241 cells actually decided.
   // A number nobody entered must not be reported as their overrun.
-  const over = { needsReview: true, priorEtc: 160, hoursWorked: 167, newEtc: 0, newEtcDraft: null };
+  const over = row({ needsReview: true, priorEtc: 160, hoursWorked: 167, newEtc: 0, newEtcDraft: null });
   assert.equal(round2(newEtcDiff(over)), 0);
 });
 
 test("a decided New ETC produces Diff = Money Left - New ETC", () => {
-  const decided = { needsReview: true, priorEtc: 10000, hoursWorked: 2500, newEtc: 0, newEtcDraft: 5000 };
+  const decided = row({ needsReview: true, priorEtc: 10000, hoursWorked: 2500, newEtc: 0, newEtcDraft: 5000 });
   assert.equal(isNewEtcDecided(decided), true);
   assert.equal(effectiveNewEtc(decided), 5000);
   assert.equal(round2(newEtcDiff(decided)), round2(calcHoursLeft(10000, 2500) - 5000));
@@ -110,13 +118,13 @@ test("a decided New ETC produces Diff = Money Left - New ETC", () => {
 });
 
 test("Diff goes negative when the plan exceeds what is left", () => {
-  const over = { needsReview: true, priorEtc: 1000, hoursWorked: 900, newEtc: 0, newEtcDraft: 500 };
+  const over = row({ needsReview: true, priorEtc: 1000, hoursWorked: 900, newEtc: 0, newEtcDraft: 500 });
   assert.equal(round2(newEtcDiff(over)), -400, "planning 500 against 100 left is a 400 overrun");
 });
 
 test("a SUBMITTED cell reports its confirmed value, not a draft or a suggestion", () => {
   // needsReview false = the month was submitted; newEtc is the decided figure.
-  const submitted = { needsReview: false, priorEtc: 10000, hoursWorked: 2500, newEtc: 4200, newEtcDraft: 9999 };
+  const submitted = row({ needsReview: false, priorEtc: 10000, hoursWorked: 2500, newEtc: 4200, newEtcDraft: 9999 });
   assert.equal(isNewEtcDecided(submitted), true);
   assert.equal(effectiveNewEtc(submitted), 4200, "a stale draft must not outrank the submitted value");
 });

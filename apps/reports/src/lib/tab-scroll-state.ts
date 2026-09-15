@@ -40,6 +40,9 @@
 // by route+params — which the earlier version did — would have collided on exactly that
 // case.
 
+import { splitRoute } from "@/lib/split-view";
+import type { Workspace } from "@/lib/workspace";
+
 /** One scroller's remembered offsets. */
 export type ScrollEntry = { key: string; left: number; top: number };
 
@@ -49,7 +52,58 @@ export type TabScrollState = Record<string, { left: number; top: number }>;
 /** The pane container itself, as opposed to a scroller inside it. */
 export const ROOT_KEY = "";
 
-export const tabScrollStorageKey = (tabId: string): string => `sdc.ws.scroll.v2:${tabId}`;
+export const tabScrollStorageKey = (scope: string): string => `sdc.ws.scroll.v2:${scope}`;
+
+// ── The scroll IDENTITY is the tab AND what it is showing (2026-09-14) ───────
+//
+// REPORTED: re-route a tab from the sidebar (Hours → Projects in the same tab, which
+// is what a sidebar click does while split) and the new page opened scrolled to
+// wherever the OLD page had been. Change the month on Monthly ETC and August's
+// horizontal offset was applied to September's grid.
+//
+// The store was keyed by tab id alone, and nothing cleared an entry when the tab's
+// route changed — so a tab inherited every offset the previous page had left in it.
+// Keying by tab alone was right about one thing (two Monthly ETC tabs on the same
+// month must not share a position — that is why it is not route+params), and wrong
+// about the other: a tab is not a page, it is a slot pages pass through.
+//
+// So the key is the tab id PLUS the route PLUS the route's instance param (the
+// month, the job) when it has one — `t2:/etc@2026-08`. A different month starts at
+// the top; a different filter on the same month does not, because a filter change
+// is a re-render of the same grid and losing the position there is the bug this
+// whole file exists to fix.
+
+/** The scroll scope of one tab as it stands: `t2:/etc@2026-08`, `t1:/hours`. */
+export function tabScrollScope(tab: { id: string; path: string; params: Record<string, string> }): string {
+  const key = splitRoute(tab.path)?.instanceParam;
+  const instance = key ? tab.params[key] : undefined;
+  return instance !== undefined && instance !== "" ? `${tab.id}:${tab.path}@${instance}` : `${tab.id}:${tab.path}`;
+}
+
+/**
+ * The scopes that `next` no longer has but `prev` did — a closed tab, or a tab that
+ * moved to another route or another month. Their remembered offsets belong to a page
+ * that is gone and must not wait around to be inherited.
+ */
+export function staleScrollScopes(prev: Workspace, next: Workspace): string[] {
+  const live = new Set(next.tabs.map(tabScrollScope));
+  const out: string[] = [];
+  for (const t of prev.tabs) {
+    const scope = tabScrollScope(t);
+    if (!live.has(scope) && !out.includes(scope)) out.push(scope);
+  }
+  return out;
+}
+
+/** Forget a scope's offsets. Storage-agnostic so the rule is testable; the component passes sessionStorage. */
+export function clearTabScrollState(scope: string, storage: Pick<Storage, "removeItem"> | null | undefined): void {
+  if (!storage) return;
+  try {
+    storage.removeItem(tabScrollStorageKey(scope));
+  } catch {
+    // Private mode, or storage disabled — there was nothing persisted to forget.
+  }
+}
 
 /**
  * A stable name for one scroller within its pane.

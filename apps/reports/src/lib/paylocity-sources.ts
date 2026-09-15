@@ -46,14 +46,24 @@ import path from "path";
 // to change: when it is set, it supplies the current-year file's path AND the folder
 // the other workbooks are looked up in. PAYLOCITY_HOURS_DIR overrides just the
 // folder, for the case where the current-year file is named as normal.
-const DEFAULT_DIR =
-  "C:/Users/akamuju/OneDrive - Steven Douglas Corp/SDC- Power BI Integration - Job Hours Report/Job Hours From Paylocity";
+//
+// ── No default path (2026-09-14) ────────────────────────────────────────────
+//
+// This used to fall back to one person's OneDrive folder under C:/Users/akamuju
+// when neither variable was set. A deployment with a missing .env key therefore
+// did not fail — it quietly read whatever stale copy that profile happened to
+// hold, and reported the hours as current. Configuration is not something to
+// guess at: unset means the source is not configured, and the step says so.
+const PAYLOCITY_NOT_CONFIGURED =
+  "Paylocity hours are not configured: set JOB_HOURS_LOCAL_PATH (the current-year workbook) or PAYLOCITY_HOURS_DIR (the folder) in .env. There is no default path.";
 
-/** The folder every Paylocity workbook is read from. */
+/** The folder every Paylocity workbook is read from. Throws when nothing configures it. */
 export function paylocityFolder(): string {
   const explicitFile = process.env.JOB_HOURS_LOCAL_PATH?.trim();
   if (explicitFile) return path.dirname(explicitFile);
-  return process.env.PAYLOCITY_HOURS_DIR?.trim() || DEFAULT_DIR;
+  const dir = process.env.PAYLOCITY_HOURS_DIR?.trim();
+  if (dir) return dir;
+  throw new Error(PAYLOCITY_NOT_CONFIGURED);
 }
 
 export type SourceKind =

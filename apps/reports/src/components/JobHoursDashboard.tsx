@@ -507,6 +507,10 @@ export function JobHoursDashboard({
                 // card started rendering it side by side. Here it still sits BELOW the
                 // chart above it, so it still wants the gap.
                 className="mt-4"
+                // The COLUMN code (40-211). The panel widens it to every raw punch
+                // code that folds onto that column (seedSectionFilter), because the
+                // rows it filters are raw pairs while this bar's Actual is the fold —
+                // passing the column alone showed ~149h under a 634h bar.
                 initialSection={drillRow.code}
                 // Arriving here from a section bar, "who worked it" is the useful
                 // rollup — Department is one click away in the same tray if wanted.

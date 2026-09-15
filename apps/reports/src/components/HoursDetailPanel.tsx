@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/Drill";
 // One filter model for every drill on this page (§73) — the same vocabulary the rollup
 // uses, so "Section" cannot mean one thing to Group By and another to a filter.
-import { dateBounds, filterOptions, matchesDrillFilters, type DrillFilterKey } from "@/lib/drill-filters";
+import { dateBounds, filterOptions, matchesDrillFilters, seedSectionFilter, type DrillFilterKey } from "@/lib/drill-filters";
 import { useDrillFilters } from "@/components/useDrillFilters";
 import { useColumnSort } from "@/components/useColumnSort";
 import { SortableTh } from "@/components/ui/SortableHeader";
@@ -269,18 +269,29 @@ export function HoursDetailPanel({
   // one dimension you could not narrow to, so "show me only Mechanical's punches, by
   // employee" was not expressible.
   //
-  // `initialSection` still preselects the section you drilled from — as a one-value
-  // selection now rather than a select's value. See useDrillFilters for why Clear filters
-  // returns to it rather than to nothing.
-  const seededSection =
-    initialSection && detail.sections.some((s) => s.code === initialSection) ? initialSection : null;
+  // `initialSection` still preselects the section you drilled from — as a selection now
+  // rather than a select's value. See useDrillFilters for why Clear filters returns to it
+  // rather than to nothing.
+  //
+  // Widened through the fold (seedSectionFilter, 2026-09-14): the bar that opens this
+  // panel is an app COLUMN (40-211) and its figure is the fold of every raw code onto it,
+  // while `detail.rows[].section` on the per-job drill is the RAW pair. Seeding the bare
+  // column code matched only punches literally coded 40-211 and dropped 40-311 and the
+  // rest — 634h on the bar, ~149h in the panel, and no way to reach the difference since
+  // Clear returns to the seed. The seed is now every raw code that folds onto the column
+  // and is present in this detail, so the section filter matches exactly what the bar
+  // counted and the menu shows each of those codes ticked.
+  const seededSections = seedSectionFilter(
+    initialSection,
+    detail.sections.map((s) => s.code),
+  );
   // Keyed on `initialSection` (§73's resetKey, same mechanism EtcMonthKpiCards keys on
   // `month`) — without it, clicking a second bar updated SectionDrill above (plain props)
   // but left this panel's Section filter seeded from whichever bar was clicked FIRST:
   // this state is `useState`-lazy-initialized once and this component never unmounts
   // between clicks, so nothing told it to re-seed.
   const filterState = useDrillFilters(initialSection ?? undefined, () => ({
-    values: seededSection ? { section: [seededSection] } : {},
+    values: seededSections ? { section: seededSections } : {},
     from: "",
     to: "",
   }));

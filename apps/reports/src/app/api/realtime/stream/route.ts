@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { subscribe } from "@/lib/realtime-hub";
+import { subscribe, type RealtimeEnvelope } from "@/lib/realtime-hub";
 
 // The server → browser event stream: presence updates and change notifications.
 //
@@ -23,7 +23,25 @@ export async function GET(request: Request) {
 
   const stream = new ReadableStream({
     start(controller) {
-      const send = (payload: unknown) => {
+      const send = (payload: RealtimeEnvelope) => {
+        // A newer stream has registered under this session id (a duplicated tab, or
+        // a reconnect that reused the id). The hub already treats that stream as the
+        // owner; this one closes itself rather than sitting half-open holding a
+        // heartbeat for a browser that has moved on. controller.close() does NOT fire
+        // cancel(), so the cleanup runs here — and the hub's unsubscribe is a no-op
+        // for a connection that no longer owns the id (see realtime-hub.ts).
+        if (payload.type === "superseded") {
+          if (heartbeat) clearInterval(heartbeat);
+          heartbeat = null;
+          unsubscribe?.();
+          unsubscribe = null;
+          try {
+            controller.close();
+          } catch {
+            // Already closed by the browser.
+          }
+          return;
+        }
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       };
 

@@ -118,3 +118,27 @@ test("credentials are still read at call time, not frozen at module load", () =>
     else process.env.TOTALETO_DB_USER = before;
   }
 });
+
+// ── Waiting for a connection is not "the pool is exhausted" (2026-09-14) ─────
+//
+// tarn's default acquireTimeoutMillis is 30s. The BOM walk's queries can legitimately
+// hold a connection for the full 120s requestTimeout, so a caller queued behind one
+// gave up after 30s with a bare TimeoutError -> pool_exhausted -> "transient" -> three
+// retries each queuing more acquires. The acquire window must outlive one full query.
+import { poolSettingsFor, POOL_MAX } from "../src/lib/totaleto-connection";
+
+test("a queued acquire waits at least one full requestTimeout before it is called exhaustion", () => {
+  for (const t of [TOTALETO_TIMEOUT.sync, TOTALETO_TIMEOUT.cashFlow, TOTALETO_TIMEOUT.bom, 300_000]) {
+    const p = poolSettingsFor(t);
+    assert.ok(p.acquireTimeoutMillis > t, `acquire window ${p.acquireTimeoutMillis} must exceed requestTimeout ${t}`);
+  }
+  // And it is what the config actually carries, not a separate copy.
+  const { pool } = totalEtoConfig(TOTALETO_TIMEOUT.bom);
+  assert.equal((pool as { acquireTimeoutMillis?: number }).acquireTimeoutMillis, poolSettingsFor(TOTALETO_TIMEOUT.bom).acquireTimeoutMillis);
+});
+
+test("every pool is sized to the one ceiling the fan-out arithmetic is checked against", () => {
+  assert.equal(totalEtoConfig(TOTALETO_TIMEOUT.bom).pool?.max, POOL_MAX);
+  assert.equal(totalEtoConfig(TOTALETO_TIMEOUT.sync).pool?.max, POOL_MAX);
+  assert.equal(POOL_MAX, 10, "mssql's own default; build-readiness-sync.ts sizes its workers against this");
+});

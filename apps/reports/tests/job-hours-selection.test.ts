@@ -70,7 +70,9 @@ test("JobSelect no longer navigates to resolve the selection on a normal landing
   const src = readFileSync(join(process.cwd(), "src", "components", "JobSelect.tsx"), "utf8");
   // One replace survives, and only inside the one-time localStorage migration —
   // guarded by the cookie already being absent, so it cannot run twice.
-  const replaces = src.match(/router\.replace\(/g) ?? [];
+  // `url.replace` is the pane-aware writer (usePaneUrl, 2026-09-14) — the same one
+  // replace, now landing in the tab's own namespace inside a workspace.
+  const replaces = src.match(/(?:router|url)\.replace\(/g) ?? [];
   assert.equal(replaces.length, 1, "only the one-time migration may replace the URL");
   assert.match(src, /if \(document\.cookie\.includes\(`\$\{JOB_HOURS_SELECTION_COOKIE\}=`\)\) return;/);
   assert.doesNotMatch(src, /localStorage\.setItem/, "the selection is no longer written to localStorage");

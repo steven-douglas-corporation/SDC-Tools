@@ -7,6 +7,7 @@ import {
   UNDEFINED_REASON_FIX,
   roundedHoursVisible,
   visibleUndefinedTotals,
+  type RejectionLike,
   type UndefinedReason,
   type UndefinedTotal,
 } from "@/lib/undefined-hours-rules";
@@ -203,12 +204,27 @@ export async function getUnattributedDetail(month: string): Promise<Unattributed
 // HoursImportIssue: that table has no per-punch granularity, so it cannot apply the
 // same "hide rows that round to 0" rule the drill above does. Reading it here instead
 // means the card can never show a number the drill's own rows don't sum to.
-export async function getUndefinedHoursTotals(month: string): Promise<{ hours: number; entries: number; issues: UndefinedTotal[] }> {
+export async function getUndefinedHoursTotals(month: string): Promise<UndefinedKpiFigures> {
   const rows = await prisma.undefinedHoursRow.findMany({
     where: { month },
     select: { reason: true, countsTowardKpi: true, month: true, label: true, hours: true },
   });
-  const issues = visibleUndefinedTotals(rows.map((r) => ({ ...r, reason: r.reason as UndefinedReason, hours: Number(r.hours) })));
+  return undefinedKpiFigures(rows.map((r) => ({ ...r, reason: r.reason as UndefinedReason, hours: Number(r.hours) })));
+}
+
+export type UndefinedKpiFigures = { hours: number; entries: number; issues: UndefinedTotal[] };
+
+// ── The card's figure, as ONE rule for both writers of it (2026-09-14) ──────
+//
+// The KPI card (above) applies roundedHoursVisible — a punch whose hours round to 0
+// is dropped from the list AND from the total. PaylocityImport.undefinedHours, written
+// by recordUndefinedHours at import time, summed every counted row with no such
+// filter, so the import record and the card disagreed by exactly the sub-half-hour
+// punches: two "Undefined Hours" figures for one file version, one of them on the
+// refresh panel and the other on the ETC page. Both now call this. Pure, so it is
+// pinned by a test rather than by two call sites happening to agree.
+export function undefinedKpiFigures(rows: RejectionLike[]): UndefinedKpiFigures {
+  const issues = visibleUndefinedTotals(rows);
   return { hours: issues.reduce((s, i) => s + i.hours, 0), entries: issues.reduce((s, i) => s + i.rows, 0), issues };
 }
 

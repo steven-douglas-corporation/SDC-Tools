@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { refreshBuildReadiness, refreshOneJob } from "@/lib/build-readiness-sync";
+import { refreshBuildReadiness, refreshOneJob, claimBuildReadinessPass, presentMetaStatus } from "@/lib/build-readiness-sync";
 import {
   type BuildReadinessData,
   type BuildReadinessFilters,
@@ -33,17 +33,22 @@ type MetaRawRow = {
   jobsFailed: number;
   triggeredByName: string | null;
   durationMs: number | null;
+  updatedAt: Date | null;
 };
 
 async function readMeta(): Promise<RefreshMetaRow> {
   const rows = await prisma.$queryRaw<MetaRawRow[]>`
-    SELECT status, startedAt, completedAt, jobsTotal, jobsDone, jobsFailed, triggeredByName, durationMs
+    SELECT status, startedAt, completedAt, jobsTotal, jobsDone, jobsFailed, triggeredByName, durationMs, updatedAt
     FROM BuildReadinessRefreshMeta WHERE id = 1
   `;
   const r = rows[0];
   if (!r) return { status: "idle", startedAt: null, completedAt: null, jobsTotal: 0, jobsDone: 0, jobsFailed: 0, triggeredByName: null, durationMs: null };
   return {
-    status: r.status as RefreshMetaRow["status"],
+    // A 'running' row whose heartbeat has stopped (the process died mid-pass) is
+    // shown as 'partial', not 'running' — see build-readiness-sync.ts's
+    // RUNNING_STALE_MS. Otherwise the page said "Refreshing…" forever after a
+    // restart, and the button that could have fixed it refused to fire.
+    status: presentMetaStatus(r, Date.now()) as RefreshMetaRow["status"],
     startedAt: r.startedAt ? r.startedAt.toISOString() : null,
     completedAt: r.completedAt ? r.completedAt.toISOString() : null,
     jobsTotal: r.jobsTotal,
@@ -59,15 +64,27 @@ async function readMeta(): Promise<RefreshMetaRow> {
 // it to completion. See build-readiness-sync.ts's own header for why that's
 // safe on this app's persistent Node process. The client polls
 // getBuildReadinessData() afterward to watch it progress.
+//
+// ── One atomic claim, not read-then-fire (2026-09-14) ─────────────────────
+//
+// This used to read the meta row, decide, and then fire the pass — so two tabs
+// (or a page visit landing beside a "Refresh now" click) both read 'idle' and
+// both started a pass: jobsDone climbed twice as fast as jobsTotal and Total ETO
+// took double the load. And a row left at 'running' by a restart mid-pass made
+// EVERY call here return early, `force` included, until somebody edited it by
+// hand. claimBuildReadinessPass is one conditional UPDATE: exactly one caller
+// gets affectedRows === 1, a stale 'running' row (no heartbeat for
+// RUNNING_STALE_MS) is claimable, and `force` overrides the freshness window —
+// but never a pass that is genuinely alive.
 export async function triggerBuildReadinessRefresh(force = false): Promise<RefreshMetaRow> {
-  const meta = await readMeta();
-  if (meta.status === "running") return meta;
-  const stale = !meta.completedAt || Date.now() - new Date(meta.completedAt).getTime() > STALE_MS;
-  if (!force && !stale) return meta;
-
   const userName = await currentUserName();
-  void refreshBuildReadiness(userName).catch((err) => console.error("[build-readiness] refresh failed:", err));
-  return { ...meta, status: "running" };
+  const claimed = await claimBuildReadinessPass({ force, triggeredByName: userName, freshForMs: STALE_MS });
+  if (claimed) {
+    void refreshBuildReadiness(userName).catch((err) => console.error("[build-readiness] refresh failed:", err));
+  }
+  // Read back rather than synthesised: whichever caller won, every caller sees the
+  // same row — 'running', with the winner's name on it.
+  return readMeta();
 }
 
 // Drill-down's "Refresh this project" — bounded to one job, so an inline

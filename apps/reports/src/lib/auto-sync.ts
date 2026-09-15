@@ -118,22 +118,62 @@ export type SyncProgress = (stage: string | null, done: SyncStepResult[]) => voi
 // window the UI is willing to wait, rather than being killed by it and reported as a
 // dead refresh.
 //
-// The abandoned work is NOT cancelled — a promise cannot be. It is only stopped from
-// being waited on, and whatever it eventually does is harmless: the step has already
-// been recorded as failed, and every write in this pass is an idempotent upsert or a
-// replace-by-key, so a late completion cannot corrupt what the next pass writes.
-const STEP_TIMEOUT_MS = 45_000;
+// ── Per-step budgets, and the abandoned step now STOPS (2026-09-14) ──────────
+//
+// One 45s budget for every step was wrong for the two Total ETO steps whose single
+// statements carry a 180s requestTimeout (sync-totaleto.ts: parts_cost runs TWO of
+// them in sequence). A slow-but-working Total ETO — answering in 50s — had
+// parts_cost recorded as failed and a "serving cached data" fallback logged, while
+// the real work was still perfectly healthy. Those steps get a budget sized to what
+// their statements are allowed to take; everything else keeps 45s. The longer lane's
+// pathological total (every step timing out) is then 345s against the button's 300s
+// — accepted: five simultaneous timeouts behind ONE login preflight that already
+// short-circuits a dead login is not a case worth failing healthy refreshes for.
+//
+// And the old note here — "the abandoned work is NOT cancelled — a promise cannot
+// be ... a late completion cannot corrupt what the next pass writes" — was wrong
+// in the way that mattered. The abandoned syncPartsCost kept running, finished
+// AFTER refresh-service.ts released the RefreshLock, and upserted EtcEntry rows
+// concurrently with the next pass. So the budget now carries an AbortSignal, which
+// lib/totaleto-connection.ts honours ambiently (runWithTotalEtoAbort): the in-flight
+// mssql request is cancelled, no retry starts, and rows arriving after the abort are
+// thrown away instead of returned — so the step's write never happens.
+export const STEP_TIMEOUT_MS = 45_000;
 
-function withTimeout<T>(label: string, run: () => Promise<T>): Promise<T> {
+/**
+ * Worst-case time a source's own Total ETO statements are allowed (sync-totaleto.ts
+ * requestTimeout) — the reason those two steps get more than the default.
+ * parts_cost: two sequential 180s statements; the budget covers one full slow
+ * statement plus the second at normal speed, which is what "slow but working"
+ * looks like. Beyond that Total ETO is genuinely unwell and the step should fail.
+ */
+const STEP_BUDGET_OVERRIDES: Readonly<Record<string, number>> = {
+  parts_cost: 120_000,
+  parts_cost_actual: 90_000,
+};
+
+/** The time budget for one step, by source. Pure, so the table above is testable. */
+export function stepBudgetFor(source: string): number {
+  return STEP_BUDGET_OVERRIDES[source] ?? STEP_TIMEOUT_MS;
+}
+
+/**
+ * Runs `run` under `budgetMs`. On expiry the returned promise rejects AND the
+ * signal handed to `run` is aborted, so work that honours it (every Total ETO
+ * query, via runWithTotalEtoAbort) stops rather than running on unobserved.
+ */
+export function withStepBudget<T>(label: string, budgetMs: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`${label} did not respond within ${STEP_TIMEOUT_MS / 1000}s — abandoned so the rest of the refresh could finish`)),
-      STEP_TIMEOUT_MS,
-    );
+    const timer = setTimeout(() => {
+      const err = new Error(`${label} did not respond within ${budgetMs / 1000}s — stopped so the rest of the refresh could finish`);
+      controller.abort(err);
+      reject(err);
+    }, budgetMs);
     // Must not hold the process open on shutdown, the same reason the lock heartbeat
     // unrefs its timer.
     timer.unref?.();
-    run().then(
+    run(controller.signal).then(
       (v) => {
         clearTimeout(timer);
         resolve(v);
@@ -144,6 +184,26 @@ function withTimeout<T>(label: string, run: () => Promise<T>): Promise<T> {
       },
     );
   });
+}
+
+/**
+ * ONE in-flight call, shared by every caller until it settles; a rejection clears
+ * the memo so the next caller retries with its own error (rule 2 — a step's failure
+ * must not take another step down with it), while a success is kept for the pass.
+ *
+ * The naive `cached ??= await factory()` this replaces was NOT single-flight: two
+ * callers arriving before the first resolved both saw null and both ran the
+ * factory. That is exactly what happened when hours_actual timed out mid-parse —
+ * undefined_hours then started a second full parse of the Paylocity workbooks
+ * beside the first, still running one.
+ */
+export function memoizeAsync<T>(factory: () => Promise<T>): () => Promise<T> {
+  let inFlight: Promise<T> | null = null;
+  return () =>
+    (inFlight ??= factory().catch((err: unknown) => {
+      inFlight = null;
+      throw err;
+    }));
 }
 
 export async function runAllSyncs(
@@ -165,8 +225,16 @@ export async function runAllSyncs(
   const { prisma } = await import("@/lib/prisma");
   const { isMonthLocked } = await import("@/lib/etc");
   // One connection definition for every Total ETO source — see the lane below.
-  const { checkTotalEtoLogin, describeTotalEtoFailure, classifyTotalEto, isTransientTotalEto, totalEtoFailureStage, TOTALETO_SERVER, TOTALETO_DATABASE } =
-    await import("@/lib/totaleto-connection");
+  const {
+    checkTotalEtoLogin,
+    describeTotalEtoFailure,
+    classifyTotalEto,
+    isTransientTotalEto,
+    totalEtoFailureStage,
+    runWithTotalEtoAbort,
+    TOTALETO_SERVER,
+    TOTALETO_DATABASE,
+  } = await import("@/lib/totaleto-connection");
   // Records that a failed source is now serving its last known-good snapshot.
   const { recordTotalEtoFallback } = await import("@/lib/totaleto-diagnostics");
 
@@ -230,7 +298,9 @@ export async function runAllSyncs(
     const t0 = Date.now();
     const took = () => Date.now() - t0;
     try {
-      const detail = await withTimeout(label, run);
+      // The budget's signal is made ambient for every Total ETO call the step makes,
+      // however deep — see withStepBudget and totaleto-connection.ts.
+      const detail = await withStepBudget(label, stepBudgetFor(source), (signal) => runWithTotalEtoAbort(signal, run));
       if (detail === null) {
         done.set(source, { source, label, status: "skipped", detail: "nothing to do", ms: took() });
         return;
@@ -309,7 +379,9 @@ export async function runAllSyncs(
   // overwrite fresh figures with stale ones, which §42.19 forbids in as many words.
   const importCtx = newImportContext({ refreshId, trigger, userName });
   let cached: Awaited<ReturnType<typeof beginPaylocityImport>> | null = null;
-  const hoursImport = async () => (cached ??= await beginPaylocityImport(importCtx));
+  // Single-flight (memoizeAsync): a second step arriving while the first parse is
+  // still running joins it rather than starting another.
+  const hoursImport = memoizeAsync(async () => (cached = await beginPaylocityImport(importCtx)));
   const hoursExport = async () => (await hoursImport()).feed;
 
   // ── Two lanes, run concurrently (§8) ─────────────────────────────────────
@@ -354,6 +426,9 @@ export async function runAllSyncs(
         const r = await syncActualHours(imported.feed);
         importTotals.rowsInserted = r.detailRowsWritten;
         importTotals.rowsUpdated = r.rowsUpserted;
+        // Punch rows whose (job, month) left the export — a reassignment upstream
+        // (2026-09-14). Recorded so a refresh that REMOVED hours says so.
+        importTotals.rowsRemoved = r.detailRowsRemoved;
         return (
           `${imported.feed.provenance.note} ` +
           `${r.rowsUpserted} upserted, ${r.detailRowsWritten} punch rows in ` +
@@ -369,6 +444,13 @@ export async function runAllSyncs(
           `${r.detailBucketsRepaired > 0 ? `, ${r.detailBucketsRepaired} REPAIRED after drifting` : ""}), ` +
           `${r.jobsNotFound} jobs not found, ` +
           `${r.rowsSkippedOverridden} overridden preserved` +
+          // Only when it happened: hours the export no longer carries for a (job, month)
+          // were removed — a reassignment upstream, worth seeing rather than inferring
+          // from a total that quietly went down (2026-09-14).
+          (r.detailBucketsRemoved > 0
+            ? `, ${r.detailBucketsRemoved} job-month(s) removed (${r.detailRowsRemoved} punch rows no longer in the export)`
+            : "") +
+          (r.rowsZeroed > 0 ? `, ${r.rowsZeroed} monthly rollup(s) zeroed` : "") +
           // §42.16: a refresh that processed the same file again must not imply new data
           // arrived. Said here so it reaches the refresh record and the completion
           // message rather than only the log.

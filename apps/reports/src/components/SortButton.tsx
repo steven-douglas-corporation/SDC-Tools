@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams } from "@/lib/url-params";
 
 // Clicking toggles asc/desc if already sorting by this key, otherwise
@@ -26,7 +26,11 @@ export function SortButton({
   currentSort: string;
   currentDir: "asc" | "desc";
 }) {
-  const searchParams = useSearchParams();
+  // Pane-aware (2026-09-14): the href used to be hard-coded at `/quoted?…`, which
+  // inside a workspace tab navigated OUT of the workspace. usePaneUrl.hrefFor builds
+  // the /w URL with only this tab's sort changed; on the plain page it is `/quoted?…`
+  // exactly as before.
+  const url = usePaneUrl();
   const active = currentSort === sortKey;
 
   const nextDir = active && currentDir === "asc" ? "desc" : "asc";
@@ -35,7 +39,7 @@ export function SortButton({
   // Recording here would claim a navigation that hasn't happened. Reading is
   // still worth it — click Sort while a filter is committing and the sort
   // carries that filter forward instead of reverting it. See lib/url-params.ts.
-  const qs = nextParams(searchParams.toString());
+  const qs = nextParams(url.searchKey);
   qs.set("sort", sortKey);
   qs.set("dir", nextDir);
   // Two of these labels carry a literal newline ("Start\nDate") so they wrap in
@@ -44,7 +48,7 @@ export function SortButton({
 
   return (
     <Link
-      href={`/quoted?${qs.toString()}`}
+      href={url.hrefFor(qs)}
       scroll={false}
       aria-label={`Sort by ${flatLabel}, ${nextDir}ending`}
       className={`inline-flex items-center gap-1 whitespace-pre-line text-center leading-tight hover:text-sdc-navy ${active ? "text-sdc-navy" : ""}`}

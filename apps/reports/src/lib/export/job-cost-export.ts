@@ -4,7 +4,8 @@ import { buildCsv } from "@/lib/export/csv";
 import { buildXlsx } from "@/lib/export/xlsx";
 import { exportFileName, todayStamp, type SheetColumn, type SheetSpec } from "@/lib/export/sheet";
 import { logAudit } from "@/lib/audit";
-import type { JobCostComputed } from "@/lib/job-cost";
+import { assertActionPermission } from "@/lib/require-permission";
+import { jobCostTotals, type JobCostComputed } from "@/lib/job-cost";
 
 // ── Job Cost Explorer export ─────────────────────────────────────────────────
 //
@@ -53,20 +54,40 @@ function cell(row: JobCostComputed, key: string): string | number | Date | null 
   return String(v);
 }
 
+// The rows arrive from the client — they are whatever the page had computed and
+// filtered on screen, which is the export's documented contract (see above). But
+// a Server Action is a public endpoint, so the input is checked for shape before
+// anything is built or logged from it: only objects carrying a string jobId are
+// rows, and the audit row's count is the count of THOSE, not of whatever array
+// length the caller sent.
+function validRows(input: unknown): JobCostComputed[] {
+  if (!Array.isArray(input)) return [];
+  return input.filter((r): r is JobCostComputed => !!r && typeof r === "object" && typeof (r as { jobId?: unknown }).jobId === "string");
+}
+
 export async function exportJobCostRows(
   rows: JobCostComputed[],
   visibleColumnKeys: string[],
   format: "csv" | "xlsx",
 ): Promise<{ base64: string; fileName: string; mime: string }> {
-  const cols = visibleColumnKeys.filter((k) => COL_DEFS[k]);
+  // The same permission /job-cost-explorer itself is gated on
+  // (route-permissions.ts). Until 2026-09-14 this action had no auth() at all,
+  // so anyone who could reach the endpoint could write "export.download" audit
+  // rows with any count they liked.
+  await assertActionPermission("profitability:view");
+  if (format !== "csv" && format !== "xlsx") throw new Error(`Unsupported export format "${String(format)}".`);
+  rows = validRows(rows);
+  const cols = (Array.isArray(visibleColumnKeys) ? visibleColumnKeys : []).filter((k) => typeof k === "string" && COL_DEFS[k]);
   const columns: SheetColumn[] = [
     { header: "Job Id", type: "text", width: 10 },
     { header: "Job Name", type: "text", width: 32 },
     ...cols.map((k) => ({ ...COL_DEFS[k], width: 14 })),
   ];
   const specRows = rows.map((r) => [r.jobId, r.jobName, ...cols.map((k) => cell(r, k))]);
-  const sum = (k: string) => rows.reduce((a, r) => a + (Number((r as unknown as Record<string, unknown>)[k]) || 0), 0);
-  const totals = [`${rows.length} jobs`, "", ...cols.map((k) => (k === "startDate" || k === "completeDate" || k === "customerName" || k === "status" ? null : sum(k)))];
+  // Ratios (margin, % complete) are recomputed from the summed components, never
+  // summed themselves — see jobCostTotals.
+  const totalsByKey = jobCostTotals(rows, cols);
+  const totals = [`${rows.length} jobs`, "", ...cols.map((k) => totalsByKey[k])];
 
   const now = new Date();
   const spec: SheetSpec = {

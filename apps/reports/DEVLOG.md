@@ -6606,3 +6606,119 @@ eslint` clean. Not browser-verified from the agent session (credentials sign-in)
 ## 71. Moved to `apps/reports`, pm2 `sdc-reports` (2026-09-13)
 
 The folder `sdc-etc-planner/` and the pm2 process `sdc-etc-planner` are now `apps/reports/` and `sdc-reports`, matching every other app (docs/adr/0003-reports-moves-to-apps-reports.md). Port 4006, the database, `.env` and the desktop shell's URL are unchanged. Older entries in this log keep the old spellings; they were true when written.
+
+## 72. Whole-app bug audit and fix pass (2026-09-14)
+
+Dan reported "a lot of issues and bugs". A six-domain review of the full source
+(auth, ETC, hours, job cost/procurement, client shell, sync/infra) confirmed 17
+HIGH, ~25 MEDIUM and ~20 LOW defects — every one traced to a concrete wrong
+outcome, then re-verified by the fixer before it was touched. All 2,235 tests were
+green throughout, so all of these lived in untested paths; the fix pass added 51
+test files and the suite is now 2,501. `tsc`, `eslint` and an isolated `next build`
+(`NEXT_DIST_DIR=.next-verify`) are clean. Nothing was browser-verified from the
+agent session (credentials sign-in).
+
+### Access control
+* A role change never reached an existing session: `token.role` was pinned at
+  sign-in only. The per-request JWT callback now re-reads the role through a
+  60 s cache (`session-role.ts`, `session-role-cache.ts`); `setUserRole` bumps
+  `tokenVersion`; inactive/missing users end the session.
+* `/jobs` and `/jobs/[id]` had no route permission and the detail page's inline
+  actions wrote `EtcEntry` / `JobMonthlyActualHours` with no guard, no month-lock
+  check, no audit, no NaN guard. Now `projects:view` in ROUTE_PERMISSIONS, page
+  gate, `monthly-etc:edit` + `assertEtcMonthUnlocked` + audit on every action,
+  input through `job-detail-input.ts`. `jobtask-actions` and
+  `project-release-actions` gained `assertProjectsEditable`.
+* Self-registration: 8-char minimum (`password-policy.ts`), new accounts start
+  `active=false`, and Users & Roles gained an Activate/Deactivate control
+  (`UserActiveToggle`, `setUserActive`). SSO auto-provision is unchanged.
+* Open redirect on `/api/auth/sso?next=//evil` (`safe-redirect.ts`); Reports'
+  own outbound SSO tokens are refused inbound (aud claim + self-minted nonce
+  store); `changePassword` bumps `tokenVersion`; login honours `callbackUrl`;
+  shared-secret compare is `timingSafeEqual`; `getEmployeePunches` requires
+  `dashboard:view`; token-revocation cache pinned on `globalThis`.
+
+### Monthly ETC / Standard Sheet
+* The 2026-09-14 `effectiveNewEtc` change was finished: every reader selects and
+  passes `submittedAt`/`newEtcClearedAt` (it did not compile, and readers with a
+  short select silently skipped the confirmed rung).
+* `saveAllNewEtcDrafts` refused nothing on a locked month, so one stale tab's
+  blur created a pending row and un-locked it. `assertMonthNotLocked` runs before
+  any write and again inside the write transaction.
+* One confirmed-row predicate (`isConfirmedEntry`) for grid, freeze, validation,
+  export and `effectiveNewEtc`; `sync-etc-history` stamps `submittedAt`;
+  existing history rows are repaired by `scripts/backfill-etc-submitted-at.ts`
+  (dry-run default, `--run` still to be executed).
+* One Parts Cost rule (`partsCostCellState` and friends in etc.ts) for freeze,
+  snapshot, KPIs, drill, export, validation and the grid seed — a reopened
+  month's confirmed Parts figure no longer drifts with today's invoices.
+* `isNewEtcDecided` gained the confirmed rung; one job scope
+  (`getEtcMonthJobIds`) for freeze, prune and validation; fee rows are built
+  inside the freeze transaction; the fingerprint covers contingency and the LTI/LTP
+  halves. Pinned in `standard-sheet-read-freeze-parity` and `etc-month-lock-and-scope`.
+
+### Hours
+* `syncJobHoursDetail` and the monthly rollup never removed a (job, month) that
+  left the Paylocity export — a cross-job reassignment doubled the hours. Departed
+  buckets are now deleted (rollups zeroed, overrides preserved) for the months the
+  export accounts for; the refresh summary says how many.
+  `scripts/purge-stale-hours-rows.ts` lists departed buckets too.
+* Fifth instance of the raw-section fold class: the Job Hours bar drill seeded the
+  panel with a FOLDED code and filtered RAW punches (`seedSectionFilter`).
+* Prisma `distinct` on MySQL is client-side — Hours filter options and summary
+  now `groupBy`. Unknown employee ids count under "Unassigned"; ambiguous manual
+  contractor names are rejected to Undefined Hours instead of guessed; the import
+  record and KPI card share one rounding rule.
+
+### Job cost / procurement / cash flow
+* Job Cost Explorer profit added PO commitment (which already holds open-PO
+  balance) to Parts New ETC (LTI + LTP) — left-to-invoice twice.
+  `partsCostForProfit` applies the Parts Cost card's projection rule.
+* PO links in the drop-down/part panel resolved only the row's displayed PO
+  (`partsOnPo`/`findPoGroup`); the PO drawer showed part-lifetime money under one
+  PO's heading (`scopePartToPo`); the row's PO #, supplier and dates now come
+  from the SAME newest line; alternate-spelling recovery no longer depends on SQL
+  row order; export totals no longer sum percentages and the export action is
+  permission-checked; `id` sort is a total order; footer Unit $ is blank;
+  self-buy assembly rows are attributed; dashboard drill links the Prisma pk.
+* Cash Flow: ordered amount carries `PurchaseCurrRate`; GL-posted rule shared via
+  `gl-posted-sql.ts` (sync-totaleto.ts still holds its own copy — the parity test
+  guards drift). Supplier matching normalizes both sides.
+
+### Workspace / realtime
+* Every in-pane control wrote bare URLs, so "Clear filters" inside `/w` wiped the
+  workspace and a month change left it. One pane-aware writer:
+  `pane-url.ts` + `PaneUrlProvider` (`usePaneUrl()`), used by every control; a
+  guard test fails on any new `router.push(\`${pathname}?…\`)`.
+* Sidebar Exit Split crashed on a `/w` split (`exit-split.ts`); a sidebar click in
+  a split opened an invisible tab (`sidebarClick` reducer); the tab bar offered
+  routes the role cannot see and a refused pane redirected the whole workspace
+  (`pane-permissions.ts`, in-pane refusal).
+* Realtime: subscriptions were keyed by a sessionStorage id with no ownership
+  check, so duplicate-tab/reconnect killed the survivor's feed. Fresh id per
+  connection, owner-checked unsubscribe, `superseded` event. Presence re-announced
+  on show; autosave flushes on Activity hide; LiveRefresh only records a version
+  after it actually refreshed; scroll memory keyed by tab + route; joiner-after-
+  abandon, notification timers, ColumnResize storage, shell signature.
+
+### Sync / infra
+* Build Readiness refresh wedged forever on a stored `running` after a pm2 restart
+  mid-pass; now heartbeats `updatedAt` every 5 s, stale after 5 min, and the pass
+  is claimed by a conditional UPDATE so two callers cannot both start it.
+* Total ETO pool starvation: 6 BOM queries × 6 workers on 5 connections, and a
+  timeout was persisted as "No BOM". Pool max 10 with `acquireTimeoutMillis`
+  above the request timeout; BOM queries bounded to 2 in flight; `getJobBomResult`
+  distinguishes failed from empty; workers × fan-out ≤ pool (pinned).
+* Step budgets sized to their query budgets and an `AbortSignal` that really
+  cancels the mssql request so an abandoned step cannot write after the lock is
+  released; Paylocity import single-flight; cash-flow `snapshotDate` uses the
+  local day; refresh surfaces month-start errors; health probes `SELECT 1`.
+* The three workbook paths no longer default to `C:/Users/akamuju/...`.
+  **Ops:** `.env` must now set `HIRING_POSITIONS_LOCAL_PATH` and
+  `JOB_COST_INVENTORY_FOLDER` (Paylocity is covered by the existing
+  `JOB_HOURS_LOCAL_PATH`); the agent session was not permitted to edit `.env`.
+
+### Left for the user
+`npm run deploy`; add the two `.env` keys first; run
+`npx tsx scripts/backfill-etc-submitted-at.ts` (dry run) then `--run`; browser
+check the workspace controls and the Users & Roles Activate button.

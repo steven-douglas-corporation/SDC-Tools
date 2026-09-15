@@ -1,0 +1,302 @@
+diff --git a/apps/reports/src/lib/etc.ts b/apps/reports/src/lib/etc.ts
+index 6310a80..def0a0a 100644
+--- a/apps/reports/src/lib/etc.ts
++++ b/apps/reports/src/lib/etc.ts
+@@ -66,26 +66,247 @@ export function etcCreateCellLiveKey(jobPk: number, section: string, month: stri
+   return `newEtcCreate__${jobPk}__${section}__${month}`;
+ }
+ 
+-// Has a manager actually decided this cell's New ETC? Submitted (needsReview
+-// false) or typed-and-saved (a draft) both count; anything else is still the
+-// machine's suggestion standing in for an answer nobody has given.
+-export function isNewEtcDecided(entry: { needsReview: boolean; newEtcDraft: unknown }): boolean {
+-  return !entry.needsReview || entry.newEtcDraft != null;
++// ── Is this row's stored `newEtc` a figure somebody CONFIRMED? ──────────────
++//
++// THE one predicate (2026-09-14). Before it, four readers spelled it four ways:
++//   * the grid seed:      isHistoricalMonth || submittedAt != null
++//   * freeze/validation:  submittedAt != null
++//   * effectiveNewEtc:    submittedAt != null
++//   * the export:         submittedAt != null
++// so on a reopened month whose rows were written by the Power BI history backfill
++// (which never stamped submittedAt), every cell LOOKED confirmed while validation
++// demanded a figure for each of them and the freeze re-derived the zero-hour cells
++// at priorEtc. Cells that look decided and a submission that says they are not is
++// two rules, and it is the shape of bug this file exists to prevent.
++//
++// The rule: a FROZEN row (needsReview false) is confirmed by definition — its
++// `newEtc` is the stored decision whatever else the row carries — and an open row
++// is confirmed only if it was submitted before being reopened (submittedAt). No
++// "historical month" allowance. The page carried one because Excel restores and
++// the Power BI backfill left submittedAt null on real history; that is fixed at the
++// source (sync-etc-history.ts stamps historyConfirmedAt on every row it writes as
++// history) and repaired for existing rows by scripts/backfill-etc-submitted-at.ts.
++// A predicate that guessed from the month's position would re-open the gap the
++// moment one row of a historical month was genuinely never confirmed.
++export function isConfirmedEntry(entry: { needsReview: boolean; submittedAt: Date | null }): boolean {
++  return !entry.needsReview || entry.submittedAt != null;
++}
++
++// The confirmed figure a cell seeds from / the freeze keeps / the export prints —
++// or null when the row has never been confirmed. Rounded to the stored
++// Decimal(10,2), which is what every caller did inline.
++export function confirmedNewEtc(entry: { needsReview: boolean; submittedAt: Date | null; newEtc: unknown }): number | null {
++  return isConfirmedEntry(entry) ? round2(Number(entry.newEtc)) : null;
+ }
+ 
+-// What a row's New ETC currently amounts to: the submitted value, else the saved
+-// draft, else the suggestion. Shared so the grid, its totals and the KPI cards
+-// cannot each answer this differently.
+-export function effectiveNewEtc(entry: {
++// ── The instant history rows are confirmed AT ───────────────────────────────
++//
++// The freeze stamps `submittedAt = new Date()`. A row written by the Power BI
++// history backfill (sync-etc-history.ts) had no such instant and was left null,
++// which is how isConfirmedEntry came to disagree with the page. Rows written as
++// history are now stamped with the LAST INSTANT OF THEIR MONTH (UTC): the period
++// closed then, and it is deterministic, so re-running the sync converges on the
++// same rows instead of rewriting a timestamp every pass.
++//
++// It is also recognisable. The sync's ownership rule treats "any row with a
++// submittedAt" as an APP-OWNED month it must never overwrite — exactly the rows
++// the sync itself writes, if it stamped them with a wall-clock time. A history
++// stamp equal to this instant is the sync's own signature and does NOT make a
++// month app-owned; see isHistoryConfirmedAt and syncEtcHistoryFromPowerBi.
++export function historyConfirmedAt(month: string): Date {
++  const { endExclusive } = monthWindowUtc(month);
++  return new Date(endExclusive.getTime() - 1);
++}
++
++export function isHistoryConfirmedAt(month: string, at: Date | null | undefined): boolean {
++  return at != null && isValidMonth(month) && at.getTime() === historyConfirmedAt(month).getTime();
++}
++
++// Has a manager actually decided this cell's New ETC?
++//
++// The same rungs as effectiveNewEtc, asked as a yes/no (2026-09-14): frozen, or a
++// saved draft, or — unless the cell was deliberately cleared afterwards — the figure
++// it was CONFIRMED at before the month was reopened. It used to stop at the draft,
++// so on a reopened month with no new edits every server-rendered Diff and every
++// "planned" KPI total read 0 (undecided) and then jumped after hydration, when the
++// cells judged themselves from the confirmed figure in the box.
++//
++// A draft saved after a clear wins over the clear, exactly as it does in
++// newEtcSeedText: re-entering a value un-clears the cell.
++export function isNewEtcDecided(entry: {
++  needsReview: boolean;
++  newEtcDraft: unknown;
++  newEtcClearedAt: Date | null;
++  submittedAt: Date | null;
++}): boolean {
++  if (!entry.needsReview) return true;
++  if (entry.newEtcDraft != null) return true;
++  if (entry.newEtcClearedAt != null) return false;
++  return entry.submittedAt != null;
++}
++
++// What a row's New ETC currently amounts to: the frozen figure, else the saved
++// draft, else the figure the row was CONFIRMED at, else the suggestion. Shared so
++// the grid, its totals, the KPI cards and the Standard Sheet cannot each answer
++// this differently.
++//
++// ── Why this DELEGATES to newEtcForSubmission (2026-09-14) ──────────────────
++//
++// It used to end `draft ?? suggestion` — the rule newEtcForSubmission had before the
++// confirmed rung was added to it on 2026-09-11 (§69). Fixing the freeze path alone
++// left the two disagreeing on exactly one state: a REOPENED row holding a confirmed
++// figure with no draft. The freeze wrote the manager's figure; this returned the
++// carry-forward. Before §69 both were wrong and agreed, so nothing showed.
++//
++// That split is not cosmetic, because the two are used by the two halves of ONE
++// submission. `submitMonthlyReport` computes the fee rows with loadStandardSheetRows
++// → getExecutionEtcByJob → this function BEFORE the freeze transaction ("they are
++// pure reads"), then writes them into StandardSheetSnapshot inside it, while
++// submitEtcEntriesInTx freezes newEtcForSubmission into EtcEntry.newEtc. One click
++// therefore stored the managers' figures in the entries and the carry-forward
++// guesses in the fee snapshot — and page.tsx renders a submitted month from that
++// snapshot verbatim ("instead of live math"), so the Standard Sheet showed numbers
++// the grid beside it disagreed with. Reported as "the Standard Sheet totals swing
++// drastically after submission".
++//
++// Measured on August 2026, 2026-09-14: $16,152,859.56 of Total ETC $ across the
++// entries against $16,255,090.91 in the snapshot. Job 1152, every cell deliberately
++// zeroed by its managers, carried a $227,053 fee row built entirely out of last
++// month's leftovers — 787 hours and $62,900 of parts that nobody had booked a minute
++// against, which is exactly the condition (hoursWorked === 0) under which
++// suggestNewEtc hands back priorEtc untouched.
++//
++// Delegating rather than restating the rungs is the point: there is ONE precedence
++// chain now, and no future edit to it can reach the freeze without also reaching
++// every reader. tests/standard-sheet-read-freeze-parity.test.ts pins that.
++//
++// `confirmed` is confirmedNewEtc(entry) — the ONE predicate (isConfirmedEntry) that
++// submitEtcEntriesInTx, validateMonthlyReport, the export and etc/page.tsx all read
++// since 2026-09-14, so no reader can count a row as confirmed that the freeze does
++// not. (The page used to add a "historical month" allowance; see isConfirmedEntry
++// for why that is gone rather than copied here.)
++export type NewEtcEntryLike = {
+   needsReview: boolean;
+   newEtc: unknown;
+   newEtcDraft: unknown;
++  newEtcClearedAt: Date | null;
++  submittedAt: Date | null;
+   priorEtc: unknown;
+   hoursWorked: unknown;
+-}): number {
++};
++
++export function effectiveNewEtc(entry: NewEtcEntryLike): number {
++  // A frozen row IS its stored figure — no rung below can apply to it.
++  if (!entry.needsReview) return Number(entry.newEtc);
++  return newEtcForSubmission({
++    draft: entry.newEtcDraft != null ? Number(entry.newEtcDraft) : null,
++    confirmed: confirmedNewEtc(entry),
++    cleared: entry.newEtcClearedAt != null,
++    priorEtc: Number(entry.priorEtc),
++    hoursWorked: Number(entry.hoursWorked),
++  });
++}
++
++// ── The Parts Cost row: ONE rule, with one extra rung ───────────────────────
++//
++// On a breakout month (lib/parts-breakout-scope.ts, August 2026 on) the Parts Cost
++// New ETC is Left to Invoice + Left to Purchase, and until 2026-09-14 three readers
++// each folded that in differently:
++//   * the freeze took the live sum FIRST (`breakoutSum ?? newEtcForSubmission`), so a
++//     no-edit re-submission of a reopened month replaced the manager's signed figure
++//     with whatever Total ETO's invoices had drifted to since;
++//   * the fee snapshot, the KPI card, the drill and the export used effectiveNewEtc,
++//     which knows nothing about the halves — so on an open month the snapshot and
++//     EtcEntry.newEtc could differ in the same click;
++//   * the grid seeded the cell from the live sum and fell back to newEtcSeedText only
++//     when the sum was null, so a pre-breakout typed draft rendered blank/yellow while
++//     validation, seeding from newEtcSeedText, counted the same row as decided.
++//
++// The rule now, stated once and used by all of them:
++//
++//   frozen (needsReview false)        -> the stored newEtc, never a live figure
++//   a saved draft                     -> the draft (the save writes the halves' sum
++//                                        into it, so this IS "what the halves make",
++//                                        as of the manager's last edit)
++//   deliberately cleared              -> blank (submits as the suggestion)
++//   confirmed before a reopen         -> the confirmed figure. The manager's answer;
++//                                        it must not drift with later invoices.
++//   OPEN and UNDECIDED, both halves
++//   currently answered                -> the live breakout sum
++//   otherwise                         -> newEtcSeedText's own fallthrough (the
++//                                        zero-spend carry-forward, else blank), and
++//                                        the suggestion for anything that must be a
++//                                        number.
++//
++// The live sum is therefore a rung BELOW the decisions, not above them: it stands
++// in for an answer nobody has given, which is the only place a live figure belongs.
++// It is expressed by folding it into `draft` of the ordinary NewEtcCellState, so
++// newEtcSeedText, isNewEtcCellDecided and newEtcForSubmission need no Parts-shaped
++// special case — the grid, validation, the freeze, the KPIs and the export all build
++// this state and read it with the same functions the hours cells use.
++//
++// `live.breakoutSum` is partsNewEtc(resolvedLeftToInvoice, leftToPurchase) as the
++// caller currently knows it. Pass null when the halves are not known where you are
++// (a caller without the upstream read): the rule then falls through exactly as it
++// would for a row whose halves are blank.
++export type PartsCostLive = {
++  /** showsPartsBreakout(month). */
++  breakoutInScope: boolean;
++  /** Left to Invoice + Left to Purchase as the halves stand now, or null while either is blank/unknown. */
++  breakoutSum: number | null;
++};
++
++export function partsCostCellState(
++  entry: NewEtcEntryLike,
++  live: PartsCostLive,
++  opts: { locked: boolean; monthComplete: boolean },
++): NewEtcCellState {
++  const draft = entry.newEtcDraft != null ? round2(Number(entry.newEtcDraft)) : null;
++  const confirmed = confirmedNewEtc(entry);
++  const cleared = entry.newEtcClearedAt != null;
++  const undecided = entry.needsReview && draft === null && !cleared && confirmed === null;
++  const liveDraft = undecided && live.breakoutInScope && live.breakoutSum !== null ? round2(live.breakoutSum) : null;
++  return {
++    priorEtc: Number(entry.priorEtc),
++    hoursWorked: round2(Number(entry.hoursWorked)),
++    draft: draft ?? liveDraft,
++    confirmed,
++    cleared,
++    locked: opts.locked,
++    monthComplete: opts.monthComplete,
++    // MONEY — keeps its cents. See NewEtcCellState.precision.
++    precision: "exact",
++  };
++}
++
++// What a Parts Cost row's New ETC amounts to — the figure the freeze writes, the
++// snapshot stores, the KPI sums and the footer prints. effectiveNewEtc with the one
++// extra rung above.
++export function partsCostEffectiveNewEtc(entry: NewEtcEntryLike, live: PartsCostLive): number {
+   if (!entry.needsReview) return Number(entry.newEtc);
+-  if (entry.newEtcDraft != null) return Number(entry.newEtcDraft);
+-  return suggestNewEtc(Number(entry.priorEtc), Number(entry.hoursWorked));
++  const s = partsCostCellState(entry, live, { locked: false, monthComplete: true });
++  return newEtcForSubmission({
++    draft: s.draft,
++    confirmed: s.confirmed,
++    cleared: s.cleared,
++    priorEtc: Number(entry.priorEtc),
++    hoursWorked: Number(entry.hoursWorked),
++  });
++}
++
++// isNewEtcDecided for a Parts Cost row: the same answer, plus "both halves are
++// answered on an open, otherwise-undecided row" counts as decided.
++export function isPartsCostDecided(entry: NewEtcEntryLike, live: PartsCostLive): boolean {
++  if (isNewEtcDecided(entry)) return true;
++  const s = partsCostCellState(entry, live, { locked: false, monthComplete: true });
++  return s.draft !== null;
++}
++
++// newEtcDiff for a Parts Cost row, through the same rungs. Undecided contributes
++// nothing, exactly as for an hours cell.
++export function partsCostDiff(entry: NewEtcEntryLike, live: PartsCostLive): number {
++  if (!isPartsCostDecided(entry, live)) return 0;
++  return calcHoursLeft(Number(entry.priorEtc), Number(entry.hoursWorked)) - Math.max(partsCostEffectiveNewEtc(entry, live), 0);
+ }
+ 
+ // Diff — "how far is the manager's New ETC from the hours actually remaining?" —
+@@ -103,6 +324,10 @@ export function newEtcDiff(entry: {
+   needsReview: boolean;
+   newEtc: unknown;
+   newEtcDraft: unknown;
++  // Carried for effectiveNewEtc below, which now needs both to tell a reopened
++  // row's confirmed figure from the carry-forward.
++  newEtcClearedAt: Date | null;
++  submittedAt: Date | null;
+   priorEtc: unknown;
+   hoursWorked: unknown;
+ }): number {
+@@ -714,6 +939,26 @@ export function isMonthLocked(entries: { needsReview: boolean }[]): boolean {
+   return entries.length > 0 && entries.every((e) => !e.needsReview);
+ }
+ 
++// ── A locked month accepts no draft write (2026-09-14) ──────────────────────
++//
++// saveAllNewEtcDrafts had no lock check at all. Its per-row loop skipped frozen
++// rows, so an existing cell could not be written — but a cell with NO row yet
++// (`newEtcCreate__…`) went through `upsert … create: { needsReview: true }`, and a
++// tab rendered before the submission would post one on blur. One pending row in a
++// frozen month flips isMonthLocked to false: the receipt vanishes, the Standard
++// Sheet snapshot is still there, and the next month cannot be started because
++// assertMonthSeedable now sees "still in progress". The month is half-unlocked by
++// a keystroke nobody meant as a reopen.
++//
++// One function so the save action, the test and the message agree. Called before
++// any write is prepared AND again inside the write transaction, because a
++// submission can land between the two.
++export function assertMonthNotLocked(month: string, entries: { needsReview: boolean }[]): void {
++  if (isMonthLocked(entries)) {
++    throw new Error(`${month} is submitted and locked — nothing was saved. Reopen the month before editing it.`);
++  }
++}
++
+ // Is `month` safe for Power BI's LIVE hours/parts sync (Run Report)? Only the
+ // single most-recently-started month qualifies — either it's already the
+ // latest (an ongoing refresh) or it's the very next one (starting a new

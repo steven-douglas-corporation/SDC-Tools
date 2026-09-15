@@ -402,6 +402,43 @@ export async function getDepartmentUtilization(month: string): Promise<Departmen
     }),
   ]);
 
+  return computeDepartmentUtilization({ month, workingDays, employees, closeDates, punches });
+}
+
+// The loaded inputs, so the arithmetic below is a pure function the test suite can
+// drive with in-memory rows (see tests/department-utilization.test.ts) instead of a
+// database. `hours`/`travelHours` are `unknown` because Prisma hands back Decimal.
+export type UtilizationInputs = {
+  month: string;
+  workingDays: number;
+  employees: {
+    paylocityId: string | null;
+    name: string;
+    department: string | null;
+    discipline: string | null;
+    team: string | null;
+    billingGroup: string | null;
+    active: boolean;
+  }[];
+  closeDates: Map<string, Date | null>;
+  punches: {
+    employeeId: string;
+    rawSection: string;
+    workDate: Date;
+    hours: unknown;
+    travelHours: unknown;
+    job: { jobId: string };
+  }[];
+};
+
+// The department a punch is filed under when its employeeId has no Employee row at
+// all — the same `#id` naming job-hours-detail.ts and hours-explorer.ts use for an
+// unmatched id, so the person is recognisable across pages. Not an ETC card key, so
+// it never renders as a department row on the card; it exists so the HOURS are kept.
+export const UNASSIGNED_DEPARTMENT_KEY = "unassigned";
+export const UNASSIGNED_DEPARTMENT_TITLE = "Unassigned";
+
+export function computeDepartmentUtilization({ month, workingDays, employees, closeDates, punches }: UtilizationInputs): DepartmentUtilizationResult {
   // ── Employee -> department, via the app's own standardized chain ──────────
   type Person = {
     employeeId: string;
@@ -434,6 +471,32 @@ export async function getDepartmentUtilization(month: string): Promise<Departmen
     });
   }
 
+  // ── Ids with no roster row at all (2026-09-14) ────────────────────────────
+  //
+  // The population query can only return Employee rows, so a punch whose employeeId
+  // has no row — a leaver never added to the roster, an id Paylocity issued this week —
+  // used to be `continue`d past in both folds below and its hours vanished from every
+  // figure here, silently. Two of 69 ids were in that state on 2026-07-30. Given a
+  // synthetic person instead — named `#id` like every other page names an unmatched
+  // id, under "Unassigned" — so the hours are counted and the rows still foot. Not a
+  // headcount anywhere the card shows (Unassigned is not an ETC card key), and never
+  // in utilization scope: this is a data-quality state to fix on the Employees page,
+  // not a department.
+  for (const row of punches) {
+    if (people.has(row.employeeId)) continue;
+    people.set(row.employeeId, {
+      employeeId: row.employeeId,
+      name: `#${row.employeeId}`,
+      departmentKey: UNASSIGNED_DEPARTMENT_KEY,
+      departmentTitle: UNASSIGNED_DEPARTMENT_TITLE,
+      billingGroup: workforceGroupTitle(workforceGroupForCardKey(UNASSIGNED_DEPARTMENT_KEY)),
+      inScope: false,
+      active: false,
+    });
+  }
+  // Every punch has a person from here on, by construction of the pass above.
+  const personFor = (employeeId: string): Person => people.get(employeeId)!;
+
   // ── Fold punches onto people ──────────────────────────────────────────────
   const byEmployee = new Map<string, UtilizationMeasures>();
   // (employee, day) -> hours, for the overtime rule. Built alongside so the punch
@@ -441,15 +504,10 @@ export async function getDepartmentUtilization(month: string): Promise<Departmen
   const dailyHours = new Map<string, number>();
   let travelKnown = false;
 
+  // Every punch has a person by now (the synthetic pass above), so nothing is skipped
+  // here. This loop used to `continue` when the roster lookup missed, which read as a
+  // safe guard and was in fact the silent drop.
   for (const row of punches) {
-    const person = people.get(row.employeeId);
-    // Unreachable on today's data — the population query above explicitly includes
-    // everybody who booked hours this month, so every punch has a person. Kept as a
-    // guard rather than a `!`: if an employee row is ever deleted out from under its
-    // punches, dropping that punch is safer than crashing the whole Dashboard, and
-    // the foot-check in the test suite will catch it.
-    if (!person) continue;
-
     const travelHours = row.travelHours === null ? null : Number(row.travelHours);
     if (travelHours !== null) travelKnown = true;
 
@@ -536,8 +594,7 @@ export async function getDepartmentUtilization(month: string): Promise<Departmen
   let totalHeadcount = 0;
 
   for (const row of punches) {
-    const person = people.get(row.employeeId);
-    if (!person) continue;
+    const person = personFor(row.employeeId);
     const travelHours = row.travelHours === null ? null : Number(row.travelHours);
     const p: PunchRow = {
       employeeId: row.employeeId,

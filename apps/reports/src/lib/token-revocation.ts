@@ -21,8 +21,28 @@ import { prisma } from "@/lib/prisma";
 // process a revoke takes effect right away rather than waiting out the
 // window; the 60s figure is only the worst case (e.g. across a restart, or
 // if a future deploy ever runs more than one instance).
-const _cache = new Map<number, { version: number; active: boolean; fetchedAt: number }>();
+//
+// ── Why the Map lives on globalThis (2026-09-14) ─────────────────────────────
+//
+// "Within THIS process a revoke takes effect right away" was only true while
+// the cache was one object. It was not: Next bundles a module once per bundle
+// layer — proxy/middleware, Server Components, Route Handlers, Server Actions —
+// so a plain module-level `const _cache = new Map()` was several Maps in one
+// Node process. invalidateTokenVersionCache runs from the sign-out route
+// handler and the admin deactivate action; currentTokenVersion runs from the
+// proxy and the (app) layout. A revoke cleared the route-handler bundle's Map
+// and the layout kept serving the proxy bundle's cached "active" for up to
+// CACHE_MS. Same defect class, same fix, as lib/prisma.ts and
+// lib/permissions.ts: one slot on globalThis that every bundle reads. A Map
+// has no module-bound identity (unlike a PrismaClient or an mssql type), so
+// no owner guard is needed — any copy of this module can use any copy's Map.
+type TokenVersionCache = Map<number, { version: number; active: boolean; fetchedAt: number }>;
+const globalForTokenCache = globalThis as typeof globalThis & { __sdcTokenVersionCache?: TokenVersionCache };
+const _cache: TokenVersionCache = (globalForTokenCache.__sdcTokenVersionCache ??= new Map());
 const CACHE_MS = 60_000;
+
+/** The globalThis key the cache is pinned on — exported so a test can prove the pinning. */
+export const TOKEN_VERSION_CACHE_KEY = "__sdcTokenVersionCache" as const;
 
 // ── Why a DB failure here must not propagate (2026-08-24) ───────────────────
 //

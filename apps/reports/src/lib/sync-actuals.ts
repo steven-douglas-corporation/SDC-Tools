@@ -52,7 +52,15 @@ export async function syncActualHours(prefetched?: HoursExport): Promise<{
   rowsUpserted: number;
   jobsNotFound: number;
   rowsSkippedOverridden: number;
+  // Rollups for a (job, month) the export accounts for but no longer carries —
+  // zeroed, never deleted (the row is where a manual override lives). See the
+  // "departed" pass below.
+  rowsZeroed: number;
   detailRowsWritten: number;
+  // Punch buckets for a (job, month) the export accounts for but no longer carries,
+  // removed with their digest. Same rule as rowsZeroed one grain down.
+  detailBucketsRemoved: number;
+  detailRowsRemoved: number;
   // Buckets whose stored contents were already exactly what this pass would have
   // written, so they were not rewritten. Reported rather than hidden: this is the
   // difference between "the refresh did nothing" and "the refresh confirmed nothing
@@ -153,6 +161,9 @@ export async function syncActualHours(prefetched?: HoursExport): Promise<{
   // The rows this pass confirmed, whether or not their figure moved — see the bulk
   // `syncedAt` stamp after the loop.
   const confirmed: { jobId: number; month: string }[] = [];
+  // Every (job pk, month) the feed carries allow-listed hours for — the set the
+  // departed-rollup pass below compares the table against.
+  const feedKeys = new Set<string>();
 
   for (const [key, hours] of byJobMonth) {
     const [jobId, monthStr] = key.split("::");
@@ -161,6 +172,7 @@ export async function syncActualHours(prefetched?: HoursExport): Promise<{
       jobsNotFound++;
       continue;
     }
+    feedKeys.add(`${job.id}::${monthStr}`);
     if (overriddenSet.has(`${job.id}::${monthStr}`)) {
       rowsSkippedOverridden++;
       continue;
@@ -209,6 +221,48 @@ export async function syncActualHours(prefetched?: HoursExport): Promise<{
     });
   }
 
+  // ── Rollups the export no longer accounts for (2026-09-14) ────────────────
+  //
+  // The loop above only visits keys PRESENT in the feed. A (job, month) whose hours
+  // all moved away upstream — every July punch on 1104 recoded to 1145, say — was never
+  // revisited, so 1104 kept its last actualHours under source="paylocity_excel" and
+  // both jobs showed the 40h. One-directional (it can only inflate) and permanent.
+  //
+  // Same rule, same guard as syncHoursWorked's "rows the export no longer accounts
+  // for": only months the feed actually carries rows for are judged. A month absent
+  // from the feed is not evidence nobody worked — it is evidence the export cannot
+  // answer — so the pre-feed legacy months and anything past the file's reach are
+  // left exactly as they are.
+  //
+  // ZEROED, not deleted: Job detail's "Actual Hours by Month" lists these rows and its
+  // manual override (the legacy "Actual Hours Override" tab) edits an EXISTING row —
+  // the fix for "Paylocity coded this month to the wrong job" lives on the row, so the
+  // row has to survive the very event that makes the override necessary. Overridden
+  // rows are never touched, same as above.
+  const months = monthsAccountedFor(rows);
+  let rowsZeroed = 0;
+  if (months.size > 0) {
+    const candidates = await prisma.jobMonthlyActualHours.findMany({
+      where: { month: { in: [...months] }, overridden: false, actualHours: { not: 0 } },
+      select: { id: true, jobId: true, month: true, actualHours: true, job: { select: { jobId: true } } },
+    });
+    const departed = departedJobMonths(
+      candidates.map((c) => ({ jobPk: c.jobId, month: c.month, id: c.id, jobId: c.job.jobId, actualHours: Number(c.actualHours) })),
+      feedKeys,
+      months,
+    );
+    for (const d of departed) {
+      console.warn(`[sync-actuals] job ${d.jobId} ${d.month}: ${d.actualHours.toFixed(2)}h rollup no longer in the export — zeroed`);
+    }
+    if (departed.length > 0) {
+      const r = await prisma.jobMonthlyActualHours.updateMany({
+        where: { id: { in: departed.map((d) => d.id) } },
+        data: { actualHours: 0, syncedAt: new Date(), source: "paylocity_excel" },
+      });
+      rowsZeroed = r.count;
+    }
+  }
+
   const detail = await syncJobHoursDetail(rows, jobByJobId);
 
   await syncHoursRefreshedThrough(rows);
@@ -217,11 +271,44 @@ export async function syncActualHours(prefetched?: HoursExport): Promise<{
     rowsUpserted,
     jobsNotFound,
     rowsSkippedOverridden,
+    rowsZeroed,
     detailRowsWritten: detail.written,
+    detailBucketsRemoved: detail.removedBuckets,
+    detailRowsRemoved: detail.removedRows,
     detailBucketsUnchanged: detail.unchanged,
     detailBucketsRepaired: detail.repaired,
     detailBuckets: detail.buckets,
   };
+}
+
+// ── "Which months does this export account for?" — one rule, two callers ────
+//
+// The set of report months the feed carries at least one row for. Both departed-
+// bucket passes (JobMonthlyActualHours above, JobHoursDetail below) judge a stored
+// (job, month) ONLY inside this set, which is the same guard syncHoursWorked's zeroing
+// pass has always used (`spentByKey.size > 0` for its one month). The feed is the whole
+// truth for a month it describes and says nothing about a month it does not.
+//
+// Every row counts, including one whose job the app does not know: the export DID
+// account for that month, so a stored bucket the export no longer mentions really is
+// gone. Pure and exported so the rule is tested rather than re-derived.
+export function monthsAccountedFor(rows: readonly { year: number; month: number }[]): Set<string> {
+  const months = new Set<string>();
+  for (const r of rows) months.add(`${r.year}-${String(r.month).padStart(2, "0")}`);
+  return months;
+}
+
+// The stored (job pk, month) pairs that are inside the months the export accounts for
+// and absent from what the export carries. Anything outside those months is preserved
+// whatever the feed says about it — that is the "absent must never mean delete" rule,
+// kept intact; this only closes the case where the export is present and simply no
+// longer mentions the pair.
+export function departedJobMonths<T extends { jobPk: number; month: string }>(
+  stored: readonly T[],
+  presentInFeed: ReadonlySet<string>, // `${jobPk}::${month}`
+  months: ReadonlySet<string>,
+): T[] {
+  return stored.filter((s) => months.has(s.month) && !presentInFeed.has(`${s.jobPk}::${s.month}`));
 }
 
 // Punch-level rows behind those rollups — one per employee/day/job/section —
@@ -239,8 +326,16 @@ export async function syncActualHours(prefetched?: HoursExport): Promise<{
 // file per punch year (paylocity-sources.ts) the feed now spans 2025 onward, so in
 // practice every month it covers is rewritten each pass. The rule stays because
 // "absent" must never mean "delete" — a failed or partial read would otherwise
-// erase history. The visible cost is that punches deleted upstream linger until
-// their month is rewritten from a file that still covers it.
+// erase history.
+//
+// What "absent" means is judged per MONTH, not per (job, month) (2026-09-14). The
+// replace-by-(job, month) write only ever visited buckets the feed still had rows for,
+// so a bucket whose punches ALL moved away — every July punch on 1104 recoded to 1145 —
+// was never revisited: its stored punches and its JobHoursBucket digest persisted
+// forever, and both jobs carried the hours. A month the feed carries rows for is wholly
+// described by it, so within such a month a stored (job, month) the feed no longer
+// mentions is removed, digest and all — see the "departed" pass at the end. A month the
+// feed has no rows for at all is still left exactly alone.
 export async function syncJobHoursDetail(
   rows: JobHoursRow[],
   jobByJobId: Map<string, { id: number; jobId: string }>,
@@ -248,7 +343,7 @@ export async function syncJobHoursDetail(
   // is now the only hours source; scripts writing the same replace-by-(job, month)
   // shape from somewhere else pass their own label rather than inheriting a wrong one.
   source = "paylocity_excel",
-): Promise<{ written: number; unchanged: number; repaired: number; buckets: number }> {
+): Promise<{ written: number; unchanged: number; repaired: number; buckets: number; removedBuckets: number; removedRows: number; removedHours: number }> {
   // job pk + month -> the rows for it
   const byJobMonth = new Map<string, { jobPk: number; month: string; rows: JobHoursRow[] }>();
   for (const r of rows) {
@@ -461,7 +556,58 @@ export async function syncJobHoursDetail(
     ]);
     written += data.length;
   }
-  return { written, unchanged, repaired, buckets: planned.length };
+
+  // ── Buckets the export no longer accounts for (2026-09-14) ────────────────
+  //
+  // Judged only inside the months the feed carries rows for (monthsAccountedFor — the
+  // same guard syncHoursWorked's zeroing pass uses), against the whole-table aggregate
+  // already read above plus the digest table, so a digest left behind over zero rows is
+  // caught too. Rows and digest go in ONE transaction, for the same reason the write
+  // above pairs them: a digest must never describe rows that are not there.
+  //
+  // Nothing user-entered lives in either table — both are derived from the workbooks
+  // and rebuilt from them on every pass — so removing a departed bucket loses nothing
+  // the source can still produce. Logged per bucket, because hours leaving a job is
+  // worth a line somebody can find later.
+  const months = monthsAccountedFor(rows);
+  const plannedKeys = new Set(planned.map((p) => `${p.jobPk}::${p.month}`));
+  const storedBuckets = new Map<string, { jobPk: number; month: string; rows: number; hours: number }>();
+  for (const [key, disk] of onDisk) {
+    const sep = key.indexOf("::");
+    storedBuckets.set(key, { jobPk: Number(key.slice(0, sep)), month: key.slice(sep + 2), rows: disk.rows, hours: disk.hours });
+  }
+  if (months.size > 0) {
+    const digests = await prisma.jobHoursBucket.findMany({
+      where: { month: { in: [...months] } },
+      select: { jobId: true, month: true },
+    });
+    for (const d of digests) {
+      const key = `${d.jobId}::${d.month}`;
+      if (!storedBuckets.has(key)) storedBuckets.set(key, { jobPk: d.jobId, month: d.month, rows: 0, hours: 0 });
+    }
+  }
+  const departed = departedJobMonths([...storedBuckets.values()], plannedKeys, months);
+
+  let removedRows = 0;
+  let removedHours = 0;
+  for (const d of departed) {
+    removedHours += d.hours;
+    console.warn(
+      `[sync-actuals] job pk ${d.jobPk} ${d.month}: ${d.rows} stored punch row(s)/${round2(d.hours)}h no longer in the export — removed with its digest`,
+    );
+  }
+  // Chunked so a pathological first pass (many departed buckets at once) does not
+  // build one unbounded OR.
+  for (let i = 0; i < departed.length; i += 200) {
+    const where = { OR: departed.slice(i, i + 200).map((d) => ({ jobId: d.jobPk, month: d.month })) };
+    const [deletedRows] = await prisma.$transaction([
+      prisma.jobHoursDetail.deleteMany({ where }),
+      prisma.jobHoursBucket.deleteMany({ where }),
+    ]);
+    removedRows += deletedRows.count;
+  }
+
+  return { written, unchanged, repaired, buckets: planned.length, removedBuckets: departed.length, removedRows, removedHours: round2(removedHours) };
 }
 
 // The digest the skip decision rests on: sha256 over every column of every row the

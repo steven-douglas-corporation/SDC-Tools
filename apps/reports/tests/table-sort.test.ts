@@ -191,3 +191,31 @@ test("sorting a grouped rollup by its dimension label sorts alphabetically, ties
     ["Jake Wiegand", "Paul Vinci", "Robert Brooks", "Samuel Adams"],
   );
 });
+
+// ── "id" is a TOTAL order on a column that mixes numeric and non-numeric values (2026-09-14) ──
+//
+// Job 1106's PO column carries "1106 correction" beside "105137" and "979". The
+// old rule — numeric when both parse, lexical otherwise — cycled on those three:
+// 105137 < "1106 correction" and "1106 correction" < 979 lexically, but 979 <
+// 105137 numerically. Array.prototype.sort is undefined on such a comparator.
+
+test("id: every numeric value sorts before every non-numeric one, numerics numerically, the rest lexically", () => {
+  const values = ["1106 correction", "105137", "979", "Refund", "10"];
+  const sorted = [...values].sort((a, b) => compareByType("id", a, b, "asc"));
+  assert.deepEqual(sorted, ["10", "979", "105137", "1106 correction", "Refund"]);
+  const desc = [...values].sort((a, b) => compareByType("id", a, b, "desc"));
+  assert.deepEqual(desc, [...sorted].reverse());
+});
+
+test("id: the comparator is antisymmetric and transitive over the cycle case", () => {
+  const values = ["105137", "1106 correction", "979", "ABC-123", "0", "10000"];
+  const cmp = (a: string, b: string) => Math.sign(compareByType("id", a, b, "asc"));
+  for (const a of values) {
+    for (const b of values) {
+      assert.equal(cmp(a, b) + cmp(b, a), 0, `${a} vs ${b} must reverse cleanly`);
+      for (const c of values) {
+        if (cmp(a, b) <= 0 && cmp(b, c) <= 0) assert.ok(cmp(a, c) <= 0, `${a} <= ${b} <= ${c} but ${a} > ${c}`);
+      }
+    }
+  }
+});

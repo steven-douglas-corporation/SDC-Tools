@@ -50,6 +50,14 @@ import { fetchSchedulerFatEvents, fetchSchedulerJobDisciplineOwners } from "@/li
 export type JobDrillFilter = { kind: "customer" | "type"; value: string };
 
 export type JobDrillRow = {
+  /**
+   * The Prisma primary key — what `/jobs/[id]` looks a job up by
+   * (jobs/[id]/page.tsx: `prisma.job.findUnique({ where: { id } })`). The panel's
+   * job-number link used `jobId` here until 2026-09-14 and landed on the wrong
+   * job, or none: the Total ETO number "1150" is not row id 1150.
+   */
+  jobPk: number;
+  /** The Total ETO job number — what the row DISPLAYS. */
   jobId: string;
   jobName: string;
   /** The canonical customer this job counted under — the bar's own label. */
@@ -193,6 +201,7 @@ export async function fetchActiveJobDrill(filter: JobDrillFilter): Promise<JobDr
     const h = hoursByJob.get(j.id);
     const num = (v: unknown): number | null => (v == null ? null : Number(v));
     return {
+      jobPk: j.id,
       jobId: j.jobId,
       jobName: j.jobName,
       // The canonical label, so every row in a combined table agrees with the

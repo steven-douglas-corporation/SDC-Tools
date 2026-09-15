@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 import type { EChartsOption } from "echarts";
 import { EChart } from "@/components/charts/EChart";
@@ -60,9 +60,9 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
 }
 
 export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  // Pane-aware (2026-09-14) — the Dashboard tab's own params, wherever it is rendered.
+  const url = usePaneUrl();
+  const searchParams = url.searchParams;
   // Local state, independent of the URL-param-driven slicers above — confirmed safe: the
   // Data Quality tab stays mounted via `hidden` (DashboardTabs.tsx), never remounted by a
   // slicer's router.push, so this survives every filter change exactly the way
@@ -77,14 +77,14 @@ export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
     // each other and get used in quick succession, and until a change commits
     // useSearchParams still reports the value from before it. Building on that
     // would drop the slicer set a moment earlier. See lib/url-params.ts.
-    const currentQs = searchParams.toString();
+    const currentQs = url.searchKey;
     const qs = nextParams(currentQs);
     if (value) qs.set(key, value);
     else qs.delete(key);
     qs.set("tab", "quality");
     const q = qs.toString();
     notePendingParams(currentQs, q);
-    router.push(`${pathname}?${q}`, { scroll: false });
+    url.push(qs, { scroll: false });
   }
 
   const from = searchParams.get("dqFrom") ?? "";
@@ -168,13 +168,13 @@ export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
           <button
             type="button"
             onClick={() => {
-              const currentQs = searchParams.toString();
+              const currentQs = url.searchKey;
               const qs = nextParams(currentQs);
               for (const k of ["dqFrom", "dqTo", "dqEmp", "dqFn", "dqMtd"]) qs.delete(k);
               qs.set("tab", "quality");
               const q = qs.toString();
               notePendingParams(currentQs, q);
-              router.push(`${pathname}?${q}`, { scroll: false });
+              url.push(qs, { scroll: false });
             }}
             className="text-xs font-medium text-sdc-blue hover:underline"
           >

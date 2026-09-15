@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { useToast } from "@/components/ui/Toast";
 import { TOOLBAR_BTN, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import {
@@ -48,9 +49,12 @@ function writeMyViews(v: MyViews) {
 // Snapshot the CURRENT grid state into a ViewConfig — the URL params, and nothing
 // else. It used to also read this tab's two Grid Size keys out of localStorage; see
 // the note above for why zoom is not part of a view.
-function snapshotView(): ViewConfig {
+// `search` is the PAGE's own query (usePaneUrl().searchKey) — not window.location.search,
+// which inside a workspace tab is the whole /w URL and would snapshot nothing of this
+// page's (2026-09-14).
+function snapshotView(search: string): ViewConfig {
   const params: Record<string, string> = {};
-  const sp = new URLSearchParams(window.location.search);
+  const sp = new URLSearchParams(search);
   for (const k of VIEW_PARAMS) {
     const val = sp.get(k);
     if (val !== null) params[k] = val;
@@ -71,7 +75,9 @@ function snapshotView(): ViewConfig {
 // written. 2026-08-03 fixed it by writing the two CSS custom properties here as well;
 // §45 removed the density prefs altogether, so there is nothing left to restore and
 // this is a plain router.push.
-function applyView(name: string, config: ViewConfig, router: { push: (href: string) => void }) {
+// `push` is usePaneUrl().push: on the plain page that is router.push("/quoted?…") as it
+// always was; inside a workspace tab it writes this tab's own params and stays on /w.
+function applyView(name: string, config: ViewConfig, push: (params: URLSearchParams) => void) {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(config.params)) sp.set(k, v);
   // Views saved before Actuals moved into the URL carry it as a config field
@@ -81,7 +87,7 @@ function applyView(name: string, config: ViewConfig, router: { push: (href: stri
     if (config.actuals) sp.set("actuals", "1");
   }
   sp.set("view", name); // label only — the page ignores it for data
-  router.push(`/quoted?${sp.toString()}`);
+  push(sp);
 }
 
 export function ProjectViewsMenu({
@@ -92,12 +98,14 @@ export function ProjectViewsMenu({
   teamDefault: SharedView | null;
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  // Pane-aware (2026-09-14): the Projects tab's own params and a push that stays in
+  // its namespace. `router` remains only for router.refresh() after a server action.
+  const url = usePaneUrl();
   const { toast } = useToast();
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [mine, setMine] = useState<MyViews>({});
   const [busy, setBusy] = useState(false);
-  const activeName = searchParams.get("view");
+  const activeName = url.searchParams.get("view");
 
   useEffect(() => {
     // Deliberately an effect, not a lazy useState initializer: readMyViews()
@@ -126,7 +134,7 @@ export function ProjectViewsMenu({
   function handleSaveMine() {
     const name = window.prompt("Name this view — it saves the visible columns, filters, sort and Actuals toggle. It stays private to you until you ★ share it.");
     if (!name || !name.trim()) return;
-    const next = { ...readMyViews(), [name.trim()]: snapshotView() };
+    const next = { ...readMyViews(), [name.trim()]: snapshotView(url.searchKey) };
     writeMyViews(next);
     setMine(next);
     toast(`Saved view “${name.trim()}”`);
@@ -183,7 +191,7 @@ export function ProjectViewsMenu({
           <div className="col-view-row flex items-center gap-1 px-2">
             <button
               type="button"
-              onClick={() => applyView("Team Default", teamDefault.config, router)}
+              onClick={() => applyView("Team Default", teamDefault.config, url.push)}
               className="flex-1 truncate rounded border-y-2 border-sdc-blue-100 px-2 py-1 text-left text-xs font-semibold text-sdc-navy hover:bg-sdc-blue-light"
             >
               Team Default
@@ -197,7 +205,7 @@ export function ProjectViewsMenu({
         {sharedViews.length > 0 && sec("Shared")}
         {sharedViews.map((v) => (
           <div key={v.name} className="col-view-row flex items-center gap-1 px-2">
-            <button type="button" onClick={() => applyView(v.name, v.config, router)} className={rowBtn}>
+            <button type="button" onClick={() => applyView(v.name, v.config, url.push)} className={rowBtn}>
               {v.name}
               {v.owner ? <span className="text-label text-sdc-gray-400"> · {v.owner}</span> : null}
             </button>
@@ -213,7 +221,7 @@ export function ProjectViewsMenu({
         {myNames.length ? (
           myNames.map((name) => (
             <div key={name} className="col-view-row flex items-center gap-1 px-2">
-              <button type="button" onClick={() => applyView(name, mine[name], router)} className={rowBtn}>
+              <button type="button" onClick={() => applyView(name, mine[name], url.push)} className={rowBtn}>
                 {name}
               </button>
               <button type="button" title="Share this view with everyone" className={iconBtn} disabled={busy} onClick={() => handlePublish(name, mine[name])}>
@@ -232,7 +240,7 @@ export function ProjectViewsMenu({
         <button type="button" onClick={handleSaveMine} className="block w-full px-3 py-1.5 text-left text-xs font-semibold text-sdc-navy hover:bg-sdc-gray-100">
           + Save current as view…
         </button>
-        <button type="button" disabled={busy} onClick={() => run("Couldn't set the default.", async () => { await setTeamDefault(snapshotView()); toast("Set as Team Default"); close(); })} className="block w-full px-3 py-1.5 text-left text-xs text-sdc-navy hover:bg-sdc-gray-100">
+        <button type="button" disabled={busy} onClick={() => run("Couldn't set the default.", async () => { await setTeamDefault(snapshotView(url.searchKey)); toast("Set as Team Default"); close(); })} className="block w-full px-3 py-1.5 text-left text-xs text-sdc-navy hover:bg-sdc-gray-100">
           Set current as Team Default
         </button>
       </div>

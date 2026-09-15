@@ -8,20 +8,24 @@ export { HiringWorkbookError, isOpenPosition, parseHiringWorkbook, SHEET_NAME, R
 
 // ── The open-positions workbook, read straight off disk (2026-08-19) ────────
 //
-// A Paylocity Recruiting "Job" report, dropped at
-// `C:\Users\akamuju\Steven Douglas Corp\Finance - General\New Hire\Job.xlsx` —
-// confirmed by reading the live file directly. Same local-file convention as
-// lib/paylocity-workbook.ts: an env var pointing at the real path, falling
-// back to the path this was built against, so a deployment on a different
-// machine only needs the env var set, never a code change.
+// A Paylocity Recruiting "Job" report — confirmed by reading the live file
+// directly. Same local-file convention as lib/paylocity-workbook.ts: an env var
+// (HIRING_POSITIONS_LOCAL_PATH) pointing at the real path. It used to fall back
+// to the path this was built against under one person's OneDrive profile; since
+// 2026-09-14 an unset variable is a configuration error instead, because a
+// silent fallback to a stale copy is worse than a missing hiring panel (which
+// hiring-positions.ts already degrades to on any HiringWorkbookError).
 //
 // Parsing itself lives in hiring-workbook-parse.ts (no `fs`, no
 // "server-only", directly unit-testable) — this file is only the disk read.
 
-const DEFAULT_PATH = String.raw`C:\Users\akamuju\Steven Douglas Corp\Finance - General\New Hire\Job.xlsx`;
-
 export function hiringWorkbookPath(): string {
-  return process.env.HIRING_POSITIONS_LOCAL_PATH?.trim() || DEFAULT_PATH;
+  const configured = process.env.HIRING_POSITIONS_LOCAL_PATH?.trim();
+  if (configured) return configured;
+  throw new HiringWorkbookError(
+    "file_missing",
+    "The hiring positions workbook is not configured: set HIRING_POSITIONS_LOCAL_PATH in .env. There is no default path.",
+  );
 }
 
 // /*turbopackIgnore*/ below: this path is a runtime value pointing OUTSIDE

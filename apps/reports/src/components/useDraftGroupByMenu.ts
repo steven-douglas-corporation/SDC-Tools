@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 import { usePendingWatchdog } from "@/components/usePendingWatchdog";
 import { applyDelayMs } from "@/components/useDraftParamMenu";
@@ -39,9 +39,8 @@ export function useDraftGroupByMenu({
   buildParams: (draft: HoursGroupBy[], qs: URLSearchParams) => void;
   debounceMs?: number;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  // Pane-aware — see useDraftParamMenu for why.
+  const url = usePaneUrl();
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [pending, startTransition] = useTransition();
   const { busy: menuBusy } = usePendingWatchdog(pending);
@@ -126,7 +125,7 @@ export function useDraftGroupByMenu({
 
   function apply() {
     if (!dirty) return;
-    const current = searchParams.toString();
+    const current = url.searchKey;
     const qs = nextParams(current);
     buildParams(draft, qs);
     const q = qs.toString();
@@ -145,7 +144,7 @@ export function useDraftGroupByMenu({
       // the navigation avoids that, the same fix HoursGroupedTree's own effect-driven
       // fetch needed for the identical reason.
       setExpectedCommitted(draftKey);
-      router.push(q ? `${pathname}?${q}` : pathname, { scroll: false });
+      url.push(qs, { scroll: false });
     });
   }
 

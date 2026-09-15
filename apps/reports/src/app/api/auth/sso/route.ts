@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AuthError } from "next-auth";
 import { signIn } from "@/lib/auth";
+import { safeRelativePath, resolveSameOrigin } from "@/lib/safe-redirect";
 
 // Inbound half of the Scheduler ↔ Reports SSO hand-off — the mirror of
 // scheduler-sso.ts's outbound mint, which every existing Reports→Scheduler
@@ -22,23 +23,31 @@ import { signIn } from "@/lib/auth";
 // window. Build the origin from the Host header instead. (A relative Location
 // header would also be correct HTTP, but see proxy.ts — Next 16 rejects those,
 // so keep both files on the same absolute-from-Host approach.)
-function redirectTo(req: NextRequest, pathAndQuery: string) {
+//
+// Every Location this route emits goes through lib/safe-redirect.ts
+// (2026-09-14). `next=` is caller-supplied, and NextAuth's default redirect
+// callback only checks `startsWith("/")` — which a scheme-relative
+// "//evil.example/x" passes, and which `new URL(..., base)` below then
+// resolves OFF this origin. So: the path is sanitised before it is handed to
+// NextAuth, sanitised again when it comes back, and the final absolute URL is
+// checked to still be on the request's own origin before it is sent.
+function requestOrigin(req: NextRequest): string {
   const host  = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
   const proto = req.headers.get("x-forwarded-proto") ?? "http";
-  const base  = host ? `${proto}://${host}` : req.nextUrl.origin;
-  return NextResponse.redirect(new URL(pathAndQuery, base));
+  return host ? `${proto}://${host}` : req.nextUrl.origin;
+}
+
+function redirectTo(req: NextRequest, pathAndQuery: string) {
+  return NextResponse.redirect(resolveSameOrigin(pathAndQuery, requestOrigin(req)));
 }
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
-  const next = req.nextUrl.searchParams.get("next") || "/";
+  // Same-origin path or "/" — never trusted raw (see the note on redirectTo).
+  const next = safeRelativePath(req.nextUrl.searchParams.get("next"));
   if (!token) return redirectTo(req, "/login");
 
   try {
-    // `next` reaches NextAuth's own `redirectTo`, which its default redirect
-    // callback already collapses any off-origin value back to this app's own
-    // origin — an open redirect via `next=` isn't possible without this
-    // route adding anything itself.
     const url = await signIn("scheduler-sso" as Parameters<typeof signIn>[0], {
       token,
       redirectTo: next,
@@ -46,9 +55,10 @@ export async function GET(req: NextRequest) {
     });
     // NextAuth returns either a path or an absolute URL at its own configured
     // origin; keep only the path+query so the browser resolves it against the
-    // origin it is really on.
+    // origin it is really on — and re-check it, since a value that came back
+    // from NextAuth is still derived from the caller's `next`.
     const dest = new URL(url as string, "http://internal.invalid");
-    return redirectTo(req, dest.pathname + dest.search);
+    return redirectTo(req, safeRelativePath(dest.pathname + dest.search));
   } catch (e) {
     // Bad signature, expired, already-used, or no Reports account for that
     // email — every one of those collapses to authorize() returning null,

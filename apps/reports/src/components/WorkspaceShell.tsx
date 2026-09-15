@@ -6,12 +6,15 @@ import { WorkspaceTabBar } from "@/components/WorkspaceTabBar";
 import { TabScrollMemory } from "@/components/TabScrollMemory";
 import { DEFAULT_RATIO, MIN_PANE_PX, clampRatio, ratioBounds } from "@/lib/split-view";
 import { publishWorkspace, registerWorkspaceApply } from "@/lib/workspace-store";
+import { clearTabScrollState, staleScrollScopes, tabScrollScope } from "@/lib/tab-scroll-state";
 import {
   activateTab,
   exitSplit,
   hasTab,
+  tabById,
   tabTitle,
   workspaceHref,
+  workspaceSignature,
   type TabId,
   type Workspace,
 } from "@/lib/workspace";
@@ -72,11 +75,19 @@ export function WorkspaceShell({
   // ── Local state is the live workspace; the server prop re-seeds it ────────
   //
   // Activating a tab must not wait for a server round-trip, so `ws` lives here. The
-  // prop wins whenever the server sends a genuinely different SET of tabs — which only
-  // happens on the navigations listed in the header, plus a reload. Comparing the
-  // id~path signature rather than object identity is what keeps a re-render caused by
-  // something else from throwing away the user's current tab.
-  const signature = serverWs.tabs.map((t) => `${t.id}~${t.path}`).join(",");
+  // prop wins whenever the server sends a genuinely different workspace — which only
+  // happens on the navigations listed in the header, plus a reload, Back/Forward and a
+  // pasted link. Comparing a content signature rather than object identity is what
+  // keeps a re-render caused by something else from throwing away the user's current
+  // tab.
+  //
+  // The signature covers the tab set, every tab's params, the active tab and the split
+  // (lib/workspace.ts workspaceSignature). It used to be `id~path` alone, so a /w URL
+  // that differed only in `a=`, `s=` or a tab's params — Back after a month change,
+  // say — left the live workspace showing the old one (2026-09-14). Every local change
+  // writes the URL through `apply`, so the server's next render decodes to what is
+  // already here and the signature only differs when the URL really did move.
+  const signature = workspaceSignature(serverWs);
   const [seen, setSeen] = useState(signature);
   const [ws, setWs] = useState(serverWs);
   if (seen !== signature) {
@@ -120,6 +131,21 @@ export function WorkspaceShell({
   // its open tab". See lib/workspace-store.ts.
   useEffect(() => {
     publishWorkspace(ws);
+  }, [ws]);
+
+  // ── Forget scroll offsets that belong to a page that is gone ─────────────
+  //
+  // A closed tab, or a tab re-routed to another page or another month, leaves offsets
+  // in sessionStorage under its old scope (lib/tab-scroll-state.ts tabScrollScope). A
+  // tab used to inherit them: re-route Hours → Projects and Projects opened scrolled
+  // to wherever Hours had been (2026-09-14). Cleared after commit, so TabScrollMemory's
+  // own layout-effect cleanup (which writes the departing scope one last time) has
+  // already run — passive effects follow layout effects.
+  const prevWs = useRef(ws);
+  useEffect(() => {
+    const storage = typeof window !== "undefined" ? window.sessionStorage : null;
+    for (const scope of staleScrollScopes(prevWs.current, ws)) clearTabScrollState(scope, storage);
+    prevWs.current = ws;
   }, [ws]);
 
   // The browser tab's own title follows the active workspace tab. Without this every
@@ -347,8 +373,6 @@ function PanePending() {
   return <div className="p-6 text-body text-sdc-muted">Opening…</div>;
 }
 
-/** A tab's scroll identity: its route AND its params, so a new month starts at the top. */
-
 function PaneHost({
   ws,
   id,
@@ -417,9 +441,13 @@ function PaneHost({
       )}
       {/* Each pane its own scroll container: scrolling Monthly ETC on the left must not
           move Job Details on the right. */}
-      {/* Keyed by the TAB, not by route+params: two Monthly ETC tabs on the same
-          month must not share a position. See lib/tab-scroll-state.ts. */}
-      <TabScrollMemory tabId={id}>{children}</TabScrollMemory>
+      {/* Scoped by the TAB plus what it is showing — `t2:/etc@2026-08`: two Monthly
+          ETC tabs on the same month still cannot share a position, and a tab that
+          moves to another page or another month starts that page at the top instead
+          of inheriting the old one's offsets. See lib/tab-scroll-state.ts. */}
+      <TabScrollMemory tabId={id} scope={tabScrollScope(tabById(ws, id)!)}>
+        {children}
+      </TabScrollMemory>
     </section>
   );
 }

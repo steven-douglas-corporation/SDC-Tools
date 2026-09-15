@@ -43,12 +43,29 @@ import { tabDebug, tabDebugEnabled, tabDebugScroller } from "@/lib/tab-debug";
 /** Frames to keep retrying one restore. ~20 at 60fps is a third of a second. */
 const MAX_RESTORE_FRAMES = 20;
 
-export function TabScrollMemory({ tabId, children }: { tabId: string; children: React.ReactNode }) {
+export function TabScrollMemory({
+  tabId,
+  scope = tabId,
+  children,
+}: {
+  tabId: string;
+  /**
+   * The scroll identity — the tab AND what it is showing (`t2:/etc@2026-08`; see
+   * lib/tab-scroll-state.ts tabScrollScope). Defaults to the tab id for a caller
+   * that has no route to speak of. When it changes the in-memory record is dropped
+   * and re-seeded for the new scope, so a re-routed tab cannot inherit the old
+   * page's offsets (2026-09-14).
+   */
+  scope?: string;
+  children: React.ReactNode;
+}) {
   const ref = useRef<HTMLDivElement | null>(null);
   // The live record. A ref, not state: nothing renders from it, and a setState per
   // scroll frame on a 450-cell grid would be its own performance bug.
   const state = useRef<TabScrollState>({});
   const loaded = useRef(false);
+  /** Which scope the in-memory record belongs to — so a scope change re-seeds rather than carries over. */
+  const loadedScope = useRef<string | null>(null);
   /** When a real gesture last happened in this pane — the thing that makes a scroll a decision. */
   const lastInput = useRef<number | null>(null);
   const shows = useRef(0);
@@ -56,8 +73,14 @@ export function TabScrollMemory({ tabId, children }: { tabId: string; children: 
   useLayoutEffect(() => {
     const root = ref.current;
     if (!root) return;
-    const storageKey = tabScrollStorageKey(tabId);
+    const storageKey = tabScrollStorageKey(scope);
     shows.current += 1;
+    // A different page (or month) in the same tab: its offsets are not this page's.
+    if (loadedScope.current !== null && loadedScope.current !== scope) {
+      loaded.current = false;
+      state.current = {};
+    }
+    loadedScope.current = scope;
     // ACTIVATE, in the report's own terms. Under <Activity> a layout effect runs when
     // the pane becomes visible and its cleanup runs when it is hidden, so this pair IS
     // the activate/deactivate boundary — and the show count proves the component is not
@@ -219,7 +242,7 @@ export function TabScrollMemory({ tabId, children }: { tabId: string; children: 
         }
       }
     };
-  }, [tabId]);
+  }, [tabId, scope]);
 
   // overflow-auto both ways: dense pages scroll horizontally in here too, and
   // ScrollHandoff (mounted once in AppShell, above this) keeps nested table scrolling

@@ -1,0 +1,59 @@
+diff --git a/apps/reports/src/lib/etc-month-jobs.ts b/apps/reports/src/lib/etc-month-jobs.ts
+index dd55cf1..cd15015 100644
+--- a/apps/reports/src/lib/etc-month-jobs.ts
++++ b/apps/reports/src/lib/etc-month-jobs.ts
+@@ -2,6 +2,11 @@ import type { Prisma } from "@prisma/client";
+ import { prisma } from "@/lib/prisma";
+ import { etcActiveJobFilter, etcEligibleJobFilter } from "@/lib/job-filters";
+ 
++// A Prisma client OR an interactive-transaction client. The freeze evaluates the
++// month's job universe INSIDE its transaction (2026-09-14), so the same rows that
++// decide "is this month historical / locked" are the rows it is about to write.
++export type EtcDb = Prisma.TransactionClient | typeof prisma;
++
+ // The single source of truth for "which jobs belong to an ETC month" — used by
+ // the Monthly ETC grid AND the Standard Sheet so both always list the exact
+ // same projects for a given month/year.
+@@ -19,11 +24,14 @@ import { etcActiveJobFilter, etcEligibleJobFilter } from "@/lib/job-filters";
+ //   form inputs. Reopening history must never change which jobs are in it.
+ // - Only the SINGLE current in-progress (or not-yet-started) month uses
+ //   etcActiveJobFilter — the live universe seeding/pruning/submission operate on.
+-export async function getEtcMonthJobWhere(month: string): Promise<{ where: Prisma.JobWhereInput; monthIsLocked: boolean }> {
++export async function getEtcMonthJobWhere(
++  month: string,
++  db: EtcDb = prisma,
++): Promise<{ where: Prisma.JobWhereInput; monthIsLocked: boolean }> {
+   const [entryCount, pendingCount, latest] = await Promise.all([
+-    prisma.etcEntry.count({ where: { month } }),
+-    prisma.etcEntry.count({ where: { month, needsReview: true } }),
+-    prisma.etcEntry.findFirst({ orderBy: { month: "desc" }, select: { month: true } }),
++    db.etcEntry.count({ where: { month } }),
++    db.etcEntry.count({ where: { month, needsReview: true } }),
++    db.etcEntry.findFirst({ orderBy: { month: "desc" }, select: { month: true } }),
+   ]);
+   const monthIsLocked = entryCount > 0 && pendingCount === 0;
+   const isHistorical = entryCount > 0 && latest != null && month < latest.month;
+@@ -51,3 +59,23 @@ export async function getEtcMonthJobWhere(month: string): Promise<{ where: Prism
+     monthIsLocked,
+   };
+ }
++
++// ── The jobs IN a month's submission, as a set of ids (2026-09-14) ──────────
++//
++// The grid renders getEtcMonthJobWhere; validation scopes its blocking checks to
++// it. But the FREEZE pruned by etcEligibleJobFilter and Refresh Data pruned by
++// etcActiveJobFilter — three spellings of "the jobs in this month", and they parted
++// on a job that COMPLETED mid-month with hours booked: the grid hid it, validation
++// skipped it, and the freeze then froze its rows at the unreviewed suggestion, after
++// which the locked grid (entries-based) showed them again. Rows nobody could see
++// became signed-off history.
++//
++// This is the one query all three read now. Submission scope == validation scope
++// == grid scope, by construction: they are the same `where`, evaluated once.
++//
++// `db` lets the freeze evaluate it inside its own transaction.
++export async function getEtcMonthJobIds(month: string, db: EtcDb = prisma): Promise<{ ids: Set<number>; monthIsLocked: boolean }> {
++  const { where, monthIsLocked } = await getEtcMonthJobWhere(month, db);
++  const jobs = await db.job.findMany({ where, select: { id: true } });
++  return { ids: new Set(jobs.map((j) => j.id)), monthIsLocked };
++}

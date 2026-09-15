@@ -19,6 +19,7 @@ import {
   type Workspace,
 } from "@/lib/workspace";
 import { isExclusive, pairingRefusal } from "@/lib/split-view";
+import { usePermittedRoutes } from "@/lib/permitted-routes-store";
 
 // ── The tab strip ────────────────────────────────────────────────────────────
 //
@@ -116,6 +117,11 @@ export function WorkspaceTabBar({
   const atCap = ws.tabs.length >= MAX_TABS;
   const openPaths = new Set(ws.tabs.map((t) => t.path));
   const activePath = tabById(ws, ws.active)?.path;
+  // The pages this role may open — the sidebar's own list, published through
+  // lib/permitted-routes-store. Offering a page the role cannot see used to open a
+  // tab whose body then redirect()ed the whole workspace away (2026-09-14).
+  const permitted = usePermittedRoutes();
+  const openable = openableRoutes(permitted);
 
   return (
     <div className="flex h-9 shrink-0 items-stretch border-b border-sdc-border bg-sdc-gray-50">
@@ -291,7 +297,7 @@ export function WorkspaceTabBar({
           </button>
           {menu === "add" && (
             <Menu title="Open in a new tab">
-              {openableRoutes().map((r) => (
+              {openable.map((r) => (
                 <MenuItem
                   key={r.path}
                   onClick={() => {
@@ -326,7 +332,10 @@ export function WorkspaceTabBar({
         {ws.split ? (
           <button
             type="button"
-            onClick={() => go(exitSplit(ws))}
+            // The ACTIVE tab survives — the same thing Ctrl+\ (WorkspaceShell) and the
+            // sidebar's Exit Split View (useWorkspaceActions.exitSplitView) do, so the
+            // three controls that end a split agree on which pane you keep.
+            onClick={() => go(exitSplit(ws, ws.active))}
             title="Leave the split and go back to one tab at a time (Ctrl+\)"
             className="motion-interactive px-3 text-label font-medium text-sdc-blue-dark hover:bg-white/60"
           >
@@ -378,7 +387,7 @@ export function WorkspaceTabBar({
             <p className="px-3 pb-1 pt-1 text-micro font-semibold uppercase tracking-wide text-sdc-gray-400">
               Open another page…
             </p>
-            {openableRoutes()
+            {openable
               .filter((r) => !openPaths.has(r.path))
               .map((r) => {
                 const refusal = pairingRefusal(r.path, activePath);

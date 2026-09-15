@@ -23,7 +23,7 @@ import { EtcIssuesIndicator } from "@/components/EtcIssuesIndicator";
 import { buildEtcIssues } from "@/lib/etc-issues";
 import { PartsCostNewEtcCell } from "@/components/PartsCostNewEtcCell";
 import { PartsBreakoutCell } from "@/components/PartsBreakoutCell";
-import { readPartsEtcBreakout } from "@/lib/parts-etc-breakout";
+import { readPartsEtcBreakout, type PartsEtcBreakout } from "@/lib/parts-etc-breakout";
 import { monthEndLabel } from "@/lib/left-to-invoice";
 import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
 import { resolveLeftToInvoice, partsNewEtc } from "@/lib/left-to-invoice";
@@ -47,7 +47,7 @@ import { savePools } from "@/lib/standard-sheet-actions";
 // ONE submission and ONE reopen for the whole month — see lib/monthly-report.ts.
 import { reopenMonthlyReport, checkMonthlyReport } from "@/lib/monthly-report-actions";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, currentMonth, round2, workingDaysInMonth, effectiveNewEtc, newEtcDiff, newEtcSeedText, isNewEtcCellDecided, rollupNewEtc, type NewEtcCellState, type NewEtcRollupCell } from "@/lib/etc";
+import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, currentMonth, round2, workingDaysInMonth, effectiveNewEtc, newEtcDiff, newEtcSeedText, isNewEtcCellDecided, rollupNewEtc, confirmedNewEtc, partsCostCellState, partsCostEffectiveNewEtc, type NewEtcCellState, type NewEtcRollupCell, type PartsCostLive } from "@/lib/etc";
 import { ReopenMonthButton } from "@/components/ReopenMonthButton";
 import { EtcAutosave } from "@/components/EtcAutosave";
 import { EtcLiveTotals } from "@/components/EtcLiveTotals";
@@ -623,11 +623,14 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
   const latestMonth = distinctMonths[0]?.month;
   const nextStartable = latestMonth && !inProgressSet.has(latestMonth) ? nextMonth(latestMonth) : undefined;
 
-  // A reopened HISTORICAL month is a correction pass: every stored newEtc is a
-  // previously-confirmed value the grid must seed its inputs from, so a
-  // no-changes resubmit is a true no-op. Detected by month position rather
-  // than per-entry submittedAt, because Excel restores and the Power BI
-  // history backfill both leave submittedAt null on confirmed history.
+  // A month before the latest started one. Used ONLY to treat its actuals as
+  // complete (monthComplete below). It used to ALSO make every cell seed as
+  // "confirmed" — the page's private allowance for Excel restores and the Power BI
+  // backfill leaving submittedAt null — while validation, the freeze and the export
+  // read submittedAt alone, so a reopened backfilled month looked signed off and
+  // could not be submitted. Confirmed-ness is now isConfirmedEntry / confirmedNewEtc
+  // (lib/etc.ts) everywhere, and history rows are stamped at the source
+  // (sync-etc-history.ts) and by scripts/backfill-etc-submitted-at.ts.
   const isHistoricalMonth = latestMonth != null && month < latestMonth;
 
   // Which jobs the grid shows depends on whether the month is history:
@@ -848,7 +851,55 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
   // colleague's save. The card now gets the job IDs and fetches the rows when a
   // drill is opened (lib/hours-detail-actions.ts). Scope is unchanged: the same
   // `visibleJobs`, so the drill still matches the card that opened it.
-  const monthKpis = await getEtcMonthKpis(month, visibleJobs);
+  //
+  // ── The two breakout columns' data (2026-09-03) ───────────────────────────
+  //
+  // Read HERE, before the KPI card and the Standard columns (moved up 2026-09-14),
+  // because the Parts Cost New ETC follows ONE rule (lib/etc.ts partsCostCellState)
+  // and on an open, otherwise-undecided row that rule reads the live sum of the two
+  // halves. The card, the fee columns, the footer and the cell all take the same map
+  // so none of them can print a Parts figure the others do not.
+  //
+  // Wrapped so it cannot throw: this is the only upstream call on the page, and a
+  // Total ETO outage must cost two columns rather than the month-end page.
+  // `readPartsEtcBreakout` already returns nulls on failure; the catch is for the
+  // unexpected. Skipped outright on a month without the columns: there is no reason
+  // to spend ~3s of Total ETO on a figure that has nowhere to render.
+  const partsBreakout = showBreakout
+    ? await readPartsEtcBreakout(
+        jobs.filter((j) => j.jobId).map((j) => ({ pk: j.id, jobNumber: j.jobId })),
+        // The month being closed IS the cutoff. Without it this read was "as of right
+        // now" on a month-end page — see lib/left-to-invoice.ts.
+        month,
+      ).catch((e) => {
+        console.error("[etc] parts breakout failed; Left to Invoice/Purchase will read —:", e);
+        return null;
+      })
+    : null;
+  // Left to Invoice (the computed default, or the manager's override) + Left to
+  // Purchase per job PK — partsNewEtc, the one both-halves-or-blank rule — exactly
+  // as the Parts Cost row below renders the two cells. Empty on a pre-breakout month.
+  //
+  // The upstream figure is read out of `partsBreakout` HERE and nowhere else: the row
+  // below takes its tooltip data (`suggestion`) from this map, so the figure reaches
+  // the cell only through resolveLeftToInvoice, once.
+  const partsLiveSums = new Map<number, number | null>();
+  const partsRowBreakout = new Map<number, PartsEtcBreakout | null>();
+  if (showBreakout) {
+    for (const job of jobs) {
+      const entry = job.etcEntries.find((e) => e.section === PARTS_COST_SECTION);
+      if (!entry) continue;
+      const b = partsBreakout?.byJobPk.get(job.id) ?? null;
+      partsRowBreakout.set(job.id, b);
+      const invoice = resolveLeftToInvoice({
+        computed: b?.rawLeftToInvoice == null ? null : round2(b.rawLeftToInvoice),
+        stored: entry.leftToInvoice != null ? round2(Number(entry.leftToInvoice)) : null,
+      }).value;
+      const purchase = entry.leftToPurchase != null ? round2(Number(entry.leftToPurchase)) : null;
+      partsLiveSums.set(job.id, partsNewEtc(invoice, purchase));
+    }
+  }
+  const monthKpis = await getEtcMonthKpis(month, visibleJobs, partsLiveSums);
   const detailJobIds = visibleJobs.map((j) => j.id);
 
   // Rates are shared with /standard-sheet's own ExecutionRate rows — once
@@ -880,7 +931,9 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
 
   if (showStandards) {
     const [execEtcByJob, effective, setting, newProjects] = await Promise.all([
-      getExecutionEtcByJob(jobs.map((j) => j.id), month),
+      // The live Parts halves ride along so the Standard columns read the same Parts
+      // rule as the grid's own Parts Cost cell (lib/etc.ts partsCostEffectiveNewEtc).
+      getExecutionEtcByJob(jobs.map((j) => j.id), month, { partsBreakoutSums: partsLiveSums }),
       // Same carry-forward fallback the /standard-sheet tab uses, so the inline
       // Standard fees and the pool panel never silently collapse to $0 for a
       // month whose pools were never pulled.
@@ -1103,27 +1156,8 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
     Engineering: { prior: 0, worked: 0, newEtc: 0, diff: 0 },
     Shop: { prior: 0, worked: 0, newEtc: 0, diff: 0 },
   };
-  // ── The two breakout columns' data (2026-09-03) ───────────────────────────
-  //
-  // Deliberately AFTER the grid's own database reads and wrapped so it cannot throw:
-  // this is the only upstream call on the page, and a Total ETO outage must cost two
-  // columns rather than the month-end page. `readPartsEtcBreakout` already returns
-  // nulls on failure; the catch is for the unexpected.
-  //
-  // Skipped outright on a month without the columns: this is the page's only upstream
-  // call, and there is no reason to spend ~3s of Total ETO on a figure that has
-  // nowhere to render.
-  const partsBreakout = showBreakout
-    ? await readPartsEtcBreakout(
-        jobs.filter((j) => j.jobId).map((j) => ({ pk: j.id, jobNumber: j.jobId })),
-        // The month being closed IS the cutoff. Without it this read was "as of right
-        // now" on a month-end page — see lib/left-to-invoice.ts.
-        month,
-      ).catch((e) => {
-        console.error("[etc] parts breakout failed; Left to Invoice/Purchase will read —:", e);
-        return null;
-      })
-    : null;
+  // (The breakout read — `partsBreakout` / `partsLiveSums` — happens above the KPI
+  // card now, so the card, the Standard columns and this grid share one figure.)
 
   const partsCostGrandTotal = { prior: 0, worked: 0, newEtc: 0, leftToInvoice: 0, leftToPurchase: 0 };
 
@@ -1693,7 +1727,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                       priorEtc: prior,
                       hoursWorked: worked,
                       draft: entry.newEtcDraft != null ? Number(entry.newEtcDraft) : null,
-                      confirmed: entry.submittedAt != null ? round2(Number(entry.newEtc)) : null,
+                      confirmed: confirmedNewEtc(entry),
                       cleared: entry.newEtcClearedAt != null,
                       locked: cellsReadOnly,
                       monthComplete,
@@ -1818,7 +1852,10 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                               priorEtc={prior}
                               initialWorked={round2(worked)}
                               initialDraft={draft}
-                              initialConfirmed={isHistoricalMonth || entry.submittedAt != null ? round2(Number(entry.newEtc)) : null}
+                              // confirmedNewEtc — the ONE predicate the freeze, validation
+                              // and the export read (lib/etc.ts isConfirmedEntry). No
+                              // "historical month" guess: see isHistoricalMonth above.
+                              initialConfirmed={confirmedNewEtc(entry)}
                               // This cell was emptied on purpose — without this it
                               // would seed straight back from the confirmed value
                               // above. See newEtcSeedText / DEVLOG §16.
@@ -1955,7 +1992,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                         // round2 because this column is money and keeps two decimals: the
                         // Total ETO sum arrives as a raw float (59205.01999499999 on the
                         // first August job) under a cell that displays "$59,205".
-                        const suggestion = partsBreakout?.byJobPk.get(job.id) ?? null;
+                        const suggestion = partsRowBreakout.get(job.id) ?? null;
                         // ── The one way this figure is not the whole story ───────────
                         //
                         // The FLOOR caveat is gone with the change below: the cell now
@@ -2025,12 +2062,33 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                         // a blank that means 0 in one of them and blank in another is the
                         // shape of bug this replaces.
                         const breakoutSum = partsNewEtc(leftToInvoiceValue, leftToPurchaseValue);
+                        // ── ONE Parts rule (2026-09-14) ─────────────────────────────
+                        //
+                        // partsCostCellState in lib/etc.ts: frozen, then the saved draft,
+                        // then a deliberate clear, then the figure the row was CONFIRMED
+                        // at before a reopen, and only for an open row nobody has
+                        // answered the live sum above. This block used to seed from the
+                        // live sum FIRST — so a locked breakout month's Parts figure kept
+                        // moving on screen as Total ETO's invoices drifted, a reopened
+                        // month's cell showed a figure the manager had not signed, and a
+                        // pre-breakout typed draft rendered blank/yellow here while
+                        // validation counted the same row as decided. The freeze, the
+                        // KPI card, the drill, the fee columns and the export all build
+                        // this same state now, so what is on screen is what is written.
+                        //
+                        // `partsLiveSums` holds exactly `breakoutSum` for this job (same
+                        // inputs, computed once above the KPI card); the local is kept for
+                        // the footer's two half-columns below.
+                        const partsLive: PartsCostLive = { breakoutInScope: showBreakout, breakoutSum };
+                        const partsCostState = partsCostCellState(partsCostEntry, partsLive, {
+                          locked: cellsReadOnly,
+                          monthComplete,
+                        });
                         // Undecided still falls back to the carry-forward suggestion,
                         // exactly as it does on a month without these columns — that is
                         // what Submit would write, and next month's Prior ETC depends on
-                        // it. See effectiveNewEtc.
-                        const effectiveNewEtcCost =
-                          showBreakout && breakoutSum !== null ? breakoutSum : effectiveNewEtc(partsCostEntry);
+                        // it.
+                        const effectiveNewEtcCost = partsCostEffectiveNewEtc(partsCostEntry, partsLive);
                         // The SAME rule as the per-section-hours cells, with no
                         // exceptions left (lib/etc.ts): Parts Cost New ETC needs manager
                         // attention (yellow) exactly when money was spent this month
@@ -2039,29 +2097,10 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                         // judgement call, and the suggestion stays on the tooltip.
                         //
                         // No spend, no question: the balance carries forward on its own
-                        // and the cell reads as neutral.
-                        const partsCostState = {
-                          priorEtc: prior,
-                          hoursWorked: spent,
-                          draft: draftCost,
-                          confirmed: isHistoricalMonth || partsCostEntry.submittedAt != null ? round2(Number(partsCostEntry.newEtc)) : null,
-                          cleared: partsCostEntry.newEtcClearedAt != null,
-                          locked: cellsReadOnly,
-                          monthComplete,
-                          // MONEY — keeps its cents. See NewEtcCellState.precision.
-                          precision: "exact",
-                          // A month with NO spend still carries the balance forward
-                          // automatically and reads as neutral (isNewEtcCellDecided
-                          // returns true on hoursWorked 0). Money spent with an empty
-                          // box is yellow, exactly like an hours cell.
-                        } satisfies NewEtcCellState;
-                        // The calculated sum on a breakout month; the stored draft /
-                        // confirmed / carry-forward seed on every earlier one.
-                        const partsCostSeed = showBreakout
-                          ? breakoutSum === null
-                            ? ""
-                            : String(breakoutSum)
-                          : newEtcSeedText(partsCostState);
+                        // and the cell reads as neutral (isNewEtcCellDecided returns true
+                        // on hoursWorked 0). Money spent with an empty box is yellow,
+                        // exactly like an hours cell.
+                        const partsCostSeed = newEtcSeedText(partsCostState);
                         const decidedCost = isNewEtcCellDecided(partsCostState, partsCostSeed);
                         // Diff = Money Left − New ETC, where New ETC is the figure IN THE CELL:
                         // a blank box counts as 0, so Diff reads as the money nobody has planned
@@ -2227,6 +2266,9 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                               // that does not.
                               derived={showBreakout}
                               locked={cellsReadOnly}
+                              // A SUBMITTED month's figure is frozen: the cell must not
+                              // re-derive it from the live halves (2026-09-14).
+                              frozen={locked}
                             />
                             <td
                               // LIVE (2026-08-04). This cell was the one dependent figure

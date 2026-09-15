@@ -20,11 +20,31 @@ import { useEffect } from "react";
 // brand-new table without remounting ColumnResize itself.
 const STORAGE_PREFIX = "col-resize:";
 
+// localStorage can throw (private mode, storage disabled, quota) — guarded like every
+// other storage site in the repo, because an unguarded throw here used to leave a
+// drag stuck: the body kept its col-resize cursor and user-select:none for the rest
+// of the session (2026-09-14). Widths are a convenience; losing one is fine.
+function readWidth(varName: string): string | null {
+  try {
+    return localStorage.getItem(STORAGE_PREFIX + varName);
+  } catch {
+    return null;
+  }
+}
+
+function writeWidth(varName: string, value: string): void {
+  try {
+    localStorage.setItem(STORAGE_PREFIX + varName, value);
+  } catch {
+    // Not persisted; the width still applies for this page.
+  }
+}
+
 function restoreWidth(handle: HTMLElement) {
   const table = handle.closest("table");
   const varName = handle.dataset.resizeVar;
   if (!table || !varName) return;
-  const saved = localStorage.getItem(STORAGE_PREFIX + varName);
+  const saved = readWidth(varName);
   if (saved) table.style.setProperty(varName, saved);
 }
 
@@ -77,10 +97,18 @@ export default function ColumnResize() {
 
     function onPointerUp() {
       if (!drag) return;
-      localStorage.setItem(STORAGE_PREFIX + drag.varName, getComputedStyle(drag.table).getPropertyValue(drag.varName).trim());
+      const ended = drag;
+      // The drag state and the body styles are reset FIRST, unconditionally, so
+      // nothing that follows can leave them behind.
       drag = null;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      try {
+        writeWidth(ended.varName, getComputedStyle(ended.table).getPropertyValue(ended.varName).trim());
+      } catch {
+        // A detached table (the grid re-rendered mid-drag) has no computed style
+        // worth saving.
+      }
     }
 
     document.addEventListener("pointerdown", onPointerDown);

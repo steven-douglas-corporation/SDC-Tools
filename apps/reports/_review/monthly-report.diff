@@ -1,0 +1,360 @@
+diff --git a/apps/reports/src/lib/monthly-report.ts b/apps/reports/src/lib/monthly-report.ts
+index 96b5d6f..f67a2b4 100644
+--- a/apps/reports/src/lib/monthly-report.ts
++++ b/apps/reports/src/lib/monthly-report.ts
+@@ -4,11 +4,22 @@ import { readPartsEtcBreakout } from "@/lib/parts-etc-breakout";
+ import { resolveLeftToInvoice, partsNewEtc } from "@/lib/left-to-invoice";
+ import { APP_VERSION } from "@/lib/app-version";
+ import { createHash, randomUUID } from "crypto";
+-import { calcHoursLeft, isMonthLocked, isValidMonth, newEtcForSubmission, newEtcSeedText, round2, type NewEtcCellState } from "@/lib/etc";
++import {
++  calcHoursLeft,
++  confirmedNewEtc,
++  isMonthLocked,
++  isValidMonth,
++  newEtcForSubmission,
++  newEtcSeedText,
++  partsCostCellState,
++  partsCostEffectiveNewEtc,
++  round2,
++  type NewEtcCellState,
++  type PartsCostLive,
++} from "@/lib/etc";
+ import { PARTS_COST_SECTION, SECTIONS } from "@/lib/sections";
+ import { usd, hours as fmtHours } from "@/components/ui/format";
+-import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
+-import { etcEligibleJobFilter } from "@/lib/job-filters";
++import { getEtcMonthJobIds, getEtcMonthJobWhere, type EtcDb } from "@/lib/etc-month-jobs";
+ import { getExecutionEtcByJob, isInStandardFeesAllocation } from "@/lib/execution-etc";
+ import { loadEffectivePools } from "@/lib/standard-sheet-actions";
+ import {
+@@ -85,6 +96,8 @@ export async function validateMonthlyReport(month: string): Promise<MonthlyRepor
+     select: {
+       id: true, section: true, priorEtc: true, hoursWorked: true, newEtc: true, newEtcDraft: true,
+       newEtcClearedAt: true, needsReview: true, submittedAt: true,
++      // The two Parts Cost halves, for the one Parts rule below.
++      leftToInvoice: true, leftToPurchase: true,
+       job: { select: { id: true, jobId: true, jobName: true } },
+     },
+   });
+@@ -117,6 +130,10 @@ export async function validateMonthlyReport(month: string): Promise<MonthlyRepor
+   // `entries` above stays the FULL month deliberately — the started/locked checks and
+   // `counts` below are facts about the month, and submitEtcEntriesInTx freezes every
+   // row it contains. Only the two checks that BLOCK submission are scoped.
++  //
++  // The SAME `where` getEtcMonthJobIds evaluates for the freeze (2026-09-14), so the
++  // set validated here is the set frozen there — see etc-month-jobs.ts for the
++  // mid-month-completion case that used to slip between the two.
+   const eligibleJobs = await prisma.job.findMany({
+     where: (await getEtcMonthJobWhere(month)).where,
+     select: { id: true, executionRate: true, billable: true, excludedFromStandardFees: true },
+@@ -124,6 +141,47 @@ export async function validateMonthlyReport(month: string): Promise<MonthlyRepor
+   const eligibleJobIds = new Set(eligibleJobs.map((j) => j.id));
+   const gridEntries = entriesInSubmissionScope(entries, eligibleJobIds);
+ 
++  // ── The Parts Cost live halves, ONLY where the rule can read them ──────────
++  //
++  // A Parts row's New ETC follows the one Parts rule (partsCostCellState): on an
++  // OPEN, otherwise-undecided row the live Left to Invoice + Left to Purchase stands
++  // in for the answer. That is the single state in which validation would need the
++  // upstream figure — a row with a stored Left to Purchase and neither a draft, a
++  // clear nor a confirmed figure. It is rare (the save writes the halves' sum into
++  // the draft), and this function runs on every realtime event, so the Total ETO
++  // read is made only when such a row exists, and only for those jobs. Every other
++  // row resolves from its own columns, exactly as the grid does.
++  const partsLiveSums = new Map<number, number | null>();
++  if (showsPartsBreakout(month)) {
++    const needsLive = gridEntries.filter(
++      (e) =>
++        e.section === PARTS_COST_SECTION &&
++        e.needsReview &&
++        e.newEtcDraft == null &&
++        e.newEtcClearedAt == null &&
++        confirmedNewEtc(e) === null &&
++        e.leftToPurchase != null,
++    );
++    if (needsLive.length > 0) {
++      const jobRows = await prisma.job.findMany({
++        where: { id: { in: [...new Set(needsLive.map((e) => e.job.id))] } },
++        select: { id: true, jobId: true },
++      });
++      const breakout = await readPartsEtcBreakout(
++        jobRows.filter((j) => j.jobId).map((j) => ({ pk: j.id, jobNumber: j.jobId as string })),
++        month,
++      ).catch(() => null);
++      for (const e of needsLive) {
++        const b = breakout?.byJobPk.get(e.job.id);
++        const invoice = resolveLeftToInvoice({
++          computed: b?.rawLeftToInvoice == null ? null : round2(b.rawLeftToInvoice),
++          stored: e.leftToInvoice != null ? round2(Number(e.leftToInvoice)) : null,
++        }).value;
++        partsLiveSums.set(e.job.id, partsNewEtc(invoice, round2(Number(e.leftToPurchase))));
++      }
++    }
++  }
++
+   // ── The manager-entered New ETC values the month is waiting on ────────────
+   //
+   // "Required" is exactly what the grid paints yellow: hours (or money) were booked
+@@ -140,16 +198,27 @@ export async function validateMonthlyReport(month: string): Promise<MonthlyRepor
+   for (const e of gridEntries) {
+     if (!e.needsReview) continue; // already confirmed (a partially-submitted month)
+     const worked = round2(Number(e.hoursWorked));
+-    const state: NewEtcCellState = {
+-      priorEtc: Number(e.priorEtc),
+-      hoursWorked: worked,
+-      draft: e.newEtcDraft != null ? Number(e.newEtcDraft) : null,
+-      confirmed: e.submittedAt != null ? round2(Number(e.newEtc)) : null,
+-      cleared: e.newEtcClearedAt != null,
+-      locked: false,
+-      monthComplete: true,
+-      precision: e.section === PARTS_COST_SECTION ? "exact" : "whole",
+-    };
++    // `confirmed` is confirmedNewEtc — the one predicate the grid seeds by and the
++    // freeze keeps by (isConfirmedEntry). Parts Cost builds its state through the
++    // one Parts rule, so a pre-breakout typed draft, a confirmed figure and the live
++    // halves are weighed here exactly as the grid weighs them.
++    const state: NewEtcCellState =
++      e.section === PARTS_COST_SECTION
++        ? partsCostCellState(
++            e,
++            { breakoutInScope: showsPartsBreakout(month), breakoutSum: partsLiveSums.get(e.job.id) ?? null },
++            { locked: false, monthComplete: true },
++          )
++        : {
++            priorEtc: Number(e.priorEtc),
++            hoursWorked: worked,
++            draft: e.newEtcDraft != null ? Number(e.newEtcDraft) : null,
++            confirmed: confirmedNewEtc(e),
++            cleared: e.newEtcClearedAt != null,
++            locked: false,
++            monthComplete: true,
++            precision: "whole",
++          };
+     // Same expression the cell uses for its background: blank + a decision required.
+     if (worked === 0) continue;
+     if (newEtcSeedText(state).trim() !== "") continue;
+@@ -288,6 +357,10 @@ export async function validateMonthlyReport(month: string): Promise<MonthlyRepor
+ export async function monthDataFingerprint(month: string): Promise<string | null> {
+   if (!isValidMonth(month)) return null;
+   try {
++    // leftToInvoice / leftToPurchase (2026-09-14): the two halves a breakout month's
++    // Parts Cost New ETC is made of. An edit to either moves what the freeze writes,
++    // and neither was in the digest — so the dialog could sit open across a Left to
++    // Purchase edit and freeze without noticing.
+     const [etc] = await prisma.$queryRaw<Record<string, unknown>[]>`
+       SELECT COUNT(*) AS n,
+              COALESCE(SUM(id * hoursWorked), 0)  AS hw,
+@@ -295,8 +368,14 @@ export async function monthDataFingerprint(month: string): Promise<string | null
+              COALESCE(SUM(id * newEtc), 0)       AS ne,
+              COALESCE(SUM(id * COALESCE(newEtcDraft, -1)), 0) AS nd,
+              COALESCE(SUM(CASE WHEN needsReview THEN id ELSE 0 END), 0)          AS nr,
+-             COALESCE(SUM(CASE WHEN newEtcClearedAt IS NULL THEN 0 ELSE id END), 0) AS cl
++             COALESCE(SUM(CASE WHEN newEtcClearedAt IS NULL THEN 0 ELSE id END), 0) AS cl,
++             COALESCE(SUM(id * COALESCE(leftToInvoice, -1)), 0)  AS li,
++             COALESCE(SUM(id * COALESCE(leftToPurchase, -1)), 0) AS lp
+       FROM EtcEntry WHERE month = ${month}`;
++    // Per-job Contingency (ExecutionRate.contingencyAmount) is a direct input to
++    // every fee row's Total Standard Fees and was not fingerprinted either.
++    const [contingency] = await prisma.$queryRaw<Record<string, unknown>[]>`
++      SELECT COUNT(*) AS n, COALESCE(SUM(jobId * contingencyAmount), 0) AS ca FROM ExecutionRate`;
+     const [pool] = await prisma.$queryRaw<Record<string, unknown>[]>`
+       SELECT COUNT(*) AS n,
+              COALESCE(SUM(id * hoursPulledThisMonth), 0) AS hp,
+@@ -316,6 +395,7 @@ export async function monthDataFingerprint(month: string): Promise<string | null
+       month,
+       ...Object.values(etc ?? {}).map(String),
+       ...Object.values(pool ?? {}).map(String),
++      ...Object.values(contingency ?? {}).map(String),
+       ...Object.values(snap ?? {}).map(String),
+       String(setting?.engrRate ?? ""),
+       String(setting?.shopRate ?? ""),
+@@ -508,37 +588,46 @@ export async function submitEtcEntriesInTx(tx: Tx, month: string, userId: number
+   if (entries.length === 0) throw new Error(`${month} has no entries to submit.`);
+   if (isMonthLocked(entries)) throw new Error(`${month} is already submitted and locked.`);
+ 
+-  // ── Only QUALIFYING projects are frozen (2026-08-10) ──────────────────────
++  // ── Only the month's OWN jobs are frozen ──────────────────────────────────
++  //
++  // 2026-08-10: this used to freeze every row the month contained, including rows
++  // left behind by jobs that are not ETC projects at all — 7 non-billable jobs held
++  // 20 pending July rows when this was written (SDC Showroom, 4000 Non-Billable, 7000
++  // Team Initiatives, 1155, 7001 and both Spare Parts buckets, carrying $29,465 of
++  // PARTS_COST between them). Freezing those is what made a month's scope change at
++  // submission: the rows became permanent history (needsReview=false is never
++  // pruned), so the totals a manager signed off could not be reproduced afterwards.
+   //
+-  // This used to freeze every row the month contained, including rows left behind by
+-  // jobs that are not ETC projects at all — 7 non-billable jobs held 20 pending July
+-  // rows when this was written (SDC Showroom, 4000 Non-Billable, 7000 Team Initiatives,
+-  // 1155, 7001 and both Spare Parts buckets, carrying $29,465 of PARTS_COST between
+-  // them). Freezing those is what made a month's scope change at submission: the rows
+-  // became permanent history (needsReview=false is never pruned), so the totals a
+-  // manager signed off could not be reproduced afterwards.
++  // 2026-09-14: the set is now getEtcMonthJobIds — the SAME query the grid renders
++  // from and validateMonthlyReport scopes its checks to. It used to be
++  // etcEligibleJobFilter here, etcActiveJobFilter in Refresh Data's prune and
++  // getEtcMonthJobWhere on the grid: a job that COMPLETED mid-month with hours
++  // booked was hidden by the grid, skipped by validation, and then frozen here at
++  // its unreviewed suggestion — after which the locked grid showed it again. Rows
++  // nobody had seen became signed-off history. One `where`, evaluated inside this
++  // transaction, closes that gap.
+   //
+-  // They are DELETED rather than frozen, which is not a new judgement about them —
+-  // pruneStaleEntries already deletes exactly this set on the next Refresh Data (see
+-  // etc-actions.ts). Doing it here makes the submitted month self-consistent at the
+-  // moment it closes instead of one refresh later, and it is what keeps `isMonthLocked`
+-  // true: leaving them pending would mean the month could never lock at all.
++  // Out-of-scope pending rows are DELETED rather than frozen, which is not a new
++  // judgement about them — Refresh Data's pruneStaleEntries deletes the same set
++  // from the same query. Doing it here makes the submitted month self-consistent at
++  // the moment it closes instead of one refresh later, and it is what keeps
++  // `isMonthLocked` true: leaving them pending would mean the month could never lock.
+   //
+-  // Deliberately scoped to `needsReview: true`. An ineligible job's ALREADY-frozen rows
+-  // from an earlier submission are real history and are left exactly alone; the grid
+-  // simply no longer renders them (getEtcMonthJobWhere). Nothing here touches
+-  // JobHoursDetail, so every one of these hours stays visible in "Hours off the grid",
+-  // the punch drill and data-quality review — the exclusion must not hide them.
+-  const eligibleJobs = await tx.job.findMany({ where: etcEligibleJobFilter, select: { id: true } });
+-  // Zero eligible jobs means something is wrong upstream (empty Job table, broken
++  // Deliberately scoped to `needsReview: true`. An out-of-scope job's ALREADY-frozen
++  // rows from an earlier submission are real history and are left exactly alone; the
++  // grid simply no longer renders them (getEtcMonthJobWhere). Nothing here touches
++  // JobHoursDetail, so every one of these hours stays visible in "Hours off the
++  // grid", the punch drill and data-quality review — the exclusion must not hide them.
++  const { ids: eligibleIds } = await getEtcMonthJobIds(month, tx);
++  // Zero jobs in scope means something is wrong upstream (empty Job table, broken
+   // filter) — `notIn: []` would delete every pending row in the month. Same guard
+   // pruneStaleEntries makes, for the same reason.
+-  if (eligibleJobs.length === 0) throw new Error(`${month} cannot be submitted: no eligible ETC jobs were found.`);
+-  const eligibleIds = new Set(eligibleJobs.map((j) => j.id));
++  if (eligibleIds.size === 0) throw new Error(`${month} cannot be submitted: no eligible ETC jobs were found.`);
+   await tx.etcEntry.deleteMany({
+     where: { month, needsReview: true, jobId: { notIn: [...eligibleIds] } },
+   });
+ 
++  const breakoutInScope = showsPartsBreakout(month);
+   let written = 0;
+   for (const entry of entries) {
+     // Pruned above — never frozen, and never counted as submitted.
+@@ -547,41 +636,45 @@ export async function submitEtcEntriesInTx(tx: Tx, month: string, userId: number
+     const hoursWorked = Number(entry.hoursWorked);
+     // An already-confirmed row is history; leave it exactly as it is.
+     if (!entry.needsReview) continue;
+-    const draft = entry.newEtcDraft != null ? round2(Number(entry.newEtcDraft)) : null;
+-    // The two-half rule, for Parts Cost on a breakout month. `resolveLeftToInvoice`
+-    // is the same function the grid renders by, so the confirmed figure is the one
+-    // that was on screen. A blank Left to Purchase counts as 0 — the grid shows the
+-    // sum that way too.
+-    const resolvedInvoice =
+-      partsInvoice.size > 0 && entry.section === PARTS_COST_SECTION
+-        ? resolveLeftToInvoice({
+-            computed: partsInvoice.get(entry.jobId) ?? null,
+-            stored: entry.leftToInvoice != null ? round2(Number(entry.leftToInvoice)) : null,
+-          }).value
+-        : null;
+-    const purchase = entry.leftToPurchase != null ? round2(Number(entry.leftToPurchase)) : null;
+-    // BOTH halves, or nothing — the same rule the grid renders by. A row with only one
+-    // half answered has NO valid New ETC, so it falls through to the stored draft and
+-    // then to the carry-forward suggestion, exactly as a row did before these columns
+-    // existed. "Keep submissions using New ETC only after it becomes valid."
+-    const breakoutSum = partsNewEtc(resolvedInvoice, purchase);
+-    // ── A REOPENED row keeps the figure it was confirmed at (2026-09-11) ──────
++    // ── ONE rule, for both kinds of row (2026-09-11, 2026-09-14) ─────────────
++    //
++    // Hours: newEtcForSubmission — draft, else the figure the row was CONFIRMED at
++    // before a reopen, else the suggestion. This read `draft ?? suggestion` until
++    // 2026-09-11: the first submission nulls every draft and a reopen restores none,
++    // so a re-submission with no new edits froze the SUGGESTION over what the grid
++    // was showing — 161 hours cells of August 2026 (§69).
++    //
++    // Parts Cost: partsCostEffectiveNewEtc, the same rungs plus the live sum of the
++    // two halves for an OPEN, otherwise-undecided row. This read `breakoutSum ??
++    // …` until 2026-09-14 — the live figure FIRST — so a no-edit re-submission of a
++    // reopened month replaced the manager's signed Parts figure with whatever Total
++    // ETO's invoices had drifted to since. The confirmed figure is the manager's
++    // answer and does not move with later invoices; the live sum stands in only
++    // where nobody has answered. Same function the grid seeds from, the KPI card
++    // sums and the fee snapshot stores, so what is frozen is what was on screen.
+     //
+-    // This read `draft ?? suggestion`. The first submission nulls every draft, and
+-    // a reopen does not restore them, so a re-submission with no new edits froze the
+-    // SUGGESTION over what the grid was showing — 161 hours cells of August 2026,
+-    // typed by managers, replaced by the carry-forward in one click. The rule lives
+-    // in lib/etc.ts (newEtcForSubmission) beside the cell's own seed rule, and
+-    // `confirmed` is the same expression the page seeds `initialConfirmed` from.
+-    const newEtc =
+-      breakoutSum ??
+-      newEtcForSubmission({
+-        draft,
+-        confirmed: entry.submittedAt != null ? round2(Number(entry.newEtc)) : null,
++    // `confirmed` is confirmedNewEtc — the one predicate every reader uses.
++    let newEtc: number;
++    if (entry.section === PARTS_COST_SECTION) {
++      const resolvedInvoice =
++        partsInvoice.size > 0
++          ? resolveLeftToInvoice({
++              computed: partsInvoice.get(entry.jobId) ?? null,
++              stored: entry.leftToInvoice != null ? round2(Number(entry.leftToInvoice)) : null,
++            }).value
++          : null;
++      const purchase = entry.leftToPurchase != null ? round2(Number(entry.leftToPurchase)) : null;
++      const live: PartsCostLive = { breakoutInScope, breakoutSum: partsNewEtc(resolvedInvoice, purchase) };
++      newEtc = partsCostEffectiveNewEtc(entry, live);
++    } else {
++      newEtc = newEtcForSubmission({
++        draft: entry.newEtcDraft != null ? round2(Number(entry.newEtcDraft)) : null,
++        confirmed: confirmedNewEtc(entry),
+         cleared: entry.newEtcClearedAt != null,
+         priorEtc,
+         hoursWorked,
+       });
++    }
+     await tx.etcEntry.update({
+       where: { id: entry.id },
+       data: {
+@@ -613,20 +706,36 @@ export async function submitEtcEntriesInTx(tx: Tx, month: string, userId: number
+ }
+ 
+ // StandardSheetSnapshot: freeze each job's fee row, computed exactly as the live
+-// Standard view computes it. Reads happen before the transaction (they are pure
+-// reads); only the delete+create pair is inside it.
+-export async function loadStandardSheetRows(month: string) {
++// Standard view computes it.
++//
++// ── Computed INSIDE the freeze transaction, AFTER the entries are frozen ─────
++//
++// Until 2026-09-14 the action read these rows BEFORE the transaction ("they are
++// pure reads") and wrote them inside it. Two costs. The reads and the freeze saw
++// different rows if anything moved in between (an autosave landing under the
++// dialog — the fingerprint is a courtesy check, not the safety property). And the
++// two halves of one click read the month by two functions: effectiveNewEtc here,
++// newEtcForSubmission in submitEtcEntriesInTx, which disagreed on a reopened row
++// (§69's read/freeze split) and stored the managers' figures in the entries beside
++// carry-forward guesses in the snapshot.
++//
++// Passing `tx` and running this after submitEtcEntriesInTx removes the question:
++// every row is frozen by then, effectiveNewEtc of a frozen row IS its stored
++// newEtc, so the snapshot is built from exactly the figures that were written. The
++// pool read (loadEffectivePools) still goes through the shared client — it takes no
++// tx, and the pools are not written by this transaction.
++export async function loadStandardSheetRows(month: string, db: EtcDb = prisma) {
+   const jobs = (
+-    await prisma.job.findMany({
+-      where: (await getEtcMonthJobWhere(month)).where,
++    await db.job.findMany({
++      where: (await getEtcMonthJobWhere(month, db)).where,
+       select: { id: true, executionRate: true, billable: true, excludedFromStandardFees: true },
+     })
+   ).filter(isInStandardFeesAllocation);
+ 
+   const [etcByJob, effective, setting] = await Promise.all([
+-    getExecutionEtcByJob(jobs.map((j) => j.id), month),
++    getExecutionEtcByJob(jobs.map((j) => j.id), month, { db }),
+     loadEffectivePools(month),
+-    prisma.standardSheetSetting.findUnique({ where: { id: 1 } }),
++    db.standardSheetSetting.findUnique({ where: { id: 1 } }),
+   ]);
+   if (effective.carriedFrom) {
+     // Validation already refuses this; the guard stays because this function is the

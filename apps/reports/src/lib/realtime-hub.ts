@@ -89,7 +89,12 @@ type Envelope =
   | { type: "presence"; entries: Omit<PresenceEntry, "lastSeen">[] }
   | { type: "changes"; events: ChangeEvent[] }
   | { type: "hello"; sessionId: string }
-  | { type: "permissions" };
+  | { type: "permissions" }
+  // Sent to the OLDER of two streams registered under one session id, so its route
+  // handler can close itself. Never reaches a browser that is still the owner.
+  | { type: "superseded" };
+
+export type RealtimeEnvelope = Envelope;
 
 // How long a presence entry survives without a heartbeat. The client beats every
 // 10s (see useRealtime), so 30s tolerates two missed beats before an editor
@@ -189,8 +194,38 @@ function broadcastPresence(): void {
   broadcast({ type: "presence", entries });
 }
 
+// ── Two streams, one session id (2026-09-14) ─────────────────────────────────
+//
+// REPORTED: after "Duplicate Tab" in the browser, or a reconnect after the laptop
+// slept, a tab showed "live" and received nothing — and its editing indicators
+// vanished for everyone else the moment it reconnected.
+//
+// The session id lived in sessionStorage, which a duplicated tab COPIES, and a
+// reconnect reused the same id on a new EventSource. `subscribers.set(id, send)`
+// silently replaced the older stream's send with the newer one — fine so far — but
+// the older stream's cancel() then ran the unsubscribe below, which deleted BY ID:
+// it removed the NEWER stream's subscription and released the NEWER stream's
+// presence. Nothing errored; the new tab simply never heard another event.
+//
+// Ownership is now the `send` function itself. An unsubscribe releases the id only
+// if this connection is still the one registered under it; a superseded connection's
+// cancel is a no-op, because the id — and every cell held under it — belongs to the
+// newer stream. The older stream is told so (`superseded`) and its route handler
+// closes it, so a browser cannot keep two live streams on one id by accident.
+//
+// The client also stopped reusing ids across connections (RealtimeProvider mints
+// one per EventSource), so this is belt and braces: the hub is correct even for a
+// client that does not.
 export function subscribe(sessionId: string, send: Subscriber): () => void {
+  const previous = subscribers.get(sessionId);
   subscribers.set(sessionId, send);
+  if (previous && previous !== send) {
+    try {
+      previous({ type: "superseded" });
+    } catch {
+      // Already dead; its own cancel() will run and find it no longer owns the id.
+    }
+  }
   // Hand the newcomer the current state immediately — otherwise a tab that just
   // opened shows nobody editing until the next change or heartbeat.
   //
@@ -205,6 +240,10 @@ export function subscribe(sessionId: string, send: Subscriber): () => void {
     // The unsubscribe returned below is still valid, and cancel() will call it.
   }
   return () => {
+    // Only the CURRENT owner of the id may release it — see the note above. A
+    // superseded stream's cancel must not take the newer stream's subscription or
+    // its cells down with it.
+    if (subscribers.get(sessionId) !== send) return;
     subscribers.delete(sessionId);
     // A disconnect releases every cell that session was holding. This is the
     // "disconnects" half of spec 3's clearing rule, and it is immediate rather

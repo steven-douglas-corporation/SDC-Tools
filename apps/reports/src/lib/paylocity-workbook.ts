@@ -62,11 +62,14 @@ import {
 // JOB_HOURS_LOCAL_PATH already existed and already pointed here — it is the variable
 // the pre-2026-08-03 reader used, left in .env when that reader was deleted. Reused
 // rather than renamed so no deployment has to change to pick this up.
-const DEFAULT_PATH =
-  "C:/Users/akamuju/OneDrive - Steven Douglas Corp/SDC- Power BI Integration - Job Hours Report/Job Hours From Paylocity/Current_Job_Hours.xlsx";
-
+//
+// No default path since 2026-09-14 (see paylocity-sources.ts): an unset variable
+// used to mean "read one person's OneDrive copy under C:/Users/akamuju" and report
+// it as current. It now means "not configured", loudly.
 export function workbookPath(): string {
-  return process.env.JOB_HOURS_LOCAL_PATH?.trim() || DEFAULT_PATH;
+  const configured = process.env.JOB_HOURS_LOCAL_PATH?.trim();
+  if (configured) return configured;
+  throw new Error("Paylocity hours are not configured: set JOB_HOURS_LOCAL_PATH in .env to the current-year workbook. There is no default path.");
 }
 
 // The sheet and columns this file actually has, confirmed by reading it

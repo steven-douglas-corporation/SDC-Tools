@@ -103,15 +103,23 @@ export async function getJobHoursDetail(jobPks: number[]): Promise<JobHoursDetai
   });
 
   // Section totals from the KEPT rows, so the filter's numbers always agree with
-  // what the table can actually show.
-  const bySection = new Map<string, number>();
-  for (const r of rows) bySection.set(r.section, (bySection.get(r.section) ?? 0) + r.hours);
+  // what the table can actually show. The name is the rows' own `sectionName` — the
+  // rule-book verdict for a raw pair ("40-311 — Machine Testing") — rather than the
+  // bare code repeated, which is what the panel's Section menu used to print for every
+  // raw code the 17-column SECTION_NAME table has no entry for. Matters now that the
+  // menu opens with several raw codes ticked at once (seedSectionFilter).
+  const bySection = new Map<string, { name: string; hours: number }>();
+  for (const r of rows) {
+    const cur = bySection.get(r.section);
+    if (cur) cur.hours += r.hours;
+    else bySection.set(r.section, { name: r.sectionName || r.section, hours: r.hours });
+  }
 
   return {
     rows,
     total: rows.reduce((s, r) => s + r.hours, 0),
     sections: [...bySection.entries()]
-      .map(([code, hours]) => ({ code, name: SECTION_NAME.get(code) ?? code, hours }))
+      .map(([code, { name, hours }]) => ({ code, name, hours }))
       .sort((a, b) => a.code.localeCompare(b.code)),
     truncated,
   };

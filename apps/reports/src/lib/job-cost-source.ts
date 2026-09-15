@@ -214,7 +214,9 @@ export async function getSubmittedEtcSnapshot(jobPks: number[], month: string): 
 
   const entries = await prisma.etcEntry.findMany({
     where: { jobId: { in: jobPks }, month, needsReview: false },
-    select: { jobId: true, section: true, newEtc: true, newEtcDraft: true, needsReview: true, priorEtc: true, hoursWorked: true },
+    // newEtcClearedAt / submittedAt are required by effectiveNewEtc's signature
+    // (2026-09-14); on these needsReview:false rows it still reduces to Number(newEtc).
+    select: { jobId: true, section: true, newEtc: true, newEtcDraft: true, newEtcClearedAt: true, submittedAt: true, needsReview: true, priorEtc: true, hoursWorked: true },
   });
   for (const e of entries) {
     let ref = out.get(e.jobId);

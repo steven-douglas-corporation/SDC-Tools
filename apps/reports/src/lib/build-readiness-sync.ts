@@ -23,7 +23,8 @@ import "server-only";
 // for the whole pass.
 
 import { prisma } from "@/lib/prisma";
-import { getJobBom, type JobBom } from "@/lib/job-bom";
+import { getJobBomResult, BOM_QUERY_CONCURRENCY, BOM_QUERY_COUNT, type JobBom, type JobBomResult } from "@/lib/job-bom";
+import { TOTALETO_TIMEOUT, POOL_MAX, runWithTotalEtoAbort } from "@/lib/totaleto-connection";
 import {
   type BomNode,
   type BomPart,
@@ -38,24 +39,49 @@ import type { BlockerEntry, BlockerReason, AssemblyDetail, JobDetail, UpcomingDe
 
 const DAY = 86_400_000;
 
-// Jobs processed at once during a bulk refresh — throttled well below the
-// active-job count so this never opens dozens of simultaneous mssql
-// connections against TotalETO. Not the 12s UPSTREAM_BUDGET_MS used for
-// page-render bounding elsewhere (with-timeout.ts) — that budget would time
-// out literally every job here, since a single getJobBom call alone can take
-// 100+ seconds. This budget only needs to be longer than mssql's own
-// `requestTimeout` (120s, job-bom.ts) so a genuinely stuck job fails on its
-// own terms instead of hanging the batch forever.
-const CONCURRENCY = 6;
-const PER_JOB_TIMEOUT_MS = 130_000;
+// ── Jobs processed at once, sized against the Total ETO pool (2026-09-14) ───
+//
+// Was 6, on the belief that a job was one connection. It was six: the BOM walk
+// fired its six queries in parallel, so six workers were 36 acquires against a
+// pool of 5 — the queue behind it timed out, was classified pool_exhausted,
+// retried three times each (queuing six more), and the walk finally returned an
+// EMPTY bom that this file wrote as "No BOM" for jobs that have one. Confirmed
+// live before the fix: job 1142 (151 parts on Procurement) came back empty under
+// 6-way load.
+//
+// The invariant now is arithmetic, and pinned by tests/build-readiness-sync.test.ts:
+// workers x queries-in-flight-per-job <= the pool's max. job-bom.ts runs
+// BOM_QUERY_CONCURRENCY statements at a time, so 4 x 2 = 8 connections at peak,
+// leaving 2 of the 120s pool's 10 for a page render or a PO drill-down that lands
+// while a pass is running.
+export const CONCURRENCY = 4;
+
+// Not the 12s UPSTREAM_BUDGET_MS used for page-render bounding elsewhere
+// (with-timeout.ts) — that budget would time out literally every job here, since
+// a single BOM walk can take 100+ seconds. A job now runs its six statements in
+// BOM_QUERY_CONCURRENCY-wide rounds, each bounded by mssql's own requestTimeout
+// (TOTALETO_TIMEOUT.bom), so the honest per-job ceiling is rounds x that timeout
+// plus a margin. When it fires, the walk is ABORTED (runWithTotalEtoAbort), not
+// merely abandoned: an orphaned walk would keep the very connections the next
+// job is waiting for.
+const BOM_QUERY_ROUNDS = Math.ceil(BOM_QUERY_COUNT / BOM_QUERY_CONCURRENCY);
+export const PER_JOB_TIMEOUT_MS = BOM_QUERY_ROUNDS * TOTALETO_TIMEOUT.bom + 10_000;
+
+/** The pool the BOM walk draws on, for the invariant test: workers x fan-out must fit in it. */
+export const BOM_POOL_MAX = POOL_MAX;
 
 async function withJobTimeout<T>(label: string, ms: number, work: () => Promise<T>): Promise<T | null> {
+  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      work(),
+      runWithTotalEtoAbort(controller.signal, work),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} did not respond within ${ms}ms`)), ms);
+        timer = setTimeout(() => {
+          const err = new Error(`${label} did not respond within ${ms}ms`);
+          controller.abort(err);
+          reject(err);
+        }, ms);
       }),
     ]);
   } catch (err) {
@@ -70,23 +96,33 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// getJobBom() is deliberately fail-soft — "Kept defensive/fail-soft
-// throughout: an unknown job or a query error yields an empty JobBom" (its
-// own header) — so a genuinely-empty BOM and a transient connection failure
-// are indistinguishable from outside it. That's fine for a single-job page
-// render (a reload retries); it's a real risk here, where CONCURRENCY jobs
-// each open their own full mssql connection pool at once and contention can
-// make an otherwise-fine job's query fail for no reason related to that job
-// (confirmed live: job 1142, which Job Hour Details -> Procurement shows with
-// 151 parts, came back empty under 6-way concurrent load). One retry after a
-// short backoff is cheap insurance against exactly that class of failure,
-// without changing job-bom.ts's own fail-soft contract.
-async function getJobBomWithRetry(jobId: string): Promise<JobBom | null> {
-  const first = await withJobTimeout(`Build Readiness (job ${jobId})`, PER_JOB_TIMEOUT_MS, () => getJobBom(jobId));
-  if (first && first.roots.length > 0) return first;
+// ── Failed is not empty (2026-09-14) ─────────────────────────────────────────
+//
+// getJobBom() is fail-soft by contract — a query error yields an empty JobBom —
+// which is right for a page render and wrong here, where the answer is persisted
+// for everyone: "failed" is only reachable when the read returned null, and
+// getJobBom never returns null, so every Total ETO fault during a pass was stored
+// as "empty" ("No BOM"). getJobBomResult carries the distinction, and this file
+// now writes what actually happened. The one retry after a short backoff is kept
+// for FAILURES only: a BOM that genuinely came back empty is not going to grow a
+// second time, and asking again only spends pool time the next job needs.
+async function getJobBomWithRetry(jobId: string): Promise<JobBomResult | null> {
+  const first = await withJobTimeout(`Build Readiness (job ${jobId})`, PER_JOB_TIMEOUT_MS, () => getJobBomResult(jobId));
+  if (first?.ok) return first;
   await sleep(2000);
-  const retry = await withJobTimeout(`Build Readiness (job ${jobId}, retry)`, PER_JOB_TIMEOUT_MS, () => getJobBom(jobId));
-  return retry && retry.roots.length > 0 ? retry : first;
+  const retry = await withJobTimeout(`Build Readiness (job ${jobId}, retry)`, PER_JOB_TIMEOUT_MS, () => getJobBomResult(jobId));
+  return retry?.ok ? retry : (retry ?? first);
+}
+
+/**
+ * What a job's read means for its snapshot row. Pure, so the failed/empty split
+ * is testable without a database: `failed` for a read that did not happen or
+ * did not succeed (timed out, threw, Total ETO fault), `empty` for a read that
+ * succeeded and found no BOM rows, `hasBom` otherwise (classify it).
+ */
+export function snapshotStatusFor(result: JobBomResult | null): "failed" | "empty" | "hasBom" {
+  if (!result || !result.ok) return "failed";
+  return result.bom.roots.length === 0 ? "empty" : "hasBom";
 }
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
@@ -448,6 +484,113 @@ async function incrementMetaDone(failed: boolean): Promise<void> {
   `;
 }
 
+// ── A "running" row that nobody is running (2026-09-14) ─────────────────────
+//
+// refreshBuildReadiness sets status = 'running' at the top and clears it at the
+// bottom, and nothing else ever did. A pass takes 15+ minutes; a pm2 restart mid-
+// pass (every deploy) left the row saying 'running' forever, and
+// triggerBuildReadinessRefresh returned early on that status — with or without
+// `force` — so every "Refresh now" after a restart was a silent no-op until
+// somebody edited the row by hand.
+//
+// Same fix as refresh-service.ts's RefreshLock: the pass HEARTBEATS. `updatedAt`
+// is re-stamped every META_HEARTBEAT_MS while the pass lives (and on every job it
+// finishes), so "running, but updatedAt is old" comes to mean "the process running
+// this died", not "this pass started a while ago". RUNNING_STALE_MS only has to
+// clear the longest plausible gap between beats — a blocked event loop, a slow
+// MySQL write — not the length of a pass. 5 minutes is 60 missed beats.
+export const META_HEARTBEAT_MS = 5_000;
+export const RUNNING_STALE_MS = 5 * 60_000;
+
+/** Is a row that claims to be running actually alive? Pure; both sides from the same clock. */
+export function isRunningRowStale(meta: { status: string; updatedAt: Date | null }, now: number, staleAfterMs: number = RUNNING_STALE_MS): boolean {
+  if (meta.status !== "running") return false;
+  if (!meta.updatedAt) return true; // never stamped at all — nothing is breathing
+  return now - meta.updatedAt.getTime() > staleAfterMs;
+}
+
+/**
+ * The status to SHOW for a meta row: a 'running' row whose heartbeat has stopped
+ * is presented as 'partial' (it did some jobs and did not finish), so the
+ * dashboard stops saying "Refreshing…" about a process that no longer exists.
+ */
+export function presentMetaStatus(meta: { status: string; updatedAt: Date | null }, now: number): string {
+  return isRunningRowStale(meta, now) ? "partial" : meta.status;
+}
+
+export type PassClaimDecision = "already_running" | "fresh" | "claim";
+
+/**
+ * Whether a caller may start a pass. Pure; the SQL in claimBuildReadinessPass is
+ * this decision written as one conditional UPDATE, and the test pins that they
+ * agree.
+ *
+ *   already_running — a live pass (heartbeat within staleAfterMs). `force` does
+ *                     NOT override a live pass; it overrides a STALE one.
+ *   fresh           — the last pass completed within freshForMs and this is not
+ *                     a forced refresh (a rapid back/forward, not a real request).
+ *   claim           — start one.
+ */
+export function decidePassClaim(
+  meta: { status: string; completedAt: Date | null; updatedAt: Date | null },
+  opts: { force: boolean; now: number; staleAfterMs: number; freshForMs: number },
+): PassClaimDecision {
+  if (meta.status === "running" && !isRunningRowStale(meta, opts.now, opts.staleAfterMs)) return "already_running";
+  if (!opts.force && meta.completedAt && opts.now - meta.completedAt.getTime() <= opts.freshForMs) return "fresh";
+  return "claim";
+}
+
+/** The slice of PrismaClient the claim needs — so a test can hand in a stub. */
+export type ClaimDb = { $executeRaw: (query: TemplateStringsArray, ...values: unknown[]) => Promise<number> };
+
+/**
+ * Atomically claims the singleton meta row for a new pass. Exactly one of any
+ * number of concurrent callers sees affectedRows === 1, and only that caller may
+ * start the pass — the check-then-act that used to live in
+ * triggerBuildReadinessRefresh (read meta, then fire) let two clicks start two
+ * passes that double-counted jobsDone and doubled the Total ETO load.
+ *
+ * The WHERE is decidePassClaim as SQL: not running, or running-but-stale; and
+ * (forced, or never completed, or completed longer than freshForMs ago). Both
+ * comparisons are against JS Dates, never NOW() — see upsertSnapshot's note on
+ * the session timezone.
+ */
+export async function claimBuildReadinessPass(opts: {
+  force: boolean;
+  triggeredByName: string | null;
+  freshForMs: number;
+  now?: Date;
+  db?: ClaimDb;
+}): Promise<boolean> {
+  const db = opts.db ?? prisma;
+  const now = opts.now ?? new Date();
+  const staleCutoff = new Date(now.getTime() - RUNNING_STALE_MS);
+  const freshCutoff = new Date(now.getTime() - opts.freshForMs);
+  // The row is a singleton the migration seeds; a missing one would make every
+  // claim affect 0 rows and nobody would ever refresh. Cheap insurance.
+  await db.$executeRaw`INSERT INTO BuildReadinessRefreshMeta (id, status, updatedAt) VALUES (1, 'idle', ${now}) ON DUPLICATE KEY UPDATE id = id`;
+  const claimed = await db.$executeRaw`
+    UPDATE BuildReadinessRefreshMeta
+       SET status = 'running', startedAt = ${now}, completedAt = NULL, durationMs = NULL,
+           jobsTotal = 0, jobsDone = 0, jobsFailed = 0, triggeredByName = ${opts.triggeredByName}, updatedAt = ${now}
+     WHERE id = 1
+       AND (status <> 'running' OR updatedAt IS NULL OR updatedAt < ${staleCutoff})
+       AND (${opts.force ? 1 : 0} = 1 OR completedAt IS NULL OR completedAt < ${freshCutoff})`;
+  return claimed === 1;
+}
+
+function startMetaHeartbeat(): () => void {
+  const timer = setInterval(() => {
+    // Only while the row is still ours to stamp: a stale-claim by another caller
+    // will have reset the row, and a beat from the corpse must not revive it.
+    void prisma.$executeRaw`UPDATE BuildReadinessRefreshMeta SET updatedAt = ${new Date()} WHERE id = 1 AND status = 'running'`.catch((err) => {
+      console.error("[build-readiness] meta heartbeat failed:", err);
+    });
+  }, META_HEARTBEAT_MS);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 // ── Entry points ─────────────────────────────────────────────────────────────
 
 // One job, live, awaited inline — used for the drill-down's "Refresh this
@@ -456,50 +599,63 @@ async function incrementMetaDone(failed: boolean): Promise<void> {
 export async function refreshOneJob(jobId: string): Promise<void> {
   const job = await prisma.job.findUnique({ where: { jobId }, select: { jobId: true, jobName: true, customer: true } });
   if (!job) return;
-  const bom = await getJobBomWithRetry(job.jobId);
-  if (!bom || bom.roots.length === 0) {
-    await upsertSnapshot(job.jobId, job.jobName, job.customer, bom ? "empty" : "failed", null);
+  const result = await getJobBomWithRetry(job.jobId);
+  const outcome = snapshotStatusFor(result);
+  if (outcome === "hasBom" && result) {
+    const computed = classifyJobBom(result.bom, job.jobId, job.jobName, Date.now());
+    await upsertSnapshot(job.jobId, job.jobName, job.customer, computed.requiredQtyTotal === 0 ? "notReleased" : "ok", computed);
     return;
   }
-  const computed = classifyJobBom(bom, job.jobId, job.jobName, Date.now());
-  await upsertSnapshot(job.jobId, job.jobName, job.customer, computed.requiredQtyTotal === 0 ? "notReleased" : "ok", computed);
+  await upsertSnapshot(job.jobId, job.jobName, job.customer, outcome === "empty" ? "empty" : "failed", null);
 }
 
 // The full cross-job pass. Fire-and-forget from build-readiness-actions.ts —
 // this function itself fully awaits its own work; it's the CALLER that
 // chooses not to await it to completion.
+//
+// The caller must already hold the claim (claimBuildReadinessPass returned true):
+// this function no longer writes status = 'running' itself, because the claim IS
+// that write, done atomically, and a second unconditional write here would let a
+// caller that lost the claim overwrite the winner's row.
 export async function refreshBuildReadiness(triggeredByName: string | null): Promise<void> {
   const startedAt = new Date();
-  const jobs = await prisma.job.findMany({ where: etcActiveJobFilter, select: { jobId: true, jobName: true, customer: true } });
-
-  await bumpMeta({ status: "running", startedAt, jobsTotal: jobs.length, jobsDone: 0, jobsFailed: 0, triggeredByName });
-  // completedAt must be cleared explicitly (a prior pass's value must not
-  // linger and be misread as "this pass finished").
-  await prisma.$executeRaw`UPDATE BuildReadinessRefreshMeta SET completedAt = NULL WHERE id = 1`;
-
+  const stopHeartbeat = startMetaHeartbeat();
   let anyFailed = false;
-  await mapWithConcurrency(jobs, CONCURRENCY, async (job) => {
-    const bom = await getJobBomWithRetry(job.jobId);
-    const failed = bom === null;
-    if (failed) anyFailed = true;
-    try {
-      if (!bom || bom.roots.length === 0) {
-        await upsertSnapshot(job.jobId, job.jobName, job.customer, failed ? "failed" : "empty", null);
-      } else {
-        const computed = classifyJobBom(bom, job.jobId, job.jobName, Date.now());
-        await upsertSnapshot(job.jobId, job.jobName, job.customer, computed.requiredQtyTotal === 0 ? "notReleased" : "ok", computed);
-      }
-    } catch (err) {
-      console.error(`[build-readiness] snapshot upsert failed for job ${job.jobId}:`, err);
-      anyFailed = true;
-    }
-    await incrementMetaDone(failed);
-  });
+  try {
+    const jobs = await prisma.job.findMany({ where: etcActiveJobFilter, select: { jobId: true, jobName: true, customer: true } });
+    await bumpMeta({ jobsTotal: jobs.length, triggeredByName });
 
-  const completedAt = new Date();
-  await bumpMeta({
-    status: anyFailed ? "partial" : "ok",
-    completedAt,
-    durationMs: completedAt.getTime() - startedAt.getTime(),
-  });
+    await mapWithConcurrency(jobs, CONCURRENCY, async (job) => {
+      const result = await getJobBomWithRetry(job.jobId);
+      const outcome = snapshotStatusFor(result);
+      const failed = outcome === "failed";
+      if (failed) anyFailed = true;
+      try {
+        if (outcome === "hasBom" && result) {
+          const computed = classifyJobBom(result.bom, job.jobId, job.jobName, Date.now());
+          await upsertSnapshot(job.jobId, job.jobName, job.customer, computed.requiredQtyTotal === 0 ? "notReleased" : "ok", computed);
+        } else {
+          await upsertSnapshot(job.jobId, job.jobName, job.customer, outcome === "empty" ? "empty" : "failed", null);
+        }
+      } catch (err) {
+        console.error(`[build-readiness] snapshot upsert failed for job ${job.jobId}:`, err);
+        anyFailed = true;
+      }
+      await incrementMetaDone(failed);
+    });
+  } catch (err) {
+    // The pass itself broke (the job list could not be read, a meta write threw).
+    // Recorded as partial below rather than left 'running' — that is the row the
+    // staleness rule exists to recover from, and there is no reason to wait for it.
+    console.error("[build-readiness] pass aborted:", err);
+    anyFailed = true;
+  } finally {
+    stopHeartbeat();
+    const completedAt = new Date();
+    await bumpMeta({
+      status: anyFailed ? "partial" : "ok",
+      completedAt,
+      durationMs: completedAt.getTime() - startedAt.getTime(),
+    }).catch((err) => console.error("[build-readiness] could not close the pass record:", err));
+  }
 }

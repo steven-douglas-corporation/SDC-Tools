@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { BTN_H_STANDARD, TOOLBAR_MIN_W } from "@/components/ui/classnames";
 import { isEtcDirty } from "@/lib/etc-dirty-tracker";
 
@@ -40,6 +41,11 @@ export function MonthYearSelect({
   nextStartable?: string;
 }) {
   const router = useRouter();
+  // Pane-aware (2026-09-14): inside a workspace tab this used to push `/etc?month=`,
+  // leaving the workspace altogether. usePaneUrl writes `t<N>.month` and stays on /w.
+  // `basePath` is honoured only when it names a different page than the one this
+  // control is rendered in — the legacy way a caller pointed it elsewhere.
+  const url = usePaneUrl();
   const [pending, startTransition] = useTransition();
   // The month the user just picked, held only while the navigation is in
   // flight. See `shown*` below for why it has to exist at all.
@@ -88,7 +94,13 @@ export function MonthYearSelect({
     // same way every other filter control on this app does it (see
     // ProjectsShowAllSwitch, useDraftParamMenu).
     startTransition(() => {
-      router.push(`${basePath}?month=${ym}`, { scroll: false });
+      if (basePath !== url.pathname && !url.inPane) {
+        router.push(`${basePath}?month=${ym}`, { scroll: false });
+        return;
+      }
+      // Only `month` is written: the ETC page's other params (dept, jobname,
+      // billables) are deliberately reset by a month change, as they always were.
+      url.push({ month: ym }, { scroll: false });
     });
   };
 

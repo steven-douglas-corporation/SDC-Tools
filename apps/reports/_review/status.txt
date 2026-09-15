@@ -1,0 +1,171 @@
+﻿ M DEVLOG.md
+ M scripts/purge-stale-hours-rows.ts
+ M src/app/(app)/admin/users/page.tsx
+ M src/app/(app)/etc/page.tsx
+ M src/app/(app)/jobs/[id]/page.tsx
+ M src/app/(app)/jobs/page.tsx
+ M src/app/(app)/split/page.tsx
+ M src/app/(app)/w/page.tsx
+ M src/app/api/auth/sso/route.ts
+ M src/app/api/health/route.ts
+ M src/app/api/realtime/stream/route.ts
+ M src/app/health/route.ts
+ M src/app/login/LoginForm.tsx
+ M src/app/login/actions.ts
+ M src/components/CashFlowClient.tsx
+ M src/components/ChangeNotifications.tsx
+ M src/components/ColumnResize.tsx
+ M src/components/DashboardTabs.tsx
+ M src/components/DataQualityExplorer.tsx
+ M src/components/GridViewProvider.tsx
+ M src/components/HoursClearFiltersButton.tsx
+ M src/components/HoursDetailPanel.tsx
+ M src/components/HoursViewsMenu.tsx
+ M src/components/JobCostExplorer.tsx
+ M src/components/JobHoursDashboard.tsx
+ M src/components/JobSelect.tsx
+ M src/components/JobStatusJobSelect.tsx
+ M src/components/LiveRefresh.tsx
+ M src/components/MonthYearSelect.tsx
+ M src/components/PaneView.tsx
+ M src/components/PartsCostNewEtcCell.tsx
+ M src/components/ProjectViewsMenu.tsx
+ M src/components/RealtimeProvider.tsx
+ M src/components/Sidebar.tsx
+ M src/components/SortButton.tsx
+ M src/components/TabScrollMemory.tsx
+ M src/components/TmReportClient.tsx
+ M src/components/WorkspaceShell.tsx
+ M src/components/WorkspaceTabBar.tsx
+ M src/components/dashboard/JobDrillPanel.tsx
+ M src/components/dashboard/useDashboardMonth.tsx
+ M src/components/useAutosave.ts
+ M src/components/useDraftGroupByMenu.ts
+ M src/components/useDraftParamMenu.ts
+ M src/components/useSplitNav.ts
+ M src/components/useWorkspaceActions.ts
+ M src/lib/auth.ts
+ M src/lib/auto-sync.ts
+ M src/lib/build-readiness-actions.ts
+ M src/lib/build-readiness-po-actions.ts
+ M src/lib/build-readiness-sync.ts
+ M src/lib/cash-flow-capture.ts
+ M src/lib/cash-flow-drill.ts
+ M src/lib/cash-flow-totaleto.ts
+ M src/lib/dashboard-job-drill.ts
+ M src/lib/data-quality-actions.ts
+ M src/lib/department-utilization.ts
+ M src/lib/drill-filters.ts
+ M src/lib/etc-actions.ts
+ M src/lib/etc-month-jobs.ts
+ M src/lib/etc-month-kpis.ts
+ M src/lib/etc.ts
+ M src/lib/execution-etc.ts
+ M src/lib/export/etc-export.ts
+ M src/lib/export/job-cost-export.ts
+ M src/lib/hiring-workbook.ts
+ M src/lib/hours-explorer.ts
+ M src/lib/hours-feed.ts
+ M src/lib/job-bom.ts
+ M src/lib/job-cost-inventory-sync.ts
+ M src/lib/job-cost-source.ts
+ M src/lib/job-cost.ts
+ M src/lib/job-hours-detail.ts
+ M src/lib/jobtask-actions.ts
+ M src/lib/manual-contractor-hours.ts
+ M src/lib/monthly-report-actions.ts
+ M src/lib/monthly-report.ts
+ M src/lib/parts-cost-window-attribution.ts
+ M src/lib/parts-etc-history-actions.ts
+ M src/lib/parts-spent.ts
+ M src/lib/paylocity-import.ts
+ M src/lib/paylocity-sources.ts
+ M src/lib/paylocity-workbook.ts
+ M src/lib/po-detail.ts
+ M src/lib/project-release-actions.ts
+ M src/lib/realtime-hub.ts
+ M src/lib/refresh-service.ts
+ M src/lib/request-sequence.ts
+ M src/lib/route-permissions.ts
+ M src/lib/scheduler-api-auth.ts
+ M src/lib/scheduler-sso.ts
+ M src/lib/sync-actuals.ts
+ M src/lib/sync-etc-history.ts
+ M src/lib/tab-scroll-state.ts
+ M src/lib/table-sort.ts
+ M src/lib/token-revocation.ts
+ M src/lib/totaleto-connection.ts
+ M src/lib/unattributed-hours.ts
+ M src/lib/user-role-actions.ts
+ M src/lib/workspace.ts
+ M tests/build-readiness-sync.test.ts
+ M tests/dashboard-job-drill.test.ts
+ M tests/department-utilization.test.ts
+ M tests/etc.test.ts
+ M tests/job-cost.test.ts
+ M tests/job-hours-selection.test.ts
+ M tests/left-to-invoice-parity.test.ts
+ M tests/money-spent-month.test.ts
+ M tests/parts-cost-reconciliation.test.ts
+ M tests/parts-cost-window-attribution.test.ts
+ M tests/scheduler-sso.test.ts
+ M tests/table-sort.test.ts
+ M tests/totaleto-connection.test.ts
+ M tests/totaleto-pool.test.ts
+ M tests/workspace.test.ts
+?? _review/
+?? backfill-etc-submitted-at.backup.1789442033208.json
+?? repair-2026-08-resubmit.backup.1789144045336.json
+?? repair-2026-08-resubmit.backup.1789144171308.json
+?? scripts/backfill-etc-submitted-at.ts
+?? scripts/dump-standard-sheet-diag.ts
+?? src/components/PaneUrlProvider.tsx
+?? src/components/UserActiveToggle.tsx
+?? src/lib/autosave-lifecycle.ts
+?? src/lib/exit-split.ts
+?? src/lib/gl-posted-sql.ts
+?? src/lib/health-probe.ts
+?? src/lib/job-detail-input.ts
+?? src/lib/live-refresh-run.ts
+?? src/lib/notification-timers.ts
+?? src/lib/pane-permissions.ts
+?? src/lib/pane-url.ts
+?? src/lib/password-policy.ts
+?? src/lib/permitted-routes-store.ts
+?? src/lib/presence-held.ts
+?? src/lib/safe-redirect.ts
+?? src/lib/session-role-cache.ts
+?? src/lib/session-role.ts
+?? standard-sheet-diag.2026-08.json
+?? tests/auth-hardening-2026-09-14.test.ts
+?? tests/auto-sync-budget.test.ts
+?? tests/autosave-lifecycle.test.ts
+?? tests/cash-flow-capture-date.test.ts
+?? tests/drill-section-seed.test.ts
+?? tests/etc-month-lock-and-scope.test.ts
+?? tests/exit-split.test.ts
+?? tests/gl-posted-sql.test.ts
+?? tests/health-probe.test.ts
+?? tests/hours-explorer-distinct.test.ts
+?? tests/job-bom-bounded.test.ts
+?? tests/job-detail-input.test.ts
+?? tests/live-refresh-run.test.ts
+?? tests/manual-contractor-resolution.test.ts
+?? tests/notification-timers.test.ts
+?? tests/pane-permissions.test.ts
+?? tests/pane-url.test.ts
+?? tests/parts-list-po-drawer.test.ts
+?? tests/password-policy.test.ts
+?? tests/presence-held.test.ts
+?? tests/realtime-hub-supersede.test.ts
+?? tests/refresh-seeding-error.test.ts
+?? tests/request-sequence-joiner.test.ts
+?? tests/safe-redirect.test.ts
+?? tests/scheduler-api-auth.test.ts
+?? tests/session-role-cache.test.ts
+?? tests/standard-sheet-read-freeze-parity.test.ts
+?? tests/sync-departed-buckets.test.ts
+?? tests/tab-scroll-scope.test.ts
+?? tests/token-revocation.test.ts
+?? tests/undefined-kpi-figures.test.ts
+?? tests/workbook-config.test.ts

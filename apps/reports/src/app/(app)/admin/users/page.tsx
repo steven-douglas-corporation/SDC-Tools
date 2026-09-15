@@ -1,8 +1,9 @@
 import { PageTitle } from "@/components/ui/Typography";
 import { PAGE_SHELL } from "@/components/ui/classnames";
 import { requirePagePermission } from "@/lib/require-permission";
-import { listUsersForAdmin, setUserRole } from "@/lib/user-role-actions";
+import { listUsersForAdmin, setUserActive, setUserRole } from "@/lib/user-role-actions";
 import { UserRoleSelect } from "@/components/UserRoleSelect";
+import { UserActiveToggle } from "@/components/UserActiveToggle";
 
 // ELT-only. The one screen that assigns All/Managers/Sales/ELT to a User row
 // — before this it took a raw DB write (see lib/user-role-actions.ts).
@@ -34,7 +35,11 @@ export default async function AdminUsersPage() {
               <td className="py-2 pr-4">
                 <UserRoleSelect userId={u.id} role={u.role} isSelf={u.email === session.user.email} action={setUserRole} />
               </td>
-              <td className="py-2 pr-4 text-sdc-gray-600">{u.active ? "Active" : "Deactivated"}</td>
+              <td className="py-2 pr-4">
+                {/* Self-registered accounts start inactive (2026-09-14) and are let in
+                    here; deactivating ends the person's sessions at once. */}
+                <UserActiveToggle userId={u.id} active={u.active} isSelf={u.email === session.user.email} action={setUserActive} />
+              </td>
             </tr>
           ))}
         </tbody>

@@ -14,8 +14,7 @@ import {
 import {
   MAX_TABS,
   decodeWorkspace,
-  navigateTab,
-  openTab,
+  sidebarClick,
   sidebarTarget,
   workspaceHref,
   type Workspace,
@@ -104,9 +103,11 @@ export function useSplitNav() {
           // workspace and opening the page full width is the useful reading of the
           // click, and it is what the menu's own refusal explains.
           if (pairingRefusal(href, other)) return href;
-          return workspaceHref(navigateTab(workspace, sidebarTarget(workspace), href));
         }
-        return workspaceHref(openTab(workspace, href));
+        // The SAME reducer useWorkspaceActions.openExistingTab applies on click, so
+        // the href in the markup and the action behind it cannot disagree — they did
+        // once (2026-09-14), and the click opened a tab the split never showed.
+        return workspaceHref(sidebarClick(workspace, href));
       }
 
       if (!state) return href;

@@ -1,7 +1,18 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { ETC_SECTIONS, PARTS_COST_SECTION, mapPunchToColumns, billingGroupForSection } from "@/lib/sections";
-import { calcHoursLeft, round2, effectiveNewEtc, newEtcDiff, isNewEtcDecided } from "@/lib/etc";
+import {
+  calcHoursLeft,
+  round2,
+  effectiveNewEtc,
+  newEtcDiff,
+  isNewEtcDecided,
+  partsCostEffectiveNewEtc,
+  partsCostDiff,
+  isPartsCostDecided,
+  type PartsCostLive,
+} from "@/lib/etc";
+import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
 
 // KPI cards for the top of the Monthly ETC page: hours worked and variance for
 // Engineering and Shop, parts money spent, and how many people booked time in
@@ -67,12 +78,17 @@ export type EtcMonthKpis = {
 
 // The entry shape both this and the grid rely on. Structural, so the caller can
 // pass its Prisma rows straight through.
+//
+// newEtcClearedAt / submittedAt are what effectiveNewEtc and isNewEtcDecided need
+// to tell a REOPENED row's confirmed figure from the carry-forward (2026-09-14).
 type EntryLike = {
   section: string;
   priorEtc: unknown;
   hoursWorked: unknown;
   newEtc: unknown;
   newEtcDraft: unknown;
+  newEtcClearedAt: Date | null;
+  submittedAt: Date | null;
   needsReview: boolean;
 };
 
@@ -82,7 +98,11 @@ export async function getEtcMonthKpis(
   // Exactly the jobs the grid is rendering (i.e. after its Billable filter), so
   // the cards move with the grid rather than describing a different set.
   jobs: { id: number; etcEntries: EntryLike[] }[],
+  // The live Left to Invoice + Left to Purchase per job PK, as the grid has it, so
+  // the Parts card reads the SAME Parts rule (lib/etc.ts) as the footer beneath it.
+  partsBreakoutSums: ReadonlyMap<number, number | null> = new Map(),
 ): Promise<EtcMonthKpis> {
+  const breakoutInScope = showsPartsBreakout(month);
   // Summed PER CELL, not derived from the group totals: the suggestion that
   // stands in for an untouched cell clamps at 0 per cell, and that clamp cannot
   // be reproduced from the sums. Every cell counts now — see newEtcDiff.
@@ -93,15 +113,17 @@ export async function getEtcMonthKpis(
   for (const job of jobs) {
     for (const entry of job.etcEntries) {
       if (entry.section === PARTS_COST_SECTION) {
+        const live: PartsCostLive = { breakoutInScope, breakoutSum: partsBreakoutSums.get(job.id) ?? null };
+        const partsEffective = partsCostEffectiveNewEtc(entry, live);
         parts.prior += Number(entry.priorEtc);
         parts.spent += Number(entry.hoursWorked);
-        parts.newEtc += effectiveNewEtc(entry);
-        parts.diff += newEtcDiff(entry);
+        parts.newEtc += partsEffective;
+        parts.diff += partsCostDiff(entry, live);
         // Decided cells only, clamped exactly as the per-cell formula clamps, so that
         // plannedMoneyLeft − plannedNewEtc === diff. See GroupKpi.
-        if (isNewEtcDecided(entry)) {
+        if (isPartsCostDecided(entry, live)) {
           parts.plannedLeft += calcHoursLeft(Number(entry.priorEtc), Number(entry.hoursWorked));
-          parts.plannedNewEtc += Math.max(effectiveNewEtc(entry), 0);
+          parts.plannedNewEtc += Math.max(partsEffective, 0);
         }
         continue;
       }

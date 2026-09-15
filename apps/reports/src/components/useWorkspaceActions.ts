@@ -7,8 +7,11 @@ import {
   MAX_TABS,
   duplicateTab as duplicateTabIn,
   enterSplit,
+  exitSplit,
   mostRecentInstance,
+  needsRender,
   openTab,
+  sidebarClick,
   sidebarTarget,
   tabById,
   tabTitle,
@@ -188,14 +191,48 @@ export function useWorkspaceActions() {
         // is right. The caller lets the <Link> handle it.
         return false;
       }
+      // ── While split, the click lands in the ACTIVE pane (2026-09-14) ─────────
+      //
+      // openTab adds or activates a tab and never touches `split`, and the shell
+      // shows only the two split tabs — so a plain click used to open a tab nobody
+      // could see, while the <Link>'s own href (useSplitNav.hrefFor) had computed the
+      // right answer. Both go through lib/workspace.ts's sidebarClick now, so the
+      // href in the markup and the action behind the click cannot disagree.
+      //
+      // The one pairing /w refuses (Monthly ETC beside Monthly ETC) is left to the
+      // <Link>: its href is the page's own route, and leaving the workspace to open
+      // it full width is the useful reading of that click.
+      if (workspace.split) {
+        const target = sidebarTarget(workspace);
+        const other = workspace.split.left === target ? workspace.split.right : workspace.split.left;
+        if (pairingRefusal(path, tabById(workspace, other)?.path)) return false;
+        const routed = sidebarClick(workspace, path);
+        if (routed === workspace) return true; // the active pane is already on that page
+        // A re-routed pane has content the server has never rendered.
+        return commit(routed, needsRender(workspace, routed) ? { navigate: true } : undefined);
+      }
       const next = openTab(workspace, path);
       if (next === workspace) return true; // already the active tab; the click is a no-op
       // A brand-new tab needs a pane rendered; resuming one does not.
-      const isNew = next.tabs.length !== workspace.tabs.length;
+      const isNew = needsRender(workspace, next);
       return commit(next, isNew ? { navigate: true } : undefined);
     },
     [canHost, workspace, commit],
   );
+
+  /**
+   * Leave the split, keeping the pane the user is working in — what the sidebar's
+   * "Exit Split View", the tab bar's "Exit Split" and Ctrl+\ all mean. Inside the
+   * workspace this is a state change, not a navigation: both panes stay mounted and
+   * the active one simply fills the width.
+   *
+   * False when there is no workspace split to leave — the caller falls back to the
+   * legacy /split route's own exit (lib/exit-split.ts decides which).
+   */
+  const exitSplitView = useCallback((): boolean => {
+    if (!workspace?.split) return false;
+    return commit(exitSplit(workspace, workspace.active));
+  }, [workspace, commit]);
 
   /**
    * Always a NEW instance, even when one is open — middle-click, and "Open in new tab".
@@ -334,5 +371,6 @@ export function useWorkspaceActions() {
     openNewTab,
     openInSplitView,
     duplicateTab,
+    exitSplitView,
   };
 }

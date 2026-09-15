@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 
 // Two tabs on the Dashboard: the overview it has always shown, and the Data
@@ -26,22 +26,21 @@ export function DashboardTabs({
   // panel's own slicers navigate, and they must not knock you back to Overview;
   // and the server needs to know which tab is open so it can skip the explorer's
   // whole-window punch scan when it isn't.
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const tab = searchParams.get("tab") === "quality" ? "quality" : "overview";
+  // Pane-aware (2026-09-14): the Dashboard tab's own params, wherever it is rendered.
+  const url = usePaneUrl();
+  const tab = url.searchParams.get("tab") === "quality" ? "quality" : "overview";
 
   function setTab(next: "overview" | "quality") {
     // See lib/url-params.ts: useSearchParams still reports the pre-navigation
     // value while a change is in flight, so building straight from it can
     // silently revert whatever was set a moment ago.
-    const currentQs = searchParams.toString();
+    const currentQs = url.searchKey;
     const qs = nextParams(currentQs);
     if (next === "quality") qs.set("tab", "quality");
     else for (const k of ["tab", "dqFrom", "dqTo", "dqEmp", "dqFn", "dqMtd"]) qs.delete(k);
     const q = qs.toString();
     notePendingParams(currentQs, q);
-    router.push(q ? `${pathname}?${q}` : pathname, { scroll: false });
+    url.push(qs, { scroll: false });
   }
 
   const tabClass = (active: boolean) =>

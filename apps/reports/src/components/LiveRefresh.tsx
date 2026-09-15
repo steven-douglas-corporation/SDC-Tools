@@ -8,6 +8,7 @@ import { isSavingSomewhere } from "@/lib/autosave";
 import { readRealtimeGaps, readRealtimeStatus, subscribeRealtimeStatus, type RealtimeStatus } from "@/lib/realtime-status";
 import { changeVersionMoved, type ChangeVersion } from "@/lib/change-version";
 import { sequenced, abandonLane } from "@/lib/request-sequence";
+import { settleRefreshRun } from "@/lib/live-refresh-run";
 
 // Keeps an OPEN page in step with what other people have saved.
 //
@@ -287,13 +288,19 @@ export function LiveRefresh({ intervalMs }: { intervalMs?: number } = {}) {
     // some browsers, and a burst of requestLiveRefresh() calls should be one
     // render, not five.
     let queued = false;
-    const run = () => {
+    // The server version the gate saw when it asked for the queued run, so the
+    // marker moves only if the refresh actually happens — see settleRefreshRun.
+    let queuedVersion: ChangeVersion | undefined;
+    const run = (version?: ChangeVersion) => {
+      if (version !== undefined) queuedVersion = version;
       if (queued) return;
       queued = true;
       // A microtask-ish gap is enough to merge the burst without adding a
       // perceptible delay to the focus case.
       setTimeout(() => {
         queued = false;
+        const latest = queuedVersion;
+        queuedVersion = undefined;
         // Checked HERE rather than only on the interval path, so it covers focus and
         // visibility too (found by review 2026-08-04 — those two bypassed it). A
         // refresh mid-save can deliver a payload rendered before the write
@@ -303,7 +310,16 @@ export function LiveRefresh({ intervalMs }: { intervalMs?: number } = {}) {
         //
         // This does NOT swallow the post-conflict requestLiveRefresh(): the save has
         // already resolved by then, so endSaveTracking() has run before this fires.
-        if (isSavingSomewhere()) return;
+        //
+        // ── The marker moves only when the refresh runs (2026-09-14) ────────────
+        // runIfWorthIt used to record `syncedAtVersion = latest` BEFORE calling run(),
+        // and when this bailed for a save in flight the marker had already moved:
+        // the next focus compared against it, saw nothing newer, and skipped too. A
+        // colleague's change stayed invisible until the five-minute backstop. Skipped
+        // for a save now leaves the marker alone, so the next focus retries.
+        const outcome = settleRefreshRun({ saving: isSavingSomewhere(), syncedAt: syncedAtVersion, latest });
+        syncedAtVersion = outcome.syncedAtVersion;
+        if (!outcome.ran) return;
         // The gap count at the moment we became current. Recorded BEFORE the
         // refresh rather than after, so a drop that happens during it still counts
         // as missed and gets its own pass.
@@ -312,7 +328,8 @@ export function LiveRefresh({ intervalMs }: { intervalMs?: number } = {}) {
       }, 50);
     };
 
-    refreshNow = run;
+    const refreshUnconditionally = () => run();
+    refreshNow = refreshUnconditionally;
 
     // Focus and visibility go through the gate; requestLiveRefresh() does NOT, so a
     // reconnect and a refused save still refresh unconditionally. That split is the
@@ -337,10 +354,10 @@ export function LiveRefresh({ intervalMs }: { intervalMs?: number } = {}) {
       if (!focusRefreshIsWorthIt(readRealtimeStatus(), readRealtimeGaps() - syncedAtGaps, changeVersionMoved(syncedAtVersion, latest))) {
         return;
       }
-      // Recorded BEFORE the refresh, so a save landing during it still counts as
-      // newer and gets its own pass.
-      syncedAtVersion = latest;
-      run();
+      // Handed to run(), which records it as the marker only when the refresh
+      // actually fires — recorded at that moment rather than after the refresh, so a
+      // save landing during it still counts as newer and gets its own pass.
+      run(latest);
     };
 
     const onVisible = () => {
@@ -375,7 +392,7 @@ export function LiveRefresh({ intervalMs }: { intervalMs?: number } = {}) {
       // A version check still in flight must not decide anything for the page that
       // replaced this one.
       abandonLane("live-refresh-version");
-      if (refreshNow === run) refreshNow = null;
+      if (refreshNow === refreshUnconditionally) refreshNow = null;
     };
   }, [router, intervalMs]);
 
