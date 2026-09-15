@@ -677,12 +677,15 @@ export function PartPoSubRowCells({
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
   onOpenPo: (supplier: string | null, poNumber: string | null) => void;
   /**
-   * Carries the parent's Part No + Desc onto this sub-row instead of the
-   * generic "↳ PO" (2026-09-15, by request). Skimming a long list of
-   * auto-expanded sub-rows (the "Left to invoice" filter's whole point) with
-   * every Part No cell reading the same "↳ PO" loses which part each
-   * order belongs to the moment it scrolls past its parent row. Optional, off
-   * by default, so ordinary manual expansion keeps the lighter original label.
+   * Carries the parent's Part No, Desc and Mfr onto this sub-row instead of
+   * leaving them generic/blank (2026-09-15, by request) — all three are
+   * PART-level facts that don't vary per PO, so the parent's own value
+   * carries straight over rather than being recomputed. Skimming a long list
+   * of auto-expanded sub-rows (the "Left to invoice" filter's whole point,
+   * which since 2026-09-15 shows no parent row at all) with every Part No
+   * cell reading the same "↳ PO" loses which part each order belongs to the
+   * moment it scrolls past where its parent used to be. Optional, off by
+   * default, so ordinary manual expansion keeps the lighter original label.
    */
   showPartIdentity?: boolean;
 }) {
@@ -705,6 +708,13 @@ export function PartPoSubRowCells({
       case "desc":
         return showPartIdentity ? (
           <span className="block truncate text-note text-sdc-gray-600" title={p.desc}>{p.desc || "—"}</span>
+        ) : null;
+      case "mfr":
+        // Part-level, like pn/desc — doesn't vary per PO, so the parent's own
+        // value carries straight over (same "In-house (SDC)" special-case
+        // PartRowCells' "mfr" case uses, for a consistent read across rows).
+        return showPartIdentity ? (
+          <span className="block truncate text-note text-sdc-gray-600" title={p.manufacturer}>{p.manufacturer === "SDC" ? "In-house (SDC)" : p.manufacturer || "—"}</span>
         ) : null;
       case "supplier":
         return (
