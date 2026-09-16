@@ -1640,9 +1640,11 @@ function PartsListTab({
   // Turning "Left to invoice" ON auto-unfolds every qualifying part (2026-09-15,
   // by request) — the whole point of the filter is "show me what's still owed",
   // and that answer lives on the PO sub-rows, not the part row's blended total.
-  // One-directional: turning the filter back OFF does not re-collapse anything,
-  // so a row the user expanded by hand (or left open before the toggle) stays
-  // exactly as they left it — the toggle only ever OPENS on the way in.
+  // Turning it back OFF collapses everything again (2026-09-16, by request) —
+  // the parent row is hidden while the filter is on (see displayRows), so
+  // `expanded` only starts mattering again once it turns off, and starting
+  // that view with every part still expanded from the filter would be a
+  // wall of unfolded rows nobody asked to see.
   //
   // Adjusted DURING render, not in a useEffect: this repo's lint blocks
   // setState-in-effect (2026-09-13, see ci.yml), and this is the React-docs
@@ -1652,6 +1654,7 @@ function PartsListTab({
   if (onlyLeftToInvoice !== prevOnlyLeftToInvoice) {
     setPrevOnlyLeftToInvoice(onlyLeftToInvoice);
     if (onlyLeftToInvoice) setExpanded((prev) => new Set([...prev, ...expandableIds]));
+    else setExpanded(new Set());
   }
 
   // A windowed Invoiced figure means something different from the lifetime one
