@@ -677,15 +677,17 @@ export function PartPoSubRowCells({
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
   onOpenPo: (supplier: string | null, poNumber: string | null) => void;
   /**
-   * Carries the parent's Part No, Desc and Mfr onto this sub-row instead of
-   * leaving them generic/blank (2026-09-15, by request) — all three are
-   * PART-level facts that don't vary per PO, so the parent's own value
-   * carries straight over rather than being recomputed. Skimming a long list
-   * of auto-expanded sub-rows (the "Left to invoice" filter's whole point,
-   * which since 2026-09-15 shows no parent row at all) with every Part No
-   * cell reading the same "↳ PO" loses which part each order belongs to the
-   * moment it scrolls past where its parent used to be. Optional, off by
-   * default, so ordinary manual expansion keeps the lighter original label.
+   * Carries the parent's Part No, Desc, Mfr and Status onto this sub-row
+   * instead of leaving them generic/blank (2026-09-15/16, by request). Part
+   * No/Desc/Mfr are PART-level facts that don't vary per PO, so the parent's
+   * own value carries straight over rather than being recomputed. Status is
+   * copied the same way (not recomputed per PO — see that case's own note).
+   * Skimming a long list of auto-expanded sub-rows (the "Left to invoice"
+   * filter's whole point, which since 2026-09-15 shows no parent row at all)
+   * with every Part No cell reading the same "↳ PO" loses which part each
+   * order belongs to the moment it scrolls past where its parent used to be.
+   * Optional, off by default, so ordinary manual expansion keeps the lighter
+   * original label.
    */
   showPartIdentity?: boolean;
 }) {
@@ -774,6 +776,14 @@ export function PartPoSubRowCells({
         return <span className={money}>{usd(g.leftToInvoice)}</span>;
       case "pctinv":
         return <span className={money}>{g.totalPrice > 0 ? `${Math.round((g.invoicedAmount / g.totalPrice) * 100)}%` : g.invoicedAmount > 0 ? "100%" : ""}</span>;
+      case "status":
+        // Copied down as-is, not recomputed per PO: p.st is the part's own
+        // blended status (received/overdue/due-soon/etc., off its OWN
+        // expected/required dates — see partStatus). A genuine per-PO status
+        // would need its own recompute off this PO's dates instead, which is
+        // a real thing to revisit later if a part with several open POs on
+        // different schedules turns out to need it.
+        return showPartIdentity ? <StatusPill st={p.st} /> : null;
       default:
         return null;
     }
