@@ -6,7 +6,11 @@ import { SortableTh } from "@/components/ui/SortableHeader";
 import { useColumnSort } from "@/components/useColumnSort";
 import { sortRows, type SortColumns } from "@/lib/table-sort";
 import { usd, usdExact } from "@/components/ui/format";
+import { BUTTON_COMPACT } from "@/components/ui/classnames";
 import type { TmPartsDrillRow } from "@/lib/tm-report";
+// The SAME predicate the export applies server-side — see tm-parts-search.ts.
+import { filterTmPartsDrillRows } from "@/lib/tm-parts-search";
+import { useToast } from "@/components/ui/Toast";
 
 // The drill-through TABLE behind the T&M tab's three Parts-based cards (Part
 // Invoiced Amount, SDC Manufactured Parts Sales Price, Expense Reports) —
@@ -55,6 +59,7 @@ export function TmPartsDrillPanel({
   error,
   amountKey,
   amountLabel,
+  exportParams,
 }: {
   /** null while the drill is loading. */
   rows: TmPartsDrillRow[] | null;
@@ -62,28 +67,67 @@ export function TmPartsDrillPanel({
   /** Which column this card's KPI actually sums — drives the default sort and the total row. */
   amountKey: "totalPrice" | "invoicedAmount";
   amountLabel: string;
+  /**
+   * What the export needs that this panel does not otherwise know: which card is
+   * open and the page's current job/date selection. The search box is NOT in
+   * here — it is this component's own state and is appended at click time.
+   * Omitted/null hides the export control rather than sending a broken request.
+   */
+  exportParams?: { key: string; jobs: string[]; from: string; to: string } | null;
 }) {
   const sort = useColumnSort<SortKey>({ key: amountKey, direction: "desc" });
   const [query, setQuery] = useState("");
+  const [exporting, setExporting] = useState<"csv" | "xlsx" | null>(null);
+  const { toast } = useToast();
 
-  const filtered = useMemo(() => {
-    if (!rows) return [];
-    const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      (r) =>
-        r.jobId.toLowerCase().includes(q) ||
-        r.jobName.toLowerCase().includes(q) ||
-        r.partNumber.toLowerCase().includes(q) ||
-        r.description.toLowerCase().includes(q) ||
-        r.supplier.toLowerCase().includes(q) ||
-        r.poNumber.toLowerCase().includes(q),
-    );
-  }, [rows, query]);
+  // One predicate, shared with the export (lib/tm-parts-search.ts) — this used
+  // to be an inline six-field OR here, which is what the server would have had
+  // to duplicate.
+  const filtered = useMemo(() => (rows ? filterTmPartsDrillRows(rows, query) : []), [rows, query]);
 
   const sorted = useMemo(() => sortRows(filtered, sort.sort, COLUMNS), [filtered, sort.sort]);
   const total = filtered.reduce((sum, r) => sum + r[amountKey], 0);
   const filtering = query.trim().length > 0;
+
+  // fetch + blob rather than a plain <a download> — see TmHoursDrillPanel's
+  // own note (ExportMenu.tsx's three reasons: progress, distinguishing a 500
+  // from a no-op, and awaitability). The drawer never navigates.
+  async function handleExport(format: "csv" | "xlsx") {
+    if (exporting || !exportParams) return;
+    setExporting(format);
+    try {
+      const qs = new URLSearchParams({
+        format,
+        key: exportParams.key,
+        from: exportParams.from,
+        to: exportParams.to,
+      });
+      if (exportParams.jobs.length > 0) qs.set("jobs", exportParams.jobs.join(","));
+      // The search box, so the file matches THIS table and not the unfiltered
+      // card. Applied server-side by the same predicate used above.
+      if (filtering) qs.set("q", query.trim());
+
+      const res = await fetch(`/api/export/tm-parts?${qs.toString()}`);
+      if (!res.ok) throw new Error((await res.text()) || `Export failed (${res.status}).`);
+
+      const blob = await res.blob();
+      const fileName =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? `T&M.${format}`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      toast(`${fileName} downloaded.`, "success");
+    } catch (err) {
+      toast(err instanceof Error ? `Export failed — ${err.message}` : "Export failed.", "error");
+    } finally {
+      setExporting(null);
+    }
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -95,6 +139,33 @@ export function TmPartsDrillPanel({
           placeholder="Search part, description, supplier, PO#, or job…"
           className="h-7 w-full max-w-xs rounded-md border border-sdc-border-soft px-2 text-note outline-none motion-interactive focus:border-sdc-blue"
         />
+        {/* Export sits opposite the search box, same layout as Hours — the box
+            decides what lands in the file, so the two controls read together.
+            Hidden until rows are loaded, same reasoning as Hours' own guard. */}
+        {exportParams && rows !== null && rows.length > 0 ? (
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="text-note text-sdc-muted">
+              Export {filtering ? `${filtered.length} of ${rows.length}` : `${rows.length}`} row
+              {(filtering ? filtered.length : rows.length) === 1 ? "" : "s"}:
+            </span>
+            <button
+              type="button"
+              className={BUTTON_COMPACT}
+              disabled={exporting !== null}
+              onClick={() => handleExport("csv")}
+            >
+              {exporting === "csv" ? "Exporting…" : "CSV"}
+            </button>
+            <button
+              type="button"
+              className={BUTTON_COMPACT}
+              disabled={exporting !== null}
+              onClick={() => handleExport("xlsx")}
+            >
+              {exporting === "xlsx" ? "Exporting…" : "Excel"}
+            </button>
+          </div>
+        ) : null}
       </div>
       <div className="styled-scrollbar min-h-0 flex-1 overflow-y-auto">
         {error ? (

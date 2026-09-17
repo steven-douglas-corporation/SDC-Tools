@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { APP_VERSION } from "@/lib/app-version";
 import { buildTmHoursExport } from "@/lib/export/tm-hours-export";
+import { buildTmPartsExport } from "@/lib/export/tm-parts-export";
 import { buildCsv } from "@/lib/export/csv";
 import { buildXlsx } from "@/lib/export/xlsx";
 import { exportFileName, todayStamp, type SheetSpec } from "@/lib/export/sheet";
@@ -71,7 +72,7 @@ import type { Permission } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
-const REPORTS = new Set(["projects", "etc", "hours", "tm-hours"]);
+const REPORTS = new Set(["projects", "etc", "hours", "tm-hours", "tm-parts"]);
 
 // Same permission the corresponding page itself requires (requirePagePermission
 // in each page.tsx) — the export must not be a back door around the page guard.
@@ -80,6 +81,8 @@ const REPORT_PERMISSION: Record<string, Permission> = {
   etc: "monthly-etc:view",
   hours: "hours:view",
   "tm-hours": "tm:view",
+  // Same tab as tm-hours (both are T&M drill exports), so the same permission.
+  "tm-parts": "tm:view",
 };
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ report: string }> }) {
@@ -132,6 +135,20 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
               },
               now,
             )
+          : report === "tm-parts"
+            ? // Same shape as tm-hours above, for the T&M tab's three Parts/$
+              // cards — lib/tm-parts-search.ts is that pipeline's own shared
+              // predicate.
+              await buildTmPartsExport(
+                {
+                  key: searchParams.get("key") ?? undefined,
+                  jobs: searchParams.get("jobs") ?? undefined,
+                  from: searchParams.get("from") ?? undefined,
+                  to: searchParams.get("to") ?? undefined,
+                  q: searchParams.get("q") ?? undefined,
+                },
+                now,
+              )
           : report === "hours"
             ? // The page's OWN query string, verbatim — same guarantee as Projects
               // above: the filter/sort/group-by rules live in hours-filters.ts,
@@ -168,9 +185,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
     }
 
     const fileName =
-      report === "tm-hours"
+      report === "tm-hours" || report === "tm-parts"
         ? // The card's own name in the file name — a folder of these is otherwise
-          // five identical "T&M" files. Spaces out, so it is a clean download name.
+          // several identical "T&M" files. Spaces out, so it is a clean download name.
           exportFileName(["T&M", (built as unknown as { cardLabel: string }).cardLabel.replace(/ /g, "_"), todayStamp(now)], format)
         : report === "projects"
         ? exportFileName(["Projects", (built as unknown as { filterLabel: string }).filterLabel, todayStamp(now)], format)
@@ -179,7 +196,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
           : exportFileName(["Monthly_ETC", (built as unknown as { monthLabel: string }).monthLabel.replace(" ", "_"), todayStamp(now)], format);
 
     const reportLabel =
-      report === "projects" ? "Projects" : report === "hours" ? "Hours" : report === "tm-hours" ? `T&M ${(built as unknown as { cardLabel: string }).cardLabel}` : "Monthly ETC";
+      report === "projects"
+        ? "Projects"
+        : report === "hours"
+          ? "Hours"
+          : report === "tm-hours" || report === "tm-parts"
+            ? `T&M ${(built as unknown as { cardLabel: string }).cardLabel}`
+            : "Monthly ETC";
 
     // The audit record §24.11 asks for: who, what, which format, which filters, when,
     // how many rows, which app version. Awaited rather than fired-and-forgotten — an
@@ -188,7 +211,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
     // one that did not.
     await logAudit({
       action: "export.download",
-      entityType: report === "projects" ? "Job" : report === "hours" || report === "tm-hours" ? "JobHoursDetail" : "EtcMonth",
+      entityType:
+        report === "projects"
+          ? "Job"
+          : report === "hours" || report === "tm-hours"
+            ? "JobHoursDetail"
+            : report === "tm-parts"
+              ? "PartPurchase"
+              : "EtcMonth",
       entityId: report === "etc" ? (searchParams.get("month") ?? "") : undefined,
       summary: `Exported ${reportLabel} as ${format.toUpperCase()} — ${built.rowCount} row(s)` + (includedStandards ? " (including Standards)" : ""),
       metadata: {

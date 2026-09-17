@@ -362,6 +362,10 @@ export function TmReportClient({
                 error={drawer.status === "error" ? drawer.message : null}
                 amountKey={PARTS_AMOUNT[openDrill].key}
                 amountLabel={PARTS_AMOUNT[openDrill].label}
+                // Same three inputs this drill was fetched with (see the
+                // loadTmPartsDrill call above), so the export cannot describe a
+                // different selection than the table it sits on.
+                exportParams={{ key: openDrill, jobs: selectedJobIds, from: startDate, to: endDate }}
               />
             )}
           </TmDrillErrorBoundary>
