@@ -115,6 +115,22 @@ function inRange(line: PartsCostLine, basis: "invoicedDate" | "purchaseDate", st
 // Each mirrors what its Power BI measure did, expressed against the fields
 // PartsCostLine already carries. The text matches are case-insensitive for the same
 // reason DAX's SEARCH was: these are AP vendor strings, typed by people.
+
+// measure: Total Price where Manufacturer = "SDC" and Supplier = "Steven Douglas
+// Corp." — SDC's own manufactured parts, reported on the sdcManufacturedPartsSalesPrice
+// card below. Named so partInvoicedAmount can also exclude it (2026-09-17): these
+// lines DO carry GL-posted actualAmount and an Invoiced Date on ~55% of rows (1,231 of
+// 2,257 measured), so before this exclusion they counted a second time inside Part
+// Invoiced Amount too — the same dollars under two KPIs shown side by side.
+const isSdcManufacturedLine = (l: PartsCostLine): boolean =>
+  (l.manufacturer ?? "").trim().toUpperCase() === "SDC" && (l.supplier ?? "").trim().toUpperCase() === "STEVEN DOUGLAS CORP.";
+
+// measure: Total Price where SEARCH("expense reports", [Supplier]) > 0 — despite
+// the name, a text-matched subset of purchase lines whose AP vendor contains
+// "expense reports", not the model's separate Travel Expenses table. Named for the
+// same reason as isSdcManufacturedLine: partInvoicedAmount excludes it too now.
+const isExpenseReportLine = (l: PartsCostLine): boolean => (l.supplier ?? "").toLowerCase().includes("expense reports");
+
 const CARD_RULES: Record<
   TmPartsDrillKey,
   { amount: (l: PartsCostLine) => number; basis: "invoicedDate" | "purchaseDate"; where: (l: PartsCostLine) => boolean }
@@ -122,34 +138,36 @@ const CARD_RULES: Record<
   // measure: SUM('Part Purchase'[Invoiced Amount]) — now the GL-posted slice, per
   // the header above. Invoiced money belongs to the period it was invoiced in, so
   // the Invoiced-Date basis is unchanged.
+  //
+  // Excludes SDC Manufactured Parts and Expense Reports (2026-09-17): both are their
+  // own cards below, reported on their own basis, and `where: () => true` here used to
+  // count them a second time inside Part Invoiced Amount as well — a real double-count,
+  // not a rounding artifact (confirmed live: PO 103842/103615/103718 lines aside, the
+  // SDC-manufactured share alone was measured at 1,231 GL-posted, Invoiced-Date-bearing
+  // rows). Both cards go through cardLines/cardTotal, so this single change fixes the
+  // KPI and its drill together — the drill can never disagree with a total it is
+  // summed from.
   partInvoicedAmount: {
     amount: (l) => l.actualAmount,
     basis: "invoicedDate",
-    where: () => true,
+    where: (l) => !isSdcManufacturedLine(l) && !isExpenseReportLine(l),
   },
 
-  // measure: Total Price where Manufacturer = "SDC" and Supplier = "Steven Douglas
-  // Corp." — SDC's own manufactured parts. Kept on PURCHASE date: these are internal,
-  // so SDC never invoices itself, and 1,026 of 2,257 such rows had no Invoiced Date
-  // at all in the old model, which made the card structurally $0 for any recent
-  // range. That divergence from Power BI's measure was already deliberate here; on
-  // Total ETO it simply stops being a divergence, because there is no measure to
-  // diverge from.
+  // Kept on PURCHASE date: these are internal, so SDC never invoices itself, and
+  // 1,026 of 2,257 such rows had no Invoiced Date at all in the old model, which made
+  // the card structurally $0 for any recent range. That divergence from Power BI's
+  // measure was already deliberate here; on Total ETO it simply stops being a
+  // divergence, because there is no measure to diverge from.
   sdcManufacturedPartsSalesPrice: {
     amount: (l) => l.totalPrice,
     basis: "purchaseDate",
-    where: (l) =>
-      (l.manufacturer ?? "").trim().toUpperCase() === "SDC" &&
-      (l.supplier ?? "").trim().toUpperCase() === "STEVEN DOUGLAS CORP.",
+    where: isSdcManufacturedLine,
   },
 
-  // measure: Total Price where SEARCH("expense reports", [Supplier]) > 0 — despite
-  // the name, a text-matched subset of purchase lines whose AP vendor contains
-  // "expense reports", not the model's separate Travel Expenses table.
   expenseReports: {
     amount: (l) => l.totalPrice,
     basis: "invoicedDate",
-    where: (l) => (l.supplier ?? "").toLowerCase().includes("expense reports"),
+    where: isExpenseReportLine,
   },
 };
 
