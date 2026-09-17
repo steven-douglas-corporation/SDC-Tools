@@ -1,26 +1,11 @@
 "use client";
 
 import { AgGridReact } from "ag-grid-react";
-import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef } from "ag-grid-community";
-
-// Register the free Community feature set (sort/filter/resize/pagination/CSV).
-ModuleRegistry.registerModules([AllCommunityModule]);
-
-// AG Grid v36 Theming API (no CSS import needed) — tuned to the SDC brand so
-// the trial grid reads like the rest of the app.
-const sdcTheme = themeQuartz.withParams({
-  accentColor: "#1574C4",
-  headerBackgroundColor: "#061D39",
-  headerTextColor: "#ffffff",
-  headerFontWeight: 600,
-  fontFamily: "inherit",
-  fontSize: 8,
-  headerFontSize: 8,
-  rowHoverColor: "#e6f0fa",
-  borderColor: "#e6e9ee",
-  wrapperBorderRadius: 12,
-  oddRowBackgroundColor: "#fafbfc",
-});
+import type { ColDef } from "ag-grid-community";
+// The theme and the Community module registration both live in one place since
+// 2026-09-17, when the feedback queue became the app's second grid — see that
+// file for why they are not inline here any more.
+import { sdcTheme, GRID_HEIGHT } from "@/components/ui/ag-grid-theme";
 
 export type AuditRow = {
   when: string;
@@ -40,7 +25,7 @@ export default function AuditLogGridInner({ rows }: { rows: AuditRow[] }) {
   ];
 
   return (
-    <div style={{ height: "calc(var(--app-vh) - 175px)", width: "100%" }}>
+    <div style={{ height: GRID_HEIGHT, width: "100%" }}>
       <AgGridReact<AuditRow>
         theme={sdcTheme}
         rowData={rows}

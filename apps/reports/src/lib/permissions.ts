@@ -70,7 +70,31 @@ export type Permission =
   | "profitability:view"
   | "users:manage"
   | "permissions:manage"
-  | "tm:view";
+  | "tm:view"
+  // ── Feedback (2026-09-17) ─────────────────────────────────────────────────
+  //
+  // SUBMIT is seeded ON for every role, and that is the point rather than an
+  // oversight: a data-accuracy channel nobody can reach dies. The key exists so
+  // the Flag button can be REVOKED from a role, not because it starts narrow.
+  //
+  // VIEW and TRIAGE are MANAGER + ELT only, by request. The queue is an
+  // oversight surface, not something every signed-in user needs a nav item for,
+  // and this follows what cash-flow:view already does: seeded OFF for the roles
+  // that do not need it, so widening it is a deliberate click on
+  // /admin/permissions rather than a code change.
+  //
+  // ── The cost of that, stated plainly ──────────────────────────────────────
+  //
+  // feedback:view is also what lets a SUBMITTER read the response to their own
+  // report (the /feedback page scopes a non-triager to their own rows). With it
+  // off, a PM or Sales user can file but cannot see what came of it — the loop
+  // is one-way for them until somebody ticks their View box. That is a
+  // deliberate trade, not an oversight: see the toast in FeedbackDrawer, which
+  // is worded from this same permission so it never promises a page the caller
+  // cannot open.
+  | "feedback:submit"
+  | "feedback:view"
+  | "feedback:triage";
 
 // The shape every role's grants take. Now COMPLETE per role rather than "what
 // this tier adds on top of the one below it" — that phrasing only made sense
@@ -102,6 +126,8 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     // accident of a refactor.
     "monthly-etc:edit",
     "monthly-etc:submit",
+    // Everyone can report a wrong number. Seeing the queue is MANAGER+.
+    "feedback:submit",
   ],
   MANAGER: [
     "job-hour-details:view",
@@ -115,6 +141,11 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "hours:view",
     "projects:view",
     "tm:view",
+    "feedback:submit",
+    // The role that owns the numbers is the role that sees the queue and
+    // answers for them.
+    "feedback:view",
+    "feedback:triage",
   ],
   // NEW ROLE (2026-09-01). Project execution, and nothing else — explicitly NOT
   // seeded from MANAGER's or SALES's list, per the request. What PM gets is the
@@ -134,6 +165,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "projects:view",
     "dashboard:view",
     "hours:view",
+    "feedback:submit",
   ],
   SALES: [
     "job-hour-details:view",
@@ -148,6 +180,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "projects:view",
     "projects:edit",
     "tm:view",
+    "feedback:submit",
   ],
   // ELT's real answer is "everything", from the wildcard in hasPermission. This
   // list is never consulted for an ELT caller; it exists so the type is total
@@ -159,6 +192,8 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "users:manage",
     "permissions:manage",
     "cash-flow:view",
+    "feedback:view",
+    "feedback:triage",
   ],
 };
 

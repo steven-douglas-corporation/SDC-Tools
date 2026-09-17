@@ -230,8 +230,24 @@ test("nothing names a font face except the theme and the loader", () => {
 test("a third-party grid is told to inherit the app font, not given one", () => {
   // §39.16's "table libraries applying their own font styles". AG Grid takes a theme
   // parameter; the right value is `inherit`, so it cannot drift from the rest of the app.
-  const grid = readFileSync(join(SRC, "components", "AuditLogGridInner.tsx"), "utf8");
-  assert.match(grid, /fontFamily:\s*"inherit"/, "the grid must inherit the app font");
+  //
+  // The theme moved out of AuditLogGridInner.tsx on 2026-09-17, when the feedback
+  // queue became the app's second grid — see components/ui/ag-grid-theme.ts.
+  const theme = readFileSync(join(SRC, "components", "ui", "ag-grid-theme.ts"), "utf8");
+  assert.match(theme, /fontFamily:\s*"inherit"/, "the grid theme must inherit the app font");
+});
+
+test("there is exactly ONE ag-grid theme definition", () => {
+  // The other half of §39.16, and the reason the theme was lifted rather than
+  // copied: two "identical" theme objects drift, and the symptom is one grid
+  // quietly rendering at a different font size from its neighbour — which is
+  // precisely how the charts ended up on a different family (see Drill.tsx's
+  // header). Asserted structurally so a third grid cannot reintroduce it by
+  // pasting the block it found in a sibling file.
+  const definers = FILES.filter((f) => /themeQuartz\s*\.withParams/.test(code(f))).map((f) =>
+    f.replace(SRC, "src").replace(/\\/g, "/"),
+  );
+  assert.deepEqual(definers, ["src/components/ui/ag-grid-theme.ts"], "import sdcTheme instead of defining another one");
 });
 
 // ── The root size, and the shift it used to cause (§39.18, §45) ─────────────

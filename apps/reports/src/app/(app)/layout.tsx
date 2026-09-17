@@ -70,6 +70,14 @@ export default async function AppGroupLayout({ children }: { children: React.Rea
     <AppShell
       userEmail={session?.user?.email}
       visibleHrefs={visibleHrefs}
+      // Resolved HERE, not inside the client button, for the same reason
+      // visibleHrefs is: the permission matrix is DB-backed and lives in this
+      // server process's memory, so a client bundle's own hasPermission()
+      // would be a build-time snapshot no live change could reach.
+      canSubmitFeedback={hasPermission(role, "feedback:submit")}
+      // Also resolved server-side: it decides whether the submit confirmation
+      // offers the Feedback page, which most roles cannot open (see permissions.ts).
+      canViewFeedback={hasPermission(role, "feedback:view")}
       // What the server rendered with. The client store reads the same two cookies, so
       // the value React hydrates with is the value already on screen.
       sidebar={sidebar}

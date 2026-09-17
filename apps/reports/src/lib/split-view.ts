@@ -155,6 +155,11 @@ export const SPLIT_ROUTES: readonly {
   { path: "/cash-flow", label: "Cash Flow", params: ["as", "compare"], instanceParam: "as" },
   { path: "/employees", label: "Employees", params: [] },
   { path: "/audit-log", label: "Audit Log", params: [] },
+  // The route most worth splitting: the queue on one side, the disputed report
+  // on the other, at the submitter's own job and month. `params` is transcribed
+  // from the page's own searchParams type — tests/split-view.test.ts asserts it
+  // both ways, so a filter added to one and not the other fails there.
+  { path: "/feedback", label: "Feedback", params: ["status", "app", "job", "assignee", "mine"] },
 ];
 
 const ROUTE_BY_PATH = new Map(SPLIT_ROUTES.map((r) => [r.path, r]));

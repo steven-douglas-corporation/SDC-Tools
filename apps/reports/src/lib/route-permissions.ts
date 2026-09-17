@@ -30,6 +30,25 @@ export const ROUTE_PERMISSIONS: readonly { path: string; permission: Permission 
   // only thing stopping them. Listing it here means the direct-URL check and
   // the sidebar agree, like every other route.
   { path: "/cash-flow", permission: "cash-flow:view" },
+  // ── Feedback sits LATE in this array on purpose (2026-09-17) ──────────────
+  //
+  // Read safeFallbackPath() below before moving it. That function returns the
+  // FIRST entry in array order whose permission the role holds, so any entry
+  // near the top becomes the destination for every permission-denied redirect
+  // in the app for every role that holds it.
+  //
+  // feedback:view ships MANAGER-only, so the blast radius today is one role —
+  // but it is exactly the kind of permission that gets widened later from
+  // /admin/permissions without anyone re-reading this file. Were it on for
+  // everyone and listed first, an ALL user typing /cash-flow would land on the
+  // complaints queue instead of Job Details, and the fallback would stop
+  // meaning "the page you can definitely see". Nothing throws; the app just
+  // quietly grows a new front door.
+  //
+  // Placed here it is reachable, gated, and can never be chosen as a fallback,
+  // because job-hour-details:view is matched first for every real role.
+  // tests/permissions.test.ts pins this.
+  { path: "/feedback", permission: "feedback:view" },
   { path: "/admin/users", permission: "users:manage" },
   // Roster maintenance moved off the Employees page (2026-08-24). Gated on the
   // permission its writing half needs, not the read-only half.

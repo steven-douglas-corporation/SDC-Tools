@@ -23,7 +23,7 @@ export type PermissionCatalogEntry = {
   indent?: boolean;
 };
 
-export const PERMISSION_SECTIONS = ["General", "Projects", "Monthly ETC", "Hours", "Standards", "Financial", "Administration"] as const;
+export const PERMISSION_SECTIONS = ["General", "Projects", "Monthly ETC", "Hours", "Standards", "Financial", "Feedback", "Administration"] as const;
 
 export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   // Display labels only. The permission KEYS stay `job-hour-details:*` — they are
@@ -50,6 +50,14 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   // by request — seeded OFF for every role but ELT, so today's access is
   // unchanged and widening it is a deliberate click rather than a code change.
   { keys: ["cash-flow:view"], label: "Cash Flow Forecast", section: "Financial" },
+  // Three rows rather than one, for the same reason Monthly ETC is three:
+  // reporting a wrong number, SEEING the queue, and ANSWERING for it are
+  // different jobs. Submit ships ON for every role; View and Triage ship
+  // MANAGER-only (see permissions.ts). Ticking View for PM or Sales is what
+  // lets those submitters read the response to their own reports.
+  { keys: ["feedback:submit"], label: "Feedback — Submit (the Flag button)", section: "Feedback" },
+  { keys: ["feedback:view"], label: "Feedback — View the queue", section: "Feedback" },
+  { keys: ["feedback:triage"], label: "Feedback — Triage (status, assign, respond)", section: "Feedback" },
   { keys: ["employees:view"], label: "Employees — View", section: "Administration" },
   { keys: ["employees:edit"], label: "Employees — Edit (Add Member)", section: "Administration" },
   { keys: ["employees:hiring:assign"], label: "Employees — Manage Hiring Positions (Create/Edit/Assign)", section: "Administration" },
