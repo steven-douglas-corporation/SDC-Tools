@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveTmJobPks } from "@/lib/tm-hours";
 import { getPartsCostForJobs, type PartsCostLine } from "@/lib/sync-totaleto";
 import { withTimeoutOrNull } from "@/lib/with-timeout";
+import { isSdcVendor } from "@/lib/vendor-normalize";
 import type { TmFilters, TmPartsDrillKey, TmPartsMetrics, TmPartsDrillRow } from "@/lib/tm-report";
 
 // T&M's three dollar cards, read from Total ETO (2026-09-02).
@@ -116,14 +117,21 @@ function inRange(line: PartsCostLine, basis: "invoicedDate" | "purchaseDate", st
 // PartsCostLine already carries. The text matches are case-insensitive for the same
 // reason DAX's SEARCH was: these are AP vendor strings, typed by people.
 
-// measure: Total Price where Manufacturer = "SDC" and Supplier = "Steven Douglas
-// Corp." — SDC's own manufactured parts, reported on the sdcManufacturedPartsSalesPrice
-// card below. Named so partInvoicedAmount can also exclude it (2026-09-17): these
-// lines DO carry GL-posted actualAmount and an Invoiced Date on ~55% of rows (1,231 of
-// 2,257 measured), so before this exclusion they counted a second time inside Part
-// Invoiced Amount too — the same dollars under two KPIs shown side by side.
-const isSdcManufacturedLine = (l: PartsCostLine): boolean =>
-  (l.manufacturer ?? "").trim().toUpperCase() === "SDC" && (l.supplier ?? "").trim().toUpperCase() === "STEVEN DOUGLAS CORP.";
+// Originally: Manufacturer = "SDC" AND Supplier = "Steven Douglas Corp." — the
+// Power BI measure's own two-field AND. Widened to SUPPLIER alone (2026-09-17),
+// via the same isSdcVendor() the Parts List already uses to canonicalize SDC
+// under one name: on job 1096, three lines carry supplier "Steven Douglas
+// Corp." with manufacturer null or "ITEM" (PO 102492, part 1096-Y-002, $100
+// GL-posted, Invoiced Date 2026-09-01 — real money) — the manufacturer AND
+// still let them straight through BOTH the partInvoicedAmount exclusion below
+// and this card, so they neither got reported here nor kept out of Part
+// Invoiced. The determining fact for "SDC never invoices itself for this" is
+// who issued the AP document (the supplier), not who is recorded as having
+// made the physical part — an SDC-supplied line can carry any manufacturer.
+// isSdcVendor already refuses "SDC Credit Card (Approved)" and "…Expense
+// Reports…" (real outside spend / handled by its own card), so it will not
+// over-match those.
+const isSdcManufacturedLine = (l: PartsCostLine): boolean => isSdcVendor(l.supplier);
 
 // measure: Total Price where SEARCH("expense reports", [Supplier]) > 0 — despite
 // the name, a text-matched subset of purchase lines whose AP vendor contains
