@@ -91,8 +91,16 @@ export function isSdcVendor(raw: string | null | undefined): boolean {
   // "SDC" as its own leading word: "SDC", "SDC ASSY", "SDC ASSEMBLY".
   if (/^SDC(\s|$)/.test(f)) return true;
   // The written-out name, with or without a legal suffix: "STEVEN DOUGLAS",
-  // "STEVEN DOUGLAS CORP", "STEVEN DOUGLAS CORPORATION", "STEVEN DOUGLAS CO".
-  if (/^STEVEN\s+DOUGLAS(\s+(CORP|CORPORATION|CO|INC|LLC))?$/.test(f)) return true;
+  // "STEVEN DOUGLAS CORP", "STEVEN DOUGLAS CORPORATION", "STEVEN DOUGLAS CO" —
+  // and, since a T&M audit found it live (2026-09-17), with a trailing AP
+  // approval-workflow annotation the accounting feed appends in brackets or
+  // parens: "Steven Douglas Corp. [Concord] (Approved)" was a $209,625 line on
+  // job 1106 that the anchored `$` refused outright, so this end-of-string
+  // pattern was letting real SDC-supplier spend straight through Part Invoiced
+  // Amount. NOT_SDC_AS_VENDOR above still runs first, so this stays narrow:
+  // "SDC Credit Card (Approved)" is excluded by its own /credit\s*card/i guard
+  // before this line is ever reached, not by this pattern failing to match it.
+  if (/^STEVEN\s+DOUGLAS(\s+(CORP|CORPORATION|CO|INC|LLC))?(\s*[[(].*)?$/.test(f)) return true;
   return false;
 }
 
