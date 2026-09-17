@@ -1253,12 +1253,7 @@ function PartsDetailTable({
 // "leftspend" did: a stored `hiddenPartCols` lists what is HIDDEN, so a key that
 // did not exist when it was written is simply absent, and the column shows up for
 // existing users as well as new ones.
-//
-// "match" joined the default-HIDDEN set 2026-09-16 — it names which rows are
-// BOM parts vs. non-BOM charges (freight, fees, credits), which matters far
-// less often than the columns beside it and was crowding a row that is
-// already dense. Still one click away behind the Columns menu.
-const DEFAULT_HIDDEN_COLS: ColKey[] = ["parent", "category", "invoiceddate", "lead", "due", "pctinv", "match"];
+const DEFAULT_HIDDEN_COLS: ColKey[] = ["parent", "category", "invoiceddate", "lead", "due", "pctinv"];
 
 // Invoiced+range window fetch status — passed down so PartsListTab can show a
 // fail-soft status message and PartsTableView can render the reconciliation
@@ -1361,8 +1356,6 @@ const DEFAULT_COL_WIDTH: Record<ColKey, number> = {
   invoiced: 96,
   pctinv: 64,
   leftspend: 104,
-  // "NON-BOM", "JOIN FIX", "NO PART NO" plus the badge padding.
-  match: 96,
   // RECEIVED / DUE SOON in 2d / NO PO, plus the badge padding around them.
   status: 132,
 };
