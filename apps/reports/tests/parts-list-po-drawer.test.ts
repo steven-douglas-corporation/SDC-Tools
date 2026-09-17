@@ -294,6 +294,55 @@ test("authoritativeVendorRollup normalizes both sides and sums every raw vendor 
   assert.equal(authoritativeVendorRollup(vendors, "NOBODY"), undefined);
 });
 
+// ── SDC never invoices itself (2026-09-17, by request) ───────────────────────
+//
+// Same rule tm-parts-source.ts already applies to T&M's Part Invoiced Amount:
+// a line bought FROM Steven Douglas Corp carries no real external invoice, so
+// Invoiced $ is not a meaningful figure and nothing is ever left to invoice on
+// it — regardless of whatever actualAmount the raw purchase line happens to
+// carry (a real GL-posted figure would otherwise flow straight through).
+
+const SDC_PART = part({ id: 20, pn: "PN-SDC-2", poId: "100400", supplier: "Steven Douglas Corp.", qty: 1, unitPrice: 500 });
+const SDC_LINE = line({ partNumber: "PN-SDC-2", poNumber: "100400", supplier: "Steven Douglas Corp.", purchaseDate: "2026-02-01", quantity: 1, totalPrice: 500, actualAmount: 300, invoicedAmount: 300 });
+
+test("a BOM row supplied by SDC has no invoiced amount and nothing left to invoice, even though the raw line was actually invoiced", () => {
+  const [row] = flattenBomParts(bomOf([SDC_PART]), [SDC_LINE]);
+  assert.equal(row.supplier, SDC_CANONICAL, "sanity: normalized to the canonical spelling");
+  assert.equal(row.totalPrice, 500, "the purchase itself still counts as real spend");
+  assert.equal(row.invoicedAmount, 0, "SDC does not invoice itself for this line");
+  assert.equal(row.leftToSpend, 0, "so nothing is left to invoice either");
+  // The per-PO breakdown (the sub-rows and the PO drawer) agrees with the row.
+  assert.equal(row.poBreakdown.length, 1);
+  assert.equal(row.poBreakdown[0].invoicedAmount, 0);
+  assert.equal(row.poBreakdown[0].leftToInvoice, 0);
+});
+
+test("a non-BOM (leftover) row supplied by SDC gets the same treatment as a matched BOM row", () => {
+  const orphanLine = line({ partNumber: "PN-SDC-ORPHAN", poNumber: "100401", supplier: "Steven Douglas Corp.", purchaseDate: "2026-02-02", totalPrice: 200, actualAmount: 200 });
+  const [row] = flattenBomParts(bomOf([]), [orphanLine]);
+  assert.equal(row.nonBom, true, "sanity: no BOM part claims this line");
+  assert.equal(row.supplier, SDC_CANONICAL);
+  assert.equal(row.totalPrice, 200);
+  assert.equal(row.invoicedAmount, 0);
+  assert.equal(row.leftToSpend, 0);
+});
+
+test("a non-SDC supplier on the same job is unaffected", () => {
+  const rows = flattenBomParts(bomOf([PN_A]), [OLD_LINE, NEW_LINE]);
+  assert.notEqual(rows[0].supplier, SDC_CANONICAL);
+  assert.equal(rows[0].invoicedAmount, 100, "ACME's real invoiced amount still flows through");
+  assert.equal(rows[0].leftToSpend, 200);
+});
+
+test("the Invoiced $ cell prints N/A, not a fake $0, for an SDC-supplied row", () => {
+  const src = strip(readFileSync(join(import.meta.dirname, "..", "src", "components", "procurement", "PoDetailPanel.tsx"), "utf8"));
+  const rowCase = src.slice(src.indexOf('case "invoiced":'), src.indexOf('case "pctinv":'));
+  assert.match(rowCase, /p\.supplier === SDC_CANONICAL/, "the row cell checks the row's own normalized supplier");
+  assert.match(rowCase, />\s*N\/A\s*</, "and prints N/A rather than usd(0)");
+  const subRowCase = src.slice(src.indexOf('case "invoiced":', src.indexOf("PartPoSubRowCells")), src.indexOf('case "leftspend":', src.indexOf("PartPoSubRowCells")));
+  assert.match(subRowCase, /g\.supplier === SDC_CANONICAL/, "the PO sub-row cell checks the group's own supplier");
+});
+
 // ── What only the components can promise, pinned by source shape ────────────
 
 const SRC = join(import.meta.dirname, "..", "src");

@@ -14,7 +14,7 @@ import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bo
 import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { normPn, type WindowAttribution } from "@/lib/parts-cost-window-attribution";
 import { alternateKeys, classifyUnmatched, type MatchReason } from "@/lib/parts-match-reason";
-import { normalizeVendor } from "@/lib/vendor-normalize";
+import { normalizeVendor, SDC_CANONICAL } from "@/lib/vendor-normalize";
 import { isUncoveredPart } from "@/lib/job-bom-rules";
 import { lineLeftToInvoice } from "@/lib/left-to-invoice";
 
@@ -439,10 +439,16 @@ export function groupLinesByPo(
         const v = pick(d);
         return v && (!best || v > best) ? v : best;
       }, null);
+    const groupSupplier = normalizeVendor(first.supplier);
+    // SDC never invoices itself for a PO it is the supplier on (same rule
+    // tm-parts-source.ts already applies to Part Invoiced Amount) — so this
+    // group's invoiced figure is not a real external invoice and nothing is
+    // still owed against it, regardless of what the raw lines carry.
+    const sdcGroup = groupSupplier === SDC_CANONICAL;
     out.push({
       lineIds: b.lines.map((l) => l.lineId),
       poNumber: first.poNumber,
-      supplier: normalizeVendor(first.supplier),
+      supplier: groupSupplier,
       lineCount: b.lines.length,
       qty,
       // Guarded, not merely divided: job 1116 carries zero-quantity purchase
@@ -451,8 +457,8 @@ export function groupLinesByPo(
       // it actually is.
       unitPrice: qty !== 0 ? totalPrice / qty : null,
       totalPrice,
-      invoicedAmount: w((l) => l.actualAmount),
-      leftToInvoice: w((l) => lineLeftToInvoice(l)),
+      invoicedAmount: sdcGroup ? 0 : w((l) => l.actualAmount),
+      leftToInvoice: sdcGroup ? 0 : w((l) => lineLeftToInvoice(l)),
       purchaseDate: newest((l) => l.purchaseDate),
       invoicedDate: newest((l) => l.invoicedDate),
       expectedDate: newestOf((d) => d.expectedDate),
@@ -678,6 +684,11 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     // — the same source `poNumber` and `purchasedDate` below use, so the three
     // cells describe one purchase.
     const supplier = normalizeVendor(line ? line.supplier : p.supplier);
+    // SDC never invoices itself (same rule tm-parts-source.ts already applies
+    // to Part Invoiced Amount — see isSdcManufacturedLine there): a row bought
+    // FROM Steven Douglas Corp carries no real external invoice, so Invoiced $
+    // and Left to Invoice below are not meaningful figures for it either.
+    const sdcSupplier = supplier === SDC_CANONICAL;
     // ── EVERY PO line for this part, not just the newest (2026-09-02) ────────
     //
     // This read `line.totalPrice` — the single newest PO line — as the part's cost.
@@ -709,11 +720,13 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     //
     // The windowed figure is already summed across every line by
     // attributeInvoicedWindow, so it only needs the same share division.
-    const invoicedAmount = activeAttribution
-      ? (windowedInvoiced ?? 0) / shareOf(p.pn)
-      : pnLines
-        ? splitSum((l) => l.actualAmount)
-        : 0;
+    const invoicedAmount = sdcSupplier
+      ? 0
+      : activeAttribution
+        ? (windowedInvoiced ?? 0) / shareOf(p.pn)
+        : pnLines
+          ? splitSum((l) => l.actualAmount)
+          : 0;
     const pctInvoiced = activeAttribution
       ? null
       : totalPrice > 0
@@ -764,7 +777,10 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       // `totalPrice - 0`, i.e. the BOM's own cost ESTIMATE, which is not money
       // any supplier invoice will ever be raised against. Left as a real (if
       // estimated) figure in Total $ — just not counted as still owed.
-      leftToSpend: activeAttribution ? null : p.source === "process" || p.source === "stock" ? 0 : pnLines ? splitSum((l) => lineLeftToInvoice(l)) : totalPrice - invoicedAmount,
+      // Bought FROM Steven Douglas Corp (2026-09-17, by request) joins that same
+      // zeroed set for the same reason: SDC does not invoice itself, so nothing
+      // is ever "left to invoice" on a line it supplied.
+      leftToSpend: activeAttribution ? null : p.source === "process" || p.source === "stock" || sdcSupplier ? 0 : pnLines ? splitSum((l) => lineLeftToInvoice(l)) : totalPrice - invoicedAmount,
       matchReason,
       nonBom: false,
       // A BOM part bought three times is three lines under one row, same as below.
@@ -827,9 +843,14 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
   for (const [, lines] of leftovers) {
     const first = lines[0];
     const totalPrice = sumLines(lines, (l) => l.totalPrice);
-    const invoicedAmount = activeAttribution
-      ? (activeAttribution.byPartNumber.get(normPn(first.partNumber)) ?? 0)
-      : sumLines(lines, (l) => l.actualAmount);
+    const supplier = normalizeVendor(first.supplier);
+    // Same "SDC never invoices itself" rule as the BOM branch above.
+    const sdcSupplier = supplier === SDC_CANONICAL;
+    const invoicedAmount = sdcSupplier
+      ? 0
+      : activeAttribution
+        ? (activeAttribution.byPartNumber.get(normPn(first.partNumber)) ?? 0)
+        : sumLines(lines, (l) => l.actualAmount);
     const reason = classifyUnmatched(first.partNumber, first.description, totalPrice, null);
     const nonBomBreakdown = groupLinesByPo(lines, [], 1, poLineDates);
     const nonBomPurchasedQty = nonBomBreakdown.reduce((sum, g) => sum + g.qty, 0);
@@ -842,7 +863,7 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       desc: first.description ?? "",
       qty: lines.reduce((s2, l) => s2 + l.quantity, 0),
       unitPrice: first.unitPrice,
-      supplier: normalizeVendor(first.supplier),
+      supplier,
       // BomPart.manufacturer is non-nullable; a purchase line's may be null.
       manufacturer: normalizeVendor(first.manufacturer) ?? "",
       poId: first.poNumber,
@@ -905,8 +926,9 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       invoicedAmount,
       pctInvoiced: activeAttribution ? null : totalPrice > 0 ? Math.round((invoicedAmount / totalPrice) * 100) : invoicedAmount > 0 ? 100 : 0,
       // Same shared kernel as the BOM branch above. These rows own their lines
-      // outright (no share split), so it is a plain sum.
-      leftToSpend: activeAttribution ? null : lines.reduce((s2, l) => s2 + lineLeftToInvoice(l), 0),
+      // outright (no share split), so it is a plain sum — except an SDC-supplied
+      // line, which is never left to invoice for the same reason as the BOM branch.
+      leftToSpend: activeAttribution ? null : sdcSupplier ? 0 : lines.reduce((s2, l) => s2 + lineLeftToInvoice(l), 0),
       matchReason: reason,
       nonBom: true,
       lineCount: lines.length,
