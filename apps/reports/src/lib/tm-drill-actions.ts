@@ -1,7 +1,7 @@
 "use server";
 
 import { auth } from "@/lib/auth";
-import type { TmPartsDrillKey, TmPartsDrillRow } from "@/lib/tm-report";
+import { TM_PARTS_KEYS, type TmPartsDrillKey, type TmPartsDrillRow } from "@/lib/tm-report";
 import { loadTmPartsLines, tmDrillRowsFrom } from "@/lib/tm-parts-source";
 import { getTmHoursDrillRows, resolveTmJobPks, type TmHoursDrillKey, type TmHoursDrillRow } from "@/lib/tm-hours";
 import { TM_HOURS_KEYS } from "@/lib/tm-hours-classify";
@@ -49,7 +49,9 @@ import { withDrillErrors } from "@/lib/drill-error";
 // about which keys exist. Same reason HOURS_CODES_BY_KEY was deleted on
 // 2026-09-01 — a second definition of one mapping is a thing that drifts.
 const HOURS_KEYS: readonly TmHoursDrillKey[] = TM_HOURS_KEYS;
-const PARTS_KEYS: TmPartsDrillKey[] = ["partInvoicedAmount", "sdcManufacturedPartsSalesPrice", "expenseReports"];
+// DERIVED from PARTS_CARDS (see tm-report.ts), not written out again — same
+// reasoning as HOURS_KEYS above, and now also shared with the export builder.
+const PARTS_KEYS: readonly TmPartsDrillKey[] = TM_PARTS_KEYS;
 
 function requireDateRange(startDate: string, endDate: string): void {
   if (!isValidDateRange(startDate, endDate)) throw new Error("Invalid date range.");

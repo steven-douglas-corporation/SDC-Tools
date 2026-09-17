@@ -255,6 +255,22 @@ export const PARTS_CARDS: Record<
   },
 };
 
+// DERIVED from PARTS_CARDS' own keys, not written out again — same reasoning
+// as TM_HOURS_KEYS in tm-hours-classify.ts: a fourth copy of this list is what
+// let the Other Hours card silently outlive one of its own siblings. The
+// export path (lib/export/tm-parts-export.ts) and the drill action
+// (tm-drill-actions.ts) both import this rather than each hand-writing it.
+export const TM_PARTS_KEYS: readonly TmPartsDrillKey[] = Object.keys(PARTS_CARDS) as TmPartsDrillKey[];
+
+// The label the export's title/subtitle/filename use — the server-safe
+// counterpart of TmReportClient.tsx's own CARD_TITLE (that map is "use
+// client" and cannot be imported into the export route).
+export const TM_PARTS_LABELS: Record<TmPartsDrillKey, string> = {
+  partInvoicedAmount: "Part Invoiced Amount",
+  sdcManufacturedPartsSalesPrice: "SDC Manufactured Parts Sales Price",
+  expenseReports: "Expense Reports",
+};
+
 /** The filter arguments for one card — the single source both the KPI and the drill build on. */
 function partsCardFilters(filters: TmFilters, key: TmPartsDrillKey): string[] {
   const card = PARTS_CARDS[key];
