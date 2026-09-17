@@ -756,13 +756,15 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       // Signed on purpose: the aggregate floor belongs on a total, never on one row,
       // and this column shows genuine over-invoicing as a negative.
       //
-      // Built in-house — `p.source === "process"` — is zeroed regardless
-      // (2026-09-16, by request): with no purchase lines, the `pnLines`
-      // fallback below reads `totalPrice - invoicedAmount` as `totalPrice -
-      // 0`, i.e. the BOM's own cost ESTIMATE, which is not money any supplier
-      // invoice will ever be raised against. Left as a real (if estimated)
-      // figure in Total $ — just not counted as still owed.
-      leftToSpend: activeAttribution ? null : p.source === "process" ? 0 : pnLines ? splitSum((l) => lineLeftToInvoice(l)) : totalPrice - invoicedAmount,
+      // Built in-house (`p.source === "process"`) or pulled from inventory
+      // (`p.source === "stock"`) is zeroed regardless (2026-09-16, in-house;
+      // extended to stock pulls 2026-09-17, by request — an item pulled from
+      // stock is never invoiced by anyone either): with no purchase lines, the
+      // `pnLines` fallback below reads `totalPrice - invoicedAmount` as
+      // `totalPrice - 0`, i.e. the BOM's own cost ESTIMATE, which is not money
+      // any supplier invoice will ever be raised against. Left as a real (if
+      // estimated) figure in Total $ — just not counted as still owed.
+      leftToSpend: activeAttribution ? null : p.source === "process" || p.source === "stock" ? 0 : pnLines ? splitSum((l) => lineLeftToInvoice(l)) : totalPrice - invoicedAmount,
       matchReason,
       nonBom: false,
       // A BOM part bought three times is three lines under one row, same as below.
