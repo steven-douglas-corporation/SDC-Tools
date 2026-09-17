@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { BomPart, PoLineGroup } from "@/lib/job-bom";
+import { SDC_CANONICAL } from "@/lib/vendor-normalize";
 import { usd, usd2 } from "@/components/ui/format";
 import { useColumnSort } from "@/components/useColumnSort";
 import { SortableTh } from "@/components/ui/SortableHeader";
@@ -592,7 +593,16 @@ export function PartRowCells({
       case "total":
         return <span className="whitespace-nowrap font-mono text-note font-semibold tabular-nums text-sdc-navy">{p.totalPrice > 0 ? usd(p.totalPrice) : "—"}</span>;
       case "invoiced":
-        return <span className="whitespace-nowrap font-mono text-note font-medium tabular-nums text-sdc-navy">{usd(p.invoicedAmount)}</span>;
+        // SDC never invoices itself (po-detail.ts already zeroes the figure
+        // behind this) — said in words rather than printed as a real "$0",
+        // which would read as "nothing invoiced yet" instead of "not applicable".
+        return p.supplier === SDC_CANONICAL ? (
+          <span className="whitespace-nowrap text-note font-medium text-sdc-muted" title="Steven Douglas Corp (SDC) is the supplier — there is no external invoice for this line">
+            N/A
+          </span>
+        ) : (
+          <span className="whitespace-nowrap font-mono text-note font-medium tabular-nums text-sdc-navy">{usd(p.invoicedAmount)}</span>
+        );
       case "pctinv":
         return (
           <span className="whitespace-nowrap font-mono text-note font-medium tabular-nums text-sdc-gray-600" title={p.pctInvoiced === null ? "Not meaningful for a windowed Invoiced $ figure" : undefined}>
@@ -745,7 +755,12 @@ export function PartPoSubRowCells({
       case "total":
         return <span className={`${money} font-semibold`}>{usd(g.totalPrice)}</span>;
       case "invoiced":
-        return <span className={money}>{usd(g.invoicedAmount)}</span>;
+        // Same "SDC never invoices itself" rule as the parent row's cell.
+        return g.supplier === SDC_CANONICAL ? (
+          <span className={`${money} text-sdc-muted`} title="Steven Douglas Corp (SDC) is the supplier — there is no external invoice for this line">N/A</span>
+        ) : (
+          <span className={money}>{usd(g.invoicedAmount)}</span>
+        );
       case "leftspend":
         return <span className={money}>{usd(g.leftToInvoice)}</span>;
       case "pctinv":
