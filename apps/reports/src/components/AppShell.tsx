@@ -3,6 +3,7 @@ import ExcelCellFocus from "@/components/ExcelCellFocus";
 import ColumnResize from "@/components/ColumnResize";
 import ScrollHandoff from "@/components/ScrollHandoff";
 import { ToastProvider } from "@/components/ui/Toast";
+import { FeedbackButton } from "@/components/FeedbackButton";
 import { DEFAULT_PREFS, sidebarWidthCss, type SidebarPrefs } from "@/lib/sidebar-prefs";
 
 export default function AppShell({
@@ -12,6 +13,8 @@ export default function AppShell({
   signOutAction,
   schedulerProjectsUrl,
   sidebar = DEFAULT_PREFS,
+  canSubmitFeedback = false,
+  canViewFeedback = false,
 }: {
   children: React.ReactNode;
   userEmail?: string | null;
@@ -22,6 +25,10 @@ export default function AppShell({
   schedulerProjectsUrl?: string;
   /** Resolved from cookies in the (app) layout, so the first paint is already correct. */
   sidebar?: SidebarPrefs;
+  /** Whether this role holds feedback:submit — resolved server-side, like visibleHrefs. */
+  canSubmitFeedback?: boolean;
+  /** Whether this role holds feedback:view, so the confirmation only points at a page they can open. */
+  canViewFeedback?: boolean;
 }) {
   // --app-vh rather than `min-h-screen`: `zoom` (§45) scales `vh` along with every
   // other length while the viewport itself does not scale, so a raw 100vh would be a
@@ -86,6 +93,11 @@ export default function AppShell({
             reason the two above are: a page cannot forget to include it, and a
             container that appears after a client-side navigation is covered. */}
         <ScrollHandoff />
+        {/* The Flag button, mounted here for the same reason the three above
+            are: every route gets it, and no page has to remember to add it.
+            It resolves the ACTIVE pane itself — see its own header for why it
+            cannot use usePaneUrl() from this position. */}
+        <FeedbackButton canSubmit={canSubmitFeedback} canView={canViewFeedback} />
       </div>
     </ToastProvider>
   );

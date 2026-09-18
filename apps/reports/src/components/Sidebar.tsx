@@ -258,6 +258,22 @@ const GROUPS: NavGroup[] = [
 const ADMIN_GROUP: NavGroup = {
   label: "Admin",
   items: [
+    // Feedback sits with the Audit Log because they are the same kind of screen
+    // — a record of what happened, read rather than worked in. Unlike the rest
+    // of this group it is visible to EVERY role (feedback:view is seeded on for
+    // all of them), so a non-admin sees an "Admin" group containing just this
+    // one item. That is honest rather than tidy: the alternative was a group of
+    // one in the main nav, which reads as more important than it is.
+    {
+      href: "/feedback",
+      label: "Feedback",
+      isActive: (p) => p === "/feedback",
+      icon: (
+        <Icon>
+          <path d="M3.5 13.5 V2.5 H11 L10 5 L11 7.5 H3.5" strokeLinecap="round" strokeLinejoin="round" />
+        </Icon>
+      ),
+    },
     {
       href: "/audit-log",
       label: "Audit Log",

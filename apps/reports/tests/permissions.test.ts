@@ -300,6 +300,19 @@ test("a role with no session at all falls back to /login, not a loop", () => {
   assert.equal(safeFallbackPath(undefined), "/login");
 });
 
+test("safeFallbackPath never resolves to /feedback — it is universal, not a landing page", () => {
+  // The trap this pins (2026-09-17): safeFallbackPath returns the FIRST entry
+  // in ROUTE_PERMISSIONS order the role holds, and feedback:view is seeded ON
+  // for every role. Move that entry to the top of the array and every
+  // permission-denied redirect in the app silently lands on the complaints
+  // queue instead of on Job Details — no error, no test failure anywhere else,
+  // the app just quietly grows a new front door.
+  setOwnPermissions(BASELINE);
+  for (const role of ROLES) {
+    assert.notEqual(safeFallbackPath(role), "/feedback", `${role} must not be sent to /feedback`);
+  }
+});
+
 test("a role stripped of EVERY permission lands on /login, not a redirect loop", () => {
   // Newly reachable: with no inheritance, a column can be emptied completely.
   // safeFallbackPath must find no route and say /login rather than returning a

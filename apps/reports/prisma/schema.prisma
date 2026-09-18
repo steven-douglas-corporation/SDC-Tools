@@ -51,6 +51,7 @@ model User {
   executionRateEdits     ExecutionRate[]
   standardSheetSnapshots StandardSheetSnapshot[]
   auditLogs              AuditLog[]
+  feedback               Feedback[]
 }
 
 // Append-only record of who changed what, everywhere in the app — ETC edits,
@@ -631,14 +632,22 @@ model EtcEntry {
   // record of a submitted month is `newEtc` itself — their sum. A submitted month is
   // also read-only on the grid (isMonthLocked / cellsReadOnly), so these cannot drift
   // away from the `newEtc` they produced after the fact.
-  /** Manager-entered: already on a purchase order, not yet invoiced. Seeded from Total ETO. */
-  leftToInvoice      Decimal? @db.Decimal(12, 2)
-  /** Manager-entered: on the BOM, not bought yet. Starts blank by request. */
-  leftToPurchase     Decimal? @db.Decimal(12, 2)
+  /**
+   * /** Manager-entered: already on a purchase order, not yet invoiced. Seeded from Total ETO.
+   */
+  leftToInvoice  Decimal? @db.Decimal(12, 2)
+  /**
+   * Manager-entered: on the BOM, not bought yet. Starts blank by request.
+   */
+  leftToPurchase Decimal? @db.Decimal(12, 2)
 
-  /** GL-posted parts spend for this job at the moment this month's ETC was submitted. */
+  /**
+   * GL-posted parts spend for this job at the moment this month's ETC was submitted.
+   */
   invoicedAtSubmit   Decimal? @db.Decimal(12, 2)
-  /** invoicedAtSubmit + newEtc — where the dotted reference line sits until the next submission. */
+  /**
+   * invoicedAtSubmit + newEtc — where the dotted reference line sits until the next submission.
+   */
   projectionBaseline Decimal? @db.Decimal(12, 2)
 
   @@unique([jobId, section, month])
@@ -890,43 +899,63 @@ model DepartmentEtcCompletion {
 model ManualContractorPunch {
   id Int @id @default(autoincrement())
 
-  /** As printed on the timecard, e.g. "Vijayan, Vipin". Used to resolve the CURRENT Employee row. */
+  /**
+   * As printed on the timecard, e.g. "Vijayan, Vipin". Used to resolve the CURRENT Employee row.
+   */
   employeeName String @db.VarChar(191)
-  /** The temp designation on the card: "Temp1", "Temp2", "Temp3". */
-  employeeRef String @db.VarChar(32)
+  /**
+   * The temp designation on the card: "Temp1", "Temp2", "Temp3".
+   */
+  employeeRef  String @db.VarChar(32)
   /**
    * The employee id emitted on the produced hours row, so the punch drill can
    * name who booked the time. A STRING, deliberately: these contractors have no
    * integer Paylocity id yet, and the whole pipeline already types employeeId as
    * a string.
    */
-  paylocityId String @db.VarChar(32)
+  paylocityId  String @db.VarChar(32)
 
   workDate DateTime @db.Date
 
-  /** The transfer value verbatim, e.g. "211/1158/10/Concord" — the audit trail for the parse below. */
+  /**
+   * The transfer value verbatim, e.g. "211/1158/10/Concord" — the audit trail for the parse below.
+   */
   transferRaw String @db.VarChar(64)
-  /** Parsed from transferRaw by the SAME rules a workbook punch uses. */
+  /**
+   * Parsed from transferRaw by the SAME rules a workbook punch uses.
+   */
   jobNumber   String @db.VarChar(32)
   machineSec  String @db.VarChar(16)
   functionId  String @db.VarChar(16)
-  /** "Concord" etc. from the 4th transfer segment; blank when absent. */
-  location String @db.VarChar(64) @default("")
+  /**
+   * "Concord" etc. from the 4th transfer segment; blank when absent.
+   */
+  location    String @default("") @db.VarChar(64)
 
-  /** "HH:MM" 24h, as printed. */
-  startTime String @db.VarChar(5)
-  endTime   String @db.VarChar(5)
-  /** DERIVED from startTime/endTime at seed time, never estimated. */
-  hours Decimal @db.Decimal(6, 4)
+  /**
+   * "HH:MM" 24h, as printed.
+   */
+  startTime String  @db.VarChar(5)
+  endTime   String  @db.VarChar(5)
+  /**
+   * DERIVED from startTime/endTime at seed time, never estimated.
+   */
+  hours     Decimal @db.Decimal(6, 4)
 
-  /** Where this came from, for the audit trail. */
-  source String @db.VarChar(64) @default("manual_contractor_timecard")
-  /** The pay period the screenshot belongs to, e.g. "2026-08-16..2026-08-29". Reporting uses workDate, never this. */
-  payPeriod String @db.VarChar(32)
+  /**
+   * Where this came from, for the audit trail.
+   */
+  source    String  @default("manual_contractor_timecard") @db.VarChar(64)
+  /**
+   * The pay period the screenshot belongs to, e.g. "2026-08-16..2026-08-29". Reporting uses workDate, never this.
+   */
+  payPeriod String  @db.VarChar(32)
   note      String? @db.VarChar(255)
 
-  /** Set false to withdraw a row without deleting it. */
-  active Boolean @default(true)
+  /**
+   * Set false to withdraw a row without deleting it.
+   */
+  active       Boolean   @default(true)
   /**
    * Stamped when the official Paylocity feed was observed to carry this
    * employee/date, i.e. the manual row is no longer needed. Informational — the
@@ -1435,4 +1464,104 @@ model CashFlowForecastOverride {
   createdAt      DateTime @default(now())
 
   @@unique([projectId, category, forecastMonth])
+}
+
+// ── Feedback: what a person says is wrong, and where they were standing ─────
+//
+// Added 2026-09-17. Managers had nowhere to report a bad number, so bad numbers
+// were reported by walking over to someone's desk — which meant they were
+// reported once, to one person, with no record and no answer.
+//
+// ── Why the context columns are the point ───────────────────────────────────
+//
+// "Left to Invoice is wrong" is unactionable. "Left to Invoice on job 1131,
+// Monthly ETC, August 2026, shows 41,200 and should be 0" is a ten-minute fix.
+// routePath/viewLabel/params/contextUrl are captured automatically by the Flag
+// button (lib/feedback-context.ts) so the submitter never types them, and they
+// are the whole reason this table lives in Reports rather than in an app of its
+// own — no other process knows what was on screen.
+//
+// ── Why jobId / periodMonth / employeeKey are REAL columns ──────────────────
+//
+// They are already inside `params`, so this is deliberate duplication. Read the
+// AuditLog header above: it records moving the per-cell fields OUT of a JSON
+// blob for exactly this reason — you cannot index or filter a JSON column by
+// key in MySQL without a generated column per field, and "every complaint about
+// job 1131" and "what went wrong in the August close" are the two questions
+// this table exists to answer. subjectType/subjectKey stay for the subjects
+// nobody has thought of yet; these three are the ones the grid filters on.
+//
+// ── Why status/category/severity are VARCHAR and not enums ──────────────────
+//
+// Migration 20260901120000 documents how expensive widening two enum columns
+// was, and this vocabulary is the kind that grows ("duplicate", "needs-info").
+// Same treatment as CashFlowSnapshotLine.flowType and AuditLog.changeType: the
+// column accepts a string, and lib/feedback-status.ts is the real constraint,
+// enforced by isFeedbackStatus() at every write boundary.
+//
+// Status/assignment HISTORY is not here: it goes to AuditLog via logAudit(),
+// following the precedent hiring-actions.ts states outright ("no separate
+// hiring-specific audit table").
+model Feedback {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ── Who ──
+  // Nullable FK + a snapshot of the email, exactly like AuditLog: the row must
+  // stay readable if the account is renamed or deleted, and a submission that
+  // arrives over the integration API may name someone with no Reports account.
+  submittedById  Int?
+  submittedBy    User?   @relation(fields: [submittedById], references: [id])
+  submitterEmail String  @db.VarChar(191)
+  submitterName  String? @db.VarChar(191)
+  sourceApp      String  @default("reports") @db.VarChar(32)
+  // "ui" | "integration". Worth storing rather than inferring from sourceApp:
+  // the integration token authenticates an APP, not a person, so a row marked
+  // "integration" carries an identity this app did not itself verify.
+  submittedVia   String  @default("ui") @db.VarChar(16)
+
+  // ── Where they were standing ──
+  routePath  String? @db.VarChar(128)
+  viewLabel  String? @db.VarChar(64)
+  params     Json?
+  contextUrl String? @db.VarChar(512)
+
+  // ── Which record ──
+  subjectType String? @db.VarChar(24)
+  subjectKey  String? @db.VarChar(64)
+  jobId       String? @db.VarChar(20)
+  periodMonth String? @db.VarChar(7)
+  employeeKey String? @db.VarChar(32)
+
+  // ── The claim ──
+  fieldLabel    String? @db.VarChar(64)
+  observedValue String? @db.VarChar(191)
+  expectedValue String? @db.VarChar(191)
+  // Required. The four structured fields above sharpen a report; they never
+  // replace the sentence explaining it.
+  body          String  @db.Text
+  category      String  @default("data-accuracy") @db.VarChar(24)
+  severity      String  @default("wrong") @db.VarChar(16)
+
+  // ── Triage ──
+  status          String    @default("open") @db.VarChar(16)
+  assignedToEmail String?   @db.VarChar(191)
+  acknowledgedAt  DateTime?
+  // The reply the submitter actually reads. Required to reach a closed status
+  // (lib/feedback-status.ts, canTransition) — "Fixed" with no explanation is
+  // indistinguishable from "ignored" to the person who filed it.
+  resolutionNote  String?   @db.VarChar(1000)
+  resolvedAt      DateTime?
+  resolvedByEmail String?   @db.VarChar(191)
+
+  // The default queue (open items, newest first) is the one query this table
+  // serves on every page load; the rest back a filter the grid exposes.
+  @@index([status, createdAt])
+  @@index([jobId])
+  @@index([sourceApp, routePath])
+  @@index([submitterEmail, createdAt])
+  @@index([assignedToEmail, status])
+  @@index([periodMonth])
+  @@map("feedback")
 }
