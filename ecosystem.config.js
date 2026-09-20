@@ -158,6 +158,36 @@ module.exports = {
       merge_logs:    true,
     },
 
+    // ── SDC Scheduler DB MCP bridge ──────────────────────────────────────────
+    // Read-only MCP server (mcp/sdc-db-server.mjs) exposing the Scheduler MySQL
+    // DB + the Total ETO bridge to MCP clients over Streamable HTTP. Reuses
+    // sdc-scheduler's own .env for MYSQL_*/ETO_* creds — MCP_TOKEN (required,
+    // no default) lives there too, never here, same reason ETO_USER/PASSWORD
+    // above stay out of this file.
+    //
+    // Added 2026-09-20 after this ran for an unknown stretch as a bare `node`
+    // process someone started by hand and forgot about — nothing supervised
+    // it, so it silently died and stayed dead until noticed via a client
+    // showing "server disconnected". Putting it here is the actual fix for
+    // THAT problem: PM2 restarts it on crash and brings it back after a
+    // reboot (once `pm2 save` has been run), the same guarantee every other
+    // app in this file already has.
+    {
+      name:          'sdc-mcp-db',
+      script:        'mcp/sdc-db-server.mjs',
+      cwd:           './SDC_Scheduler',
+      env: {
+        NODE_ENV:         'production',
+        NODE_NO_WARNINGS: '1',
+      },
+      watch:         false,
+      max_restarts:  10,
+      restart_delay: 3000,
+      max_memory_restart: '200M',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs:    true,
+    },
+
     // ── State Logic Builder ─────────────────────────────────────────────────
     {
       name:          'sdc-statelogic',
