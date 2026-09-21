@@ -52,12 +52,12 @@
     "@eslint/js": "^9.39.5",
     "@vitejs/plugin-react": "^4.7.0",
     "electron": "^29.0.0",
-    "electron-builder": "^26.8.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^15.15.0",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.8",
     "vite": "^6.4.3"
   },
   "dependencies": {
