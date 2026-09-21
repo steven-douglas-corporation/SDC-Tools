@@ -167,7 +167,15 @@ export function TmPartsDrillPanel({
           </div>
         ) : null}
       </div>
-      <div className="styled-scrollbar min-h-0 flex-1 overflow-y-auto">
+      {/* ONE scrolling region, both axes — not overflow-y-auto wrapping a
+          separate overflow-x-auto. Two nested scrollers put the horizontal
+          scrollbar at the bottom of the TABLE's content (below every row),
+          reachable only after scrolling all the way down. A single
+          overflow-auto region docks both scrollbars to the edges of this
+          fixed-height box instead — the right-side vertical scrollbar and
+          the bottom horizontal one are both visible at any scroll
+          position, however many rows or columns there are. */}
+      <div className="styled-scrollbar min-h-0 flex-1 overflow-auto">
         {error ? (
           <DrillEmpty>Couldn&apos;t load this detail: {error}</DrillEmpty>
         ) : rows === null ? (
@@ -175,63 +183,61 @@ export function TmPartsDrillPanel({
         ) : sorted.length === 0 ? (
           <DrillEmpty>No parts match.</DrillEmpty>
         ) : (
-          <div className="overflow-x-auto">
-            <DrillLines
-              head={
-                <>
-                  <SortableTh label="Purchase Date" sortKey="purchaseDate" type="date" sort={sort.sort} onSort={sort.onSort} className="w-28" />
-                  <SortableTh label="Invoiced Date" sortKey="invoicedDate" type="date" sort={sort.sort} onSort={sort.onSort} className="w-28" />
-                  <SortableTh label="Job ID" sortKey="jobId" type="id" sort={sort.sort} onSort={sort.onSort} className="w-20" />
-                  <SortableTh label="Job / Machine" sortKey="jobName" type="text" sort={sort.sort} onSort={sort.onSort} className="w-44" />
-                  <SortableTh label="Part No" sortKey="partNumber" type="text" sort={sort.sort} onSort={sort.onSort} className="w-32" />
-                  <SortableTh label="Description" sortKey="description" type="text" sort={sort.sort} onSort={sort.onSort} />
-                  <SortableTh label="Supplier" sortKey="supplier" type="text" sort={sort.sort} onSort={sort.onSort} className="w-40" />
-                  <SortableTh label="PO #" sortKey="poNumber" type="text" sort={sort.sort} onSort={sort.onSort} className="w-24" />
-                  <SortableTh label="Qty" sortKey="quantity" type="number" sort={sort.sort} onSort={sort.onSort} className="w-16" />
-                  <SortableTh label="Unit $" sortKey="unitPrice" type="currency" sort={sort.sort} onSort={sort.onSort} className="w-24" />
-                  <SortableTh label="Job Cost" sortKey="totalPrice" type="currency" sort={sort.sort} onSort={sort.onSort} className="w-24" title="Part Purchase[Total Price]" />
-                  <SortableTh label="Invoiced $" sortKey="invoicedAmount" type="currency" sort={sort.sort} onSort={sort.onSort} className="w-24" title="Part Purchase[Invoiced Amount]" />
-                </>
-              }
-              foot={
-                <tr>
-                  <td className={DRILL_TOTAL_LABEL} colSpan={11}>
-                    {filtering ? `Shown (${amountLabel})` : `Total (${amountLabel})`}
-                  </td>
-                  <td className={`${DRILL_NUM} text-sm font-semibold`} title={usdExact(total)}>
-                    {usd(total)}
-                  </td>
-                </tr>
-              }
-            >
-              {sorted.map((r, i) => (
-                <tr key={`${r.jobId}-${r.poNumber}-${r.partNumber}-${i}`}>
-                  <td className="font-mono tabular-nums text-sdc-muted">{r.purchaseDate ?? "—"}</td>
-                  <td className="font-mono tabular-nums text-sdc-muted">{r.invoicedDate ?? "—"}</td>
-                  <td className="font-mono text-sdc-muted">{r.jobId || "—"}</td>
-                  <td className="text-sdc-gray-700" title={r.jobName}>
-                    <span className="line-clamp-1">{r.jobName || "—"}</span>
-                  </td>
-                  <td className="font-mono text-sdc-gray-700">{r.partNumber || "—"}</td>
-                  <td className="text-sdc-gray-700" title={r.description}>
-                    <span className="line-clamp-1">{r.description || "—"}</span>
-                  </td>
-                  <td className="text-sdc-muted">{r.supplier || "—"}</td>
-                  <td className="font-mono text-sdc-muted">{r.poNumber || "—"}</td>
-                  <td className={DRILL_NUM}>{r.quantity.toLocaleString()}</td>
-                  <td className={DRILL_NUM} title={usdExact(r.unitPrice)}>
-                    {usd(r.unitPrice)}
-                  </td>
-                  <td className={`${DRILL_NUM} ${amountKey === "totalPrice" ? "font-semibold text-sdc-navy" : ""}`} title={usdExact(r.totalPrice)}>
-                    {usd(r.totalPrice)}
-                  </td>
-                  <td className={`${DRILL_NUM} ${amountKey === "invoicedAmount" ? "font-semibold text-sdc-navy" : ""}`} title={usdExact(r.invoicedAmount)}>
-                    {usd(r.invoicedAmount)}
-                  </td>
-                </tr>
-              ))}
-            </DrillLines>
-          </div>
+          <DrillLines
+            head={
+              <>
+                <SortableTh label="Purchase Date" sortKey="purchaseDate" type="date" sort={sort.sort} onSort={sort.onSort} className="w-28" />
+                <SortableTh label="Invoiced Date" sortKey="invoicedDate" type="date" sort={sort.sort} onSort={sort.onSort} className="w-28" />
+                <SortableTh label="Job ID" sortKey="jobId" type="id" sort={sort.sort} onSort={sort.onSort} className="w-20" />
+                <SortableTh label="Job / Machine" sortKey="jobName" type="text" sort={sort.sort} onSort={sort.onSort} className="w-44" />
+                <SortableTh label="Part No" sortKey="partNumber" type="text" sort={sort.sort} onSort={sort.onSort} className="w-32" />
+                <SortableTh label="Description" sortKey="description" type="text" sort={sort.sort} onSort={sort.onSort} />
+                <SortableTh label="Supplier" sortKey="supplier" type="text" sort={sort.sort} onSort={sort.onSort} className="w-40" />
+                <SortableTh label="PO #" sortKey="poNumber" type="text" sort={sort.sort} onSort={sort.onSort} className="w-24" />
+                <SortableTh label="Qty" sortKey="quantity" type="number" sort={sort.sort} onSort={sort.onSort} className="w-16" />
+                <SortableTh label="Unit $" sortKey="unitPrice" type="currency" sort={sort.sort} onSort={sort.onSort} className="w-24" />
+                <SortableTh label="Job Cost" sortKey="totalPrice" type="currency" sort={sort.sort} onSort={sort.onSort} className="w-24" title="Part Purchase[Total Price]" />
+                <SortableTh label="Invoiced $" sortKey="invoicedAmount" type="currency" sort={sort.sort} onSort={sort.onSort} className="w-24" title="Part Purchase[Invoiced Amount]" />
+              </>
+            }
+            foot={
+              <tr>
+                <td className={DRILL_TOTAL_LABEL} colSpan={11}>
+                  {filtering ? `Shown (${amountLabel})` : `Total (${amountLabel})`}
+                </td>
+                <td className={`${DRILL_NUM} text-sm font-semibold`} title={usdExact(total)}>
+                  {usd(total)}
+                </td>
+              </tr>
+            }
+          >
+            {sorted.map((r, i) => (
+              <tr key={`${r.jobId}-${r.poNumber}-${r.partNumber}-${i}`}>
+                <td className="font-mono tabular-nums text-sdc-muted">{r.purchaseDate ?? "—"}</td>
+                <td className="font-mono tabular-nums text-sdc-muted">{r.invoicedDate ?? "—"}</td>
+                <td className="font-mono text-sdc-muted">{r.jobId || "—"}</td>
+                <td className="text-sdc-gray-700" title={r.jobName}>
+                  <span className="line-clamp-1">{r.jobName || "—"}</span>
+                </td>
+                <td className="font-mono text-sdc-gray-700">{r.partNumber || "—"}</td>
+                <td className="text-sdc-gray-700" title={r.description}>
+                  <span className="line-clamp-1">{r.description || "—"}</span>
+                </td>
+                <td className="text-sdc-muted">{r.supplier || "—"}</td>
+                <td className="font-mono text-sdc-muted">{r.poNumber || "—"}</td>
+                <td className={DRILL_NUM}>{r.quantity.toLocaleString()}</td>
+                <td className={DRILL_NUM} title={usdExact(r.unitPrice)}>
+                  {usd(r.unitPrice)}
+                </td>
+                <td className={`${DRILL_NUM} ${amountKey === "totalPrice" ? "font-semibold text-sdc-navy" : ""}`} title={usdExact(r.totalPrice)}>
+                  {usd(r.totalPrice)}
+                </td>
+                <td className={`${DRILL_NUM} ${amountKey === "invoicedAmount" ? "font-semibold text-sdc-navy" : ""}`} title={usdExact(r.invoicedAmount)}>
+                  {usd(r.invoicedAmount)}
+                </td>
+              </tr>
+            ))}
+          </DrillLines>
         )}
       </div>
     </div>

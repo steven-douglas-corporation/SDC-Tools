@@ -339,6 +339,11 @@ export function TmReportClient({
           breadcrumb={[CARD_TITLE[openDrill]]}
           onBreadcrumbClick={() => {}}
           onClose={() => toggleDrill(openDrill)}
+          // Full-viewport, not the shared 800px panel: these tables run to a
+          // dozen columns (date, job, part, supplier, PO#, qty, prices...)
+          // and an 800px-wide drawer forced every one of them into
+          // horizontal scrolling just to read the next column.
+          size="full"
         >
           {/* Scoped to just the drawer's CONTENT, not its header — see
               TmDrillErrorBoundary.tsx's own header. Close stays reachable
