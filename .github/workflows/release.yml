@@ -45,7 +45,7 @@ jobs:
       version:        ${{ steps.get_version.outputs.version }}
       should_release: ${{ steps.check.outputs.should_release }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -76,12 +76,12 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -120,7 +120,7 @@ jobs:
 
       # Keep a 90-day backup copy in workflow artifacts
       - name: Upload installer as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SDC-Tools-v${{ needs.check-version.outputs.version }}
           path: apps/shell/dist-electron/*.exe
