@@ -13,7 +13,7 @@ import { loadPartsListInvoicedInWindow } from "@/lib/hours-detail-actions";
 import { sequenced } from "@/lib/request-sequence";
 import { useColumnSort } from "@/components/useColumnSort";
 import { SortableTh, SortableColumnHeader } from "@/components/ui/SortableHeader";
-import { sortRows, type SortColumns } from "@/lib/table-sort";
+import { sortRows, type SortColumns, type ColumnType as TableColumnType } from "@/lib/table-sort";
 import { useStableNow } from "@/lib/use-stable-now";
 import {
   STATUS_ROW_BG,
@@ -40,6 +40,7 @@ import { PoPanel, ReleaseBadge, SupplierAvatar, Stat, ALL_COLS, partsListSortCol
 import { PartPoPanel } from "@/components/procurement/PartPoPanel";
 import { computeRiskCards, dueMs, earliestRequired, groupPartsByPo } from "@/lib/procurement-risk";
 import { FILTER_ALL, resolveFilterChoice, filterOptionValues, sanitizeStatusSelection } from "@/lib/filter-choice";
+import type { ColumnType as SheetColumnType } from "@/lib/export/sheet";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Procurement drawer — the Build Readiness "Procurement" view, ported to the
@@ -662,6 +663,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
           allParts={parts}
           reconcile={reconcile}
           state={partsState}
+          jobId={bom.jobId}
           drill={drill}
           vendors={bom.vendors}
           onOpenPart={(p) => setPartPanelId(p.id)}
@@ -1361,6 +1363,12 @@ const DEFAULT_COL_WIDTH: Record<ColKey, number> = {
 };
 const MIN_COL_WIDTH = 48;
 
+// partsListSortColumns' "id"/"status" column types have no meaning to the export
+// writers (SheetColumn only knows text/number/hours/currency/date) — both read as
+// plain text there, same as they already sort as strings.
+function toSheetColumnType(t: TableColumnType): SheetColumnType {
+  return t === "id" || t === "status" ? "text" : t;
+}
 
 function PartsListTab({
   parts,
@@ -1375,6 +1383,7 @@ function PartsListTab({
   scope,
   setScope,
   allParts,
+  jobId,
 }: {
   parts: FlatPart[];
   state: PartsListState;
@@ -1392,6 +1401,8 @@ function PartsListTab({
   setScope: (s: "all" | "bom" | "nonbom") => void;
   /** Every row regardless of scope — for the chip counts, which must not move when the scope does. */
   allParts: FlatPart[];
+  /** The human job number (JobBom.jobId) — for the Export menu's filename and audit trail. */
+  jobId: string;
 }) {
   const { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, hidden, setHidden, colWidths, setColWidths, clearFilters } = state;
   const { toast } = useToast();
@@ -1669,6 +1680,114 @@ function PartsListTab({
     return c;
   });
 
+  // ── Export ▾ — CSV/Excel of the table exactly as it's filtered (§Job Parts) ──
+  //
+  // Built from `filtered`/`visibleCols` — the SAME rows and columns the table
+  // and its footer render, via partsListSortColumns' own accessors (PartsTableView
+  // sorts with the identical map). No server-side re-filtering: this app's other
+  // exports match a page's URL-driven filters by construction (they re-run the
+  // same query), but the Parts List filters live in local/localStorage state, so
+  // matching here means sending exactly what's on screen instead.
+  const sortColumns = useMemo(() => partsListSortColumns(now), [now]);
+  const exportMenuRef = useRef<HTMLDetailsElement>(null);
+  const [exportBusy, setExportBusy] = useState<"xlsx" | "csv" | null>(null);
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      const el = exportMenuRef.current;
+      if (el?.open && !el.contains(e.target as Node)) el.open = false;
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  const buildExportPayload = useCallback(() => {
+    const columns = visibleCols.map((c) => ({
+      header: c.label,
+      type: toSheetColumnType(sortColumns[c.key].type),
+    }));
+    const rows = filtered.map((p) =>
+      visibleCols.map((c) => {
+        const v = sortColumns[c.key].value(p);
+        return v === undefined ? null : v;
+      }),
+    );
+
+    // Mirrors PartsTableView's own footer totals (`tot`/`totPct`) — same columns,
+    // same rule of skipping a windowed leftToSpend rather than summing nulls as
+    // zero — so the export's total row never disagrees with the on-screen footer.
+    const tot = filtered.reduce(
+      (a, p) => {
+        a.qty += p.qty;
+        a.total += p.totalPrice;
+        a.invoiced += p.invoicedAmount;
+        if (p.leftToSpend !== null) a.left += p.leftToSpend;
+        return a;
+      },
+      { qty: 0, total: 0, invoiced: 0, left: 0 },
+    );
+    const totPct = windowStatus.active ? null : tot.total > 0 ? Math.round((tot.invoiced / tot.total) * 100) : tot.invoiced > 0 ? 100 : 0;
+    const totals = visibleCols.map((c) => {
+      switch (c.key) {
+        case "qty": return tot.qty;
+        case "total": return tot.total;
+        case "invoiced": return tot.invoiced;
+        case "leftspend": return windowStatus.active ? null : tot.left;
+        case "pctinv": return totPct;
+        default: return null;
+      }
+    });
+
+    const statusSummary = statusIsDefault
+      ? "Default (all except On Hold)"
+      : STATUS_FILTER_OPTIONS.filter((o) => status.has(o.value)).map((o) => o.label).join(", ") || "None selected";
+    const scopeSummary =
+      scope === "all" ? `All ${num(allParts.length)}` : scope === "bom" ? `BOM ${num(allParts.filter((p) => !p.nonBom).length)}` : `Non-BOM ${num(allParts.filter((p) => p.nonBom).length)}`;
+    const dateTypeLabel = { purchase: "Purchase", invoice: "Invoiced", req: "Req Date", exp: "Exp Date", delivered: "Received" }[dateType];
+
+    const filters = [
+      `Scope: ${scopeSummary}`,
+      `Status: ${statusSummary}`,
+      effCategory !== FILTER_ALL ? `Category: ${effCategory}` : null,
+      effManufacturer !== FILTER_ALL ? `Mfr: ${effManufacturer}` : null,
+      effSupplier !== FILTER_ALL ? `Supplier: ${effSupplier}` : null,
+      onlyLeftToInvoice ? "Left to invoice only" : null,
+      from || to ? `${dateTypeLabel}: ${from || "…"} to ${to || "…"}` : null,
+      query ? `Search: "${query}"` : null,
+    ].filter((s): s is string => Boolean(s));
+
+    return { jobId, tab: "parts" as const, columns, rows, totals, filters };
+  }, [visibleCols, sortColumns, filtered, windowStatus.active, statusIsDefault, status, scope, allParts, effCategory, effManufacturer, effSupplier, onlyLeftToInvoice, from, to, dateType, query, jobId]);
+
+  async function runExport(format: "xlsx" | "csv") {
+    if (exportBusy) return; // one click, one export
+    setExportBusy(format);
+    try {
+      const res = await fetch(`/api/export/job-parts?format=${format}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildExportPayload()),
+      });
+      if (!res.ok) throw new Error((await res.text()) || `The server returned ${res.status}.`);
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = /filename="([^"]+)"/.exec(disposition);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = match?.[1] ?? `export.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      toast(`${a.download} downloaded.`, "success");
+      if (exportMenuRef.current) exportMenuRef.current.open = false;
+    } catch (err) {
+      toast(err instanceof Error ? `Export failed — ${err.message}` : "Export failed.", "error");
+    } finally {
+      setExportBusy(null);
+    }
+  }
+
   return (
     <div ref={rootRef} className="flex flex-col gap-3">
       {/* RiskCards used to render here, inside the Parts List tab only. It is
@@ -1823,6 +1942,36 @@ function PartsListTab({
         <span className="ml-auto whitespace-nowrap text-xs font-semibold text-sdc-gray-600 tabular-nums">
           {num(filtered.length)} line items
         </span>
+
+        {/* Export ▾ — CSV/Excel of the Parts List exactly as filtered, using
+            whichever columns Columns currently shows (2026-09-21, by request;
+            moved to the far right, after the line-item count, 2026-09-21 —
+            the natural "last thing you'd reach for once you've got the view
+            you want" spot, rather than sitting among the view/structure
+            controls at the left). Same <details>/<summary> dropdown pattern
+            as Columns above, rather than the portaled ExportMenu.tsx: this
+            control's filters live in local state, not the URL, so
+            ExportMenu's GET-with-searchParams plumbing doesn't apply here —
+            see runExport/buildExportPayload. */}
+        <details ref={exportMenuRef} className="relative">
+          <summary className="flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md border border-sdc-border bg-white px-3 text-xs font-medium text-sdc-navy hover:bg-sdc-blue-light">
+            <span className="inline-flex min-w-[3.5rem] items-center justify-center">{exportBusy ? "Preparing…" : "Export"}</span>
+            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6 L8 11 L13 6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </summary>
+          <div className="absolute right-0 z-20 mt-1 w-56 rounded-lg border border-sdc-border bg-white p-1 shadow-lg">
+            <p className="px-2 py-1 text-label leading-snug text-sdc-muted">
+              Exports the rows currently matching your filters, in the columns Columns currently shows.
+            </p>
+            <button type="button" disabled={exportBusy !== null} onClick={() => runExport("xlsx")} className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-sdc-navy hover:bg-sdc-blue-light disabled:opacity-50">
+              Export to Excel
+              <span className="text-label text-sdc-gray-400">{exportBusy === "xlsx" ? "preparing…" : ".xlsx"}</span>
+            </button>
+            <button type="button" disabled={exportBusy !== null} onClick={() => runExport("csv")} className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-sdc-navy hover:bg-sdc-blue-light disabled:opacity-50">
+              Export to CSV
+              <span className="text-label text-sdc-gray-400">{exportBusy === "csv" ? "preparing…" : ".csv"}</span>
+            </button>
+          </div>
+        </details>
       </div>
 
       {filtered.length === 0 ? (
