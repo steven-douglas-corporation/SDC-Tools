@@ -35,13 +35,13 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Need push access — use a token with write permission
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -105,7 +105,7 @@ jobs:
 
       # ── Archive installer as artifact ───────────────────────────────────────
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SDC-Tools-v${{ steps.bump.outputs.version }}
           path: shell/dist-electron/*.exe
