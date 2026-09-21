@@ -24,6 +24,7 @@ export function BuildReadinessDrawer({
   breadcrumb,
   onBreadcrumbClick,
   onClose,
+  size = "panel",
   children,
 }: {
   title: string;
@@ -35,6 +36,15 @@ export function BuildReadinessDrawer({
   breadcrumb: string[];
   onBreadcrumbClick: (index: number) => void;
   onClose: () => void;
+  /**
+   * "panel" (default): the usual 800px / 92vw-capped side panel every other
+   * drilldown here uses — unchanged. "full": the panel fills the whole
+   * viewport instead of just the right edge of it. T&M's drills are wide,
+   * many-column tables (job, dates, part, supplier, PO#, qty, prices...)
+   * that need the full width to be readable without forcing every row into
+   * horizontal scrolling just to escape an 800px column.
+   */
+  size?: "panel" | "full";
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -64,9 +74,14 @@ export function BuildReadinessDrawer({
         className={`absolute inset-0 bg-sdc-navy/40 motion-interactive ${open ? "opacity-100" : "opacity-0"}`}
       />
       {/* Panel — same 800px / 92vw-capped width as PoPanel, for one consistent
-          drawer size across every Build Readiness drilldown. */}
+          drawer size across every Build Readiness drilldown (size="panel",
+          the default). size="full" keeps everything else about the shell —
+          backdrop, slide-in, Escape/backdrop-click to close — and only swaps
+          the width/cap for the full viewport. */}
       <aside
-        className={`absolute right-0 top-0 flex h-full w-[800px] max-w-[calc(var(--app-vw)_*_0.92)] flex-col bg-white shadow-xl motion-interactive ${open ? "translate-x-0" : "translate-x-full"}`}
+        className={`absolute right-0 top-0 flex h-full flex-col bg-white shadow-xl motion-interactive ${
+          size === "full" ? "w-full" : "w-[800px] max-w-[calc(var(--app-vw)_*_0.92)]"
+        } ${open ? "translate-x-0" : "translate-x-full"}`}
       >
         <div className="flex flex-col gap-2 border-b border-sdc-border-soft p-4">
           <div className="flex items-start justify-between gap-3">

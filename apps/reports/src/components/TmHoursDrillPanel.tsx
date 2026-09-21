@@ -148,7 +148,15 @@ export function TmHoursDrillPanel({
           </div>
         ) : null}
       </div>
-      <div className="styled-scrollbar min-h-0 flex-1 overflow-y-auto">
+      {/* ONE scrolling region, both axes — not overflow-y-auto wrapping a
+          separate overflow-x-auto. Two nested scrollers put the horizontal
+          scrollbar at the bottom of the TABLE's content (below every row),
+          reachable only after scrolling all the way down. A single
+          overflow-auto region docks both scrollbars to the edges of this
+          fixed-height box instead — the right-side vertical scrollbar and
+          the bottom horizontal one are both visible at any scroll
+          position, however many rows or columns there are. */}
+      <div className="styled-scrollbar min-h-0 flex-1 overflow-auto">
         {error ? (
           <DrillEmpty>Couldn&apos;t load this detail: {error}</DrillEmpty>
         ) : rows === null ? (
@@ -156,55 +164,53 @@ export function TmHoursDrillPanel({
         ) : sorted.length === 0 ? (
           <DrillEmpty>No hours match.</DrillEmpty>
         ) : (
-          <div className="overflow-x-auto">
-            <DrillLines
-              head={
-                <>
-                  <SortableTh label="Date" sortKey="date" type="date" sort={sort.sort} onSort={sort.onSort} className="w-24" />
-                  <SortableTh label="Employee" sortKey="employee" type="text" sort={sort.sort} onSort={sort.onSort} />
-                  <SortableTh label="Department" sortKey="department" type="text" sort={sort.sort} onSort={sort.onSort} className="w-40" />
-                  <SortableTh label="Job ID" sortKey="jobId" type="id" sort={sort.sort} onSort={sort.onSort} className="w-20" />
-                  <SortableTh label="Job / Machine" sortKey="jobName" type="text" sort={sort.sort} onSort={sort.onSort} className="w-56" />
-                  {/* Separate columns (2026-08-21) — consistent with every other view
-                      of these same JobHoursDetail rows. */}
-                  <SortableTh label="Section" sortKey="rawSection" type="text" sort={sort.sort} onSort={sort.onSort} className="w-16" />
-                  <SortableTh label="Section Name" sortKey="rawSectionName" type="text" sort={sort.sort} onSort={sort.onSort} className="w-40" />
-                  <SortableTh label="Function" sortKey="rawFunction" type="text" sort={sort.sort} onSort={sort.onSort} className="w-16" />
-                  <SortableTh label="Function Name" sortKey="standardTaskDescription" type="text" sort={sort.sort} onSort={sort.onSort} className="w-40" />
-                  <SortableTh label="Hours" sortKey="hours" type="hours" sort={sort.sort} onSort={sort.onSort} className="w-20" />
-                </>
-              }
-              foot={
-                <tr>
-                  <td className={DRILL_TOTAL_LABEL} colSpan={9}>
-                    {filtering ? "Shown" : "Total"}
-                  </td>
-                  <td className={`${DRILL_NUM} text-sm font-semibold`} title={hoursExact(total)}>
-                    {hoursCell(total)}
-                  </td>
-                </tr>
-              }
-            >
-              {sorted.map((r, i) => (
-                <tr key={`${r.date}-${r.employee}-${r.jobId}-${r.section}-${i}`}>
-                  <td className="font-mono tabular-nums text-sdc-muted">{r.date ?? "—"}</td>
-                  <td className="text-sdc-gray-700">{r.employee || "—"}</td>
-                  <td className="text-sdc-muted">{r.department || "—"}</td>
-                  <td className="font-mono text-sdc-muted">{r.jobId || "—"}</td>
-                  <td className="text-sdc-gray-700" title={r.jobName}>
-                    <span className="line-clamp-1">{r.jobName || "—"}</span>
-                  </td>
-                  <td className="font-mono text-sdc-muted">{r.rawSection || "—"}</td>
-                  <td className="text-sdc-muted">{r.rawSectionName || "—"}</td>
-                  <td className="font-mono text-sdc-muted">{r.rawFunction || "—"}</td>
-                  <td className="text-sdc-muted">{r.standardTaskDescription || "—"}</td>
-                  <td className={DRILL_NUM} title={hoursExact(r.hours)}>
-                    {hoursCell(r.hours)}
-                  </td>
-                </tr>
-              ))}
-            </DrillLines>
-          </div>
+          <DrillLines
+            head={
+              <>
+                <SortableTh label="Date" sortKey="date" type="date" sort={sort.sort} onSort={sort.onSort} className="w-24" />
+                <SortableTh label="Employee" sortKey="employee" type="text" sort={sort.sort} onSort={sort.onSort} />
+                <SortableTh label="Department" sortKey="department" type="text" sort={sort.sort} onSort={sort.onSort} className="w-40" />
+                <SortableTh label="Job ID" sortKey="jobId" type="id" sort={sort.sort} onSort={sort.onSort} className="w-20" />
+                <SortableTh label="Job / Machine" sortKey="jobName" type="text" sort={sort.sort} onSort={sort.onSort} className="w-56" />
+                {/* Separate columns (2026-08-21) — consistent with every other view
+                    of these same JobHoursDetail rows. */}
+                <SortableTh label="Section" sortKey="rawSection" type="text" sort={sort.sort} onSort={sort.onSort} className="w-16" />
+                <SortableTh label="Section Name" sortKey="rawSectionName" type="text" sort={sort.sort} onSort={sort.onSort} className="w-40" />
+                <SortableTh label="Function" sortKey="rawFunction" type="text" sort={sort.sort} onSort={sort.onSort} className="w-16" />
+                <SortableTh label="Function Name" sortKey="standardTaskDescription" type="text" sort={sort.sort} onSort={sort.onSort} className="w-40" />
+                <SortableTh label="Hours" sortKey="hours" type="hours" sort={sort.sort} onSort={sort.onSort} className="w-20" />
+              </>
+            }
+            foot={
+              <tr>
+                <td className={DRILL_TOTAL_LABEL} colSpan={9}>
+                  {filtering ? "Shown" : "Total"}
+                </td>
+                <td className={`${DRILL_NUM} text-sm font-semibold`} title={hoursExact(total)}>
+                  {hoursCell(total)}
+                </td>
+              </tr>
+            }
+          >
+            {sorted.map((r, i) => (
+              <tr key={`${r.date}-${r.employee}-${r.jobId}-${r.section}-${i}`}>
+                <td className="font-mono tabular-nums text-sdc-muted">{r.date ?? "—"}</td>
+                <td className="text-sdc-gray-700">{r.employee || "—"}</td>
+                <td className="text-sdc-muted">{r.department || "—"}</td>
+                <td className="font-mono text-sdc-muted">{r.jobId || "—"}</td>
+                <td className="text-sdc-gray-700" title={r.jobName}>
+                  <span className="line-clamp-1">{r.jobName || "—"}</span>
+                </td>
+                <td className="font-mono text-sdc-muted">{r.rawSection || "—"}</td>
+                <td className="text-sdc-muted">{r.rawSectionName || "—"}</td>
+                <td className="font-mono text-sdc-muted">{r.rawFunction || "—"}</td>
+                <td className="text-sdc-muted">{r.standardTaskDescription || "—"}</td>
+                <td className={DRILL_NUM} title={hoursExact(r.hours)}>
+                  {hoursCell(r.hours)}
+                </td>
+              </tr>
+            ))}
+          </DrillLines>
         )}
       </div>
     </div>
