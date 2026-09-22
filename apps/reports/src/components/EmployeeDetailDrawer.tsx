@@ -53,7 +53,7 @@ export function EmployeeDetailDrawer({
         <Field label="Level / Specialty" value={employee.specialty ?? DASH} />
         <Field label="Status" value={employee.active ? "Active" : "Inactive"} />
         {employee.isLead && <Field label="Department Lead" value="Yes" />}
-        {employee.paylocityId && <Field label="Paylocity ID" value={employee.paylocityId} />}
+        <Field label="Paylocity ID" value={employee.paylocityId || DASH} />
       </div>
     </BuildReadinessDrawer>
   );

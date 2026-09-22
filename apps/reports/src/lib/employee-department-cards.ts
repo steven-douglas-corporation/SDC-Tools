@@ -1,6 +1,7 @@
 import { resolveEmployeeGroup, compareGroupOrder, type EmployeeGroup } from "@/lib/employee-card-theme";
 import { DISCIPLINE_LABEL } from "@/lib/disciplines";
 import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
+import { rollupGroup, workforceGroupForCardKey, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
 import type { EmployeeRow } from "@/lib/employee-row";
 
@@ -16,6 +17,23 @@ export type DepartmentCard = EmployeeGroup & { people: EmployeeRow[]; placeholde
 
 /** schedulerCodes of teams whose card must render even with nobody on it yet — see EmployeeTeam.alwaysShowCard. */
 export const ALWAYS_SHOW_CARD_KEYS: readonly string[] = EMPLOYEE_TEAMS.filter((t) => t.alwaysShowCard).map((t) => t.schedulerCode);
+
+/**
+ * The subset of ALWAYS_SHOW_CARD_KEYS that belongs to one workforce-group
+ * SECTION of the Employees tab (2026-09-22) — e.g. "engineering" for "ai".
+ *
+ * EmployeesGrid.tsx renders one EmployeesCards per section, each scoped to
+ * that section's own rows/placeholders. Passing the FULL, unfiltered
+ * ALWAYS_SHOW_CARD_KEYS to every section would inject the same empty card
+ * (AI) into every one of them — PM, Shop, Growth, Finance… — not just
+ * Engineering. This uses the exact same rollupGroup(workforceGroupForCardKey())
+ * mapping EmployeesGrid's own `groupOf` uses for real rows, so "which section
+ * does this always-show key belong to" can never disagree with "which section
+ * does an actual employee of that team land in".
+ */
+export function alwaysShowKeysForGroup(groupKey: WorkforceGroupKey): string[] {
+  return ALWAYS_SHOW_CARD_KEYS.filter((code) => rollupGroup(workforceGroupForCardKey(code)) === groupKey);
+}
 
 // Which card a placeholder belongs to — department/discipline (labels), not
 // just team (code): matchesGrowth and the Finance/Sales/Exec matchers in
