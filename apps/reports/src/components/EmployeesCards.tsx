@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { AddEmployeeButton } from "@/components/AddEmployeeButton";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
 import { DISCIPLINE_LABEL } from "@/lib/disciplines";
-import { buildDepartmentCards } from "@/lib/employee-department-cards";
+import { buildDepartmentCards, ALWAYS_SHOW_CARD_KEYS } from "@/lib/employee-department-cards";
 import { DASH, type EmployeeRow } from "@/lib/employee-row";
 import type { HiringPosition } from "@/lib/hiring-positions";
 import { HiringStatusPill } from "@/components/HiringStatusPill";
@@ -93,7 +93,7 @@ export function EmployeesCards({
   /** Whether the viewer can see positions hidden via HiringVisibilityControl. Omitted/false hides them from the "Hiring" list below — never from cardHiring.length/hiringCapacityHours, which must stay driven by isOpen regardless of visibility. */
   canAssignHiring?: boolean;
 }) {
-  const cards = useMemo(() => buildDepartmentCards(rows, placeholders), [rows, placeholders]);
+  const cards = useMemo(() => buildDepartmentCards(rows, placeholders, ALWAYS_SHOW_CARD_KEYS), [rows, placeholders]);
   const hiringByDepartment = useMemo(() => {
     const m = new Map<string, HiringPosition[]>();
     for (const p of hiringPositions ?? []) {

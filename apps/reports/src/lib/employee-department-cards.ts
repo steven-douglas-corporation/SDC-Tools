@@ -1,5 +1,6 @@
 import { resolveEmployeeGroup, compareGroupOrder, type EmployeeGroup } from "@/lib/employee-card-theme";
 import { DISCIPLINE_LABEL } from "@/lib/disciplines";
+import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
 import type { EmployeeRow } from "@/lib/employee-row";
 
@@ -12,6 +13,9 @@ import type { EmployeeRow } from "@/lib/employee-row";
 // server component if that's ever useful.
 
 export type DepartmentCard = EmployeeGroup & { people: EmployeeRow[]; placeholders: SchedulerPlaceholder[] };
+
+/** schedulerCodes of teams whose card must render even with nobody on it yet — see EmployeeTeam.alwaysShowCard. */
+export const ALWAYS_SHOW_CARD_KEYS: readonly string[] = EMPLOYEE_TEAMS.filter((t) => t.alwaysShowCard).map((t) => t.schedulerCode);
 
 // Which card a placeholder belongs to — department/discipline (labels), not
 // just team (code): matchesGrowth and the Finance/Sales/Exec matchers in
@@ -26,7 +30,15 @@ export function resolvePlaceholderGroup(p: SchedulerPlaceholder): EmployeeGroup 
   return resolveEmployeeGroup({ team: p.discipline, department: label, discipline: label });
 }
 
-export function buildDepartmentCards(rows: EmployeeRow[], placeholders: SchedulerPlaceholder[]): DepartmentCard[] {
+/**
+ * `alwaysShow` (2026-09-22) — schedulerCodes to render a card for even when
+ * empty, e.g. ALWAYS_SHOW_CARD_KEYS above. Defaults to none, so every
+ * existing caller (and every test in employee-department-cards.test.ts, which
+ * asserts exact card counts for plain rows/placeholders input) is unaffected
+ * unless it opts in. The real Employees tab passes ALWAYS_SHOW_CARD_KEYS;
+ * nothing else needs to.
+ */
+export function buildDepartmentCards(rows: EmployeeRow[], placeholders: SchedulerPlaceholder[], alwaysShow: readonly string[] = []): DepartmentCard[] {
   const byKey = new Map<string, DepartmentCard>();
   for (const r of rows) {
     const group = resolveEmployeeGroup(r);
@@ -51,6 +63,15 @@ export function buildDepartmentCards(rows: EmployeeRow[], placeholders: Schedule
       byKey.set(group.key, card);
     }
     card.placeholders.push(p);
+  }
+  // Force-included empty cards, opted in via `alwaysShow` — after the two
+  // loops above, so a team that DOES have a real person or placeholder keeps
+  // that populated card rather than being overwritten by an empty stand-in.
+  for (const key of alwaysShow) {
+    if (byKey.has(key)) continue;
+    const group = resolveEmployeeGroup({ team: key });
+    if (!group) continue;
+    byKey.set(key, { ...group, people: [], placeholders: [] });
   }
   return [...byKey.values()]
     .sort((a, b) => compareGroupOrder(a.key, b.key))

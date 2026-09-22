@@ -49,6 +49,19 @@ export type EmployeeTeam = {
   // resolve a stored code back to this team's card.
   schedulerCode: string;
   theme: CardTheme;
+  /**
+   * Render this team's department card even with zero people and zero
+   * Scheduler placeholders (2026-09-22). Every one of the seven original
+   * delivery teams always has real people, so this never mattered before —
+   * buildDepartmentCards() (employee-department-cards.ts) only ever creates a
+   * card from an actual row or placeholder. A brand-new team with nobody on
+   * it yet (AI) would otherwise never render a card at all, which means its
+   * "Add member" control — the only way anyone ever gets INTO it — would be
+   * unreachable. Opt-in, not the default: General Engineering deliberately
+   * stays invisible until a placeholder gives it one (see its own comment
+   * below), so this must not become "every team always shows."
+   */
+  alwaysShowCard?: boolean;
 };
 
 const ON_DARK = { onBand: "text-white", chip: "bg-white/20 text-white" };
@@ -111,6 +124,7 @@ export const EMPLOYEE_TEAMS: EmployeeTeam[] = [
     disciplines: ["AI"],
     schedulerCode: "ai",
     theme: { band: "bg-sdc-purple", ...ON_DARK },
+    alwaysShowCard: true,
   },
   // ── General Engineering (2026-08-24) — a HIRING destination, not a roster ──
   //
