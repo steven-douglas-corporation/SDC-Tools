@@ -88,7 +88,9 @@ export type WorkforceGroupDef = {
 // somebody fails there rather than silently on screen:
 //   Engineering 27 · Shop 29 · PM 4 · Growth 9 · Finance 4 · Exec 5 · Operations 1
 export const WORKFORCE_GROUPS: WorkforceGroupDef[] = [
-  { key: "engineering", title: "Engineering", teamCodes: ["mech", "controls", "service"] },
+  // "ai" joined 2026-09-22 — a fourth Engineering department card, same
+  // teamCodes membership as Mechanical/Controls/Service (see employee-teams.ts).
+  { key: "engineering", title: "Engineering", teamCodes: ["mech", "controls", "service", "ai"] },
   // Rolls up into Engineering for totals; stays its own group for hiring
   // selection and display. Its single department is "geneng"
   // (employee-teams.ts), which no employee can currently resolve to — this

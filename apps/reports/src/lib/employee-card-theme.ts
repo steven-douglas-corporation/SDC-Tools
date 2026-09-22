@@ -15,6 +15,10 @@ const CARD_COLORS: Record<string, CardColors> = {
   pm: { bg: "#e9d5ff", text: "#581c87" },
   mech: { bg: "#bfdbfe", text: "#1e3a8a" },
   controls: { bg: "#bbf7d0", text: "#14532d" },
+  // AI (2026-09-22). Violet, distinct from every other Engineering card and
+  // from General Engineering's indigo, so it reads as its own department at a
+  // glance rather than a shade of an existing one.
+  ai: { bg: "#ddd6fe", text: "#4c1d95" },
   build: { bg: "#fed7aa", text: "#7c2d12" },
   wire: { bg: "#fef08a", text: "#713f12" },
   service: { bg: "#99f6e4", text: "#134e4a" },

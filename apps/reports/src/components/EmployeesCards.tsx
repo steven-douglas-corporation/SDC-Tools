@@ -161,7 +161,17 @@ export function EmployeesCards({
             }`}
           >
             <header className="px-3.5 py-2.5" style={{ background: card.colors.bg, color: card.colors.text }}>
-              <h3 className="truncate text-sm font-bold">{card.title}</h3>
+              <h3 className="flex items-center gap-1 truncate text-sm font-bold">
+                {card.title}
+                {/* AI department marker (2026-09-22) — a small bot glyph after the
+                    card name, matching the way the lead star sits beside a person's
+                    name below, so the card reads as AI-related at a glance. */}
+                {card.key === "ai" && (
+                  <span className="text-sm" title="AI department" aria-hidden>
+                    🤖
+                  </span>
+                )}
+              </h3>
             </header>
             <div className="flex items-baseline gap-1.5 border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-1.5 text-xs text-sdc-muted">
               <span className="font-bold tabular-nums text-sdc-navy">{activeCount}</span>

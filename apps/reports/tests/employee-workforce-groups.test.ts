@@ -14,8 +14,8 @@ import {
 } from "../src/lib/employee-workforce-groups";
 import { resolveEmployeeGroup } from "../src/lib/employee-card-theme";
 
-// The task's own hierarchy, pinned down exactly (2026-08-24 revision):
-//   Engineering: Mechanical Engineering, Controls Engineering, Service Engineering
+// The task's own hierarchy, pinned down exactly (2026-08-24 revision, AI added 2026-09-22):
+//   Engineering: Mechanical Engineering, Controls Engineering, Service Engineering, AI
 //   Shop:        Mechanical Build / Manufacturing, Electrical Build, Manufacturing Operations
 //   PM:          Project Execution / Project Management
 //   Growth / Business Development: Growth / Business Development, Business Development, Sales
@@ -30,10 +30,11 @@ test("every delivery team lands in a real workforce group — never 'other'", ()
   }
 });
 
-test("Engineering is exactly Mechanical/Controls/Service Engineering", () => {
+test("Engineering is exactly Mechanical/Controls/Service Engineering/AI", () => {
   assert.equal(workforceGroupForCardKey("mech"), "engineering");
   assert.equal(workforceGroupForCardKey("controls"), "engineering");
   assert.equal(workforceGroupForCardKey("service"), "engineering");
+  assert.equal(workforceGroupForCardKey("ai"), "engineering");
 });
 
 test("Shop is exactly Mechanical Build/Electrical Build/Manufacturing Operations", () => {
@@ -354,7 +355,7 @@ test("every selectable workforce group offers at least one department, and Gener
   assert.deepEqual(genEngDepartments, ["geneng"], "General Engineering's department is its own, not one of Engineering's");
 
   const engineeringDepartments = EMPLOYEE_TEAMS.filter((t) => workforceGroupForCardKey(t.schedulerCode) === "engineering").map((t) => t.schedulerCode);
-  assert.deepEqual(engineeringDepartments.sort(), ["controls", "mech", "service"], "Engineering must NOT offer General Engineering's department");
+  assert.deepEqual(engineeringDepartments.sort(), ["ai", "controls", "mech", "service"], "Engineering must NOT offer General Engineering's department");
 });
 
 test("the workforce-group options come out in the requested order", () => {
