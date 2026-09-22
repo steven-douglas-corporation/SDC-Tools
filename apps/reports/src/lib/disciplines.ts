@@ -17,6 +17,7 @@ export const DISCIPLINE_LABEL: Record<string, string> = {
   pm: "Project Management",
   mech: "Mechanical Engineers",
   controls: "Controls Engineers",
+  ai: "AI",
   build: "Builders",
   wire: "Electricians",
   service: "Service Engineering",

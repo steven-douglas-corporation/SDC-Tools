@@ -96,6 +96,22 @@ export const EMPLOYEE_TEAMS: EmployeeTeam[] = [
     theme: { band: "bg-sdc-lime", ...ON_LIGHT }, // Lime Green
   },
   { code: "Service", name: "Service Engineering", departments: ["Service Engineering", "Service"], disciplines: ["Service Engineering"], schedulerCode: "service", theme: { band: "bg-sdc-border", ...ON_LIGHT } }, // Gray
+  // ── AI (2026-09-22, by request) — a real roster department, not a hiring-only
+  // placeholder like General Engineering below. It gets its own department
+  // string and discipline label ("AI"), matched nowhere else in this table, so
+  // it starts empty on the live roster but the "Add member" control (which
+  // creates the Employee row with this discipline) and Scheduler push both work
+  // for it exactly as they do for the other seven cards. Card key "ai" sits in
+  // employee-workforce-groups.ts's Engineering group, alongside Mechanical,
+  // Controls and Service.
+  {
+    code: "AI",
+    name: "AI",
+    departments: ["AI"],
+    disciplines: ["AI"],
+    schedulerCode: "ai",
+    theme: { band: "bg-sdc-purple", ...ON_DARK },
+  },
   // ── General Engineering (2026-08-24) — a HIRING destination, not a roster ──
   //
   // For engineering openings that aren't tied to the Mechanical/Controls/
