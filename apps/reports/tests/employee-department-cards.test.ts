@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDepartmentCards, resolvePlaceholderGroup, ALWAYS_SHOW_CARD_KEYS } from "../src/lib/employee-department-cards";
+import { buildDepartmentCards, resolvePlaceholderGroup, ALWAYS_SHOW_CARD_KEYS, alwaysShowKeysForGroup } from "../src/lib/employee-department-cards";
 import { DASH, type EmployeeRow } from "../src/lib/employee-row";
 import type { SchedulerPlaceholder } from "../src/lib/scheduler-db";
 
@@ -123,6 +123,20 @@ test("without alwaysShow (the default), an empty team gets no card — existing 
 
 test("ALWAYS_SHOW_CARD_KEYS includes AI, the only team currently opted in", () => {
   assert.deepEqual([...ALWAYS_SHOW_CARD_KEYS], ["ai"]);
+});
+
+// ── alwaysShowKeysForGroup (2026-09-22) ──────────────────────────────────
+//
+// The actual bug this locks in: EmployeesGrid.tsx renders one EmployeesCards
+// per workforce-group section, so passing the FULL ALWAYS_SHOW_CARD_KEYS to
+// every section injected an empty AI card into PM, Shop, Growth, Finance,
+// Executive Leadership, Operations and Other too — not just Engineering.
+
+test("alwaysShowKeysForGroup gives AI to Engineering only, not any other section", () => {
+  assert.deepEqual(alwaysShowKeysForGroup("engineering"), ["ai"]);
+  for (const key of ["pm", "shop", "growth", "finance", "exec", "operations", "other"] as const) {
+    assert.deepEqual(alwaysShowKeysForGroup(key), [], `${key} must not get an AI card`);
+  }
 });
 
 test("cards come back in the canonical delivery-team order, not insertion order", () => {

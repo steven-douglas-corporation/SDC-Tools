@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { AddEmployeeButton } from "@/components/AddEmployeeButton";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
 import { DISCIPLINE_LABEL } from "@/lib/disciplines";
-import { buildDepartmentCards, ALWAYS_SHOW_CARD_KEYS } from "@/lib/employee-department-cards";
+import { buildDepartmentCards } from "@/lib/employee-department-cards";
 import { DASH, type EmployeeRow } from "@/lib/employee-row";
 import type { HiringPosition } from "@/lib/hiring-positions";
 import { HiringStatusPill } from "@/components/HiringStatusPill";
@@ -61,6 +61,7 @@ function roleOf(r: EmployeeRow, cardTitle: string): string {
 export function EmployeesCards({
   rows,
   placeholders,
+  alwaysShowKeys,
   canAddEmployees,
   onSelectEmployee,
   focusDepartment,
@@ -72,6 +73,16 @@ export function EmployeesCards({
 }: {
   rows: EmployeeRow[];
   placeholders: SchedulerPlaceholder[];
+  /**
+   * schedulerCodes to render an empty card for even with nobody on this list
+   * yet (2026-09-22) — see EmployeeTeam.alwaysShowCard. Omitted/empty, cards
+   * render exactly as before this existed: one per team actually present in
+   * `rows`/`placeholders`. The CALLER decides which keys apply here — this
+   * component has no way to know which workforce-group section it's being
+   * asked to render, so it must not default to a tab-wide list (that would
+   * inject the same empty card into every section, not just its own).
+   */
+  alwaysShowKeys?: readonly string[];
   canAddEmployees: boolean;
   /** Opens the Level 3 employee-detail drawer. Omitted entirely, the roster renders read-only exactly as before. */
   onSelectEmployee?: (row: EmployeeRow) => void;
@@ -93,7 +104,7 @@ export function EmployeesCards({
   /** Whether the viewer can see positions hidden via HiringVisibilityControl. Omitted/false hides them from the "Hiring" list below — never from cardHiring.length/hiringCapacityHours, which must stay driven by isOpen regardless of visibility. */
   canAssignHiring?: boolean;
 }) {
-  const cards = useMemo(() => buildDepartmentCards(rows, placeholders, ALWAYS_SHOW_CARD_KEYS), [rows, placeholders]);
+  const cards = useMemo(() => buildDepartmentCards(rows, placeholders, alwaysShowKeys ?? []), [rows, placeholders, alwaysShowKeys]);
   const hiringByDepartment = useMemo(() => {
     const m = new Map<string, HiringPosition[]>();
     for (const p of hiringPositions ?? []) {
