@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CARD_RENDER_ORDER } from "@/components/WorkforceSummaryCards";
-import { buildDepartmentCards } from "@/lib/employee-department-cards";
+import { buildDepartmentCards, ALWAYS_SHOW_CARD_KEYS } from "@/lib/employee-department-cards";
 import { EmployeesCards } from "@/components/EmployeesCards";
 import { HiringPositionsSummary } from "@/components/HiringPositionsSummary";
 import { WorkforceSummaryCards } from "@/components/WorkforceSummaryCards";
@@ -375,7 +375,7 @@ export function EmployeesGrid({
       // The real card count, from the same builder EmployeesCards uses — so the
       // container asks for exactly as much width as it will fill, rather than a
       // guess from the number of distinct departments.
-      const cardCount = buildDepartmentCards(rows, ph).length;
+      const cardCount = buildDepartmentCards(rows, ph, ALWAYS_SHOW_CARD_KEYS).length;
       return { key, rows, hiring, placeholders: ph, cardCount };
     }).filter((g) => g.rows.length > 0 || g.hiring.length > 0);
   }, [visible, openHiring, placeholders]);
