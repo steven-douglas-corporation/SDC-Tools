@@ -1,0 +1,44 @@
+{
+  "dxt_version": "0.1",
+  "name": "totaleto-sdc",
+  "display_name": "TotalETO SDC Database",
+  "version": "1.1.0",
+  "description": "Read-only MCP server for the TotalETO SDC (production) SQL Server database — active projects, costing, purchase orders, invoicing, and more. Writes are rejected and every query runs in a rolled-back transaction.",
+  "long_description": "Provides pre-built tools for the TotalETO ERP system: list active jobs, compare actuals vs estimates, view section-level costing, check open purchase orders and delivery status, review payment/invoicing schedules, and run custom read-only SQL queries against the SDC production database. The ad-hoc query tool (query_sdc) enforces a single read-only statement, executed inside a transaction that is always rolled back, with a row cap and a sensitive-column blocklist — the same protections used by every other database-access tool in this codebase. Configure your SQL Server connection on install; nothing is hardcoded in the extension itself.",
+  "author": { "name": "SDC Automation" },
+  "server": {
+    "type": "node",
+    "entry_point": "index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/index.js"],
+      "env": {
+        "SQL_HOST": "${user_config.sql_host}",
+        "SQL_PORT": "${user_config.sql_port}",
+        "SQL_DATABASE": "${user_config.sql_database}",
+        "SQL_USER": "${user_config.sql_user}",
+        "SQL_PASSWORD": "${user_config.sql_password}"
+      }
+    }
+  },
+  "user_config": {
+    "sql_host": { "type": "string", "title": "SQL Server host", "description": "Hostname or IP of the TotalETO SQL Server", "default": "SERVER-APP1.stevendouglas.local", "required": true },
+    "sql_port": { "type": "number", "title": "SQL Server port", "description": "SQL Server port (usually 1433)", "default": 1433, "required": true },
+    "sql_database": { "type": "string", "title": "Database name", "description": "The TotalETO database name", "default": "SDC", "required": true },
+    "sql_user": { "type": "string", "title": "SQL login", "description": "A SQL Server login with read (SELECT) access only — today this is the shared TETO_ReadOnly account; per-user Windows Auth is the planned replacement, not yet rolled out.", "default": "TETO_ReadOnly", "required": true },
+    "sql_password": { "type": "string", "title": "SQL login password", "description": "Password for the SQL login above. Stored by Claude Desktop's own secure credential storage, never written to a file in this extension.", "sensitive": true, "required": true }
+  },
+  "tools": [
+    { "name": "query_sdc",                "description": "Run a single read-only SQL SELECT/WITH query against the SDC database. Rejected if it isn't read-only, contains more than one statement, or references a sensitive column. Runs inside a transaction that is always rolled back, and results are row-capped." },
+    { "name": "get_unpaid_amounts",       "description": "Get purchase orders not yet fully invoiced — money still owed to suppliers" },
+    { "name": "list_active_projects",     "description": "List all active (Sold) projects with customer, delivery, and team" },
+    { "name": "get_project_costing",      "description": "Actuals vs estimates — hours, labour cost, materials, margin" },
+    { "name": "get_project_specs",        "description": "All sections/machines on a job with engineer, dates, and billing status" },
+    { "name": "get_payment_schedule",     "description": "Invoicing and payment schedule — invoiced vs outstanding per job" },
+    { "name": "get_open_purchase_orders", "description": "Open POs with qty ordered vs received, date required, and outstanding value" },
+    { "name": "get_receiver_log",         "description": "Recent material receipts — what arrived, when, from which supplier" },
+    { "name": "get_spec_costing",         "description": "Actual costs broken down by section — labour, materials, margin" }
+  ],
+  "keywords": ["totaleto", "erp", "manufacturing", "sql-server", "purchasing", "costing"],
+  "license": "UNLICENSED"
+}
