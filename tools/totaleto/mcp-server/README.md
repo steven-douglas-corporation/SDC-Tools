@@ -51,8 +51,8 @@ write, and they were only ever meant to be a backstop.
 ## Credentials — configured on install, not hardcoded
 
 Unlike the version this replaced (which had a real password hardcoded directly in
-`index.js`, found sitting in a Downloads folder — see the incident note in
-[CLAUDE.md](../CLAUDE.md)), this version takes its SQL Server connection from
+`index.js` — see the incident note in [CLAUDE.md](../CLAUDE.md)), this version
+takes its SQL Server connection from
 Claude Desktop's own install-time prompt (`manifest.json`'s `user_config`), which
 Claude Desktop stores in the OS's secure credential storage, never a plaintext
 file in this repo or anywhere else. `sql_password` is marked `"sensitive": true`

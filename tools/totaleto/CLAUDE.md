@@ -15,10 +15,9 @@ full tool list and how the read-only guarantee is actually enforced.
 ## Incident note (2026-09-20/22)
 
 The version that predated this one had a **real SQL login password hardcoded
-directly in `index.js`**, discovered sitting as a built `.dxt` in a personal
-Downloads folder — not tracked anywhere, not backed up, and the credential
-inside it never rotated. It also had zero guardrails on its ad-hoc query tool:
-no read-only enforcement, no row cap, nothing stopping a write from executing
+directly in `index.js`** — not tracked in any repo, and the credential inside
+it never rotated. It also had zero guardrails on its ad-hoc query tool: no
+read-only enforcement, no row cap, nothing stopping a write from executing
 beyond whatever grants the SQL login happened to have.
 
 This version fixes both: credentials come from Claude Desktop's own encrypted
@@ -26,8 +25,8 @@ This version fixes both: credentials come from Claude Desktop's own encrypted
 fixed — runs inside a transaction that's always rolled back, with `query_sdc`
 additionally restricted to a single `SELECT`/`WITH` statement with no
 sensitive-column references. If you find another copy of the old hardcoded
-version floating around (another Downloads folder, another machine), replace
-it with this one and let whoever owns the `TETO_ReadOnly` SQL login know the
+version floating around on another machine, replace it with this one and let
+whoever owns the `TETO_ReadOnly` SQL login know the
 old password should be rotated.
 
 **Auth is a deliberate stopgap**: SQL Server login today, per-user Windows
