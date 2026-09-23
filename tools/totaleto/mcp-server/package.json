@@ -1,0 +1,12 @@
+{
+  "name": "totaleto-sdc-dxt",
+  "version": "1.1.0",
+  "description": "Read-only TotalETO SQL Server database — Claude Desktop extension (stdio MCP server)",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "mssql": "^12.5.5",
+    "zod": "^4.4.3"
+  }
+}
