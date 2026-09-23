@@ -247,6 +247,12 @@ export default function App() {
   // ── Keyboard shortcut: Ctrl+K focuses search ─────────────────────────────
   useEffect(() => {
     const handler = (e) => {
+      // Electron still routes keydown to this window's listeners in some
+      // cases even when it isn't the OS-focused window (main.js separately
+      // registers real global shortcuts for Ctrl+1–6 that are meant to work
+      // from anywhere) — without this, these shortcuts double-fire.
+      if (!document.hasFocus()) return
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault()
         searchRef.current?.focus()
