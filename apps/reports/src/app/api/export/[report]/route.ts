@@ -167,6 +167,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
                 dir: searchParams.get("dir") ?? undefined,
               },
               now,
+              // Opt-in migration-snapshot / frozen-ETC sheets, offered by the Hours
+              // page's export modal. XLSX only — a CSV has one table, and appending
+              // period totals under the punches would double-count any pivot over it.
+              format === "xlsx"
+                ? { includeMigration: searchParams.get("includeMigration") === "1", includeFrozenEtc: searchParams.get("includeFrozenEtc") === "1" }
+                : {},
             )
             : await buildEtcExport(
                 searchParams.get("month") ?? "",
@@ -178,6 +184,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
     // proves it is unlocked. buildEtcExport has already rejected an invalid month by
     // this point, so the same string is safe to reuse.
     const sheets: SheetSpec[] = [built.spec];
+    if (report === "hours" && format === "xlsx") sheets.push(...(built as { historicalSheets: SheetSpec[] }).historicalSheets);
     let includedStandards = false;
     if (report === "etc" && (await isStandardSheetUnlocked())) {
       sheets.push(...(await buildStandardExportSheets(searchParams.get("month") ?? "", now)));

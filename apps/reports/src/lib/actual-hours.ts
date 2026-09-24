@@ -1,6 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { PARTS_COST_SECTION, mapPunchToColumns } from "@/lib/sections";
+import type { HistoricalEraScope } from "@/lib/hours-filters";
 
 // THE definition of "actual hours worked to date", for every report that shows
 // one. Both the Projects grid and the Job Hour Details dashboard call this, so
@@ -158,4 +160,80 @@ export async function loadMonthlyWorkedBySection(jobPks: number[]): Promise<Reco
     out[section] = [...months].map(([month, worked]) => ({ month, worked })).sort((a, b) => a.month.localeCompare(b.month));
   }
   return out;
+}
+
+// ── Eras 1 and 2, row by row, for the Hours export (2026-09-24) ──────────────
+//
+// The Hours page reads JobHoursDetail only, so it shows era 3 alone, and its total
+// for a job can sit well below the Actual Hours every other report shows. These
+// let the Hours export append the two missing eras as sheets of their own, so a
+// manager can see where the difference is. They are not punches and cannot be
+// made into punches: the migration snapshot is one number per job/section, a
+// frozen month is one number per job/section/month, and nothing finer exists.
+//
+// Same partition as loadActualHoursBySection above (era 2 is only the months
+// coveredMonths() does NOT cover), so these sheets plus the punch sheet never
+// count a month twice. PARTS_COST is excluded from both: it is dollars stored in
+// the hours column, not hours.
+//
+// Zero rows are skipped, here and in the existence check, so the export is
+// only offered for a sheet that would contain something.
+
+function eraWhere(scope: HistoricalEraScope) {
+  return {
+    ...(scope.jobIds ? { job: { jobId: { in: scope.jobIds } } } : {}),
+    section: scope.sections ? { in: scope.sections.filter((s) => s !== PARTS_COST_SECTION) } : { not: PARTS_COST_SECTION },
+  };
+}
+
+function frozenMonthFilter(scope: HistoricalEraScope, covered: string[]): Prisma.StringFilter {
+  return {
+    notIn: covered,
+    ...(scope.fromMonth ? { gte: scope.fromMonth } : {}),
+    ...(scope.toMonth ? { lte: scope.toMonth } : {}),
+  };
+}
+
+// Which of the two eras has anything at all under the given scope. Two
+// findFirsts, not aggregates: the Hours page calls this on every render and only
+// needs to know whether to offer the sheets.
+export async function historicalErasAvailable(scope: HistoricalEraScope): Promise<{ migration: boolean; frozenEtc: boolean }> {
+  const covered = await coveredMonths();
+  const [migration, frozen] = await Promise.all([
+    prisma.estimatedHours.findFirst({
+      where: { ...eraWhere(scope), actualHistoricalHours: { not: 0 } },
+      select: { id: true },
+    }),
+    prisma.etcEntry.findFirst({
+      where: { ...eraWhere(scope), month: frozenMonthFilter(scope, covered), hoursWorked: { not: 0 } },
+      select: { id: true },
+    }),
+  ]);
+  return { migration: migration !== null, frozenEtc: frozen !== null };
+}
+
+export type MigrationSnapshotRow = { jobId: string; jobName: string; section: string; hours: number };
+
+// Era 1. Already one row per job/section (EstimatedHours is @@unique on the pair),
+// so nothing to aggregate. The scope's month range does not apply: there is no month.
+export async function loadMigrationSnapshotRows(scope: HistoricalEraScope): Promise<MigrationSnapshotRow[]> {
+  const rows = await prisma.estimatedHours.findMany({
+    where: { ...eraWhere(scope), actualHistoricalHours: { not: 0 } },
+    select: { section: true, actualHistoricalHours: true, job: { select: { jobId: true, jobName: true } } },
+    orderBy: [{ job: { jobId: "asc" } }, { section: "asc" }],
+  });
+  return rows.map((r) => ({ jobId: r.job.jobId, jobName: r.job.jobName, section: r.section, hours: Number(r.actualHistoricalHours) }));
+}
+
+export type FrozenEtcMonthRow = { jobId: string; jobName: string; month: string; section: string; hours: number };
+
+// Era 2. EtcEntry is one row per job/section/month already, so again no grouping.
+export async function loadFrozenEtcMonthRows(scope: HistoricalEraScope): Promise<FrozenEtcMonthRow[]> {
+  const covered = await coveredMonths();
+  const rows = await prisma.etcEntry.findMany({
+    where: { ...eraWhere(scope), month: frozenMonthFilter(scope, covered), hoursWorked: { not: 0 } },
+    select: { month: true, section: true, hoursWorked: true, job: { select: { jobId: true, jobName: true } } },
+    orderBy: [{ job: { jobId: "asc" } }, { month: "asc" }, { section: "asc" }],
+  });
+  return rows.map((r) => ({ jobId: r.job.jobId, jobName: r.job.jobName, month: r.month, section: r.section, hours: Number(r.hoursWorked) }));
 }

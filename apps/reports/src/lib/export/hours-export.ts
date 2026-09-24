@@ -1,10 +1,14 @@
 import { queryHoursExportRows, queryHoursGrouped, queryHoursSummary } from "@/lib/hours-explorer";
+import { loadFrozenEtcMonthRows, loadMigrationSnapshotRows } from "@/lib/actual-hours";
+import { SECTIONS } from "@/lib/sections";
 import {
   parseHoursFilters,
   parseHoursGroupByList,
   parseHoursSort,
   describeHoursFilters,
+  historicalEraScope,
   HOURS_GROUP_BY_LABEL,
+  type HoursFilters,
   type HoursSearchParams,
 } from "@/lib/hours-filters";
 import type { CellValue, SheetColumn, SheetSpec } from "@/lib/export/sheet";
@@ -36,10 +40,20 @@ import type { CellValue, SheetColumn, SheetSpec } from "@/lib/export/sheet";
 // Hours KPI" holds exactly even in the one edge case (an unfiltered export past
 // MAX_EXPORT_ROWS) where summing the file's own rows would come up short.
 
-export type HoursExportResult = { spec: SheetSpec; rowCount: number };
+// `historicalSheets` is kept apart from `spec` rather than folded into a
+// `SheetSpec | SheetSpec[]`: the route hands one sheet list to BOTH writers, and
+// buildCsv would happily concatenate these under the punches — the one thing a
+// CSV of this export must never do, since a pivot over it would double-count.
+// The route appends them for XLSX only.
+export type HoursExportResult = { spec: SheetSpec; rowCount: number; historicalSheets: SheetSpec[] };
 
-export async function buildHoursExport(params: HoursSearchParams, now: Date): Promise<HoursExportResult> {
+// Which of the two pre-punch eras to append. Both default off, so any caller
+// that doesn't ask gets exactly the export it always did.
+export type HoursExportOptions = { includeMigration?: boolean; includeFrozenEtc?: boolean };
+
+export async function buildHoursExport(params: HoursSearchParams, now: Date, options: HoursExportOptions = {}): Promise<HoursExportResult> {
   const filters = parseHoursFilters(params);
+  const historicalSheets = await buildHistoricalSheets(filters, options, now);
   const groupByLevels = parseHoursGroupByList(params.groupBy);
   const summary = await queryHoursSummary(filters);
 
@@ -68,6 +82,7 @@ export async function buildHoursExport(params: HoursSearchParams, now: Date): Pr
 
     return {
       rowCount: groups.length,
+      historicalSheets,
       spec: { sheetName: "Hours", title: "Hours (grouped)", subtitle, columns, rows: body, totals, freezeColumns: 1 },
     };
   }
@@ -119,6 +134,92 @@ export async function buildHoursExport(params: HoursSearchParams, now: Date): Pr
 
   return {
     rowCount: rows.length,
+    historicalSheets,
     spec: { sheetName: "Hours", title: "Hours", subtitle, columns, rows: body, totals, freezeColumns: 1 },
   };
+}
+
+// ── The two pre-punch eras, as sheets of their own (2026-09-24) ──────────────
+//
+// The punch sheet above is era 3 only (see lib/actual-hours.ts). Eras 1 and 2 are
+// period totals with no employee and no punch behind them, so they cannot be rows
+// in it, and a manager reconciling this file against the Projects page needs them.
+// Each sheet says in its subtitle which of the page's filters it honoured and
+// which it could not, because a filter silently ignored reads as a filter applied.
+
+const SECTION_NAME = new Map(SECTIONS.map((s) => [s.code, s.name]));
+
+function describeEraScope(filters: HoursFilters, withMonths: boolean): string[] {
+  const applied = [filters.jobIds?.length ? `jobs: ${filters.jobIds.length === 1 ? filters.jobIds[0] : `${filters.jobIds.length} selected`}` : "all jobs"];
+  if (filters.sections?.length) applied.push("sections (folded onto their standard columns)");
+  if (withMonths && (filters.from || filters.to)) applied.push(`${filters.from ?? "…"} to ${filters.to ?? "…"} (as whole months)`);
+
+  const notApplied: string[] = [];
+  if (filters.employeeIds?.length) notApplied.push("employees");
+  if (filters.departments?.length) notApplied.push("departments");
+  if (!withMonths && (filters.from || filters.to)) notApplied.push("date range");
+
+  const lines = [`Filters: ${applied.join(", ")}`];
+  if (notApplied.length > 0) {
+    lines.push(`Not applied: ${notApplied.join(", ")}. These figures have no ${withMonths ? "employee" : "employee or date"} behind them.`);
+  }
+  return lines;
+}
+
+async function buildHistoricalSheets(filters: HoursFilters, options: HoursExportOptions, now: Date): Promise<SheetSpec[]> {
+  if (!options.includeMigration && !options.includeFrozenEtc) return [];
+  const scope = historicalEraScope(filters);
+  const stamp = `Exported ${now.toISOString().slice(0, 16).replace("T", " ")}`;
+  const sheets: SheetSpec[] = [];
+
+  if (options.includeMigration) {
+    const rows = await loadMigrationSnapshotRows(scope);
+    const total = rows.reduce((sum, r) => sum + r.hours, 0);
+    sheets.push({
+      sheetName: "Migration Snapshot",
+      title: "Migration Snapshot",
+      subtitle: [
+        "Hours carried over from the original Excel migration, before ETC tracking. One total per job and section, with no date or employee.",
+        ...describeEraScope(filters, false),
+        `${stamp} — ${rows.length} row${rows.length === 1 ? "" : "s"}`,
+      ],
+      columns: [
+        { header: "Job Id", type: "text", width: 10 },
+        { header: "Job / Machine", type: "text", width: 30 },
+        { header: "Section", type: "text", width: 10 },
+        { header: "Section Name", type: "text", width: 26 },
+        { header: "Hours", type: "hours" },
+      ],
+      rows: rows.map((r) => [r.jobId, r.jobName, r.section, SECTION_NAME.get(r.section) ?? "", r.hours]),
+      totals: [`TOTAL (${rows.length} rows)`, null, null, null, total],
+      freezeColumns: 1,
+    });
+  }
+
+  if (options.includeFrozenEtc) {
+    const rows = await loadFrozenEtcMonthRows(scope);
+    const total = rows.reduce((sum, r) => sum + r.hours, 0);
+    sheets.push({
+      sheetName: "Frozen ETC Months",
+      title: "Frozen ETC Months",
+      subtitle: [
+        "Hours Worked from the monthly ETC, for months the punch import does not cover. One total per job, section and month, frozen when the month closed.",
+        ...describeEraScope(filters, true),
+        `${stamp} — ${rows.length} row${rows.length === 1 ? "" : "s"}`,
+      ],
+      columns: [
+        { header: "Job Id", type: "text", width: 10 },
+        { header: "Job / Machine", type: "text", width: 30 },
+        { header: "Month", type: "text", width: 10 },
+        { header: "Section", type: "text", width: 10 },
+        { header: "Section Name", type: "text", width: 26 },
+        { header: "Hours", type: "hours" },
+      ],
+      rows: rows.map((r) => [r.jobId, r.jobName, r.month, r.section, SECTION_NAME.get(r.section) ?? "", r.hours]),
+      totals: [`TOTAL (${rows.length} rows)`, null, null, null, null, total],
+      freezeColumns: 1,
+    });
+  }
+
+  return sheets;
 }

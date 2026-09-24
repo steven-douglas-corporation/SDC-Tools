@@ -12,7 +12,8 @@ import { HoursGroupedTree } from "@/components/HoursGroupedTree";
 import { HoursViewsMenu } from "@/components/HoursViewsMenu";
 import { HoursClearFiltersButton } from "@/components/HoursClearFiltersButton";
 import { getHoursFilterOptions, queryHoursGrouped, queryHoursRows, queryHoursSummary, type HoursRow } from "@/lib/hours-explorer";
-import { parseHoursFilters, parseHoursGroupByList, parseHoursSort, countActiveHoursFilters, type HoursDetailSortKey } from "@/lib/hours-filters";
+import { parseHoursFilters, parseHoursGroupByList, parseHoursSort, countActiveHoursFilters, historicalEraScope, type HoursDetailSortKey } from "@/lib/hours-filters";
+import { historicalErasAvailable } from "@/lib/actual-hours";
 import { cycleSortState, type SortState } from "@/lib/table-sort";
 import { listSharedHoursViews } from "@/lib/hours-saved-views-actions";
 import { requirePagePermission } from "@/lib/require-permission";
@@ -61,12 +62,16 @@ export async function HoursView({ params }: { params: HoursPageSearchParams }) {
   const page = Math.max(1, Number(sp.page) || 1);
   const grouped = groupByLevels.length > 0;
 
-  const [options, summary, rootRows, detail, sharedViewsResult] = await Promise.all([
+  const [options, summary, rootRows, detail, sharedViewsResult, historicalEras] = await Promise.all([
     getHoursFilterOptions(),
     queryHoursSummary(filters),
     grouped ? queryHoursGrouped(filters, groupByLevels[0]) : Promise.resolve(null),
     grouped ? Promise.resolve(null) : queryHoursRows(filters, { page, pageSize: PAGE_SIZE, sort }),
     listSharedHoursViews(),
+    // Whether the current filters reach any migration-snapshot or frozen-ETC hours
+    // — the two eras this page's punches can't show. Only decides whether the Excel
+    // export offers them as extra sheets (ExportMenu); the table never reads them.
+    historicalErasAvailable(historicalEraScope(filters)),
   ]);
 
   const filterSpecs: HoursFilterSpec[] = [
@@ -137,7 +142,7 @@ export async function HoursView({ params }: { params: HoursPageSearchParams }) {
               position the request asks for, and the one that reads as "undo all
               of the above". Muted styling: it is a way out, not the main act. */}
           <HoursClearFiltersButton activeCount={activeFilterCount} />
-          <ExportMenu report="hours" />
+          <ExportMenu report="hours" historicalEras={historicalEras} />
         </div>
       </div>
 
