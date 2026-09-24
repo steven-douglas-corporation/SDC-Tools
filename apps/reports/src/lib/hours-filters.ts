@@ -3,7 +3,7 @@ import type { SortState } from "@/lib/table-sort";
 import { sectionNumberAndName, rawSectionNumberAndName, functionGroupFor, taskFor, departmentFor, codesInSection, codesInFunctionGroup, codesInTask, codesInDepartment, departmentOrderRank, UNDEFINED_LABEL } from "@/lib/hours-operational-grouping";
 import { reconcileRounding } from "@/lib/rounding";
 import { canonicalSectionFor } from "@/lib/paylocity-canonical";
-import { rawCodesFoldingInto } from "@/lib/sections";
+import { mapPunchToColumns, rawCodesFoldingInto } from "@/lib/sections";
 import { classifyPunch, STANDARD_DEPARTMENTS, UNDEFINED_LABEL as STANDARD_UNDEFINED } from "@/lib/paylocity-standard-rules";
 import { EMPLOYEE_TEAMS, teamFor } from "@/lib/employee-teams";
 
@@ -381,6 +381,44 @@ export function describeHoursFilters(f: HoursFilters): string {
   parts.push(f.departments?.length ? `${f.departments.length} department${f.departments.length === 1 ? "" : "s"}` : "all departments");
   if (f.from || f.to) parts.push(`${f.from ?? "…"} to ${f.to ?? "…"}`);
   return parts.join(", ");
+}
+
+// ── The Hours filters, restated for the two pre-punch eras (2026-09-24) ──────
+//
+// The Hours export can append the migration snapshot (EstimatedHours
+// .actualHistoricalHours) and the frozen ETC months (EtcEntry.hoursWorked) as extra
+// sheets — see lib/actual-hours.ts for the three-era model. Neither table has an
+// employee, a department, a raw Section/Function or a punch date, so only three of
+// the page's filters can carry over, and each needs restating in those tables' terms:
+//
+//   jobs     — unchanged (Job.jobId, the same values the page's filter holds).
+//   sections — the page's filter holds RAW Paylocity pairs (JobHoursDetail.section),
+//              but both tables are keyed by the app's standardized column code. So the
+//              raw pairs are folded forward through mapPunchToColumns, the same fold
+//              every punch consumer uses: a "40-311" filter becomes the 40-211 column.
+//              That is necessarily wider than the raw pair — 40-211's frozen hours
+//              include whatever was booked as 40-211 itself — because the frozen
+//              figures were never split by raw code in the first place.
+//   from/to  — whole months only. A frozen month is one total, so a month is in if
+//              any day of it is in the range. The migration snapshot has no month at
+//              all, so the range does not narrow it (the caller says so in the sheet).
+export type HistoricalEraScope = {
+  jobIds?: string[];
+  sections?: string[];
+  fromMonth?: string; // "YYYY-MM", inclusive
+  toMonth?: string; // "YYYY-MM", inclusive
+};
+
+export function historicalEraScope(filters: HoursFilters): HistoricalEraScope {
+  const sections = filters.sections?.length
+    ? [...new Set(filters.sections.flatMap((raw) => mapPunchToColumns(raw, 0).map((c) => c.section)))]
+    : undefined;
+  return {
+    jobIds: filters.jobIds?.length ? filters.jobIds : undefined,
+    sections,
+    fromMonth: filters.from && ISO_DATE.test(filters.from) ? filters.from.slice(0, 7) : undefined,
+    toMonth: filters.to && ISO_DATE.test(filters.to) ? filters.to.slice(0, 7) : undefined,
+  };
 }
 
 /**
