@@ -203,6 +203,11 @@ off).
   (`loadJoblessActualsBySection`, [actual-hours.ts](../src/lib/actual-hours.ts)). The
   tooltip lists what the job cell said. It includes no pre-punch hours: those periods
   were only ever recorded per job.
+- **No Job ID switch** (toolbar, next to Show Actuals): hides the No Job ID row. The
+  TOTAL then counts job rows only and always reads partial. The switch works without
+  reloading the page: both versions of the TOTAL are already rendered, and a class on
+  the table picks one. It is saved in the URL as `jobless=0`, so saved views and split
+  view keep it. It is on by default.
 - **TOTAL:** every job row on screen plus No Job ID, per visible column, summed from
   exact figures and rounded only at the end. Its note says **complete** only when every
   job is listed (compared with a count of the `Job` table) and every section column is

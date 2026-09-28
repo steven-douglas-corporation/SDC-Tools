@@ -20,6 +20,15 @@ export function isActualsOn(params: { get(name: string): string | null }): boole
   return params.get(ACTUALS_PARAM) === "1";
 }
 
+// The Projects grid's "No Job ID" footer row. Shown by default, so the param only
+// ever carries the OFF state ("0"); absent means shown. Toggled by
+// ProjectsShowJoblessSwitch the same render-free way Show Actuals is.
+export const JOBLESS_PARAM = "jobless";
+
+export function isJoblessShown(params: { get(name: string): string | null }): boolean {
+  return params.get(JOBLESS_PARAM) !== "0";
+}
+
 // ── QUOTED_VIEW_PARAMS, isShowingAll and ShowAllOptions are gone (§47.4) ─────
 //
 // All three existed for the "Show all / Reset" switch, which set customers, types,

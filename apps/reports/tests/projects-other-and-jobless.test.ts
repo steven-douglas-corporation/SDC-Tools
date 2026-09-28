@@ -93,3 +93,31 @@ test("the Other column is counted and present in every kind of row", () => {
   assert.match(code("src", "components", "NewProjectRows.tsx"), /className="actuals-only/);
   assert.match(code("src", "app", "globals.css"), /table\[data-grid="projects"\]\.hide-actuals \.actuals-only/);
 });
+
+// ── The No Job ID switch ────────────────────────────────────────────────────
+
+test("No Job ID is shown unless the param says 0", async () => {
+  const { JOBLESS_PARAM, isJoblessShown } = await import("../src/lib/quoted-display-prefs");
+  const p = new URLSearchParams();
+  assert.equal(isJoblessShown(p), true, "absent = shown");
+  p.set(JOBLESS_PARAM, "0");
+  assert.equal(isJoblessShown(p), false);
+  p.set(JOBLESS_PARAM, "1");
+  assert.equal(isJoblessShown(p), true);
+});
+
+test("hiding No Job ID swaps the Total for the one without it", () => {
+  const page = code("src", "app", "(app)", "quoted", "page.tsx");
+  // Both Totals are rendered; CSS picks one, so the switch needs no server render.
+  assert.match(page, /key: "total-with-jobless"/);
+  assert.match(page, /key: "total-without-jobless"/);
+  assert.match(page, /showJobless \? "" : "hide-jobless"/);
+  assert.match(page, /<ProjectsShowJoblessSwitch \/>/);
+  const css = code("src", "app", "globals.css");
+  assert.match(css, /\.hide-jobless \.jobless-row/);
+  assert.match(css, /\.hide-jobless \.total-with-jobless/);
+  assert.match(css, /:not\(\.hide-jobless\) \.total-without-jobless/);
+  // Saved views and split view carry it like any other view param.
+  assert.match(code("src", "components", "ProjectViewsMenu.tsx"), /"actuals", "jobless"\]/);
+  assert.match(code("src", "lib", "split-view.ts"), /"jobless",/);
+});

@@ -21,6 +21,7 @@ import { ProjectsSectionsMenu } from "@/components/ProjectsSectionsMenu";
 import { ProjectsGridView } from "@/components/ProjectsGridView";
 import { PROJECTS_INFO_COLUMNS } from "@/lib/projects-view";
 import { ProjectsShowActualsSwitch } from "@/components/ProjectsShowActualsSwitch";
+import { ProjectsShowJoblessSwitch } from "@/components/ProjectsShowJoblessSwitch";
 import { SortButton } from "@/components/SortButton";
 import { AddProjectButton } from "@/components/AddProjectButton";
 import { NewProjectRows } from "@/components/NewProjectRows";
@@ -33,7 +34,7 @@ import { jobCellMenuProps } from "@/lib/job-cell-menu";
 import { getSchedulerLinkContext, schedulerScheduleUrl } from "@/lib/scheduler-link";
 import { saveQuotedHours } from "@/lib/quoted-actions";
 import { QuotedSaveForm } from "@/components/QuotedSaveForm";
-import { decodeParamList, isActualsOn } from "@/lib/quoted-display-prefs";
+import { decodeParamList, isActualsOn, isJoblessShown } from "@/lib/quoted-display-prefs";
 import { quotedCellTone } from "@/lib/quoted-tone";
 import { loadActualHoursBySection, loadJoblessActualsBySection } from "@/lib/actual-hours";
 import {
@@ -270,6 +271,8 @@ export async function ProjectsView({ params }: { params: {
     hide?: string;
     view?: string;
     actuals?: string;
+    // No Job ID footer row; "0" hides it.
+    jobless?: string;
     // "Dates ▾" — which date column to filter on, and the range.
     dateField?: string;
     from?: string;
@@ -281,6 +284,8 @@ export async function ProjectsView({ params }: { params: {
   // Actual hours in the cells. A view param rather than a client-side flag, so
   // the markup below is already right on arrival — see quoted-display-prefs.ts.
   const showActuals = isActualsOn({ get: (k) => sp[k as keyof typeof sp] ?? null });
+  // The No Job ID footer row — on unless `jobless=0`. Same render-free switch.
+  const showJobless = isJoblessShown({ get: (k) => sp[k as keyof typeof sp] ?? null });
 
   // Read-only unless the signed-in user has explicitly switched Edit Mode on
   // (projects-edit-mode.ts). The cookie's value only SEEDS the switch — from
@@ -533,16 +538,20 @@ export async function ProjectsView({ params }: { params: {
     jobs.length < totalJobCount ? `${totalJobCount - jobs.length} of ${totalJobCount} jobs are filtered out` : null,
     hiddenSectionCount > 0 ? `${hiddenSectionCount} section column${hiddenSectionCount === 1 ? " is" : "s are"} hidden` : null,
   ].filter((g): g is string => g !== null);
-  const footerComplete = footerGaps.length === 0;
-  const footerCompleteness = footerComplete
-    ? "Complete: every job and every section is shown, so this is every hour the app holds."
-    : `Partial: ${footerGaps.join("; ")}. Clear the filters and show every section for the full total.`;
-  const footerBySection = new Map<string, number>();
-  const addFooter = (code: string, hours: number) => footerBySection.set(code, (footerBySection.get(code) ?? 0) + hours);
-  for (const job of jobs) for (const [code, hours] of actualHours.get(job.id) ?? EMPTY_ACTUALS) addFooter(code, hours);
-  for (const [code, hours] of jobless.bySection) addFooter(code, hours);
+  // The Total exists twice, with and without the No Job ID hours, because the No
+  // Job ID switch hides that row client-side and the Total has to follow it. CSS
+  // shows one of the two (globals.css, `.hide-jobless`). Hidden, it is never complete.
+  const completeness = (gaps: string[]) =>
+    gaps.length === 0
+      ? "Complete: every job and every section is shown, so this is every hour the app holds."
+      : `Partial: ${gaps.join("; ")}. Clear the filters, show every section and show No Job ID for the full total.`;
+  const jobsBySection = new Map<string, number>();
+  for (const job of jobs) {
+    for (const [code, hours] of actualHours.get(job.id) ?? EMPTY_ACTUALS) jobsBySection.set(code, (jobsBySection.get(code) ?? 0) + hours);
+  }
+  const withJobless = new Map(jobsBySection);
+  for (const [code, hours] of jobless.bySection) withJobless.set(code, (withJobless.get(code) ?? 0) + hours);
   const joblessOther = otherActualHours(jobless.bySection);
-  const footerOther = otherActualHours(footerBySection);
   const sumCodes = (m: ReadonlyMap<string, number>, codes: string[]) => codes.reduce((s, c) => s + (m.get(c) ?? 0), 0);
   // "Not Defined 412h · 2026 SERVICE 88h · …" — the first dozen, largest first.
   const hoursList = (items: { name: string; hours: number }[]) =>
@@ -650,6 +659,8 @@ export async function ProjectsView({ params }: { params: {
             offers statuses and billables explicitly. It takes no props at all now: it
             reads the one param it owns and writes it back without navigating. */}
         <ProjectsShowActualsSwitch />
+        {/* The No Job ID footer row, and with it that row's share of the Total. */}
+        <ProjectsShowJoblessSwitch />
       </div>
 
       {/* Keeps ENG/SHOP TOTAL in step with the section cells as they are typed —
@@ -679,7 +690,7 @@ export async function ProjectsView({ params }: { params: {
             halves and hiding them a frame later (see globals.css). It also
             widens the quoted input back out — with the suffix gone, there's a
             whole cell for it. */}
-        <table data-grid="projects" className={`quiet-controls w-full text-sm ${TABLE_GRID} ${CELL_PADDING} ${showActuals ? "" : "hide-actuals"}`}>
+        <table data-grid="projects" className={`quiet-controls w-full text-sm ${TABLE_GRID} ${CELL_PADDING} ${showActuals ? "" : "hide-actuals"} ${showJobless ? "" : "hide-jobless"}`}>
           <thead className="sticky top-0 z-20 bg-sdc-gray-100">
             <tr className={TABLE_HEADER_ROW}>
               <th rowSpan={3} className="frozen-col sticky left-0 z-10 w-8 min-w-8 bg-sdc-gray-100 px-1 py-2 text-center align-bottom">
@@ -1316,35 +1327,50 @@ export async function ProjectsView({ params }: { params: {
               [
                 {
                   key: "jobless",
+                  className: "jobless-row",
+                  bg: "bg-sdc-gray-50",
                   label: "No Job ID",
                   detail: "Punches with no usable job number",
                   title: `No Job ID — punches whose job cell is blank, "Not Defined" or a job number the app does not have. Punch data only: the older eras were only ever kept per job. ${jobless.byLabel.length ? hoursList(jobless.byLabel.map((l) => ({ name: l.label, hours: l.hours }))) : "None."}`,
                   bySection: jobless.bySection,
                   other: joblessOther,
-                  rowClass: "bg-sdc-gray-50",
+                  complete: true,
                 },
                 {
-                  key: "total",
+                  key: "total-with-jobless",
+                  className: "total-with-jobless font-semibold",
+                  bg: "bg-sdc-gray-100",
                   label: "TOTAL",
-                  detail: footerComplete ? "All rows above + No Job ID · complete" : "All rows above + No Job ID · partial",
-                  title: footerCompleteness,
-                  bySection: footerBySection,
-                  other: footerOther,
-                  rowClass: "bg-sdc-gray-100 font-semibold",
+                  detail: `All rows above + No Job ID · ${footerGaps.length === 0 ? "complete" : "partial"}`,
+                  title: completeness(footerGaps),
+                  bySection: withJobless,
+                  other: otherActualHours(withJobless),
+                  complete: footerGaps.length === 0,
+                },
+                {
+                  key: "total-without-jobless",
+                  className: "total-without-jobless font-semibold",
+                  bg: "bg-sdc-gray-100",
+                  label: "TOTAL",
+                  detail: "Job rows only · partial",
+                  title: completeness([...footerGaps, "the No Job ID row is hidden"]),
+                  bySection: jobsBySection,
+                  other: otherActualHours(jobsBySection),
+                  complete: false,
                 },
               ] as const
             ).map((row) => (
-              <tr key={row.key} className={`${row.rowClass} border-t-2 border-sdc-border`} title={row.title}>
-                <td className={`frozen-col sticky left-0 z-10 w-8 min-w-8 px-1 py-1.5 ${row.rowClass}`} />
-                <td className={`frozen-col sticky left-8 z-10 w-20 min-w-20 max-w-20 overflow-hidden truncate px-2 py-1.5 align-middle text-label font-semibold whitespace-nowrap text-sdc-navy ${row.rowClass}`}>
+              <tr key={row.key} className={`${row.className} ${row.bg} border-t-2 border-sdc-border`} title={row.title}>
+                <td className={`frozen-col sticky left-0 z-10 w-8 min-w-8 px-1 py-1.5 ${row.bg}`} />
+                <td className={`frozen-col sticky left-8 z-10 w-20 min-w-20 max-w-20 overflow-hidden truncate px-2 py-1.5 align-middle text-label font-semibold whitespace-nowrap text-sdc-navy ${row.bg}`}>
                   {row.label}
                 </td>
                 <td
                   data-col="job"
                   style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
                   className={`frozen-col frozen-col-last sticky left-[7rem] z-10 overflow-hidden border-l border-r border-sdc-border px-2 py-1.5 align-middle text-label whitespace-nowrap ${
-                    row.key === "total" && !footerComplete ? "text-sdc-red-text" : "text-sdc-gray-600"
-                  } ${row.rowClass}`}
+                    row.complete ? "text-sdc-gray-600" : "text-sdc-red-text"
+                  } ${row.bg}`}
                 >
                   {row.detail}
                 </td>
@@ -1422,6 +1448,8 @@ export default async function QuotedPage({ searchParams }: { searchParams: Promi
     hide?: string;
     view?: string;
     actuals?: string;
+    // No Job ID footer row; "0" hides it.
+    jobless?: string;
     // "Dates ▾" — which date column to filter on, and the range.
     dateField?: string;
     from?: string;
