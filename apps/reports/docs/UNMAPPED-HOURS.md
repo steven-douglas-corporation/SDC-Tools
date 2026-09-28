@@ -1,5 +1,10 @@
 # Hours that never reach a project figure
 
+> **Update 2026-09-28:** the Projects grid now shows buckets A and C. A is in each job's
+> **Other / Unmapped** column, and C is in the **No Job ID** footer row. See
+> [PROJECTS-GRID-COLUMNS.md](PROJECTS-GRID-COLUMNS.md). The figures below are unchanged
+> as a record of what was measured.
+
 Generated from the Power BI `Hours Actual` table (`Data Source = "Paylocity Hours"`), covering **2025-02 – 2026-07**. Every hour below is real booked time that does **not** appear against a job on the Projects grid.
 
 | bucket | hours | codes | why |
