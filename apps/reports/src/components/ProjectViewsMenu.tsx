@@ -30,7 +30,7 @@ import {
 const MY_VIEWS_KEY = "quoted-my-views";
 // The exact set of /quoted query params a view captures (columns + filters +
 // the Actuals toggle, which used to be a localStorage flag restored separately).
-const VIEW_PARAMS = ["cols", "hide", "sort", "dir", "customers", "types", "statuses", "billables", "actuals"] as const;
+const VIEW_PARAMS = ["cols", "hide", "sort", "dir", "customers", "types", "statuses", "billables", "actuals", "jobless"] as const;
 
 type MyViews = Record<string, ViewConfig>;
 

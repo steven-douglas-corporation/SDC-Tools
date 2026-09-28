@@ -487,6 +487,14 @@ table[data-grid="projects"].hide-actuals td.quoted-actual-cell > .actual-suffix 
 table[data-grid="projects"].hide-actuals .actuals-only {
   display: none;
 }
+/* The No Job ID switch (ProjectsShowJoblessSwitch). The footer's Total is rendered
+ * twice, with and without the No Job ID hours, and exactly one shows: hiding the row
+ * must take its hours out of the Total as well. */
+table[data-grid="projects"].hide-jobless .jobless-row,
+table[data-grid="projects"].hide-jobless .total-with-jobless,
+table[data-grid="projects"]:not(.hide-jobless) .total-without-jobless {
+  display: none;
+}
 .hide-actuals td.quoted-actual-cell > input[type="number"] {
   width: 100% !important;
 }
