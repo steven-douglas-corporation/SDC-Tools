@@ -3,7 +3,7 @@ import { SourceStaleBanner } from "@/components/SourceStaleBanner";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { validJobTypeFilter, VALID_JOB_TYPES, JOB_STATUSES, DEFAULT_VISIBLE_STATUSES, compareJobIds, isSdcCustomer } from "@/lib/job-filters";
-import { SECTIONS, PHASE_GROUPS, RESTRICTED_SECTION_CODES, restrictedSectionPermission } from "@/lib/sections";
+import { SECTIONS, PHASE_GROUPS, RESTRICTED_SECTION_CODES, otherActualHours, restrictedSectionPermission } from "@/lib/sections";
 import { hasPermission } from "@/lib/permissions";
 import { abbreviateLabel } from "@/lib/abbrev";
 import { DragScroll } from "@/components/DragScroll";
@@ -35,7 +35,7 @@ import { saveQuotedHours } from "@/lib/quoted-actions";
 import { QuotedSaveForm } from "@/components/QuotedSaveForm";
 import { decodeParamList, isActualsOn } from "@/lib/quoted-display-prefs";
 import { quotedCellTone } from "@/lib/quoted-tone";
-import { loadActualHoursBySection } from "@/lib/actual-hours";
+import { loadActualHoursBySection, loadJoblessActualsBySection } from "@/lib/actual-hours";
 import {
   ProjectsEditModeProvider,
   ProjectsEditModeToggle,
@@ -311,6 +311,14 @@ export async function ProjectsView({ params }: { params: {
     // Fail-soft: empty set when the Scheduler DB isn't configured. Independent
     // of the job query, so it has no business waiting for it.
     { baseUrl: schedulerBaseUrl, jobNumbers: schedulerJobNumbers, ssoEmail: schedulerSsoEmail },
+    // Every job in the table, unfiltered — the footer's Total says "complete" only
+    // when the grid is showing all of them. Counted rather than inferred from the
+    // filters, because a job with no type or an unlisted status matches no filter
+    // value and would otherwise make the grid look complete when it is not.
+    totalJobCount,
+    // Punches with no usable job number, for the "No Job ID" footer row. Company-
+    // wide, so it depends on nothing the filters choose.
+    jobless,
   ] = await Promise.all([
     getProjectsEditState(),
     listSharedViews(),
@@ -319,6 +327,8 @@ export async function ProjectsView({ params }: { params: {
     prisma.job.findMany({ where: validJobTypeFilter, distinct: ["customer"], select: { customer: true } }),
     prisma.job.findMany({ where: validJobTypeFilter, distinct: ["status"], select: { status: true } }),
     getSchedulerLinkContext(),
+    prisma.job.count(),
+    loadJoblessActualsBySection(),
   ]);
   // PM / Manufacturing / Warranty Engineering / Warranty Shop, shown only to a
   // role with the matching Standard Fees permission (lib/sections.ts's
@@ -493,12 +503,13 @@ export async function ProjectsView({ params }: { params: {
 
   // Total visible data columns: for each phase, its visible sections (or just 1
   // collapsed column if every section in that phase is hidden), PLUS the two
-  // grand-total columns (Engineering total + Shop total) that span all phases.
+  // grand-total columns (Engineering total + Shop total) that span all phases,
+  // PLUS the Other column.
   const dataColumnCount =
     PHASE_GROUPS.reduce((sum, g) => {
       const visible = visibleSectionsByPhase.get(g.phase) ?? [];
       return sum + visible.length; // fully-hidden phases render no column
-    }, 0) + 2;
+    }, 0) + 3;
 
   // Currently-visible section codes split by billing group — the two grand
   // totals sum exactly these, so they track the column pickers. Shop = the
@@ -507,6 +518,37 @@ export async function ProjectsView({ params }: { params: {
   const visibleSectionsFlat = PHASE_GROUPS.flatMap((g) => visibleSectionsByPhase.get(g.phase) ?? []);
   const engCodes = visibleSectionsFlat.filter((s) => s.group !== "Shop").map((s) => s.code);
   const shopCodes = visibleSectionsFlat.filter((s) => s.group === "Shop").map((s) => s.code);
+
+  // ── The footer: No Job ID, then the Total of everything on screen ───────────
+  //
+  // The Total adds every job row plus the No Job ID row, per visible column, from
+  // the exact figures (rounded only when drawn). It accounts for every hour the
+  // app holds only when nothing is hidden: every job is listed (the filters are
+  // cleared) and every section column is on, which a role without the Standard
+  // Fees grants can never reach. `complete` says which, so a filtered total is not
+  // read as the company figure. What "every hour" means is in actual-hours.ts:
+  // all three eras for jobs, punch-era only for jobless time.
+  const hiddenSectionCount = SECTIONS.filter((s) => !visibleSet.has(s.code)).length;
+  const footerGaps = [
+    jobs.length < totalJobCount ? `${totalJobCount - jobs.length} of ${totalJobCount} jobs are filtered out` : null,
+    hiddenSectionCount > 0 ? `${hiddenSectionCount} section column${hiddenSectionCount === 1 ? " is" : "s are"} hidden` : null,
+  ].filter((g): g is string => g !== null);
+  const footerComplete = footerGaps.length === 0;
+  const footerCompleteness = footerComplete
+    ? "Complete: every job and every section is shown, so this is every hour the app holds."
+    : `Partial: ${footerGaps.join("; ")}. Clear the filters and show every section for the full total.`;
+  const footerBySection = new Map<string, number>();
+  const addFooter = (code: string, hours: number) => footerBySection.set(code, (footerBySection.get(code) ?? 0) + hours);
+  for (const job of jobs) for (const [code, hours] of actualHours.get(job.id) ?? EMPTY_ACTUALS) addFooter(code, hours);
+  for (const [code, hours] of jobless.bySection) addFooter(code, hours);
+  const joblessOther = otherActualHours(jobless.bySection);
+  const footerOther = otherActualHours(footerBySection);
+  const sumCodes = (m: ReadonlyMap<string, number>, codes: string[]) => codes.reduce((s, c) => s + (m.get(c) ?? 0), 0);
+  // "Not Defined 412h · 2026 SERVICE 88h · …" — the first dozen, largest first.
+  const hoursList = (items: { name: string; hours: number }[]) =>
+    items.slice(0, 12).map((x) => `${x.name} ${exactHours(x.hours)}h`).join(" · ") + (items.length > 12 ? ` · +${items.length - 12} more` : "");
+  const otherTitle = (o: { total: number; codes: { code: string; hours: number }[] }) =>
+    o.codes.length ? `Other / unmapped — ${exactHours(o.total)}h: ${hoursList(o.codes.map((c) => ({ name: c.code, hours: c.hours })))}` : "Other / unmapped — none";
 
   return (
     // ProjectsGridView wraps the toolbar AND the grid: the info-column checkboxes read
@@ -796,6 +838,18 @@ export async function ProjectsView({ params }: { params: {
               >
                 SHOP
                 <span className="block font-semibold">TOTAL</span>
+              </th>
+              {/* Actual hours whose code has no column here even after the fold
+                  (phase 80/90, 10-400, 70-414…) — see otherActualHours in
+                  lib/sections.ts. Actual-only, so it goes when actuals are off. */}
+              <th
+                rowSpan={3}
+                style={DATA_COL_STYLE}
+                title="Actual hours booked to a code with no column on this grid, even after folding: phase 80/90 Service, 10-400, 70-414 and the like. Hidden or permission-gated columns are not counted here."
+                className="actuals-only border-l border-sdc-border bg-sdc-gray-100 px-2 py-2 text-center align-bottom text-note leading-tight text-sdc-gray-600"
+              >
+                OTHER
+                <span className="block font-semibold">UNMAPPED</span>
               </th>
               {/* ONE "Parts Cost" column (merged 2026-08-11 — used to be
                   "Parts Cost Quoted" / "Parts Cost Actual" as two separate
@@ -1194,6 +1248,18 @@ export async function ProjectsView({ params }: { params: {
                       </>
                     );
                   })()}
+                  {(() => {
+                    const other = otherActualHours(actualBySection);
+                    return (
+                      <td
+                        style={DATA_COL_STYLE}
+                        title={otherTitle(other)}
+                        className={`actuals-only overflow-hidden whitespace-nowrap border-l border-sdc-border px-1 py-1.5 text-center align-middle font-mono text-label ${other.total ? "font-semibold text-sdc-navy" : "text-sdc-muted"}`}
+                      >
+                        {other.total ? wholeHours(other.total) : "—"}
+                      </td>
+                    );
+                  })()}
                   {/* "Parts Cost Quoted / Parts Cost Actual" — ONE cell, same
                       pattern as the section-hours cells above: quoted first
                       (blue, matching the hours input's text-sdc-blue-dark),
@@ -1242,6 +1308,86 @@ export async function ProjectsView({ params }: { params: {
               );
             })}
           </tbody>
+          {/* No Job ID, then Total — see the footer note above the return. Sticky to
+              the bottom of the scroller like the header is to the top, and
+              actual-only, so it goes with the Show Actuals switch. */}
+          <tfoot className="actuals-only sticky bottom-0 z-20">
+            {(
+              [
+                {
+                  key: "jobless",
+                  label: "No Job ID",
+                  detail: "Punches with no usable job number",
+                  title: `No Job ID — punches whose job cell is blank, "Not Defined" or a job number the app does not have. Punch data only: the older eras were only ever kept per job. ${jobless.byLabel.length ? hoursList(jobless.byLabel.map((l) => ({ name: l.label, hours: l.hours }))) : "None."}`,
+                  bySection: jobless.bySection,
+                  other: joblessOther,
+                  rowClass: "bg-sdc-gray-50",
+                },
+                {
+                  key: "total",
+                  label: "TOTAL",
+                  detail: footerComplete ? "All rows above + No Job ID · complete" : "All rows above + No Job ID · partial",
+                  title: footerCompleteness,
+                  bySection: footerBySection,
+                  other: footerOther,
+                  rowClass: "bg-sdc-gray-100 font-semibold",
+                },
+              ] as const
+            ).map((row) => (
+              <tr key={row.key} className={`${row.rowClass} border-t-2 border-sdc-border`} title={row.title}>
+                <td className={`frozen-col sticky left-0 z-10 w-8 min-w-8 px-1 py-1.5 ${row.rowClass}`} />
+                <td className={`frozen-col sticky left-8 z-10 w-20 min-w-20 max-w-20 overflow-hidden truncate px-2 py-1.5 align-middle text-label font-semibold whitespace-nowrap text-sdc-navy ${row.rowClass}`}>
+                  {row.label}
+                </td>
+                <td
+                  data-col="job"
+                  style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
+                  className={`frozen-col frozen-col-last sticky left-[7rem] z-10 overflow-hidden border-l border-r border-sdc-border px-2 py-1.5 align-middle text-label whitespace-nowrap ${
+                    row.key === "total" && !footerComplete ? "text-sdc-red-text" : "text-sdc-gray-600"
+                  } ${row.rowClass}`}
+                >
+                  {row.detail}
+                </td>
+                {TOGGLE_COLUMNS.filter((c) => c.key !== "job").map((c) => (
+                  <td key={c.key} data-col={c.key} />
+                ))}
+                {visibleSectionsFlat.map((s) => {
+                  const hours = row.bySection.get(s.code) ?? 0;
+                  return (
+                    <td
+                      key={s.code}
+                      style={DATA_COL_STYLE}
+                      title={`${row.label} · ${s.name} — Actual ${exactHours(hours) ?? "0"}`}
+                      className={`qc overflow-hidden border-l border-sdc-border px-1 py-1.5 text-center align-middle font-mono text-label whitespace-nowrap ${hours ? "text-sdc-green-text" : "text-sdc-muted"}`}
+                    >
+                      {hours ? wholeHours(hours) : "—"}
+                    </td>
+                  );
+                })}
+                {[engCodes, shopCodes].map((codes, i) => {
+                  const hours = sumCodes(row.bySection, codes);
+                  return (
+                    <td
+                      key={i}
+                      style={DATA_COL_STYLE}
+                      title={`${row.label} · ${i === 0 ? "Engineering" : "Shop"} — Actual ${exactHours(hours) ?? "0"}`}
+                      className={`overflow-hidden whitespace-nowrap border-l border-sdc-border bg-sdc-blue-light px-1 py-1.5 text-center align-middle font-mono text-label font-semibold text-sdc-green-text`}
+                    >
+                      {wholeHours(hours)}
+                    </td>
+                  );
+                })}
+                <td
+                  style={DATA_COL_STYLE}
+                  title={otherTitle(row.other)}
+                  className={`overflow-hidden whitespace-nowrap border-l border-sdc-border px-1 py-1.5 text-center align-middle font-mono text-label ${row.other.total ? "font-semibold text-sdc-navy" : "text-sdc-muted"}`}
+                >
+                  {row.other.total ? wholeHours(row.other.total) : "—"}
+                </td>
+                <td className={`${PARTS_COST_COL_CLASS} border-l border-sdc-border`} />
+              </tr>
+            ))}
+          </tfoot>
         </table>
       </DragScroll>
       </ProjectsEditFieldset>

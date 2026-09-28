@@ -160,6 +160,11 @@ export function NewProjectRows({
           >
             <span data-total-quoted>0</span>
           </td>
+          {/* Other / unmapped actual hours — a new row has none yet. Kept so the
+              row stays column-aligned with the saved rows in quoted/page.tsx. */}
+          <td className="actuals-only overflow-hidden border-l border-sdc-border px-1 py-1.5 text-center align-middle font-mono text-label whitespace-nowrap text-sdc-muted">
+            —
+          </td>
           {/* Merged Parts Cost column — same structure as the real rows in
               quoted/page.tsx: quoted first (blue), "/ actual" second (green)
               inside `.actual-suffix`, hidden by `.hide-actuals` with no extra
