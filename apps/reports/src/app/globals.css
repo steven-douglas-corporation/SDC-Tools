@@ -481,6 +481,12 @@ td.quoted-actual-cell > .actual-suffix > .actual-sep {
 table[data-grid="projects"].hide-actuals td.quoted-actual-cell > .actual-suffix {
   display: none;
 }
+/* Parts of the Projects grid that are nothing BUT actual hours — the Other column
+ * and the No Job ID / Total footer. With actuals off there is nothing left to show
+ * in them, so the whole column and footer go, not just a suffix. */
+table[data-grid="projects"].hide-actuals .actuals-only {
+  display: none;
+}
 .hide-actuals td.quoted-actual-cell > input[type="number"] {
   width: 100% !important;
 }

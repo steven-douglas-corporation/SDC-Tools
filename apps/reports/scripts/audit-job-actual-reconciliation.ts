@@ -21,7 +21,7 @@
  */
 import { prisma } from "../src/lib/prisma";
 import { getJobHoursDashboard } from "../src/lib/job-hours-dashboard";
-import { coveredMonths } from "../src/lib/actual-hours";
+import { OUTSIDE_SNAPSHOT, SNAPSHOT_THROUGH_MONTH, coveredMonths, supersededBySnapshot } from "../src/lib/actual-hours";
 import { SECTIONS, PARTS_COST_SECTION, RESTRICTED_SECTION_CODES, mapPunchToColumns } from "../src/lib/sections";
 
 const DEFAULT_JOBS = ["1131"];
@@ -110,12 +110,16 @@ async function auditJob(jobNumber: string): Promise<void> {
   const historicalTotal = historical.reduce((s, r) => s + Number(r.actualHistoricalHours ?? 0), 0);
   const frozen = await prisma.etcEntry.groupBy({
     by: ["month", "section"],
-    where: { jobId: job.id, section: { not: PARTS_COST_SECTION }, month: { notIn: covered } },
+    where: { jobId: job.id, section: { not: PARTS_COST_SECTION }, month: { notIn: covered }, AND: [OUTSIDE_SNAPSHOT] },
     _sum: { hoursWorked: true },
   });
   const frozenTotal = frozen.reduce((s, r) => s + Number(r._sum.hoursWorked ?? 0), 0);
-  const punchesInCovered = punches.filter((p) => coveredSet.has(p.month)).reduce((s, p) => s + Number(p.hours), 0);
-  const punchesOutsideCovered = rawTotal - punchesInCovered;
+  // Punches in a month the job's snapshot already contains are not counted again.
+  const hasSnapshot = historical.some((r) => Number(r.actualHistoricalHours ?? 0) !== 0);
+  const inSnapshot = punches.filter((p) => supersededBySnapshot(p.month, hasSnapshot)).reduce((s, p) => s + Number(p.hours), 0);
+  const punchesInCovered =
+    punches.filter((p) => coveredSet.has(p.month) && !supersededBySnapshot(p.month, hasSnapshot)).reduce((s, p) => s + Number(p.hours), 0);
+  const punchesOutsideCovered = punches.filter((p) => !coveredSet.has(p.month)).reduce((s, p) => s + Number(p.hours), 0);
 
   console.log(`\n2. THE THREE ERAS Actual IS BUILT FROM (actual-hours.ts)`);
   console.log(`   punch-covered months (app-wide): ${covered.length} (${covered.slice().sort()[0]} … ${covered.slice().sort().at(-1)})`);
@@ -124,6 +128,7 @@ async function auditJob(jobNumber: string): Promise<void> {
   console.log(`   era 2  frozen ETC, uncovered mo: ${h(frozenTotal)}  (${frozen.length} cells)`);
   console.log(`   era 3  punches in covered month: ${h(punchesInCovered)}`);
   console.log(`   punches in an UNCOVERED month  : ${h(punchesOutsideCovered)}  <- counted by neither era if > 0`);
+  console.log(`   punches already in snapshot    : ${h(inSnapshot)}  (months <= ${SNAPSHOT_THROUGH_MONTH}, not counted again)`);
   console.log(`   expected Actual total          : ${h(historicalTotal + frozenTotal + punchesInCovered)}`);
 
   // ── Stage 3: raw section pairs, and whether the chart has a home for each ──

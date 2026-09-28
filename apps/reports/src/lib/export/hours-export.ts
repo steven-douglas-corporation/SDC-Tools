@@ -1,5 +1,5 @@
 import { queryHoursExportRows, queryHoursGrouped, queryHoursSummary } from "@/lib/hours-explorer";
-import { loadFrozenEtcMonthRows, loadMigrationSnapshotRows } from "@/lib/actual-hours";
+import { SNAPSHOT_THROUGH_MONTH, loadFrozenEtcMonthRows, loadMigrationSnapshotRows } from "@/lib/actual-hours";
 import { SECTIONS } from "@/lib/sections";
 import {
   parseHoursFilters,
@@ -180,6 +180,9 @@ async function buildHistoricalSheets(filters: HoursFilters, options: HoursExport
       title: "Migration Snapshot",
       subtitle: [
         "Hours carried over from the original Excel migration, before ETC tracking. One total per job and section, with no date or employee.",
+        // See SNAPSHOT_THROUGH_MONTH in actual-hours.ts: the reports drop those punches
+        // for a job with a snapshot, but the punch sheet lists every punch there is.
+        `Runs through the end of ${SNAPSHOT_THROUGH_MONTH}, so it already includes that month's punches for these jobs. Do not add this sheet to their ${SNAPSHOT_THROUGH_MONTH} rows on the punch sheet.`,
         ...describeEraScope(filters, false),
         `${stamp} — ${rows.length} row${rows.length === 1 ? "" : "s"}`,
       ],

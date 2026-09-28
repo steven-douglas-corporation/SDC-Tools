@@ -37,6 +37,46 @@ import type { HistoricalEraScope } from "@/lib/hours-filters";
 // Era 3 takes precedence over era 2 for the same month by construction: the two
 // queries partition on `coveredMonths`, so no month is counted twice.
 
+// ── The snapshot already contains January 2025 (2026-09-28) ─────────────────
+//
+// Era 1 is `Hours Through 20250131.xlsx`: a lifetime total per job and section,
+// THROUGH 2025-01-31. The punch feed (Job_Hours_2025.xlsx) starts 2025-01-06. So
+// for any job that has a snapshot, its January 2025 punches are already inside
+// that snapshot, and adding them counted them twice.
+//
+// Measured against production on 2026-09-28: 46 jobs had January 2025 punches
+// (6,417.49h). The 37 with a snapshot carried 5,618.35h of them, every one with a
+// snapshot at least that large. Job 1105 (Clip-iT Retrofit) is the proof: its only
+// work before February was in January, and its snapshot equals its January punches
+// exactly (8.89h and 8.89h). Power BI makes the same cut: its punch feed starts
+// 2025-02-01 and the historical import covers everything before.
+//
+// The other 9 jobs have no snapshot at all (799.14h, mostly the service and
+// utility jobs the Excel tracker never carried). For them the punches are the only
+// record, so a flat cutoff would lose them. The rule is therefore per job: a month
+// at or before SNAPSHOT_THROUGH_MONTH counts for era 2 or 3 only when the job has
+// no snapshot. Rows are not touched; this only decides what the reports read.
+//
+// Per job rather than per section: the snapshot is a whole-job crosstab, so a
+// section with 0 in it means no hours were booked there, not that it is missing.
+export const SNAPSHOT_THROUGH_MONTH = "2025-01";
+
+// Whether a job/month is already inside the migration snapshot. Pure, so the rule
+// is testable without a database; OUTSIDE_SNAPSHOT below is the same rule as SQL.
+export function supersededBySnapshot(month: string, jobHasSnapshot: boolean): boolean {
+  return jobHasSnapshot && month <= SNAPSHOT_THROUGH_MONTH;
+}
+
+// The where-fragment every era-2 and era-3 read of a job's hours must include, in
+// its AND list. Keeps the month, or keeps the job when it has no
+// non-zero snapshot row. EtcEntry and JobHoursDetail both have `month` and `job`.
+export const OUTSIDE_SNAPSHOT = {
+  OR: [
+    { month: { gt: SNAPSHOT_THROUGH_MONTH } },
+    { job: { estimatedHours: { none: { actualHistoricalHours: { not: 0 } } } } },
+  ],
+} satisfies Prisma.JobHoursDetailWhereInput & Prisma.EtcEntryWhereInput;
+
 // Which months the punch import actually covers. Everything else falls back to
 // the frozen ETC figure. Derived from the data rather than configured, so it
 // widens on its own as the import's window grows.
@@ -86,12 +126,12 @@ export async function loadActualHoursBySection(jobPks: number[]): Promise<Actual
     }),
     prisma.etcEntry.groupBy({
       by: ["jobId", "section"],
-      where: { jobId: { in: jobPks }, section: { not: PARTS_COST_SECTION }, month: { notIn: covered } },
+      where: { jobId: { in: jobPks }, section: { not: PARTS_COST_SECTION }, month: { notIn: covered }, AND: [OUTSIDE_SNAPSHOT] },
       _sum: { hoursWorked: true },
     }),
     prisma.jobHoursDetail.groupBy({
       by: ["jobId", "section"],
-      where: { jobId: { in: jobPks }, month: { in: covered } },
+      where: { jobId: { in: jobPks }, month: { in: covered }, AND: [OUTSIDE_SNAPSHOT] },
       _sum: { hours: true },
     }),
   ]);
@@ -127,12 +167,12 @@ export async function loadMonthlyWorkedBySection(jobPks: number[]): Promise<Reco
   const [frozen, punches] = await Promise.all([
     prisma.etcEntry.groupBy({
       by: ["month", "section"],
-      where: { jobId: { in: jobPks }, section: { not: PARTS_COST_SECTION }, month: { notIn: covered } },
+      where: { jobId: { in: jobPks }, section: { not: PARTS_COST_SECTION }, month: { notIn: covered }, AND: [OUTSIDE_SNAPSHOT] },
       _sum: { hoursWorked: true },
     }),
     prisma.jobHoursDetail.groupBy({
       by: ["month", "section"],
-      where: { jobId: { in: jobPks }, month: { in: covered } },
+      where: { jobId: { in: jobPks }, month: { in: covered }, AND: [OUTSIDE_SNAPSHOT] },
       _sum: { hours: true },
     }),
   ]);
@@ -162,6 +202,58 @@ export async function loadMonthlyWorkedBySection(jobPks: number[]): Promise<Reco
   return out;
 }
 
+// ── Punches with no usable job (2026-09-28) ─────────────────────────────────
+//
+// The Projects grid's "No Job ID" row. These punches never reach JobHoursDetail:
+// the import files them in UndefinedHoursRow instead, from the same file in the
+// same transaction, so the two tables together are every job-number outcome of
+// one import with nothing counted in both.
+//
+// Only the two job-number reasons. Both are raised AFTER the year-ownership gate
+// in paylocity-workbook.ts, so the overlapping workbooks cannot put a punch here
+// twice. The other reasons are not "no job id" and are left out on purpose:
+// CONTROL_TOTAL_CODE rows are report totals rather than time, INVALID_HOURS rows
+// carry no hours, and MISSING_WORK_DATE / INVALID_LABOR_CODE are raised BEFORE the
+// year gate, so summing them could count an overlapping file's copy as well.
+//
+// countsTowardKpi is ignored: that flag scopes the ETC KPI, and this row exists to
+// show everything, phase 80/90 and the pool codes included.
+//
+// Punch-era only, and limited to coveredMonths() so it spans the same months as
+// era 3. Eras 1 and 2 were only ever recorded against a job, so there is no
+// jobless counterpart to them.
+export const JOBLESS_REASONS = ["MISSING_JOB_ID", "JOB_NOT_FOUND"] as const;
+
+export type JoblessActuals = {
+  // Folded column code (or raw code, when it has no column) -> hours.
+  bySection: Map<string, number>;
+  // What the job cell said, largest first: "Not Defined", "2026 SERVICE", "925".
+  byLabel: { label: string; hours: number }[];
+};
+
+export async function loadJoblessActualsBySection(): Promise<JoblessActuals> {
+  const covered = await coveredMonths();
+  const where = { reason: { in: [...JOBLESS_REASONS] }, month: { in: covered } };
+  const [bySectionRows, byLabelRows] = await Promise.all([
+    prisma.undefinedHoursRow.groupBy({ by: ["section"], where, _sum: { hours: true } }),
+    prisma.undefinedHoursRow.groupBy({ by: ["label"], where, _sum: { hours: true } }),
+  ]);
+
+  const bySection = new Map<string, number>();
+  // Folded exactly as a job's punches are, so the row's cells mean what the job
+  // rows' cells mean.
+  for (const u of bySectionRows) {
+    for (const col of mapPunchToColumns(u.section, Number(u._sum.hours ?? 0))) {
+      if (col.hours) bySection.set(col.section, (bySection.get(col.section) ?? 0) + col.hours);
+    }
+  }
+  const byLabel = byLabelRows
+    .map((u) => ({ label: u.label, hours: Number(u._sum.hours ?? 0) }))
+    .filter((u) => u.hours !== 0)
+    .sort((a, b) => b.hours - a.hours);
+  return { bySection, byLabel };
+}
+
 // ── Eras 1 and 2, row by row, for the Hours export (2026-09-24) ──────────────
 //
 // The Hours page reads JobHoursDetail only, so it shows era 3 alone, and its total
@@ -172,8 +264,11 @@ export async function loadMonthlyWorkedBySection(jobPks: number[]): Promise<Reco
 // frozen month is one number per job/section/month, and nothing finer exists.
 //
 // Same partition as loadActualHoursBySection above (era 2 is only the months
-// coveredMonths() does NOT cover), so these sheets plus the punch sheet never
-// count a month twice. PARTS_COST is excluded from both: it is dollars stored in
+// coveredMonths() does NOT cover, less any month already inside a job's
+// snapshot), so these sheets plus the punch sheet never count a month twice —
+// with one exception the export states on the sheet: the punch sheet still lists
+// January 2025 for jobs whose snapshot already includes it (SNAPSHOT_THROUGH_MONTH).
+// PARTS_COST is excluded from both: it is dollars stored in
 // the hours column, not hours.
 //
 // Zero rows are skipped, here and in the existence check, so the export is
@@ -205,7 +300,7 @@ export async function historicalErasAvailable(scope: HistoricalEraScope): Promis
       select: { id: true },
     }),
     prisma.etcEntry.findFirst({
-      where: { ...eraWhere(scope), month: frozenMonthFilter(scope, covered), hoursWorked: { not: 0 } },
+      where: { ...eraWhere(scope), month: frozenMonthFilter(scope, covered), hoursWorked: { not: 0 }, AND: [OUTSIDE_SNAPSHOT] },
       select: { id: true },
     }),
   ]);
@@ -231,7 +326,7 @@ export type FrozenEtcMonthRow = { jobId: string; jobName: string; month: string;
 export async function loadFrozenEtcMonthRows(scope: HistoricalEraScope): Promise<FrozenEtcMonthRow[]> {
   const covered = await coveredMonths();
   const rows = await prisma.etcEntry.findMany({
-    where: { ...eraWhere(scope), month: frozenMonthFilter(scope, covered), hoursWorked: { not: 0 } },
+    where: { ...eraWhere(scope), month: frozenMonthFilter(scope, covered), hoursWorked: { not: 0 }, AND: [OUTSIDE_SNAPSHOT] },
     select: { month: true, section: true, hoursWorked: true, job: { select: { jobId: true, jobName: true } } },
     orderBy: [{ job: { jobId: "asc" } }, { month: "asc" }, { section: "asc" }],
   });

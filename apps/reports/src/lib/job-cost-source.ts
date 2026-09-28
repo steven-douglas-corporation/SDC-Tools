@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { validJobTypeFilter } from "@/lib/job-filters";
 import { SECTIONS, PARTS_COST_SECTION, mapPunchToColumns, billingGroupForSection } from "@/lib/sections";
-import { coveredMonths } from "@/lib/actual-hours";
+import { OUTSIDE_SNAPSHOT, coveredMonths } from "@/lib/actual-hours";
 import { getPartsCostSpentByJob, getPartsActualByJob } from "@/lib/sync-totaleto";
 import { effectiveNewEtc } from "@/lib/etc";
 import { runDax } from "@/lib/powerbi-client";
@@ -100,12 +100,14 @@ async function loadJobHoursAndYears(jobPks: number[], throughMonth: string | nul
         jobId: { in: jobPks },
         section: { not: PARTS_COST_SECTION },
         month: { notIn: covered, ...(throughMonth ? { lte: throughMonth } : {}) },
+        // Months already inside the job's migration snapshot — see actual-hours.ts.
+        AND: [OUTSIDE_SNAPSHOT],
       },
       _sum: { hoursWorked: true },
     }),
     prisma.jobHoursDetail.groupBy({
       by: ["jobId", "section", "month"],
-      where: { jobId: { in: jobPks }, month: { in: covered, ...(throughMonth ? { lte: throughMonth } : {}) } },
+      where: { jobId: { in: jobPks }, month: { in: covered, ...(throughMonth ? { lte: throughMonth } : {}) }, AND: [OUTSIDE_SNAPSHOT] },
       _sum: { hours: true },
     }),
   ]);

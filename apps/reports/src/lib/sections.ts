@@ -66,6 +66,25 @@ export const SECTIONS: { code: string; name: string; phase: string; group: strin
   { code: "70-411", name: "MB & EB", phase: WARRANTY_PHASE, group: "Shop" },
 ];
 
+// Every grid column code, for asking whether a folded punch has a column at all.
+export const SECTION_CODES: ReadonlySet<string> = new Set(SECTIONS.map((s) => s.code));
+
+// The Projects grid's "Other" column: actual hours whose code has no grid column
+// even after mapPunchToColumns — phase 80/90, 10-400, 70-414 and the like. Takes a
+// map from actual-hours.ts, which keeps those codes as themselves rather than
+// dropping them. A column that is merely hidden or permission-gated is NOT other:
+// it has a column, so the figure does not move with the picker. Largest code first.
+export function otherActualHours(bySection: ReadonlyMap<string, number>): { total: number; codes: { code: string; hours: number }[] } {
+  const codes: { code: string; hours: number }[] = [];
+  for (const [code, hours] of bySection) {
+    // PARTS_COST is dollars filed in an hours column; never let it into an hours total.
+    if (SECTION_CODES.has(code) || code === PARTS_COST_SECTION || !hours) continue;
+    codes.push({ code, hours });
+  }
+  codes.sort((a, b) => b.hours - a.hours);
+  return { total: codes.reduce((s, c) => s + c.hours, 0), codes };
+}
+
 // Consecutive runs of the same phase, for a grouped header row's colSpans.
 export const PHASE_GROUPS = SECTIONS.reduce<{ phase: string; count: number }[]>((groups, s) => {
   const last = groups[groups.length - 1];
