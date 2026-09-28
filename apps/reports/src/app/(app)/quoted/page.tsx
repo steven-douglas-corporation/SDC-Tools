@@ -3,7 +3,7 @@ import { SourceStaleBanner } from "@/components/SourceStaleBanner";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { validJobTypeFilter, VALID_JOB_TYPES, JOB_STATUSES, DEFAULT_VISIBLE_STATUSES, compareJobIds, isSdcCustomer } from "@/lib/job-filters";
-import { SECTIONS, PHASE_GROUPS, RESTRICTED_SECTION_CODES, otherActualHours, restrictedSectionPermission } from "@/lib/sections";
+import { SECTIONS, PHASE_GROUPS, RESTRICTED_SECTION_CODES, offGridActualHours, restrictedSectionPermission, type OffGridBucket } from "@/lib/sections";
 import { hasPermission } from "@/lib/permissions";
 import { abbreviateLabel } from "@/lib/abbrev";
 import { DragScroll } from "@/components/DragScroll";
@@ -509,12 +509,12 @@ export async function ProjectsView({ params }: { params: {
   // Total visible data columns: for each phase, its visible sections (or just 1
   // collapsed column if every section in that phase is hidden), PLUS the two
   // grand-total columns (Engineering total + Shop total) that span all phases,
-  // PLUS the Other column.
+  // PLUS the Service & Spare Parts and Unmapped columns.
   const dataColumnCount =
     PHASE_GROUPS.reduce((sum, g) => {
       const visible = visibleSectionsByPhase.get(g.phase) ?? [];
       return sum + visible.length; // fully-hidden phases render no column
-    }, 0) + 3;
+    }, 0) + 4;
 
   // Currently-visible section codes split by billing group — the two grand
   // totals sum exactly these, so they track the column pickers. Shop = the
@@ -551,13 +551,33 @@ export async function ProjectsView({ params }: { params: {
   }
   const withJobless = new Map(jobsBySection);
   for (const [code, hours] of jobless.bySection) withJobless.set(code, (withJobless.get(code) ?? 0) + hours);
-  const joblessOther = otherActualHours(jobless.bySection);
   const sumCodes = (m: ReadonlyMap<string, number>, codes: string[]) => codes.reduce((s, c) => s + (m.get(c) ?? 0), 0);
   // "Not Defined 412h · 2026 SERVICE 88h · …" — the first dozen, largest first.
   const hoursList = (items: { name: string; hours: number }[]) =>
     items.slice(0, 12).map((x) => `${x.name} ${exactHours(x.hours)}h`).join(" · ") + (items.length > 12 ? ` · +${items.length - 12} more` : "");
-  const otherTitle = (o: { total: number; codes: { code: string; hours: number }[] }) =>
-    o.codes.length ? `Other / unmapped — ${exactHours(o.total)}h: ${hoursList(o.codes.map((c) => ({ name: c.code, hours: c.hours })))}` : "Other / unmapped — none";
+  // The two off-grid columns, Service & Spare Parts then Unmapped — for a job row
+  // and the footer rows alike. Display only: neither feeds ENG or SHOP TOTAL.
+  const offGridCell = (label: string, b: OffGridBucket, warn: boolean) => (
+    <td
+      style={DATA_COL_STYLE}
+      title={b.codes.length ? `${label} — ${exactHours(b.total)}h: ${hoursList(b.codes.map((c) => ({ name: c.code, hours: c.hours })))}` : `${label} — none`}
+      className={`actuals-only overflow-hidden whitespace-nowrap border-l border-sdc-border px-1 py-1.5 text-center align-middle font-mono text-label ${
+        b.total ? `font-semibold ${warn ? "text-sdc-red-text" : "text-sdc-navy"}` : "text-sdc-muted"
+      }`}
+    >
+      {b.total ? wholeHours(b.total) : "—"}
+    </td>
+  );
+  const offGridCells = (bySection: ReadonlyMap<string, number>) => {
+    const { service, unmapped } = offGridActualHours(bySection);
+    return (
+      <>
+        {offGridCell("Service & Spare Parts", service, false)}
+        {/* Red when non-zero: an Unmapped hour is a code nobody has placed yet. */}
+        {offGridCell("Unmapped", unmapped, true)}
+      </>
+    );
+  };
 
   return (
     // ProjectsGridView wraps the toolbar AND the grid: the info-column checkboxes read
@@ -850,13 +870,22 @@ export async function ProjectsView({ params }: { params: {
                 SHOP
                 <span className="block font-semibold">TOTAL</span>
               </th>
-              {/* Actual hours whose code has no column here even after the fold
-                  (phase 80/90, 10-400, 70-414…) — see otherActualHours in
-                  lib/sections.ts. Actual-only, so it goes when actuals are off. */}
+              {/* Actual hours whose code has no column here even after the fold,
+                  split in two for reading only — see offGridActualHours in
+                  lib/sections.ts. Actual-only, so both go when actuals are off. */}
               <th
                 rowSpan={3}
                 style={DATA_COL_STYLE}
-                title="Actual hours booked to a code with no column on this grid, even after folding: phase 80/90 Service, 10-400, 70-414 and the like. Hidden or permission-gated columns are not counted here."
+                title="Service (80-*) and Spare Parts (90-*) actual hours. These phases have no grid column. Display only: not counted in ENG or SHOP TOTAL."
+                className="actuals-only border-l border-sdc-border bg-sdc-gray-100 px-2 py-2 text-center align-bottom text-note leading-tight text-sdc-gray-600"
+              >
+                SERVICE
+                <span className="block font-semibold">&amp; SPARES</span>
+              </th>
+              <th
+                rowSpan={3}
+                style={DATA_COL_STYLE}
+                title="Actual hours on a code nobody has placed: no grid column, and not Service or Spare Parts (e.g. 10-400, 70-414, malformed codes). Not counted in ENG or SHOP TOTAL. Hidden or permission-gated columns are not counted here."
                 className="actuals-only border-l border-sdc-border bg-sdc-gray-100 px-2 py-2 text-center align-bottom text-note leading-tight text-sdc-gray-600"
               >
                 OTHER
@@ -1259,18 +1288,7 @@ export async function ProjectsView({ params }: { params: {
                       </>
                     );
                   })()}
-                  {(() => {
-                    const other = otherActualHours(actualBySection);
-                    return (
-                      <td
-                        style={DATA_COL_STYLE}
-                        title={otherTitle(other)}
-                        className={`actuals-only overflow-hidden whitespace-nowrap border-l border-sdc-border px-1 py-1.5 text-center align-middle font-mono text-label ${other.total ? "font-semibold text-sdc-navy" : "text-sdc-muted"}`}
-                      >
-                        {other.total ? wholeHours(other.total) : "—"}
-                      </td>
-                    );
-                  })()}
+                  {offGridCells(actualBySection)}
                   {/* "Parts Cost Quoted / Parts Cost Actual" — ONE cell, same
                       pattern as the section-hours cells above: quoted first
                       (blue, matching the hours input's text-sdc-blue-dark),
@@ -1333,7 +1351,6 @@ export async function ProjectsView({ params }: { params: {
                   detail: "Punches with no usable job number",
                   title: `No Job ID — punches whose job cell is blank, "Not Defined" or a job number the app does not have. Punch data only: the older eras were only ever kept per job. ${jobless.byLabel.length ? hoursList(jobless.byLabel.map((l) => ({ name: l.label, hours: l.hours }))) : "None."}`,
                   bySection: jobless.bySection,
-                  other: joblessOther,
                   complete: true,
                 },
                 {
@@ -1344,7 +1361,6 @@ export async function ProjectsView({ params }: { params: {
                   detail: `All rows above + No Job ID · ${footerGaps.length === 0 ? "complete" : "partial"}`,
                   title: completeness(footerGaps),
                   bySection: withJobless,
-                  other: otherActualHours(withJobless),
                   complete: footerGaps.length === 0,
                 },
                 {
@@ -1355,7 +1371,6 @@ export async function ProjectsView({ params }: { params: {
                   detail: "Job rows only · partial",
                   title: completeness([...footerGaps, "the No Job ID row is hidden"]),
                   bySection: jobsBySection,
-                  other: otherActualHours(jobsBySection),
                   complete: false,
                 },
               ] as const
@@ -1403,13 +1418,7 @@ export async function ProjectsView({ params }: { params: {
                     </td>
                   );
                 })}
-                <td
-                  style={DATA_COL_STYLE}
-                  title={otherTitle(row.other)}
-                  className={`overflow-hidden whitespace-nowrap border-l border-sdc-border px-1 py-1.5 text-center align-middle font-mono text-label ${row.other.total ? "font-semibold text-sdc-navy" : "text-sdc-muted"}`}
-                >
-                  {row.other.total ? wholeHours(row.other.total) : "—"}
-                </td>
+                {offGridCells(row.bySection)}
                 <td className={`${PARTS_COST_COL_CLASS} border-l border-sdc-border`} />
               </tr>
             ))}

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { SECTIONS, ETC_SECTIONS, PHASE_GROUPS, PARTS_COST_SECTION, SERVICE_AND_SPARE_PARTS_CODES, OFF_GRID_PHASE, UNMAPPED_PHASE } from "@/lib/sections";
+import { SECTIONS, ETC_SECTIONS, PHASE_GROUPS, PARTS_COST_SECTION, OFF_GRID_PHASE, UNMAPPED_PHASE, isServiceOrSparePartsCode } from "@/lib/sections";
 import { suggestNewEtc } from "@/lib/etc";
 import { validJobTypeFilter, compareJobIds } from "@/lib/job-filters";
 import { loadActualHoursBySection, loadMonthlyWorkedBySection } from "@/lib/actual-hours";
@@ -258,7 +258,8 @@ export async function getJobHoursDashboard(jobIdOrIds: number | number[]): Promi
         name: c.taskDescription === "Undefined" ? `Unmapped ${code}` : c.taskDescription,
         // Service/Spare Parts keep their own band; an unmappable code must not be
         // labelled as Service work it may have nothing to do with.
-        phase: SERVICE_AND_SPARE_PARTS_CODES.has(code) ? OFF_GRID_PHASE : UNMAPPED_PHASE,
+        // Same prefix rule as the Projects grid's Service & Spare Parts column.
+        phase: isServiceOrSparePartsCode(code) ? OFF_GRID_PHASE : UNMAPPED_PHASE,
         group: c.department,
         billingGroup: billingGroupForOffGridCode(code),
         quoted: 0,
