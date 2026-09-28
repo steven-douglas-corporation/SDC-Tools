@@ -138,6 +138,7 @@ export const SPLIT_ROUTES: readonly {
       "hide",
       "view",
       "actuals",
+      "jobless",
       "dateField",
       "from",
       "to",

@@ -128,7 +128,8 @@ on. Cell rendering: [page.tsx:1094-1153](../src/app/(app)/quoted/page.tsx#L1094-
     40-311 → 40-211, 10-414 → 10-413, and 13-211 → 10-211. **10-311 is split 30% to 10-312
     and 70% to 10-313.**
   - Punches whose code doesn't map to any grid column keep their raw code. They appear in
-    the **Other / Unmapped** column (section 5) rather than in a section column.
+    the **Service & Spares** or **Other / Unmapped** column (section 5) rather than in a
+    section column.
 - **Why not just ETC Hours Worked:** closed ETC months are frozen and miss punches booked
   late. See the explanation at
   [actual-hours.ts:11-38](../src/lib/actual-hours.ts#L11-L38) and the comment at
@@ -175,20 +176,25 @@ Rendered at [page.tsx:1154-1196](../src/app/(app)/quoted/page.tsx#L1154-L1196).
 
 ---
 
-## 5. OTHER / UNMAPPED (actual hours)
+## 5. SERVICE & SPARES and OTHER / UNMAPPED (actual hours)
 
-One column after SHOP TOTAL, actual hours only, so it is hidden when Show Actuals is off.
+Two columns after SHOP TOTAL, actual hours only, so both are hidden when Show Actuals is
+off. Together they hold every actual-hours code for the job that has **no column on this
+grid**, even after the fold (`offGridActualHours`, [sections.ts](../src/lib/sections.ts)).
+The split is **display only**: neither column is counted in ENG or SHOP TOTAL, the
+Monthly ETC grid or Job Cost.
 
-- **What counts:** every actual-hours code for the job that has **no column on this
-  grid**, even after the fold: phase 80/90 Service, `10-400`, `70-414` and the like
-  (`otherActualHours`, [sections.ts](../src/lib/sections.ts)).
-- **What does not:** a section that has a column but is hidden by the Sections picker or
-  by permission. The figure doesn't move with the picker.
+- **SERVICE & SPARES:** Service (`80-*`) and Spare Parts (`90-*`), decided by the phase
+  prefix, so a combination nobody has seen before (e.g. `80-312`) still lands here. Job
+  Hour Details uses the same rule for its Service & Spare Parts band.
+- **OTHER / UNMAPPED:** everything else, meaning codes nobody has placed: `10-400`,
+  `70-414`, malformed codes such as `1-312`. Shown **red** when above zero, because it
+  should normally be empty.
+- **What does not count:** a section that has a column but is hidden by the Sections
+  picker or by permission. Neither figure moves with the picker.
 - **In practice, punch-period only.** The migration snapshot and the ETC months were only
-  ever recorded against grid columns, so hours in these codes before the punch feed were
-  never kept anywhere.
+  ever recorded against grid columns.
 - **Tooltip:** each code and its hours, largest first.
-- **No colour.** There is no quoted figure to compare it with.
 
 ---
 
@@ -203,6 +209,11 @@ off).
   (`loadJoblessActualsBySection`, [actual-hours.ts](../src/lib/actual-hours.ts)). The
   tooltip lists what the job cell said. It includes no pre-punch hours: those periods
   were only ever recorded per job.
+- **No Job ID switch** (toolbar, next to Show Actuals): hides the No Job ID row. The
+  TOTAL then counts job rows only and always reads partial. The switch works without
+  reloading the page: both versions of the TOTAL are already rendered, and a class on
+  the table picks one. It is saved in the URL as `jobless=0`, so saved views and split
+  view keep it. It is on by default.
 - **TOTAL:** every job row on screen plus No Job ID, per visible column, summed from
   exact figures and rounded only at the end. Its note says **complete** only when every
   job is listed (compared with a count of the `Job` table) and every section column is
@@ -264,7 +275,7 @@ These came up while tracing the code. They describe current behavior and are not
    export ([projects-export.ts:96-134](../src/lib/export/projects-export.ts#L96-L134))
    has a single quoted total and a single actual total over **all** sections, regardless of
    the column picker. It also adds Remaining columns (quoted − actual) that the grid
-   doesn't show, and an Other / Unmapped actual column. It has no No Job ID row.
+   doesn't show, and Service & Spare Parts and Other / Unmapped actual columns. It has no No Job ID row.
 
 ---
 

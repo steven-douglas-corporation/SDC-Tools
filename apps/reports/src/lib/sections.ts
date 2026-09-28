@@ -69,20 +69,39 @@ export const SECTIONS: { code: string; name: string; phase: string; group: strin
 // Every grid column code, for asking whether a folded punch has a column at all.
 export const SECTION_CODES: ReadonlySet<string> = new Set(SECTIONS.map((s) => s.code));
 
-// The Projects grid's "Other" column: actual hours whose code has no grid column
-// even after mapPunchToColumns — phase 80/90, 10-400, 70-414 and the like. Takes a
-// map from actual-hours.ts, which keeps those codes as themselves rather than
-// dropping them. A column that is merely hidden or permission-gated is NOT other:
-// it has a column, so the figure does not move with the picker. Largest code first.
-export function otherActualHours(bySection: ReadonlyMap<string, number>): { total: number; codes: { code: string; hours: number }[] } {
-  const codes: { code: string; hours: number }[] = [];
+// Service (80-*) and Spare Parts (90-*) work: real, understood time that simply
+// has no grid column. Decided by the phase prefix rather than by
+// SERVICE_AND_SPARE_PARTS_CODES, so a combination nobody has seen yet (80-312 is
+// already one) still lands here instead of reading as unknown. Display only:
+// nothing that feeds a total, the ETC grid or Job Cost reads this.
+export function isServiceOrSparePartsCode(code: string): boolean {
+  return /^(80|90)-/.test(code);
+}
+
+export type OffGridBucket = { total: number; codes: { code: string; hours: number }[] };
+
+// The Projects grid's two off-grid columns: actual hours whose code has no grid
+// column even after mapPunchToColumns, split into Service & Spare Parts and
+// Unmapped (everything else — 10-400, 70-414, malformed codes). Purely visual: the
+// hours are not in ENG or SHOP TOTAL either way, only shown under a clearer label,
+// so an Unmapped figure means "nobody has placed this code" and nothing else.
+//
+// Takes a map from actual-hours.ts, which keeps these codes as themselves rather
+// than dropping them. A column that is merely hidden or permission-gated is in
+// neither bucket: it has a column, so the figures do not move with the picker.
+export function offGridActualHours(bySection: ReadonlyMap<string, number>): { service: OffGridBucket; unmapped: OffGridBucket } {
+  const service: OffGridBucket["codes"] = [];
+  const unmapped: OffGridBucket["codes"] = [];
   for (const [code, hours] of bySection) {
     // PARTS_COST is dollars filed in an hours column; never let it into an hours total.
     if (SECTION_CODES.has(code) || code === PARTS_COST_SECTION || !hours) continue;
-    codes.push({ code, hours });
+    (isServiceOrSparePartsCode(code) ? service : unmapped).push({ code, hours });
   }
-  codes.sort((a, b) => b.hours - a.hours);
-  return { total: codes.reduce((s, c) => s + c.hours, 0), codes };
+  const bucket = (codes: OffGridBucket["codes"]): OffGridBucket => ({
+    total: codes.reduce((s, c) => s + c.hours, 0),
+    codes: codes.sort((a, b) => b.hours - a.hours),
+  });
+  return { service: bucket(service), unmapped: bucket(unmapped) };
 }
 
 // Consecutive runs of the same phase, for a grouped header row's colSpans.

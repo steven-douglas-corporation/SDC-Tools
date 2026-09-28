@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { SECTIONS, PARTS_COST_SECTION, mapPunchToColumns, otherActualHours } from "../src/lib/sections";
+import { SECTIONS, PARTS_COST_SECTION, isServiceOrSparePartsCode, mapPunchToColumns, offGridActualHours } from "../src/lib/sections";
 import { JOBLESS_REASONS, SNAPSHOT_THROUGH_MONTH, supersededBySnapshot } from "../src/lib/actual-hours";
 
 const code = (...parts: string[]) => readFileSync(join(process.cwd(), ...parts), "utf8");
@@ -38,20 +38,28 @@ test("every era-2 and era-3 read applies the snapshot rule", () => {
 
 // ── Other / unmapped ────────────────────────────────────────────────────────
 
-test("Other counts only codes with no grid column", () => {
+test("off-grid hours split into Service & Spare Parts and Unmapped, and nothing else", () => {
   const bySection = new Map<string, number>([
-    ["10-211", 100], // a real column — not other
-    ["70-211", 40], // permission-gated, but still a column — not other
+    ["10-211", 100], // a real column — in neither bucket
+    ["70-211", 40], // permission-gated, but still a column — in neither bucket
     ["80-311", 25.5],
+    ["80-312", 3], // not in SERVICE_AND_SPARE_PARTS_CODES, still Service by its phase
     ["90-211", 4.5],
+    ["10-400", 8],
+    ["1-312", 2], // malformed — unknown, not Service
     [PARTS_COST_SECTION, 99_999], // dollars, never hours
   ]);
-  const other = otherActualHours(bySection);
-  assert.equal(other.total, 30);
-  assert.deepEqual(other.codes, [
-    { code: "80-311", hours: 25.5 },
-    { code: "90-211", hours: 4.5 },
-  ]);
+  const { service, unmapped } = offGridActualHours(bySection);
+  assert.equal(service.total, 33);
+  assert.deepEqual(service.codes.map((c) => c.code), ["80-311", "90-211", "80-312"]);
+  assert.equal(unmapped.total, 10);
+  assert.deepEqual(unmapped.codes.map((c) => c.code), ["10-400", "1-312"]);
+});
+
+test("Service & Spare Parts is decided by the 80/90 phase prefix only", () => {
+  for (const c of ["80-211", "80-312", "90-414", "80-999"]) assert.equal(isServiceOrSparePartsCode(c), true, c);
+  // 180-211 and 8-211 are not phase 80; 10-800 is not either.
+  for (const c of ["180-211", "8-211", "10-800", "Not Defined-311", "70-414"]) assert.equal(isServiceOrSparePartsCode(c), false, c);
 });
 
 test("Other plus the section columns adds back up to every folded punch", () => {
@@ -63,7 +71,8 @@ test("Other plus the section columns adds back up to every folded punch", () => 
   }
   const inColumns = SECTIONS.reduce((s, sec) => s + (bySection.get(sec.code) ?? 0), 0);
   const total = punches.reduce((s, [, h]) => s + h, 0);
-  assert.ok(Math.abs(inColumns + otherActualHours(bySection).total - total) < 1e-9);
+  const { service, unmapped } = offGridActualHours(bySection);
+  assert.ok(Math.abs(inColumns + service.total + unmapped.total - total) < 1e-9);
 });
 
 // ── No Job ID ───────────────────────────────────────────────────────────────
@@ -84,12 +93,42 @@ test("the No Job ID row takes only the two job-number reasons", () => {
 
 // ── The grid stays column-aligned ───────────────────────────────────────────
 
-test("the Other column is counted and present in every kind of row", () => {
+test("the two off-grid columns are counted and present in every kind of row", () => {
   const page = code("src", "app", "(app)", "quoted", "page.tsx");
-  assert.match(page, /\}, 0\) \+ 3;/, "dataColumnCount counts Eng, Shop and Other");
-  assert.match(page, /otherActualHours\(actualBySection\)/);
+  assert.match(page, /\}, 0\) \+ 4;/, "dataColumnCount counts Eng, Shop, Service & Spare Parts and Unmapped");
+  assert.match(page, /\{offGridCells\(actualBySection\)\}/);
+  assert.match(page, /\{offGridCells\(row\.bySection\)\}/);
   assert.match(page, /<tfoot className="actuals-only/);
   // Unsaved rows render the same columns, or everything after them shifts.
-  assert.match(code("src", "components", "NewProjectRows.tsx"), /className="actuals-only/);
+  const newRows = code("src", "components", "NewProjectRows.tsx");
+  assert.equal((newRows.match(/className="actuals-only/g) ?? []).length, 2, "one cell per off-grid column");
   assert.match(code("src", "app", "globals.css"), /table\[data-grid="projects"\]\.hide-actuals \.actuals-only/);
+});
+
+// ── The No Job ID switch ────────────────────────────────────────────────────
+
+test("No Job ID is shown unless the param says 0", async () => {
+  const { JOBLESS_PARAM, isJoblessShown } = await import("../src/lib/quoted-display-prefs");
+  const p = new URLSearchParams();
+  assert.equal(isJoblessShown(p), true, "absent = shown");
+  p.set(JOBLESS_PARAM, "0");
+  assert.equal(isJoblessShown(p), false);
+  p.set(JOBLESS_PARAM, "1");
+  assert.equal(isJoblessShown(p), true);
+});
+
+test("hiding No Job ID swaps the Total for the one without it", () => {
+  const page = code("src", "app", "(app)", "quoted", "page.tsx");
+  // Both Totals are rendered; CSS picks one, so the switch needs no server render.
+  assert.match(page, /key: "total-with-jobless"/);
+  assert.match(page, /key: "total-without-jobless"/);
+  assert.match(page, /showJobless \? "" : "hide-jobless"/);
+  assert.match(page, /<ProjectsShowJoblessSwitch \/>/);
+  const css = code("src", "app", "globals.css");
+  assert.match(css, /\.hide-jobless \.jobless-row/);
+  assert.match(css, /\.hide-jobless \.total-with-jobless/);
+  assert.match(css, /:not\(\.hide-jobless\) \.total-without-jobless/);
+  // Saved views and split view carry it like any other view param.
+  assert.match(code("src", "components", "ProjectViewsMenu.tsx"), /"actuals", "jobless"\]/);
+  assert.match(code("src", "lib", "split-view.ts"), /"jobless",/);
 });

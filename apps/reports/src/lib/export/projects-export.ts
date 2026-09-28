@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { SECTIONS, PARTS_COST_SECTION, otherActualHours } from "@/lib/sections";
+import { SECTIONS, PARTS_COST_SECTION, offGridActualHours } from "@/lib/sections";
 import { validJobTypeFilter, isSdcCustomer } from "@/lib/job-filters";
 import { buildProjectsQuery, sortProjectRows, type ProjectsViewParams } from "@/lib/projects-query";
 import { loadActualHoursBySection } from "@/lib/actual-hours";
@@ -55,9 +55,10 @@ export async function buildProjectsExport(
     sectionColumns.push({ header: "Actual", group: `${s.name}`, type: "hours" });
     sectionColumns.push({ header: "Remaining", group: `${s.name}`, type: "hours" });
   }
-  // The grid's Other column: actual hours on a code with no section column. Already
-  // inside "Actual Hours (total)"; broken out so the section columns plus this one
-  // add back up to it.
+  // The grid's two off-grid columns: actual hours on a code with no section column.
+  // Already inside "Actual Hours (total)"; broken out so the section columns plus
+  // these two add back up to it.
+  sectionColumns.push({ header: "Actual", group: "Service & Spare Parts", type: "hours" });
   sectionColumns.push({ header: "Actual", group: "Other / Unmapped", type: "hours" });
 
   const columns: SheetColumn[] = [
@@ -148,9 +149,10 @@ export async function buildProjectsExport(
       addTotal(i + 2, q - a);
       i += 3;
     }
-    const other = otherActualHours(actualBySection).total;
-    row.push(other);
-    addTotal(i, other);
+    const { service, unmapped } = offGridActualHours(actualBySection);
+    row.push(service.total, unmapped.total);
+    addTotal(i, service.total);
+    addTotal(i + 1, unmapped.total);
     rows.push(row);
   }
 
