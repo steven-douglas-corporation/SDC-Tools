@@ -29,23 +29,31 @@ enum Role {
 // Auth: credentials (email/password) for now — swap for Microsoft/Azure AD SSO
 // later without changing downstream models (User.id is what everything else keys off).
 model User {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
+  id           Int       @id @default(autoincrement())
+  email        String    @unique
   name         String
   passwordHash String
-  role         Role     @default(ALL)
-  createdAt    DateTime @default(now())
+  role         Role      @default(ALL)
+  createdAt    DateTime  @default(now())
   // Bumped to invalidate every previously-issued session for this user —
   // the server-side half of "sign out", and what a Scheduler-side logout
   // calls out to over /api/integration/revoke-session. See
   // lib/token-revocation.ts; never read or written anywhere else.
-  tokenVersion Int      @default(0)
+  tokenVersion Int       @default(0)
   // A disable flag, added for the shared-account project with Scheduler —
   // this app had none before (Scheduler's users.active is the older one).
   // Checked alongside tokenVersion in auth.ts's jwt callback; each app's
   // active flag is its own — deactivating someone here does not touch
   // their Scheduler account, and vice versa.
-  active       Boolean  @default(true)
+  active       Boolean   @default(true)
+  // Which roster person this login is (2026-09-29). Keyed on Employee.id, not
+  // paylocityId, because temps are on the roster without a Paylocity id — the
+  // id is still one hop away via employee.paylocityId. Null for accounts that
+  // are not employees (Sales, test accounts) and until a link is confirmed;
+  // @unique so two logins cannot claim the same person. Nothing reads it yet —
+  // it is the foundation for deriving roles from the roster.
+  employeeId   Int?      @unique
+  employee     Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
   etcEntries             EtcEntry[]
   executionRateEdits     ExecutionRate[]
@@ -142,6 +150,7 @@ model Employee {
   supervisorId  Int?
   supervisor    Employee?  @relation("EmployeeSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
   reports       Employee[] @relation("EmployeeSupervisor")
+  user          User?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 }
