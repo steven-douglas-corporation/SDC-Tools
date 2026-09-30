@@ -5,6 +5,7 @@ import {
   planRosterSync,
   isEmptyPlan,
   personName,
+  rosterQualityFindings,
   RosterFileError,
   type AppEmployee,
 } from "../src/lib/paylocity-roster-parse";
@@ -117,6 +118,28 @@ test("plan: a supervisor id nobody has leaves the current supervisor alone", () 
   const plan = planRosterSync(file, [boss, jane]);
   assert.equal(plan.supervisorChanges.length, 0);
   assert.deepEqual(plan.unresolvedSupervisors, [{ paylocityId: "100001", name: "Jane Doe", supervisorPaylocityId: "999999" }]);
+});
+
+test("quality: lists where Paylocity and the app disagree about who is current", () => {
+  const boss = app({ id: 1, name: "Pat Boss", paylocityId: "100042", positionTitle: "President" });
+  const newHire = app({ id: 2, name: "Jane Doe", paylocityId: "100001", positionTitle: "Engineer", supervisorId: 1, active: false });
+  const leaver = app({ id: 3, name: "Old Timer", paylocityId: "100002", positionTitle: "Builder", supervisorId: 1 });
+  const temp = app({ id: 4, name: "Temp Person" });
+  const formerHidden = app({ id: 5, name: "Gone Guy", paylocityId: "100003", positionTitle: "Builder", supervisorId: 1, active: false });
+  const file = parseRosterGrid(
+    grid(
+      BOSS,
+      ["100001", "Jane", "Doe", "Engineer", "", "100042", "Yes"],
+      ["100002", "Old", "Timer", "Builder", "", "100042", "No"],
+      ["100003", "Gone", "Guy", "Builder", "", "100042", "No"],
+    ),
+  );
+  const q = rosterQualityFindings(file, [boss, newHire, leaver, temp, formerHidden]);
+  assert.deepEqual(q.awaitingShow.map((p) => p.name), ["Jane Doe"]);
+  assert.deepEqual(q.shownButInactive.map((p) => p.name), ["Old Timer"]);
+  assert.deepEqual(q.shownNotInFile.map((p) => p.name), ["Temp Person"]);
+  assert.equal(q.pending, null, "an up-to-date app has nothing pending");
+  assert.equal(q.fileRows, 4);
 });
 
 test("plan: a second pass over the same file changes nothing", () => {
