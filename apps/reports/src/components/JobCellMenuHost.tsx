@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { JOB_MENU_CELL_SELECTOR, placeContextMenu } from "@/lib/job-cell-menu";
+import { HOURS_CELL_SELECTOR, HOURS_ROW_JOB_ATTR, JOB_MENU_CELL_SELECTOR, hoursHref, placeContextMenu, type HoursColumnMap } from "@/lib/job-cell-menu";
 import { currentZoom } from "@/lib/app-zoom";
 import { decideCrossAppNav, reportCrossAppNavError } from "@/lib/shell-cross-app-nav";
 import { useToast } from "@/components/ui/Toast";
@@ -32,12 +32,23 @@ import { useToast } from "@/components/ui/Toast";
 // module, because this file is "use client" and its exports become client
 // references that a server component cannot call. See the note there.
 
-type OpenAt = { x: number; y: number; ret: string; jobId: string; jobName: string; schedulerUrl: string | null };
+// `hours` is set when the menu was opened from an hours cell rather than a Job cell
+// (see "Hours cells" in lib/job-cell-menu.ts): the column it came from, resolved to
+// the raw codes the Hours tab filters by.
+type OpenAt = {
+  x: number;
+  y: number;
+  ret: string;
+  jobId: string;
+  jobName: string;
+  schedulerUrl: string | null;
+  hours: { label: string; codes: string[]; note?: string } | null;
+};
 
 const ITEM =
   "flex w-full items-center gap-2 px-3 py-1.5 text-left text-note text-sdc-navy hover:bg-sdc-gray-100 focus:bg-sdc-gray-100 focus:outline-none";
 
-export function JobCellMenuHost() {
+export function JobCellMenuHost({ hoursColumns }: { hoursColumns?: HoursColumnMap } = {}) {
   // `ret` is the report URL handed to the Scheduler, captured when the menu
   // OPENS rather than at click time: window.location.href carries the user's
   // current filters/sort/columns, and mutating the anchor's href inside its own
@@ -53,25 +64,43 @@ export function JobCellMenuHost() {
       // hold an editable job-name input, so keep an escape hatch to its native
       // copy/paste/spellcheck items.
       if (e.shiftKey) return;
-      const cell = (e.target as HTMLElement | null)?.closest<HTMLElement>(JOB_MENU_CELL_SELECTOR);
-      if (!cell) return;
+      const target = e.target as HTMLElement | null;
+      let cell = target?.closest<HTMLElement>(JOB_MENU_CELL_SELECTOR) ?? null;
+      let jobId = "";
+      let jobName = "";
+      let schedulerUrl: string | null = null;
+      let hours: OpenAt["hours"] = null;
+      if (cell) {
+        jobId = cell.getAttribute("data-job-menu-id") ?? "";
+        jobName = cell.getAttribute("data-job-menu-name") ?? "";
+        schedulerUrl = cell.getAttribute("data-job-menu-url");
+      } else {
+        // An hours cell: only on a page that handed over its column map, and only
+        // inside a job row (the footer rows carry no job, so they are left alone).
+        const hoursCell = hoursColumns ? (target?.closest<HTMLElement>(HOURS_CELL_SELECTOR) ?? null) : null;
+        const row = hoursCell?.closest<HTMLElement>(`tr[${HOURS_ROW_JOB_ATTR}]`) ?? null;
+        const col = hoursCell ? hoursColumns?.[hoursCell.getAttribute("data-hours-col") ?? ""] : undefined;
+        if (!hoursCell || !row || !col) return;
+        cell = hoursCell;
+        jobId = row.getAttribute(HOURS_ROW_JOB_ATTR) ?? "";
+        jobName = row.getAttribute("data-hours-job-name") ?? "";
+        const own = hoursCell.getAttribute("data-hours-codes");
+        hours = { label: col.label, codes: own != null ? own.split(",").filter(Boolean) : col.codes, note: col.note };
+      }
       e.preventDefault();
-      const jobId = cell.getAttribute("data-job-menu-id") ?? "";
-      const jobName = cell.getAttribute("data-job-menu-name") ?? "";
-      const schedulerUrl = cell.getAttribute("data-job-menu-url");
       const ret = window.location.href;
       // The keyboard Menu key (and Shift+F10) fire `contextmenu` with no useful
       // coordinates; anchor to the cell instead of the viewport corner.
       if (e.clientX === 0 && e.clientY === 0) {
         const r = cell.getBoundingClientRect();
-        setAt({ x: r.left + 8, y: r.bottom, ret, jobId, jobName, schedulerUrl });
+        setAt({ x: r.left + 8, y: r.bottom, ret, jobId, jobName, schedulerUrl, hours });
       } else {
-        setAt({ x: e.clientX, y: e.clientY, ret, jobId, jobName, schedulerUrl });
+        setAt({ x: e.clientX, y: e.clientY, ret, jobId, jobName, schedulerUrl, hours });
       }
     }
     document.addEventListener("contextmenu", onContextMenu);
     return () => document.removeEventListener("contextmenu", onContextMenu);
-  }, []);
+  }, [hoursColumns]);
 
   // Close on anything that would leave the menu stranded or mispositioned.
   useEffect(() => {
@@ -182,7 +211,29 @@ export function JobCellMenuHost() {
       style={{ position: "fixed", left: at.x, top: at.y, visibility: "hidden", zIndex: 60 }}
       className="min-w-[190px] overflow-hidden rounded-md border border-sdc-border bg-white py-1 shadow-lg"
     >
-      <div className="truncate border-b border-sdc-border px-3 py-1 font-mono text-label text-sdc-muted">{at.jobId}</div>
+      <div className="truncate border-b border-sdc-border px-3 py-1 font-mono text-label text-sdc-muted">
+        {at.jobId}
+        {at.hours && <span className="font-sans"> · {at.hours.label}</span>}
+      </div>
+      {at.hours &&
+        (at.hours.codes.length > 0 ? (
+          <Link href={hoursHref({ jobId: at.jobId, codes: at.hours.codes })} role="menuitem" data-menu-item className={ITEM} onClick={() => setAt(null)}>
+            <HoursGlyph />
+            <span className="min-w-0">
+              Hours: {at.hours.label}
+              {at.hours.note && <span className="block max-w-[260px] whitespace-normal text-label text-sdc-muted">{at.hours.note}</span>}
+            </span>
+          </Link>
+        ) : (
+          <span className={`${ITEM} cursor-default text-sdc-muted hover:bg-transparent`}>
+            <HoursGlyph />
+            No {at.hours.label} hours on this job
+          </span>
+        ))}
+      <Link href={hoursHref({ jobId: at.jobId })} role="menuitem" data-menu-item className={ITEM} onClick={() => setAt(null)}>
+        <HoursGlyph />
+        {at.hours ? "All hours for this job" : "Hours"}
+      </Link>
       <Link
         href={`/job-hours?jobs=${encodeURIComponent(at.jobId)}`}
         role="menuitem"
@@ -225,5 +276,15 @@ export function JobCellMenuHost() {
       )}
     </div>,
     document.body,
+  );
+}
+
+// The Hours tab's glyph in this menu: a clock.
+function HoursGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" className="shrink-0 text-sdc-gray-400" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.75" />
+      <path d="M8 5v3.25l2 1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
