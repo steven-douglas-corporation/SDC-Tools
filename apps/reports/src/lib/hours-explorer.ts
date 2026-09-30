@@ -4,8 +4,10 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { HOURS_IMPORT_CODES, mapPunchToColumns } from "@/lib/sections";
 import { classifyPunch, emptyBucketTotals, type BucketTotals } from "@/lib/paylocity-standard-rules";
-import { buildHoursWhere, punchIdentity, rollupByOperationalTier, rollupByRawTier, departmentFilterRank, type HoursFilters, type HoursGroupBy, type HoursGroupRow, type HoursDetailSortKey, type PunchIdentity } from "@/lib/hours-filters";
+import { buildHoursWhere, historicalEraScope, punchIdentity, rollupByOperationalTier, rollupByRawTier, departmentFilterRank, type HoursFilters, type HoursGroupBy, type HoursGroupRow, type HoursDetailSortKey, type PunchIdentity } from "@/lib/hours-filters";
 import { sectionDisplayName } from "@/lib/hours-operational-grouping";
+import { loadHoursBySource } from "@/lib/actual-hours";
+import { combineHourSources, olderSourcesUnavailable, type HoursBySource } from "@/lib/hours-by-source";
 import type { SortState } from "@/lib/table-sort";
 
 export type { HoursFilters, HoursGroupBy, HoursGroupRow };
@@ -395,6 +397,16 @@ export async function queryHoursSummary(filters: HoursFilters): Promise<HoursSum
     employees: employees.length,
     sections: sections.length,
   };
+}
+
+// The "Hours by source" band (lib/hours-by-source.ts). The punch figures use this
+// page's own resolved filter, so they are the table's; the two older eras use the
+// export's scope (historicalEraScope), and are withheld under an employee or
+// department filter, which neither can honour.
+export async function queryHoursBySource(filters: HoursFilters): Promise<HoursBySource & { snapshotBeforeRange: boolean; unavailableReason: string | null }> {
+  const unavailableReason = olderSourcesUnavailable(filters);
+  const loaded = await loadHoursBySource(await resolveWhere(filters), historicalEraScope(filters), unavailableReason === null);
+  return { ...combineHourSources(loaded), snapshotBeforeRange: loaded.snapshotBeforeRange, unavailableReason };
 }
 
 export async function queryHoursGrouped(filters: HoursFilters, groupBy: HoursGroupBy): Promise<HoursGroupRow[]> {

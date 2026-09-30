@@ -11,7 +11,8 @@ import { HoursGroupByMenu } from "@/components/HoursGroupByMenu";
 import { HoursGroupedTree } from "@/components/HoursGroupedTree";
 import { HoursViewsMenu } from "@/components/HoursViewsMenu";
 import { HoursClearFiltersButton } from "@/components/HoursClearFiltersButton";
-import { getHoursFilterOptions, queryHoursGrouped, queryHoursRows, queryHoursSummary, type HoursRow } from "@/lib/hours-explorer";
+import { getHoursFilterOptions, queryHoursBySource, queryHoursGrouped, queryHoursRows, queryHoursSummary, type HoursRow } from "@/lib/hours-explorer";
+import { HoursBySourceBand } from "@/components/HoursBySourceBand";
 import { parseHoursFilters, parseHoursGroupByList, parseHoursSort, countActiveHoursFilters, historicalEraScope, type HoursDetailSortKey } from "@/lib/hours-filters";
 import { historicalErasAvailable } from "@/lib/actual-hours";
 import { cycleSortState, type SortState } from "@/lib/table-sort";
@@ -62,7 +63,7 @@ export async function HoursView({ params }: { params: HoursPageSearchParams }) {
   const page = Math.max(1, Number(sp.page) || 1);
   const grouped = groupByLevels.length > 0;
 
-  const [options, summary, rootRows, detail, sharedViewsResult, historicalEras] = await Promise.all([
+  const [options, summary, rootRows, detail, sharedViewsResult, historicalEras, bySource] = await Promise.all([
     getHoursFilterOptions(),
     queryHoursSummary(filters),
     grouped ? queryHoursGrouped(filters, groupByLevels[0]) : Promise.resolve(null),
@@ -72,6 +73,9 @@ export async function HoursView({ params }: { params: HoursPageSearchParams }) {
     // — the two eras this page's punches can't show. Only decides whether the Excel
     // export offers them as extra sheets (ExportMenu); the table never reads them.
     historicalErasAvailable(historicalEraScope(filters)),
+    // The "Hours by source" band: the punches reconciled with the two older eras
+    // (lib/hours-by-source.ts), so the page's total explains itself.
+    queryHoursBySource(filters),
   ]);
 
   const filterSpecs: HoursFilterSpec[] = [
@@ -156,6 +160,8 @@ export async function HoursView({ params }: { params: HoursPageSearchParams }) {
         <IndicatorCard label="Employees" value={summary.employees.toLocaleString()} />
         <IndicatorCard label="Section-Function Codes" value={summary.sections.toLocaleString()} />
       </div>
+
+      <HoursBySourceBand data={{ ...bySource, fromMonth: historicalEraScope(filters).fromMonth, sectionFiltered: Boolean(filters.sections?.length) }} />
 
       <div className={card("p-4")}>
         {grouped && rootRows ? (
