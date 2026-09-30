@@ -595,6 +595,13 @@ export async function runAllSyncs(
         return await syncJobCostInventorySnapshots();
       });
 
+      // The Paylocity employee roster file — local file + MySQL like the step above,
+      // so it shares this lane rather than the hours chain's single workbook parse.
+      await step("employee_roster", labelFor("employee_roster"), true, async () => {
+        const { syncPaylocityRoster } = await import("@/lib/paylocity-roster-sync");
+        return await syncPaylocityRoster();
+      });
+
       // The TotalETO job mirror (customer, estimate/actual hour totals). Was
       // button-only, which is why a job's mirrored figures could sit weeks behind the
       // hours shown beside them. Manual Customer edits survive it —

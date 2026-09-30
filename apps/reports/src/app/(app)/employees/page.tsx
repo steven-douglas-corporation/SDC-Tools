@@ -88,7 +88,9 @@ export async function EmployeesView() {
             person&apos;s own detail opens in a side panel. Deactivated employees
             keep all historical hours. Team grouping is shared live with SDC Scheduler&apos;s board — the roster here
             is read-only, maintained through Scheduler&apos;s own board and, for bulk roster maintenance,
-            Admin &rsaquo; Data Management.
+            Admin &rsaquo; Data Management. New people, supervisors and job titles sync from Paylocity every
+            hour — change those in Paylocity. New people arrive hidden; open one and choose Show to put them on
+            the roster.
           </p>
         </div>
       </div>

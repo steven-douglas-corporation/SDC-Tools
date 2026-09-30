@@ -620,6 +620,7 @@ export function EmployeesGrid({
           employee={selectedEmployee}
           departmentTitle={selectedEmployeeGroup?.title ?? selectedEmployee.department?.trim() ?? DASH}
           workforceGroup={workforceGroupForCardKey(selectedEmployeeGroup?.key ?? "")}
+          canEdit={canAddEmployees}
           onClose={() => setSelectedEmployee(null)}
         />
       )}

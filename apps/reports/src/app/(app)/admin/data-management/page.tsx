@@ -1,7 +1,6 @@
 import { PageTitle } from "@/components/ui/Typography";
 import { PAGE_SHELL } from "@/components/ui/classnames";
 import { requirePagePermission } from "@/lib/require-permission";
-import { ImportSupervisorsButton } from "@/components/ImportSupervisorsButton";
 import { ReconcileRosterButton } from "@/components/ReconcileRosterButton";
 
 // ── Roster maintenance, moved off the Employees page (2026-08-24) ────────────
@@ -16,10 +15,10 @@ import { ReconcileRosterButton } from "@/components/ReconcileRosterButton";
 //     scripts/reconcile-employee-groups.ts matches on a stable employee_id and
 //     is the one to trust (see sync-scheduler-team.ts's header). A diagnostic.
 //
-//   Import supervisors        Writes Employee.supervisorId from an uploaded
-//     Paylocity export. Needs a human to supply the file, so no scheduled step
-//     can replace it, and no SharePoint auto-pull exists yet. Occasional bulk
-//     maintenance; single people are edited from the Employees page itself.
+//   Import supervisors        RETIRED 2026-09-30, for the time being. The hourly
+//     Paylocity roster sync (lib/paylocity-roster-sync.ts) now owns supervisor
+//     and job title, so the section below only says where they come from.
+//     ImportSupervisorsButton is unmounted; its server action refuses.
 //
 // So they moved rather than being removed, and the backend is untouched — the
 // same two components and the same two server actions, mounted here instead.
@@ -58,16 +57,17 @@ export default async function AdminDataManagementPage() {
         </section>
 
         <section className="rounded-xl border border-sdc-border bg-white p-5">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-sdc-navy">Import supervisors (Paylocity)</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-sdc-navy">Supervisors and job titles come from Paylocity</h2>
           <p className="mt-1.5 text-sm text-sdc-gray-600">
-            Sets each person&apos;s reporting line from a Paylocity employee export, matching the
-            export&apos;s <em>Emp Id</em> against the Paylocity id stored here.
-            <strong> This writes to the roster.</strong> Use it for a bulk refresh of reporting lines; to change one
-            person, edit them on the Employees page instead.
+            The employee roster syncs from Paylocity&apos;s roster file every hour, with Refresh Data. It adds
+            anyone new, hidden until someone shows them on the Employees page, and keeps each person&apos;s{" "}
+            <strong>supervisor</strong> and <strong>job title</strong> exactly as Paylocity has them.{" "}
+            <strong>These can&apos;t be edited here. To change one, change it in Paylocity</strong>, and it comes
+            through on the next refresh.
           </p>
-          <div className="mt-3">
-            <ImportSupervisorsButton />
-          </div>
+          <p className="mt-1.5 text-sm text-sdc-gray-600">
+            The sync never removes or hides anyone, and never changes a name, department or team.
+          </p>
         </section>
       </div>
     </div>
