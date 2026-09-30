@@ -3,7 +3,7 @@ import { SourceStaleBanner } from "@/components/SourceStaleBanner";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { validJobTypeFilter, VALID_JOB_TYPES, JOB_STATUSES, DEFAULT_VISIBLE_STATUSES, compareJobIds, isSdcCustomer } from "@/lib/job-filters";
-import { SECTIONS, PHASE_GROUPS, RESTRICTED_SECTION_CODES, offGridActualHours, restrictedSectionPermission, type OffGridBucket } from "@/lib/sections";
+import { SECTIONS, PHASE_GROUPS, RESTRICTED_SECTION_CODES, offGridActualHours, rawCodesFoldingInto, restrictedSectionPermission, type OffGridBucket } from "@/lib/sections";
 import { hasPermission } from "@/lib/permissions";
 import { abbreviateLabel } from "@/lib/abbrev";
 import { DragScroll } from "@/components/DragScroll";
@@ -30,7 +30,7 @@ import { dateCellProps } from "@/lib/date-cell";
 import { MoneyCell } from "@/components/MoneyCell";
 import { SaveQuotedHoursButton } from "@/components/SaveQuotedHoursButton";
 import { JobCellMenuHost } from "@/components/JobCellMenuHost";
-import { jobCellMenuProps } from "@/lib/job-cell-menu";
+import { buildProjectsHoursColumns, hoursCellProps, hoursRowProps, jobCellMenuProps } from "@/lib/job-cell-menu";
 import { getSchedulerLinkContext, schedulerScheduleUrl } from "@/lib/scheduler-link";
 import { saveQuotedHours } from "@/lib/quoted-actions";
 import { QuotedSaveForm } from "@/components/QuotedSaveForm";
@@ -557,8 +557,9 @@ export async function ProjectsView({ params }: { params: {
     items.slice(0, 12).map((x) => `${x.name} ${exactHours(x.hours)}h`).join(" · ") + (items.length > 12 ? ` · +${items.length - 12} more` : "");
   // The two off-grid columns, Service & Spare Parts then Unmapped — for a job row
   // and the footer rows alike. Display only: neither feeds ENG or SHOP TOTAL.
-  const offGridCell = (label: string, b: OffGridBucket, warn: boolean) => (
+  const offGridCell = (label: string, b: OffGridBucket, warn: boolean, col: "service" | "unmapped") => (
     <td
+      {...hoursCellProps(col, rawCodesFoldingInto(b.codes.map((c) => c.code)))}
       style={DATA_COL_STYLE}
       title={b.codes.length ? `${label} — ${exactHours(b.total)}h: ${hoursList(b.codes.map((c) => ({ name: c.code, hours: c.hours })))}` : `${label} — none`}
       className={`actuals-only overflow-hidden whitespace-nowrap border-l border-sdc-border px-1 py-1.5 text-center align-middle font-mono text-label ${
@@ -572,9 +573,9 @@ export async function ProjectsView({ params }: { params: {
     const { service, unmapped } = offGridActualHours(bySection);
     return (
       <>
-        {offGridCell("Service & Spare Parts", service, false)}
+        {offGridCell("Service & Spare Parts", service, false, "service")}
         {/* Red when non-zero: an Unmapped hour is a code nobody has placed yet. */}
-        {offGridCell("Unmapped", unmapped, true)}
+        {offGridCell("Unmapped", unmapped, true, "unmapped")}
       </>
     );
   };
@@ -694,8 +695,9 @@ export async function ProjectsView({ params }: { params: {
           ProjectsRemoteCells for both halves of that. */}
       <ProjectsRemoteCells />
       {/* ONE right-click menu for the whole grid — see JobCellMenuHost. It used
-          to be a client component per Job cell, 2 per row. */}
-      <JobCellMenuHost />
+          to be a client component per Job cell, 2 per row. It also serves the hours
+          cells: right-click one for the Hours tab filtered to that job and column. */}
+      <JobCellMenuHost hoursColumns={buildProjectsHoursColumns(visibleSectionsFlat, engCodes, shopCodes)} />
       {/* One delegated handler for every date cell — see GridDateCells. */}
       <GridDateCells />
       <ProjectsEditFieldset>
@@ -1009,7 +1011,7 @@ export async function ProjectsView({ params }: { params: {
               // tones), so a <tr> background painted behind them double-tinted
               // the plain cells and missed the rest.
               return (
-                <tr key={job.id} className={zebra}>
+                <tr key={job.id} className={zebra} {...hoursRowProps(job.jobId, job.jobName)}>
                   <td className={`frozen-col sticky left-0 z-10 w-8 min-w-8 overflow-hidden px-1 py-1.5 text-center align-middle text-label whitespace-nowrap text-sdc-gray-400 ${zebraSticky}`}>
                     {i + 1}
                   </td>
@@ -1205,6 +1207,7 @@ export async function ProjectsView({ params }: { params: {
                           return (
                             <td
                               key={s.code}
+                              {...hoursCellProps(s.code)}
                               // data-cell-actual lets ProjectsLiveTotals recompute
                               // this cell's over/under tone as the quoted number
                               // (or the row's Status) is edited. The rule lives in
@@ -1269,6 +1272,7 @@ export async function ProjectsView({ params }: { params: {
                       const tone = quotedCellTone({ quoted: q, actual: a, jobComplete: job.status === "Complete" });
                       return (
                         <td
+                          {...hoursCellProps(kind)}
                           data-total={kind}
                           data-job={job.id}
                           data-actual={exactHours(a) ?? "0"}
