@@ -140,6 +140,9 @@ test("quality: lists where Paylocity and the app disagree about who is current",
   assert.deepEqual(q.shownNotInFile.map((p) => p.name), ["Temp Person"]);
   assert.equal(q.pending, null, "an up-to-date app has nothing pending");
   assert.equal(q.fileRows, 4);
+  // The agreeing cells: Pat Boss (shown, active) and Gone Guy (hidden, inactive).
+  assert.equal(q.shownAndActive, 1);
+  assert.equal(q.hiddenAndInactive, 1);
 });
 
 test("plan: a second pass over the same file changes nothing", () => {
