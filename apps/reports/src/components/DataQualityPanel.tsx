@@ -4,6 +4,8 @@ import Link from "next/link";
 import { card } from "@/components/ui/classnames";
 import { SectionTitle } from "@/components/ui/Typography";
 import type { DataQuality, PunchExplorer } from "@/lib/data-quality";
+import type { RosterQuality } from "@/lib/paylocity-roster-sync";
+import type { RosterPerson } from "@/lib/paylocity-roster-parse";
 import { DataQualityExplorer } from "@/components/DataQualityExplorer";
 import { DataQualityDrill, EmployeeIdDrill } from "@/components/DataQualityDrill";
 import { hours as fmtHours } from "@/components/ui/format";
@@ -176,7 +178,144 @@ function CustomerNamingFinding({ data }: { data: DataQuality["customerNaming"] }
   );
 }
 
-export function DataQualityPanel({ dq, explorer }: { dq: DataQuality; explorer: PunchExplorer | null }) {
+// ── Employee roster (Paylocity) ────────────────────────────────────
+//
+// Where the Paylocity roster file and the app disagree about people
+// (lib/paylocity-roster-parse.ts rosterQualityFindings). The hourly sync adds
+// people and mirrors supervisor and title, but deliberately never decides who is
+// shown — so the disagreements about that are listed here for a person to act on.
+
+function PeopleTable({ people, note }: { people: RosterPerson[]; note?: (p: RosterPerson) => string | null }) {
+  return (
+    <div className="max-h-72 overflow-auto rounded-lg border border-sdc-border">
+      <table className="w-full text-left text-xs">
+        <thead className="sticky top-0 bg-sdc-gray-50 text-label font-semibold uppercase tracking-[0.04em] text-sdc-gray-600">
+          <tr>
+            <th className="px-3 py-2">Name</th>
+            <th className="px-3 py-2">Paylocity ID</th>
+            <th className="px-3 py-2">{note ? "Detail" : "Title"}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-sdc-border-soft">
+          {people.map((p, i) => (
+            <tr key={`${p.paylocityId ?? "none"}-${i}`}>
+              <td className="px-3 py-1.5 font-medium text-sdc-navy">{p.name}</td>
+              <td className="px-3 py-1.5 font-mono text-[0.7rem] text-sdc-gray-600">{p.paylocityId ?? "—"}</td>
+              <td className="px-3 py-1.5 text-sdc-gray-600">{(note ? note(p) : p.title) ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RosterQualitySection({ roster }: { roster: RosterQuality }) {
+  const f = roster.findings;
+  const last = roster.lastSuccess ? new Date(roster.lastSuccess).toLocaleString() : null;
+  const statusIsProblem = roster.lastStatus != null && /^(Failed|Waiting)/.test(roster.lastStatus);
+  return (
+    <>
+      <div className={`${card("p-5")} ${roster.configured && !roster.fileError && !statusIsProblem ? "" : "border-sdc-yellow"}`}>
+        <p className="font-heading text-base font-bold tracking-tight text-sdc-navy">Employee roster (Paylocity)</p>
+        <p className="mt-1 text-xs leading-relaxed text-sdc-muted">
+          Every hour the roster sync adds anyone new from Paylocity&apos;s roster file (hidden until someone chooses Show on
+          the Employees page) and keeps supervisors and job titles as Paylocity has them. It never decides who is shown, so
+          the checks below list where Paylocity and this app disagree about that.
+        </p>
+        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+          <dt className="font-semibold text-sdc-gray-600">Last successful sync</dt>
+          <dd className="text-sdc-navy">{last ?? "never"}</dd>
+          {f && (
+            <>
+              <dt className="font-semibold text-sdc-gray-600">People in the file</dt>
+              <dd className="text-sdc-navy tabular-nums">{f.fileRows.toLocaleString()}</dd>
+            </>
+          )}
+          {statusIsProblem && (
+            <>
+              <dt className="font-semibold text-sdc-gray-600">Last pass</dt>
+              <dd className="text-sdc-yellow-text">{roster.lastStatus}</dd>
+            </>
+          )}
+        </dl>
+        {!roster.configured && (
+          <p className="mt-3 text-xs font-medium text-sdc-yellow-text">
+            Not configured: set <code>PAYLOCITY_EMPLOYEES_LOCAL_PATH</code> in the server&apos;s .env to the roster file.
+          </p>
+        )}
+        {roster.fileError && <p className="mt-3 text-xs font-medium text-sdc-yellow-text">The roster file can&apos;t be used right now: {roster.fileError}</p>}
+        {f?.pending && (
+          <p className="mt-3 text-xs text-sdc-gray-600">
+            <strong>Not yet synced:</strong> the file has changes the next pass will apply — {f.pending}.
+          </p>
+        )}
+      </div>
+
+      {f && (
+        <>
+          <Finding
+            title="Active in Paylocity, hidden here"
+            rule="People Paylocity lists as active who are hidden in this app — usually new hires the sync added, waiting for someone to open them on the Employees page and choose Show. Back-office people kept off the roster on purpose will also appear here."
+            count={f.awaitingShow.length}
+            hours={0}
+            unit="people"
+          >
+            <PeopleTable people={f.awaitingShow} />
+          </Finding>
+
+          <Finding
+            title="Shown here, inactive in Paylocity"
+            rule="People still shown in this app whom Paylocity lists as inactive — usually someone who has left. The sync never hides anyone, so hide them from their panel on the Employees page if they're gone."
+            count={f.shownButInactive.length}
+            hours={0}
+            unit="people"
+          >
+            <PeopleTable people={f.shownButInactive} />
+          </Finding>
+
+          <Finding
+            title="Shown here, not in the Paylocity file"
+            rule="People shown in this app with no Paylocity ID, or an ID the roster file doesn't carry — temps, contractors and hand-entered rows. The sync can't keep their supervisor or title current."
+            count={f.shownNotInFile.length}
+            hours={0}
+            unit="people"
+          >
+            <PeopleTable people={f.shownNotInFile} />
+          </Finding>
+
+          <Finding
+            title="Roster names the sync couldn't match"
+            rule="People in the file whose Paylocity ID isn't in this app yet, and whose name matches more than one hand-entered person here. The sync skips them rather than guess — give the right person their Paylocity ID and the next pass links them."
+            count={f.ambiguous.length}
+            hours={0}
+            unit="people"
+          >
+            <PeopleTable
+              people={f.ambiguous.map((a) => ({ name: a.name, paylocityId: a.paylocityId, title: null }))}
+              note={(p) => `Could be: ${f.ambiguous.find((a) => a.paylocityId === p.paylocityId)?.candidates.join(", ") ?? "—"}`}
+            />
+          </Finding>
+
+          <Finding
+            title="Supervisor IDs not found"
+            rule="People whose supervisor in the file is an Employee Id that isn't on the roster. Their current supervisor is left as it is. Usually fixed in Paylocity."
+            count={f.unresolvedSupervisors.length}
+            hours={0}
+            unit="people"
+          >
+            <PeopleTable
+              people={f.unresolvedSupervisors.map((u) => ({ name: u.name, paylocityId: u.paylocityId, title: null }))}
+              note={(p) => `Supervisor ID ${f.unresolvedSupervisors.find((u) => u.paylocityId === p.paylocityId)?.supervisorPaylocityId ?? "?"}`}
+            />
+          </Finding>
+        </>
+      )}
+    </>
+  );
+}
+
+export function DataQualityPanel({ dq, explorer, roster }: { dq: DataQuality; explorer: PunchExplorer | null; roster: RosterQuality | null }) {
   return (
     <div className="space-y-5">
       <div className={card("p-5")}>
@@ -232,6 +371,8 @@ export function DataQualityPanel({ dq, explorer }: { dq: DataQuality; explorer: 
             what it has been booking to. */}
         <EmployeeIdDrill ids={dq.undefinedEmployees.ids} />
       </Finding>
+
+      {roster && <RosterQualitySection roster={roster} />}
 
       <CustomerNamingFinding data={dq.customerNaming} />
 

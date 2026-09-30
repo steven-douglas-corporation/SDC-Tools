@@ -293,6 +293,48 @@ export function isEmptyPlan(p: RosterPlan): boolean {
   return p.create.length === 0 && p.link.length === 0 && p.titleChanges.length === 0 && p.supervisorChanges.length === 0;
 }
 
+// ── Data quality: how the roster file and the app disagree ─────────────────
+//
+// The Dashboard's Data Quality tab (DataQualityPanel's roster section). The sync
+// deliberately leaves `active` alone, so the places where Paylocity and the app
+// disagree about who is current are exactly what a person has to decide — this
+// lists them rather than acting on them.
+
+export type RosterPerson = { name: string; paylocityId: string | null; title: string | null };
+
+export type RosterQualityFindings = {
+  /** Active in Paylocity, hidden here — usually a new hire waiting for Show. */
+  awaitingShow: RosterPerson[];
+  /** Shown here, inactive in Paylocity — usually a leaver still on the roster. */
+  shownButInactive: RosterPerson[];
+  /** Shown here but absent from the file (no id, or an id it doesn't carry) — the sync can't keep them current. */
+  shownNotInFile: RosterPerson[];
+  ambiguous: RosterPlan["ambiguous"];
+  unresolvedSupervisors: RosterPlan["unresolvedSupervisors"];
+  /** What the next pass would still change — non-empty only if the sync is behind the file. */
+  pending: string | null;
+  fileRows: number;
+};
+
+export function rosterQualityFindings(file: RosterFileRow[], app: AppEmployee[]): RosterQualityFindings {
+  const plan = planRosterSync(file, app);
+  const fileByPid = new Map(file.map((r) => [r.paylocityId, r]));
+  const person = (e: AppEmployee): RosterPerson => ({ name: e.name, paylocityId: e.paylocityId, title: e.positionTitle });
+  const byName = (a: RosterPerson, b: RosterPerson) => a.name.localeCompare(b.name);
+  return {
+    awaitingShow: app.filter((e) => !e.active && e.paylocityId && fileByPid.get(e.paylocityId)?.paylocityActive).map(person).sort(byName),
+    shownButInactive: app
+      .filter((e) => e.active && e.paylocityId && fileByPid.has(e.paylocityId) && !fileByPid.get(e.paylocityId)!.paylocityActive)
+      .map(person)
+      .sort(byName),
+    shownNotInFile: app.filter((e) => e.active && (!e.paylocityId || !fileByPid.has(e.paylocityId))).map(person).sort(byName),
+    ambiguous: plan.ambiguous,
+    unresolvedSupervisors: plan.unresolvedSupervisors,
+    pending: isEmptyPlan(plan) ? null : describePlan(plan),
+    fileRows: file.length,
+  };
+}
+
 /** One line for the refresh log and the Data Sources panel. */
 export function describePlan(p: RosterPlan): string {
   const parts = [

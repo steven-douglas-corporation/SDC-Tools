@@ -8,8 +8,10 @@ import {
   planRosterSync,
   isEmptyPlan,
   describePlan,
+  rosterQualityFindings,
   RosterFileError,
   type RosterPlan,
+  type RosterQualityFindings,
 } from "@/lib/paylocity-roster-parse";
 
 // ── The Paylocity employee roster, synced from a file (2026-09-30) ──────────
@@ -65,6 +67,40 @@ async function loadAppEmployees() {
   return prisma.employee.findMany({
     select: { id: true, name: true, paylocityId: true, positionTitle: true, supervisorId: true, active: true },
   });
+}
+
+export type RosterQuality = {
+  configured: boolean;
+  /** When the last successful pass ran, and the step's stored status (a failure or wait, if any). */
+  lastSuccess: string | null;
+  lastStatus: string | null;
+  /** Set when the file couldn't be read or was refused — the findings are then empty. */
+  fileError: string | null;
+  findings: RosterQualityFindings | null;
+};
+
+/**
+ * The Data Quality tab's roster section. Reads the file live (it is small), so
+ * the findings describe the file as it is now, not as of the last pass. Never
+ * throws: a bad file is itself the finding.
+ */
+export async function getRosterQuality(): Promise<RosterQuality> {
+  const path = rosterFilePath();
+  const freshness = await prisma.powerBiFreshness
+    .findUnique({ where: { source: "employee_roster" }, select: { refreshedThrough: true, status: true } })
+    .catch(() => null);
+  const base = {
+    configured: path !== null,
+    lastSuccess: freshness?.refreshedThrough ? freshness.refreshedThrough.toISOString() : null,
+    lastStatus: freshness?.status ?? null,
+  };
+  if (!path) return { ...base, fileError: null, findings: null };
+  try {
+    const rows = parseRosterWorkbook(await readStable(path));
+    return { ...base, fileError: null, findings: rosterQualityFindings(rows, await loadAppEmployees()) };
+  } catch (err) {
+    return { ...base, fileError: err instanceof Error ? err.message : String(err), findings: null };
+  }
 }
 
 /** Parse the configured file and work out what would change. Writes nothing. */
