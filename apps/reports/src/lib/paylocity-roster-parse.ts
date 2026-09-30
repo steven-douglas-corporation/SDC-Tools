@@ -314,6 +314,12 @@ export type RosterQualityFindings = {
   /** What the next pass would still change — non-empty only if the sync is behind the file. */
   pending: string | null;
   fileRows: number;
+  /**
+   * The two AGREEING cells of Paylocity status × app visibility, for people in both
+   * the file and the app. The disagreeing cells are awaitingShow / shownButInactive.
+   */
+  shownAndActive: number;
+  hiddenAndInactive: number;
 };
 
 export function rosterQualityFindings(file: RosterFileRow[], app: AppEmployee[]): RosterQualityFindings {
@@ -332,6 +338,8 @@ export function rosterQualityFindings(file: RosterFileRow[], app: AppEmployee[])
     unresolvedSupervisors: plan.unresolvedSupervisors,
     pending: isEmptyPlan(plan) ? null : describePlan(plan),
     fileRows: file.length,
+    shownAndActive: app.filter((e) => e.active && e.paylocityId && fileByPid.get(e.paylocityId)?.paylocityActive).length,
+    hiddenAndInactive: app.filter((e) => !e.active && e.paylocityId && fileByPid.has(e.paylocityId) && !fileByPid.get(e.paylocityId)!.paylocityActive).length,
   };
 }
 
