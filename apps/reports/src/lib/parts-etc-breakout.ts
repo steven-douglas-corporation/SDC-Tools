@@ -2,6 +2,7 @@ import "server-only";
 import { getPartsCostForJobs } from "@/lib/sync-totaleto";
 import { withTimeoutOrNull, UPSTREAM_BUDGET_MS } from "@/lib/with-timeout";
 import { explainLeftToInvoice, monthEndCutoff } from "@/lib/left-to-invoice";
+import { isSdcVendor } from "@/lib/vendor-normalize";
 
 // ── Seeding the Parts Cost breakout ──────────────────────────────────────────
 //
@@ -127,7 +128,16 @@ export async function readPartsEtcBreakout(
     // That conflated two different things. If the batched query SUCCEEDED, a job with
     // no lines has nothing on order: its Left to Invoice is $0, a real answer. Only a
     // FAILED query means unknown, and that returns above.
-    const lines = linesByJob.get(j.jobNumber) ?? [];
+    // SDC never invoices itself (2026-09-30, by request) — a line supplied by
+    // Steven Douglas Corp carries no real external invoice, so it is never
+    // still owed against, the same rule po-detail.ts applies to the Job
+    // Details Parts List's Left to Invoice column. Filtered HERE, not inside
+    // getPartsCostForJobs: that function is shared with the Parts List, which
+    // still wants the SDC row to exist (Total $, Purchased date, etc.) and
+    // only zeroes its Invoiced $ / Left to Invoice — it does not want the row
+    // gone. This column has no such row to preserve, so the line is simply
+    // left out of the sum.
+    const lines = (linesByJob.get(j.jobNumber) ?? []).filter((l) => !isSdcVendor(l.supplier));
     // THE shared definition (lib/left-to-invoice.ts) — the same function the Parts
     // List's column, the Parts Cost card and the projection all call, with this
     // month's cutoff applied. Deliberately not re-expressed here: this file having

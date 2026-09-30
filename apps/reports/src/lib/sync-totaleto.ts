@@ -3,6 +3,7 @@ import { TOTALETO_TIMEOUT, withTotalEto } from "@/lib/totaleto-connection";
 import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES } from "@/lib/job-filters";
 import { applyRefundSign, sqlRefundSigned } from "@/lib/parts-refund";
+import { isSdcVendor } from "@/lib/vendor-normalize";
 
 // The exact query Power BI's 'Part Purchase' table runs against this same
 // SQL server (extracted verbatim from the semantic model's TMDL). Verified
@@ -168,7 +169,11 @@ export async function getPartsCostPurchasedByJob(monthStart: Date, monthEndExclu
 //           does not mean "void"; filtering it would have reported $39,987 instead
 //           of $491,206.
 export type PartsBookedByJob = {
-  /** job number -> net booked amount for the month (credits already netted off). */
+  /**
+   * job number -> net booked amount for the month (credits already netted off).
+   * Excludes anything billed under Steven Douglas Corp. as the supplier — see
+   * getPartsCostBookedByJob's own header for why.
+   */
   net: Map<string, number>;
   /** Debits and credits kept apart, so a reconciliation can compare all three columns. */
   debit: Map<string, number>;
@@ -414,6 +419,24 @@ export async function getUnclassifiedFlaggedSpend(
   }, { feed: "parts_cost.unclassified_flagged_spend" });
 }
 
+// ── SDC never invoices itself (2026-09-30, by request) ──────────────────────
+//
+// Steven Douglas Corp supplying its own job is not an external invoice — the
+// same rule tm-parts-source.ts already applies to T&M's Part Invoiced Amount,
+// and po-detail.ts applies to the Job Details Parts List's Invoiced $ / Left
+// to Invoice columns. Money Spent Month had no such exclusion at all until
+// now: verified live against Total ETO for August 2026, $65,043 of the
+// month's $997,136 was billed under "Steven Douglas Corp." (955 AP lines
+// across every active job), none of it flagged do-not-export — so this is
+// not an edge case, it is a real and recurring share of every month's figure.
+//
+// Grouped by vendor (not just by job) so the exclusion can be decided in
+// TypeScript against the ONE definition of "is this SDC" (isSdcVendor),
+// rather than a second, hand-written SQL pattern that could drift from it —
+// the same reason glPostedAp's Sage-first check reads SFC.CName instead of
+// re-deriving a vendor test in SQL. SDC Credit Card and Steven Douglas Corp.
+// Expense Reports are NOT excluded here: isSdcVendor already refuses them
+// (they are a payment method and an expense channel, not SDC as a supplier).
 export async function getPartsCostBookedByJob(
   monthStart: Date,
   monthEndExclusive: Date,
@@ -425,7 +448,7 @@ export async function getPartsCostBookedByJob(
       .input("start", sql.DateTime, monthStart)
       .input("end", sql.DateTime, monthEndExclusive)
       .query(
-        `SELECT APDD.ProjectID AS JobId,
+        `SELECT APDD.ProjectID AS JobId, SFC.CName AS Vendor,
                 SUM(CASE WHEN ${amt} > 0 THEN ${amt} ELSE 0 END) AS DebitAmt,
                 SUM(CASE WHEN ${amt} < 0 THEN -(${amt}) ELSE 0 END) AS CreditAmt,
                 SUM(${amt}) AS NetAmt
@@ -435,20 +458,21 @@ export async function getPartsCostBookedByJob(
           WHERE APBD.APDocDate >= @start AND APBD.APDocDate < @end
             AND APDD.ProjectID IS NOT NULL
             AND ${glPostedAp("SFC")}
-          GROUP BY APDD.ProjectID`,
+          GROUP BY APDD.ProjectID, SFC.CName`,
       );
     const net = new Map<string, number>();
     const debit = new Map<string, number>();
     const credit = new Map<string, number>();
     for (const r of result.recordset) {
+      if (isSdcVendor(r.Vendor as string | null)) continue;
       const job = String(Number(r.JobId));
       const n = Number(r.NetAmt);
       // A null/NaN sum is a data problem, not a zero — skipping keeps it out of the month
       // rather than silently reporting nothing bought (§30.14).
       if (!Number.isFinite(n)) continue;
-      net.set(job, n);
-      debit.set(job, Number(r.DebitAmt) || 0);
-      credit.set(job, Number(r.CreditAmt) || 0);
+      net.set(job, (net.get(job) ?? 0) + n);
+      debit.set(job, (debit.get(job) ?? 0) + (Number(r.DebitAmt) || 0));
+      credit.set(job, (credit.get(job) ?? 0) + (Number(r.CreditAmt) || 0));
     }
 
     // Anything the month booked that no job will ever show. Reported rather than

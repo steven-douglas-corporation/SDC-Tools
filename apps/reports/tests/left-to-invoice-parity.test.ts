@@ -247,6 +247,26 @@ test("the cutoff is what the fix IS — without it August inherits September", (
   assert.match(breakout, /month: string \| null,/, "month must be required, not optional");
 });
 
+test("Left to Invoice excludes Steven Douglas Corp. as a supplier, via the one shared isSdcVendor rule", () => {
+  // SDC never invoices itself (2026-09-30) — same rule as Money Spent Month
+  // (tests/parts-actual-gl-posted.test.ts) and the Job Details Parts List
+  // (po-detail.ts). Filtered on the raw lines BEFORE explainLeftToInvoice, not by
+  // re-deriving the SDC test inside explainLeftToInvoice itself — that function is
+  // shared with every other Left to Invoice caller and must stay generic.
+  const breakout = readFileSync(join(process.cwd(), "src", "lib", "parts-etc-breakout.ts"), "utf8");
+  assert.match(breakout, /import \{ isSdcVendor \} from "@\/lib\/vendor-normalize";/);
+  assert.match(
+    breakout,
+    /const lines = \(linesByJob\.get\(j\.jobNumber\) \?\? \[\]\)\.filter\(\(l\) => !isSdcVendor\(l\.supplier\)\);/,
+    "the SDC filter must run on the raw lines, before they reach explainLeftToInvoice",
+  );
+  // The filter must happen strictly before the call, not after (which would be too
+  // late to affect the sum at all).
+  const filterAt = breakout.indexOf("!isSdcVendor(l.supplier)");
+  const callAt = breakout.indexOf("explainLeftToInvoice(lines, { asOf })");
+  assert.ok(filterAt > 0 && callAt > filterAt, "the filter must precede the explainLeftToInvoice call it feeds");
+});
+
 test("there is ONE formula — no caller re-expresses it", () => {
   // The report's actual instruction: reuse the shared calculation, do not add a
   // second one. This fails the moment somebody spells the subtraction out again.

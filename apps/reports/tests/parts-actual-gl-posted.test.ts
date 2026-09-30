@@ -498,6 +498,29 @@ test("a Sage-first vendor is matched EXACTLY, never by pattern", () => {
   assert.ok(!/LIKE/i.test(predicate), "never a LIKE — it would catch unrelated vendors");
 });
 
+test("getPartsCostBookedByJob excludes Steven Douglas Corp. as a supplier, via the one shared isSdcVendor rule", () => {
+  // SDC never invoices itself (2026-09-30): verified live against Total ETO for August
+  // 2026, $65,043 of that month's $997,136 Money Spent Month was billed under "Steven
+  // Douglas Corp." across 955 AP lines on every active job, none of it flagged — a real
+  // and recurring share, not an edge case.
+  assert.match(totalEtoCode, /import \{ isSdcVendor \} from "@\/lib\/vendor-normalize";/);
+  // Grouped by vendor too, not just by job — the exclusion is decided in TypeScript
+  // against isSdcVendor, not re-derived as a second SQL pattern that could drift from it.
+  assert.match(
+    TOTALETO,
+    /SFC\.CName AS Vendor,[\s\S]{0,600}?GROUP BY APDD\.ProjectID, SFC\.CName`,/,
+    "getPartsCostBookedByJob's query must carry the vendor name and group by it",
+  );
+  const fn = totalEtoCode.slice(totalEtoCode.indexOf("export async function getPartsCostBookedByJob"));
+  const body = fn.slice(0, fn.indexOf("}, { requestTimeout: 180_000"));
+  assert.match(body, /if \(isSdcVendor\(r\.Vendor as string \| null\)\) continue;/, "an SDC vendor row must be skipped before it reaches net/debit/credit");
+  // SDC Credit Card and Steven Douglas Corp. Expense Reports must NOT be caught by this —
+  // isSdcVendor itself already refuses them (they are a payment method and an expense
+  // channel, not SDC as a supplier), so this test only needs to confirm the real
+  // function is called, not a hand-rolled pattern that could disagree with it.
+  assert.doesNotMatch(body, /CName\s*===|CName\s*\.includes|LIKE.*STEVEN/i, "no second, hand-written SDC test — only isSdcVendor decides");
+});
+
 test("the predicate takes a joined alias, because a subquery is illegal in an aggregate", () => {
   // The first attempt used a correlated EXISTS. SQL Server refuses it inside
   // SUM(CASE WHEN ...) outright: "Cannot perform an aggregate function on an
