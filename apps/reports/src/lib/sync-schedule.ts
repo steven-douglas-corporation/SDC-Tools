@@ -63,6 +63,10 @@ export const SYNC_SOURCES = [
   // and upserts are keyed per month so an older snapshot is never touched by
   // a newer file arriving.
   { source: "job_cost_inventory", label: "Job Cost inventory (monthly file)", monthScoped: false },
+  // The Paylocity employee roster file (2026-09-30) — adds new people (hidden)
+  // and mirrors supervisor and job title. Never removes or deactivates anyone.
+  // See lib/paylocity-roster-sync.ts.
+  { source: "employee_roster", label: "Employee roster (Paylocity file)", monthScoped: false },
   { source: "standard_pools", label: "Standard Fees pools", monthScoped: true },
   // Same wording as the dashboard's long-standing "Jobs from TotalETO" button,
   // which triggers this exact sync. Two names for one feed is precisely the

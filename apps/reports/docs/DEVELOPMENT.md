@@ -26,6 +26,7 @@ Local setup and day-to-day workflows. For production deployment, see
 | `HOURS_SOURCE` | Override to force `power_bi` instead of the workbook (rare — CLI/debug use) |
 | `JOB_COST_INVENTORY_FOLDER` | Folder scanned for Lisa's monthly `*inventory*.xlsx` workbook (Job Cost Explorer's %Complete/Sales$) — defaults to a hardcoded OneDrive path if unset |
 | `HIRING_POSITIONS_LOCAL_PATH` | Filesystem path to the Paylocity Recruiting export read live on every `/employees` render — defaults to a hardcoded OneDrive path if unset |
+| `PAYLOCITY_EMPLOYEES_LOCAL_PATH` | Filesystem path to the Paylocity employee roster file, synced hourly (`src/lib/paylocity-roster-sync.ts`): adds new people hidden, mirrors supervisor and job title, never removes anyone. Unset = step skipped. Preview with `scripts/preview-roster-sync.ts` |
 | `SCHEDULER_DATABASE_URL` | Read-only MySQL into the sibling Scheduler app's database |
 | `SCHEDULER_SHARED_TOKEN` | Bearer token for the two apps' server-to-server integration routes |
 | `SCHEDULER_BASE_URL` | Where to send a user for the Scheduler-SSO handoff |

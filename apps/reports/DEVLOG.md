@@ -6722,3 +6722,40 @@ agent session (credentials sign-in).
 `npm run deploy`; add the two `.env` keys first; run
 `npx tsx scripts/backfill-etc-submitted-at.ts` (dry run) then `--run`; browser
 check the workspace controls and the Users & Roles Activate button.
+
+## 73. Employee roster synced hourly from Paylocity's roster file (2026-09-30)
+
+A new refresh step, `employee_roster` (`src/lib/paylocity-roster-sync.ts`, rules in
+`paylocity-roster-parse.ts`), reads the Paylocity roster report from
+`PAYLOCITY_EMPLOYEES_LOCAL_PATH` (the SFTP folder, same convention as
+`JOB_HOURS_LOCAL_PATH`). Matched on Employee Id == `paylocityId`.
+
+* **Adds, never removes.** Everyone in the file ends up in the app. A new person is
+  created **hidden** (`active = false`) whether or not Paylocity has them active,
+  because `active` here means "shown on the boards", which is an app decision.
+  Existing people's `active`, name, department, team, discipline and billing group
+  are never touched.
+* **Supervisor and job title are Paylocity-owned.** Mirrored every pass, blanks
+  included. Editing them in the app is off for the time being: `updateEmployee` /
+  `createEmployee` no longer accept `supervisorId`, the Import Supervisors upload is
+  unmounted from Admin › Data Management and its action refuses, and the employee
+  drawer labels both fields "From Paylocity — change it there".
+* An unlinked app row (no `paylocityId`) whose name matches exactly one file row is
+  linked rather than duplicated; an ambiguous match is skipped and reported.
+* Refuses the whole file on missing columns, duplicate ids, an all-blank supervisor
+  or title column, or a file still uploading. One transaction per pass.
+* The employee drawer gained **Show / Hide** (the existing `setEmployeeActive`,
+  `employees:edit`), since nothing on screen could change `active` before and new
+  people now arrive hidden.
+* `normalizeName` moved to `src/lib/employee-name-key.ts` (re-exported from
+  `sync-scheduler-team.ts`) so the pure planner can use it.
+
+Checked that hidden people stay off the boards: every current-people view filters
+`active` or hides inactive by default; Scheduler's Unassigned/Inactive cards are
+off (`BOARD_SHOW_ETC_EXTRAS = false`) and its roster pull skips inactive people and
+anyone without a delivery team.
+
+### Left for the user
+Set `PAYLOCITY_EMPLOYEES_LOCAL_PATH` in `.env`; run
+`npx tsx -r ./scripts/shim-server-only.cjs scripts/preview-roster-sync.ts` against
+the real database before deploying — the first pass adds everyone in the file.

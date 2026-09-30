@@ -52,6 +52,7 @@ export type SourceFamily = "Total ETO" | "Paylocity" | "Monthly file" | "App-own
 const FAMILY_OVERRIDES: Record<string, SourceFamily> = {
   hours_actual: "Paylocity",
   job_cost_inventory: "Monthly file",
+  employee_roster: "Paylocity",
 };
 
 export function familyFor(source: string): SourceFamily {

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 import { recordChanges, classifyChange } from "@/lib/change-log";
 import { reconcileSchedulerRoster, type RosterReconciliation } from "@/lib/sync-scheduler-team";
-import { parseSupervisorExport, applySupervisorImport, type SupervisorImportResult } from "@/lib/import-employee-supervisors";
+import type { SupervisorImportResult } from "@/lib/import-employee-supervisors";
 import { assertActionPermission } from "@/lib/require-permission";
 import { DISCIPLINE_LABEL } from "@/lib/disciplines";
 import { pushTeamMemberToScheduler } from "@/lib/scheduler-push";
@@ -21,16 +21,11 @@ function readEmployeeForm(formData: FormData) {
   const billingGroup = String(formData.get("billingGroup") ?? "").trim() || null;
   const discipline = String(formData.get("discipline") ?? "").trim() || null;
   const paylocityId = String(formData.get("paylocityId") ?? "").trim() || null;
-  const supRaw = String(formData.get("supervisorId") ?? "").trim();
-  // Guard like every other numeric field: a non-numeric/blank-ish value must
-  // not slip through as NaN (or "0" as 0) into a Prisma write.
-  let supervisorId: number | null = null;
-  if (supRaw) {
-    const n = Number(supRaw);
-    if (!Number.isInteger(n) || n <= 0) throw new Error(`Invalid supervisor id "${supRaw}".`);
-    supervisorId = n;
-  }
-  return { name, department, billingGroup, discipline, paylocityId, supervisorId };
+  // No supervisorId (2026-09-30): supervisor and job title are Paylocity-owned and
+  // written only by the hourly roster sync (lib/paylocity-roster-sync.ts). A
+  // supervisorId posted here is ignored rather than written, so an edit in this app
+  // can't disagree with Paylocity until the next pass reverts it.
+  return { name, department, billingGroup, discipline, paylocityId };
 }
 
 export async function createEmployee(formData: FormData) {
@@ -65,9 +60,6 @@ export async function updateEmployee(id: number, formData: FormData) {
       throw new Error(`Paylocity ID ${data.paylocityId} already belongs to ${existing.name}.`);
     }
   }
-
-  // A person can't be their own supervisor.
-  if (data.supervisorId === id) data.supervisorId = null;
 
   const before = await prisma.employee.findUnique({ where: { id } });
   await prisma.employee.update({ where: { id }, data });
@@ -114,7 +106,6 @@ const EMPLOYEE_FIELD_LABELS = {
   billingGroup: "Billing Group",
   discipline: "Discipline",
   paylocityId: "Paylocity ID",
-  supervisorId: "Supervisor",
 } as const;
 
 function employeeFieldText(value: unknown): string | null {
@@ -131,24 +122,19 @@ export async function reconcileSchedulerRosterAction(): Promise<RosterReconcilia
   return reconcileSchedulerRoster();
 }
 
-// Imports reporting lines from an uploaded Paylocity employee export (the
-// "Supervisor [Id]" column), matched by Emp Id == paylocityId. Returns a report
-// for the UI. Same apply logic a future SharePoint auto-pull would reuse.
-export async function importSupervisorsAction(formData: FormData): Promise<SupervisorImportResult> {
+// Disabled 2026-09-30, for the time being: supervisors now come from the hourly
+// Paylocity roster sync (lib/paylocity-roster-sync.ts), and a manual upload of a
+// different export would only be reverted by the next pass. The button is off
+// Admin > Data Management; this refusal stays because a server action is a
+// callable endpoint whether or not a button points at it. To bring the upload
+// back, restore the parse/apply calls from import-employee-supervisors.ts.
+export async function importSupervisorsAction(_formData: FormData): Promise<SupervisorImportResult> {
   await assertActionPermission("employees:edit");
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, reason: "No file uploaded.", updated: [], clearedCount: 0, unchanged: 0, notInEtc: 0, supervisorNotInEtc: [] };
-  }
-  let parsed;
-  try {
-    parsed = parseSupervisorExport(Buffer.from(await file.arrayBuffer()));
-  } catch {
-    return { ok: false, reason: "Could not read that file — expected a Paylocity employee export (.xlsx).", updated: [], clearedCount: 0, unchanged: 0, notInEtc: 0, supervisorNotInEtc: [] };
-  }
-  const result = await applySupervisorImport(parsed);
-  if (result.ok) revalidatePath("/employees");
-  return result;
+  return {
+    ok: false,
+    reason: "Supervisors sync from Paylocity every hour — change them in Paylocity.",
+    updated: [], clearedCount: 0, unchanged: 0, notInEtc: 0, supervisorNotInEtc: [],
+  };
 }
 
 // Soft-delete / restore. Historical ActualHours rows stay linked either way.
