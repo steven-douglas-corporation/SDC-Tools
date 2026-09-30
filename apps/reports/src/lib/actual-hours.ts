@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { PARTS_COST_SECTION, mapPunchToColumns } from "@/lib/sections";
 import type { HistoricalEraScope } from "@/lib/hours-filters";
+import { snapshotBeforeRange, type HoursBySourceInput } from "@/lib/hours-by-source";
 
 // THE definition of "actual hours worked to date", for every report that shows
 // one. Both the Projects grid and the Job Hour Details dashboard call this, so
@@ -305,6 +306,52 @@ export async function historicalErasAvailable(scope: HistoricalEraScope): Promis
     }),
   ]);
   return { migration: migration !== null, frozenEtc: frozen !== null };
+}
+
+// ── The Hours page's "Hours by source" band (2026-09-30) ────────────────────
+//
+// Totals for all three eras under the page's filters, reconciled to one figure —
+// see lib/hours-by-source.ts for the overlap rule. `punchWhere` is the page's own
+// resolved punch filter (hours-explorer.ts), so the punch figure is the table's.
+// Eras 1 and 2 use the same scope and partition as the export's sheets above.
+export async function loadHoursBySource(
+  punchWhere: Prisma.JobHoursDetailWhereInput,
+  scope: HistoricalEraScope,
+  olderSourcesApply: boolean,
+): Promise<HoursBySourceInput & { snapshotBeforeRange: boolean }> {
+  const excludeSnapshot = snapshotBeforeRange(scope.fromMonth, SNAPSHOT_THROUGH_MONTH);
+  const covered = olderSourcesApply ? await coveredMonths() : [];
+  const [punches, overlap, snapshot, frozen] = await Promise.all([
+    prisma.jobHoursDetail.aggregate({ where: punchWhere, _sum: { hours: true } }),
+    // The complement of OUTSIDE_SNAPSHOT: dated inside the snapshot's months, on a
+    // job that has a non-zero snapshot row.
+    prisma.jobHoursDetail.aggregate({
+      where: {
+        AND: [
+          punchWhere,
+          { month: { lte: SNAPSHOT_THROUGH_MONTH } },
+          { job: { estimatedHours: { some: { actualHistoricalHours: { not: 0 } } } } },
+        ],
+      },
+      _sum: { hours: true },
+    }),
+    olderSourcesApply && !excludeSnapshot
+      ? prisma.estimatedHours.aggregate({ where: { ...eraWhere(scope), actualHistoricalHours: { not: 0 } }, _sum: { actualHistoricalHours: true } })
+      : null,
+    olderSourcesApply
+      ? prisma.etcEntry.aggregate({
+          where: { ...eraWhere(scope), month: frozenMonthFilter(scope, covered), hoursWorked: { not: 0 }, AND: [OUTSIDE_SNAPSHOT] },
+          _sum: { hoursWorked: true },
+        })
+      : null,
+  ]);
+  return {
+    punches: Number(punches._sum.hours ?? 0),
+    overlap: Number(overlap._sum.hours ?? 0),
+    snapshot: !olderSourcesApply ? null : excludeSnapshot ? 0 : Number(snapshot?._sum.actualHistoricalHours ?? 0),
+    frozen: olderSourcesApply ? Number(frozen?._sum.hoursWorked ?? 0) : null,
+    snapshotBeforeRange: excludeSnapshot,
+  };
 }
 
 export type MigrationSnapshotRow = { jobId: string; jobName: string; section: string; hours: number };

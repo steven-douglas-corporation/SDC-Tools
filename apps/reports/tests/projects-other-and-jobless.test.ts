@@ -28,10 +28,13 @@ test("a job's January 2025 punches are dropped only when it has a snapshot", () 
 
 test("every era-2 and era-3 read applies the snapshot rule", () => {
   // Two per reader in actual-hours.ts (the cumulative figure and its timeline), one
-  // for each Hours-export frozen-month query, and both reads in Job Cost Explorer. A
-  // reader without it double-counts January again.
+  // for each Hours-export frozen-month query, the Hours page's "by source" frozen
+  // read, and both reads in Job Cost Explorer. A reader without it double-counts
+  // January again. (loadHoursBySource's two PUNCH reads are deliberately unfiltered:
+  // one is the table's own total, the other is the overlap it then leaves out —
+  // see lib/hours-by-source.ts and tests/hours-by-source.test.ts.)
   const actual = code("src", "lib", "actual-hours.ts");
-  assert.equal((actual.match(/AND: \[OUTSIDE_SNAPSHOT\]/g) ?? []).length, 6);
+  assert.equal((actual.match(/AND: \[OUTSIDE_SNAPSHOT\]/g) ?? []).length, 7);
   const jobCost = code("src", "lib", "job-cost-source.ts");
   assert.equal((jobCost.match(/AND: \[OUTSIDE_SNAPSHOT\]/g) ?? []).length, 2);
 });
