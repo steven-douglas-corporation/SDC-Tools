@@ -87,7 +87,7 @@ async function employeeIdsForDepartments(departments: string[]): Promise<string[
   return employees.map((e) => e.paylocityId!);
 }
 
-async function resolveWhere(filters: HoursFilters) {
+export async function resolveWhere(filters: HoursFilters) {
   const deptEmployeeIds =
     filters.departments && filters.departments.length > 0 ? await employeeIdsForDepartments(filters.departments) : undefined;
   return buildHoursWhere(filters, deptEmployeeIds);

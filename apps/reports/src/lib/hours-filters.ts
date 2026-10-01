@@ -296,6 +296,10 @@ export type HoursSearchParams = {
   departments?: string;
   from?: string;
   to?: string;
+  // "YYYY-MM" — "Match Monthly ETC" (lib/hours-etc-scope-rules.ts). Not read by
+  // parseHoursFilters either: it is resolved against the database into jobs, codes and
+  // dates by resolveEtcScope, which the page and the export both call.
+  etcMonth?: string;
   // Not read by parseHoursFilters below (they don't affect WHICH rows match, only
   // how they're grouped/ordered) — carried on this type so the export route can
   // parse them off the SAME query string via parseHoursGroupByList/parseHoursSort
@@ -333,6 +337,7 @@ export const HOURS_FILTER_PARAMS = [
   "departments",
   "from",
   "to",
+  "etcMonth",
   "groupBy",
   "sort",
   "dir",
@@ -353,7 +358,7 @@ export const HOURS_FILTER_PARAMS = [
 export function countActiveHoursFilters(sp: Record<string, string | undefined>): number {
   const set = (k: string) => Boolean(sp[k] && String(sp[k]).trim() !== "");
   let n = 0;
-  for (const k of ["jobs", "employees", "sections", "departments", "groupBy", "view"]) if (set(k)) n += 1;
+  for (const k of ["jobs", "employees", "sections", "departments", "etcMonth", "groupBy", "view"]) if (set(k)) n += 1;
   if (set("from") || set("to")) n += 1;
   if (set("sort")) n += 1;
   return n;

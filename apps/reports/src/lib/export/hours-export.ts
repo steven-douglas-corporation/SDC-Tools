@@ -1,6 +1,8 @@
 import { queryHoursExportRows, queryHoursGrouped, queryHoursSummary } from "@/lib/hours-explorer";
 import { SNAPSHOT_THROUGH_MONTH, loadFrozenEtcMonthRows, loadMigrationSnapshotRows } from "@/lib/actual-hours";
 import { SECTIONS } from "@/lib/sections";
+import { resolveEtcScope } from "@/lib/hours-etc-scope";
+import { parseEtcMonth } from "@/lib/hours-etc-scope-rules";
 import {
   parseHoursFilters,
   parseHoursGroupByList,
@@ -52,12 +54,17 @@ export type HoursExportResult = { spec: SheetSpec; rowCount: number; historicalS
 export type HoursExportOptions = { includeMigration?: boolean; includeFrozenEtc?: boolean };
 
 export async function buildHoursExport(params: HoursSearchParams, now: Date, options: HoursExportOptions = {}): Promise<HoursExportResult> {
-  const filters = parseHoursFilters(params);
+  // Same narrowing the page applies for "Match Monthly ETC", so the file is the table.
+  const etcMonth = parseEtcMonth(params.etcMonth);
+  const filters = etcMonth ? (await resolveEtcScope(parseHoursFilters(params), etcMonth)).scoped : parseHoursFilters(params);
   const historicalSheets = await buildHistoricalSheets(filters, options, now);
   const groupByLevels = parseHoursGroupByList(params.groupBy);
   const summary = await queryHoursSummary(filters);
 
-  const subtitleBase = [`Filters: ${describeHoursFilters(filters)}`];
+  const subtitleBase = [
+    ...(etcMonth ? [`Matched to Monthly ETC ${etcMonth}: grid jobs and ETC section codes only`] : []),
+    `Filters: ${describeHoursFilters(filters)}`,
+  ];
 
   if (groupByLevels.length > 0) {
     const groupBy = groupByLevels[0];

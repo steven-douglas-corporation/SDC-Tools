@@ -11,6 +11,10 @@ import { HoursGroupByMenu } from "@/components/HoursGroupByMenu";
 import { HoursGroupedTree } from "@/components/HoursGroupedTree";
 import { HoursViewsMenu } from "@/components/HoursViewsMenu";
 import { HoursClearFiltersButton } from "@/components/HoursClearFiltersButton";
+import { HoursEtcScopeMenu } from "@/components/HoursEtcScopeMenu";
+import { HoursEtcScopePanel } from "@/components/HoursEtcScopePanel";
+import { resolveEtcScope } from "@/lib/hours-etc-scope";
+import { parseEtcMonth } from "@/lib/hours-etc-scope-rules";
 import { getHoursFilterOptions, queryHoursBySource, queryHoursGrouped, queryHoursRows, queryHoursSummary, type HoursRow } from "@/lib/hours-explorer";
 import { HoursBySourceBand } from "@/components/HoursBySourceBand";
 import { parseHoursFilters, parseHoursGroupByList, parseHoursSort, countActiveHoursFilters, historicalEraScope, type HoursDetailSortKey } from "@/lib/hours-filters";
@@ -44,6 +48,8 @@ type HoursPageSearchParams = {
   departments?: string;
   from?: string;
   to?: string;
+  // "YYYY-MM" — Match Monthly ETC. See lib/hours-etc-scope-rules.ts.
+  etcMonth?: string;
   page?: string;
   groupBy?: string;
   sort?: string;
@@ -57,7 +63,15 @@ type HoursPageSearchParams = {
 export async function HoursView({ params }: { params: HoursPageSearchParams }) {
   await requirePagePermission("hours:view");
   const sp = params;
-  const filters = parseHoursFilters(sp);
+  // "Match Monthly ETC": when on, the user's filters are narrowed to the punches
+  // Monthly ETC counts for that month, and EVERY query below reads the narrowed set —
+  // KPIs, tree, detail rows, the source band — so nothing on the page disagrees.
+  const etcMonth = parseEtcMonth(sp.etcMonth);
+  // The menus show what the USER picked, never the narrowing: ticking 55 grid jobs into
+  // the Jobs menu would make the next click write them into the URL as a real selection.
+  const userFilters = parseHoursFilters(sp);
+  const etcScope = etcMonth ? await resolveEtcScope(userFilters, etcMonth) : null;
+  const filters = etcScope ? etcScope.scoped : userFilters;
   const groupByLevels = parseHoursGroupByList(sp.groupBy);
   const sort = parseHoursSort(sp.sort, sp.dir);
   const page = Math.max(1, Number(sp.page) || 1);
@@ -83,27 +97,27 @@ export async function HoursView({ params }: { params: HoursPageSearchParams }) {
       key: "jobs",
       label: "Jobs / Machines",
       searchable: true,
-      selected: filters.jobIds ?? [],
+      selected: userFilters.jobIds ?? [],
       options: options.jobs.map((j) => ({ value: j.jobId, label: `${j.jobId} — ${j.jobName}` })),
     },
     {
       key: "employees",
       label: "Employees",
       searchable: true,
-      selected: filters.employeeIds ?? [],
+      selected: userFilters.employeeIds ?? [],
       options: options.employees.map((e) => ({ value: e.employeeId, label: e.name })),
     },
     {
       key: "sections",
       label: "Section-Function",
       searchable: true,
-      selected: filters.sections ?? [],
+      selected: userFilters.sections ?? [],
       options: options.sections.map((s) => ({ value: s.code, label: `${s.code} — ${s.name}` })),
     },
     {
       key: "departments",
       label: "Department",
-      selected: filters.departments ?? [],
+      selected: userFilters.departments ?? [],
       options: options.departments.map((d) => ({ value: d, label: d })),
     },
   ];
@@ -121,7 +135,7 @@ export async function HoursView({ params }: { params: HoursPageSearchParams }) {
     return s ? `/hours?${s}` : "/hours";
   }
 
-  const hasAnyFilter = Boolean(sp.jobs || sp.employees || sp.sections || sp.departments || sp.from || sp.to);
+  const hasAnyFilter = Boolean(sp.jobs || sp.employees || sp.sections || sp.departments || sp.from || sp.to || etcMonth);
   // Counted from the SAME query string the results come from, server-side, so
   // the badge cannot disagree with what is actually applied — see
   // countActiveHoursFilters for what does and does not count as a filter.
@@ -140,6 +154,7 @@ export async function HoursView({ params }: { params: HoursPageSearchParams }) {
         <div className="flex items-center gap-2">
           <HoursFilterMenu filters={filterSpecs} />
           <HoursDateFilter from={sp.from ?? ""} to={sp.to ?? ""} />
+          <HoursEtcScopeMenu etcMonth={etcMonth ?? ""} from={sp.from ?? ""} />
           <HoursGroupByMenu groupBy={groupByLevels} />
           <HoursViewsMenu sharedViews={sharedViewsResult.shared} />
           {/* Between the menus it resets and the Export it does not — the
@@ -160,6 +175,8 @@ export async function HoursView({ params }: { params: HoursPageSearchParams }) {
         <IndicatorCard label="Employees" value={summary.employees.toLocaleString()} />
         <IndicatorCard label="Section-Function Codes" value={summary.sections.toLocaleString()} />
       </div>
+
+      {etcScope && <HoursEtcScopePanel scope={etcScope} />}
 
       <HoursBySourceBand data={{ ...bySource, fromMonth: historicalEraScope(filters).fromMonth, sectionFiltered: Boolean(filters.sections?.length) }} />
 
