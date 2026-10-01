@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { DashboardOverview as Overview } from "@/lib/dashboard-overview";
 import { ActiveJobsSection } from "@/components/dashboard/ActiveJobsSection";
-import { ExecutionCalendarSection } from "@/components/dashboard/ExecutionCalendar";
 import { Band, KpiStrip } from "@/components/dashboard/DashboardLayout";
 
 // ── The Dashboard's Overview panel (2026-08-27 redesign) ────────────────────
@@ -65,7 +64,7 @@ function Kpi({
 
 // The two Scheduler props (`schedulerBaseUrl`, `schedulerJobNumbers`) are gone
 // with the FAT list: they existed only to deep-link a FAT row into the
-// Scheduler, and the Execution Calendar opens its details in place instead.
+// Scheduler. The Execution Calendar that replaced it was removed on 2026-10-01.
 export function DashboardOverviewPanel({ data }: { data: Overview }) {
   const label = monthLabel(data.month);
   const eng = data.workforce.find((w) => w.key === "engineering")!;
@@ -186,24 +185,6 @@ export function DashboardOverviewPanel({ data }: { data: Overview }) {
         />
       </Band>
 
-      {/* ── Execution Calendar: FATs, Pre-FATs and Customer Visits ────────── */}
-      {/* Replaces the old "Execution — FATs" list and the separate
-          "Planning — Customer Visits" panel. Both were lists of the same shape
-          of thing on one page; the calendar answers "what is happening the week
-          of the 14th" without counting rows.
-          ── The FAT summary cards are gone too (2026-08-31, by request) ──
-          "FATs in <month>", "Pre-FATs", "Involving ME" and "Involving CE" used
-          to sit in a column beside the grid, with a paragraph under them about
-          placeholder seats and unstaffed FATs. Removed, and the calendar now
-          takes the full width of the band rather than 2.2/3 of it — see
-          ExecutionCalendarSection, which no longer has a slot to render them
-          into. The two counts worth keeping (FATs and pre-FATs this month) were
-          already on the top KPI strip and still are; nothing else read the rest,
-          so the ME/CE breakdown and the per-FAT rows are gone from
-          lib/dashboard-overview.ts as well. */}
-      <Band label="Execution &amp; planning">
-        <ExecutionCalendarSection data={data.calendar} monthLabel={label} keyDates={data.keyDates} />
-      </Band>
     </div>
   );
 }
