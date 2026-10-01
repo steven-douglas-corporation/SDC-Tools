@@ -147,7 +147,7 @@ export const SPLIT_ROUTES: readonly {
   {
     path: "/hours",
     label: "Hours",
-    params: ["jobs", "employees", "sections", "departments", "from", "to", "page", "groupBy", "sort", "dir", "view"],
+    params: ["jobs", "employees", "sections", "departments", "from", "to", "etcMonth", "page", "groupBy", "sort", "dir", "view"],
   },
   { path: "/tm", label: "T&M", params: ["jobs", "start", "end"], instanceParam: "jobs" },
   { path: "/build-readiness", label: "Build Readiness", params: [] },

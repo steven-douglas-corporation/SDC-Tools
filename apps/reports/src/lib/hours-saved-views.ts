@@ -14,7 +14,7 @@ export type { ViewConfig };
 // excluded — a view is "what you're filtering/grouping/sorting to," not which page you
 // happened to be on, consistent with the app's existing rule that any filter change
 // clears `page`. `view` is excluded too — it's the label param itself, never data.
-export const HOURS_VIEW_PARAMS = ["jobs", "employees", "sections", "departments", "from", "to", "groupBy", "sort", "dir"] as const;
+export const HOURS_VIEW_PARAMS = ["jobs", "employees", "sections", "departments", "from", "to", "etcMonth", "groupBy", "sort", "dir"] as const;
 
 export const HOURS_MY_VIEWS_KEY = "hours-my-views";
 export const HOURS_DEFAULT_VIEW_KEY = "hours-default-view";

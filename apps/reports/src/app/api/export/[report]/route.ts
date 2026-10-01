@@ -162,6 +162,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
                 departments: searchParams.get("departments") ?? undefined,
                 from: searchParams.get("from") ?? undefined,
                 to: searchParams.get("to") ?? undefined,
+                etcMonth: searchParams.get("etcMonth") ?? undefined,
                 groupBy: searchParams.get("groupBy") ?? undefined,
                 sort: searchParams.get("sort") ?? undefined,
                 dir: searchParams.get("dir") ?? undefined,
