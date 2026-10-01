@@ -1,0 +1,6 @@
+# One line per punch SEGMENT as printed on the Paylocity timecard. Lunch is the gap between lines.
+# Times are 24h HH:MM. transfer is FUNCTION/JOB/PHASE[/LOCATION]. Lines starting with # are ignored.
+# Import: npx tsx -r ./scripts/shim-server-only.cjs scripts/import-contractor-punches.ts scripts/contractor-punches/<file>.csv [--run]
+employeeName,employeeRef,paylocityId,payPeriod,workDate,in,out,transfer,note
+Vipin Vijayan,Temp3,100600,2026-08-30..2026-09-12,2026-09-01,08:00,12:00,211/1158/10/Concord,
+Vipin Vijayan,Temp3,100600,2026-08-30..2026-09-12,2026-09-01,12:30,16:30,211/1158/10/Concord,

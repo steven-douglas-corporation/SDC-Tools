@@ -1,0 +1,3 @@
+# Transcribed timecards are payroll data: keep them local, never commit them.
+*.csv
+!TEMPLATE.csv
