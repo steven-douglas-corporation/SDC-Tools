@@ -276,6 +276,14 @@ These came up while tracing the code. They describe current behavior and are not
    has a single quoted total and a single actual total over **all** sections, regardless of
    the column picker. It also adds Remaining columns (quoted − actual) that the grid
    doesn't show, and Service & Spare Parts and Other / Unmapped actual columns. It has no No Job ID row.
+4. **The export has four "excl. SDC" Parts Cost columns the grid does not.** After
+   *Parts Cost Remaining*: *SDC Billed (GL-posted, lifetime)*, *Parts Cost Actual
+   (GL-posted, excl. SDC)*, *Parts Cost Remaining (excl. SDC)* and *Excl. SDC basis*. They are
+   calculated live from Total ETO when you click Export (`getPartsActualSdcSplitByJob`), are
+   stored nowhere, and do not change the grid or `Job.costActualHistorical`, which still
+   include Steven Douglas Corp. Jobs with a typed historical actual (no Total ETO data) carry
+   their stored figure through and say so in the basis column. If Total ETO does not answer,
+   the file still downloads with those columns blank.
 
 ---
 

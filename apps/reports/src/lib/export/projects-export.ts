@@ -3,6 +3,8 @@ import { SECTIONS, PARTS_COST_SECTION, offGridActualHours } from "@/lib/sections
 import { validJobTypeFilter, isSdcCustomer } from "@/lib/job-filters";
 import { buildProjectsQuery, sortProjectRows, type ProjectsViewParams } from "@/lib/projects-query";
 import { loadActualHoursBySection } from "@/lib/actual-hours";
+import { getPartsActualSdcSplitByJob } from "@/lib/sync-totaleto";
+import type { PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
 import { round2 } from "@/lib/etc";
 import type { CellValue, SheetColumn, SheetSpec } from "@/lib/export/sheet";
 
@@ -47,6 +49,24 @@ export async function buildProjectsExport(
   // join understated every finished job. Same source as the grid's Actuals toggle.
   const actuals = await loadActualHoursBySection(ordered.map((j) => j.id));
 
+  // ── "Excl. SDC" Parts Cost, calculated live at export time (2026-10-02, by request) ──
+  //
+  // Steven Douglas Corp. never invoices itself, so a manager comparing Parts Cost against
+  // Total ETO wants the actual with SDC's own billing taken out. That is offered HERE and
+  // only here: the grid, Job.costActualHistorical and the sync keep SDC in, exactly as
+  // before, so nothing on screen moves. One Total ETO query, made inside the export
+  // request, never on a page render — the grid cannot slow down because of this.
+  //
+  // Fail-soft: if Total ETO does not answer, the file still downloads with these columns
+  // blank and says so, because a Projects export that fails outright over an optional
+  // comparison is worse than one that is missing it.
+  let sdcSplit: Map<string, PartsActualSdcSplit> | null = null;
+  try {
+    sdcSplit = await getPartsActualSdcSplitByJob();
+  } catch (e) {
+    console.error("[projects-export] SDC split unavailable; the excl. SDC columns will be blank:", e);
+  }
+
   // Section columns: quoted and actual hours per section, in the grid's own order.
   const sectionColumns: SheetColumn[] = [];
   for (const s of SECTIONS) {
@@ -86,6 +106,16 @@ export async function buildProjectsExport(
     // This is the other half: a comparison is now either like-for-like or visibly not.
     { header: "Parts Cost Actual (GL-posted)", type: "currency" },
     { header: "Parts Cost Remaining", type: "currency" },
+    // ── Excl. SDC block: live from Total ETO at export time, not stored anywhere ──
+    //
+    // Same GL-posted basis as the Actual column above (both read the same predicate), with
+    // every AP line billed under Steven Douglas Corp. removed. "SDC Credit Card" and
+    // "Steven Douglas Corp. Expense Reports" are NOT removed — isSdcVendor refuses them.
+    // The last column says, per row, where the figure came from.
+    { header: "SDC Billed (GL-posted, lifetime)", type: "currency", width: 18 },
+    { header: "Parts Cost Actual (GL-posted, excl. SDC)", type: "currency", width: 20 },
+    { header: "Parts Cost Remaining (excl. SDC)", type: "currency", width: 18 },
+    { header: "Excl. SDC basis", type: "text", width: 42 },
     ...sectionColumns,
   ];
 
@@ -110,6 +140,38 @@ export async function buildProjectsExport(
     const costQuoted = job.costQuoted != null ? Number(job.costQuoted) : null;
     const costActual = job.costActualHistorical != null ? Number(job.costActualHistorical) : null;
 
+    // The excl. SDC block. Three cases, each named in the last column so nobody has to
+    // guess which kind of number they are looking at:
+    //   * Total ETO has AP spend for the job  -> live total minus the SDC share. Computed
+    //     entirely from the one live read, so the three figures agree with each other even
+    //     if the stored (on-screen) actual has not caught up with a recent invoice; when it
+    //     has not, the basis says by how much.
+    //   * Total ETO has none, stored is blank/0 -> nothing to exclude.
+    //   * Total ETO has none, stored is typed    -> a manually entered historical figure
+    //     (116 jobs pre-date Total ETO's data). SDC cannot be separated out of a typed
+    //     number, so it is carried through unchanged and labelled as such.
+    let sdcBilled: number | null = null;
+    let costActualExcl: number | null = null;
+    let costRemainingExcl: number | null = null;
+    let exclBasis: string;
+    const split = sdcSplit?.get(job.jobId);
+    if (sdcSplit === null) {
+      exclBasis = "Unavailable - Total ETO did not respond";
+    } else if (split) {
+      sdcBilled = round2(split.sdc);
+      costActualExcl = round2(split.actual - split.sdc);
+      const lag = costActual === null ? null : round2(split.actual - costActual);
+      exclBasis =
+        costActual !== null && lag !== null && Math.abs(lag) < 1
+          ? "Total ETO, live"
+          : `Total ETO, live (the app's stored actual is ${costActual === null ? "blank" : `$${costActual.toFixed(2)}`}, not yet synced)`;
+    } else {
+      sdcBilled = 0;
+      costActualExcl = costActual;
+      exclBasis = (costActual ?? 0) === 0 ? "No Total ETO AP spend" : "Manual historical figure - SDC not separable";
+    }
+    if (sdcSplit !== null) costRemainingExcl = costQuoted === null ? null : costQuoted - (costActualExcl ?? 0);
+
     const row: CellValue[] = [
       job.jobId,
       job.jobName,
@@ -129,6 +191,10 @@ export async function buildProjectsExport(
       // Blank rather than 0 when there is no quote: "no figure on file" and "nothing
       // left" are different answers, and a 0 here would be the export inventing one.
       costQuoted === null ? null : costQuoted - (costActual ?? 0),
+      sdcBilled,
+      costActualExcl,
+      costRemainingExcl,
+      exclBasis,
     ];
     // Fixed-column totals.
     addTotal(8, quotedTotal);
@@ -137,8 +203,12 @@ export async function buildProjectsExport(
     addTotal(11, costQuoted);
     addTotal(12, costActual);
     addTotal(13, costQuoted === null ? null : costQuoted - (costActual ?? 0));
+    addTotal(14, sdcBilled);
+    addTotal(15, costActualExcl);
+    addTotal(16, costRemainingExcl);
 
-    let i = 14;
+    // 18, not 14: the four excl. SDC columns above (14-17) sit before the section columns.
+    let i = 18;
     for (const s of SECTIONS) {
       if (s.code === PARTS_COST_SECTION) continue;
       const q = quotedBySection.get(s.code) ?? 0;
@@ -174,6 +244,9 @@ export async function buildProjectsExport(
         `Filters: ${describeFilters(query.selected)}`,
         `Sorted by ${query.sortKey} ${query.sortDir}`,
         `Exported ${now.toISOString().slice(0, 16).replace("T", " ")} — ${rows.length} project${rows.length === 1 ? "" : "s"}`,
+        sdcSplit === null
+          ? "Excl. SDC columns are blank: Total ETO did not respond at export time. The rest of the file is unaffected."
+          : "Excl. SDC columns are calculated live from Total ETO at export time (GL-posted AP, Steven Douglas Corp. removed); the grid still includes SDC.",
       ],
       columns,
       rows,
