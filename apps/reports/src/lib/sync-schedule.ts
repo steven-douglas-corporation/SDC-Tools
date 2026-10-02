@@ -67,9 +67,9 @@ export const SYNC_SOURCES = [
   // overrides file (2026-10-02). Ahead of the roster, which it feeds. See
   // lib/position-families-sync.ts.
   { source: "position_families", label: "Position families (Paylocity file)", monthScoped: false },
-  // The Paylocity employee roster file (2026-09-30) — adds new people (hidden)
-  // and mirrors supervisor, job title and position code. Never removes or
-  // deactivates anyone.
+  // The Paylocity employee roster file (2026-09-30) — adds new people (hidden),
+  // mirrors supervisor, job title and position code, hides leavers, and sets
+  // teams by the team rule (2026-10-02). Never removes anyone.
   // See lib/paylocity-roster-sync.ts.
   { source: "employee_roster", label: "Employee roster (Paylocity file)", monthScoped: false },
   { source: "standard_pools", label: "Standard Fees pools", monthScoped: true },

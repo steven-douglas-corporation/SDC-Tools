@@ -21,7 +21,8 @@ import { normalizeName } from "@/lib/employee-name-key";
 //
 // ── What the sync is allowed to do ──────────────────────────────────────────
 //
-// ADD and UPDATE, never remove. Decided with the user on 2026-09-30:
+// ADD and UPDATE, never remove. Decided with the user on 2026-09-30, and
+// amended 2026-10-02 so leavers are hidden:
 //
 //   • Everyone in the file ends up in the app, current and former staff alike.
 //     A person NEW to the app is created HIDDEN (active = false), whatever the
@@ -29,16 +30,21 @@ import { normalizeName } from "@/lib/employee-name-key";
 //     which is an app decision rather than an employment fact — back-office
 //     people are deliberately kept off the boards although Paylocity has them
 //     active. So a person arrives hidden and someone turns them on.
-//   • `active` is never changed on a person who already exists, in either
-//     direction. Nobody is deactivated for being absent from the file, or for
-//     being "No" in it; nobody hidden on purpose is brought back.
+//   • `active` changes on an existing person in ONE direction only: someone
+//     shown here whom the file marks "No" is hidden (2026-10-02) — they have
+//     left. Nobody is hidden for being absent from the file, and nobody hidden
+//     on purpose is brought back. A pass that would hide more than half of the
+//     shown roster is held (`hideHeld`) as a broken export, not applied.
 //   • Supervisor, job title and position code are PAYLOCITY-OWNED: the app
 //     mirrors what the file says, a blank included, and the app offers no way to
 //     edit them. Change them in Paylocity.
-//   • Name, department, team, discipline and billing group are never touched on
-//     an existing person. Names here were curated (the outsourced rows were
-//     renamed on purpose — scripts/rename-outsourced-employees.ts), and the other
-//     fields have their own owners.
+//   • Team is set by the team rule after this plan is applied (2026-10-02) —
+//     lib/team-resolution.ts, run by paylocity-roster-sync.ts on every pass —
+//     from position families and the reporting line, not from this file.
+//   • Name, department, discipline and billing group are never touched on an
+//     existing person. Names here were curated (the outsourced rows were renamed
+//     on purpose — scripts/rename-outsourced-employees.ts), and the other fields
+//     have their own owners.
 
 export class RosterFileError extends Error {
   constructor(message: string) {
@@ -191,6 +197,10 @@ export type RosterPlan = {
   link: { employeeId: number; name: string; paylocityId: string }[];
   titleChanges: { paylocityId: string; name: string; from: string | null; to: string | null }[];
   positionCodeChanges: { paylocityId: string; name: string; from: string | null; to: string | null }[];
+  /** Shown here, "No" in Paylocity: hidden by this pass (unless hideHeld). */
+  hide: { paylocityId: string; name: string }[];
+  /** True when `hide` covers more than half of the shown roster — not applied. */
+  hideHeld: boolean;
   /** Supervisors by Paylocity id; applied after `create` so new supervisors exist. */
   supervisorChanges: { paylocityId: string; name: string; fromName: string | null; toPaylocityId: string | null }[];
   /** File rows that name an unlinked app row ambiguously — left for a person. */
@@ -229,6 +239,8 @@ export function planRosterSync(file: RosterFileRow[], app: AppEmployee[]): Roste
     link: [],
     titleChanges: [],
     positionCodeChanges: [],
+    hide: [],
+    hideHeld: false,
     supervisorChanges: [],
     ambiguous: [],
     unresolvedSupervisors: [],
@@ -299,8 +311,17 @@ export function planRosterSync(file: RosterFileRow[], app: AppEmployee[]): Roste
       }
     }
 
+    if (current?.active && !r.paylocityActive) {
+      plan.hide.push({ paylocityId: r.paylocityId, name: current.name });
+      changed = true;
+    }
+
     if (current && !changed && !plan.link.some((l) => l.paylocityId === r.paylocityId)) plan.unchanged++;
   }
+
+  // A file that marks most of the shown roster "No" is a broken export, not a
+  // layoff — the same reasoning as the all-blank-supervisors check above.
+  plan.hideHeld = plan.hide.length > app.filter((e) => e.active).length / 2;
 
   return plan;
 }
@@ -310,7 +331,7 @@ function linkedPid(plan: RosterPlan, employeeId: number): string | null {
 }
 
 export function isEmptyPlan(p: RosterPlan): boolean {
-  return p.create.length === 0 && p.link.length === 0 && p.titleChanges.length === 0 && p.positionCodeChanges.length === 0 && p.supervisorChanges.length === 0;
+  return p.create.length === 0 && p.link.length === 0 && p.titleChanges.length === 0 && p.positionCodeChanges.length === 0 && p.supervisorChanges.length === 0 && (p.hide.length === 0 || p.hideHeld);
 }
 
 // ── Data quality: how the roster file and the app disagree ─────────────────
@@ -371,6 +392,11 @@ export function describePlan(p: RosterPlan): string {
     `${p.supervisorChanges.length} supervisor${p.supervisorChanges.length === 1 ? "" : "s"}`,
     `${p.titleChanges.length} title${p.titleChanges.length === 1 ? "" : "s"} updated`,
     p.positionCodeChanges.length ? `${p.positionCodeChanges.length} position code${p.positionCodeChanges.length === 1 ? "" : "s"} updated` : null,
+    p.hide.length
+      ? p.hideHeld
+        ? `${p.hide.length} leavers NOT hidden — more than half the shown roster, check the export`
+        : `${p.hide.length} leaver${p.hide.length === 1 ? "" : "s"} hidden`
+      : null,
     p.ambiguous.length ? `${p.ambiguous.length} ambiguous name${p.ambiguous.length === 1 ? "" : "s"} skipped` : null,
     p.unresolvedSupervisors.length ? `${p.unresolvedSupervisors.length} unknown supervisor id${p.unresolvedSupervisors.length === 1 ? "" : "s"}` : null,
   ].filter(Boolean);

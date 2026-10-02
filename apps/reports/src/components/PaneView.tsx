@@ -9,7 +9,6 @@ import { JobsView } from "@/app/(app)/jobs/page";
 import { ProfitabilityView } from "@/app/(app)/job-cost-explorer/page";
 import { CashFlowView } from "@/app/(app)/cash-flow/page";
 import { EmployeesView } from "@/app/(app)/employees/page";
-import { OrgChartView } from "@/app/(app)/org-chart/page";
 import { AuditLogView } from "@/app/(app)/audit-log/page";
 import { FeedbackView } from "@/app/(app)/feedback/page";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -71,7 +70,6 @@ const PANE_VIEWS = {
   "/job-cost-explorer": ProfitabilityView,
   "/cash-flow": CashFlowView,
   "/employees": EmployeesView,
-  "/org-chart": OrgChartView,
   "/audit-log": AuditLogView,
   "/feedback": FeedbackView,
 } as const;

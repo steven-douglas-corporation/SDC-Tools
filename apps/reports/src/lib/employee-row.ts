@@ -38,6 +38,9 @@ export type EmployeeRow = {
   // columns Reports has no equivalent of and does not own. false/null when
   // there's no Scheduler match at all (not yet reconciled).
   isLead: boolean;
+  // Leadership: their position code is in family 100 (2026-10-02). Badged, and
+  // listed first on whichever card they sit on — see lib/team-resolution.ts.
+  isLeadership?: boolean;
   specialty: string | null;
   sortOrder: number | null;
 };

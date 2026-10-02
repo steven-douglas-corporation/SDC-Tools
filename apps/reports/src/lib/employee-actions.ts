@@ -154,7 +154,6 @@ export async function setEmployeeSupervisor(id: number, supervisorId: number | n
     { action: "employee.setSupervisor" },
   );
   revalidatePath("/employees");
-  revalidatePath("/org-chart");
 }
 
 // The editable employee fields, as a human reads them. Also the allow-list for what

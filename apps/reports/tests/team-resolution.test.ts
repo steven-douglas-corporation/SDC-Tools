@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveTeams, pendingTeamChanges, pickFamily, type TeamPerson } from "../src/lib/team-resolution";
+import { resolveTeams, pendingTeamChanges, planTeamWrites, pickFamily, type TeamPerson } from "../src/lib/team-resolution";
 import type { PositionFamilyRow } from "../src/lib/position-families-parse";
 
 // The reporting-line team rule (2026-10-02). See the header of
@@ -85,4 +85,13 @@ test("pending changes: only shown, non-Leadership people whose team would move",
     ],
   );
   assert.match(changes[0].reason, /branch of Monica Saggio \(own family says Manufacturing Operations\)/);
+});
+
+test("planTeamWrites: hidden people too, never Leadership, never a blank", () => {
+  const people = [...PEOPLE, { ...p(70, "Hidden Builder", "ME SR", 30, null), active: false }];
+  const writes = planTeamWrites(people, ROWS);
+  assert.ok(writes.some((w) => w.name === "Hidden Builder" && w.to === "mech"), "a hidden new hire is placed before anyone shows them");
+  assert.ok(!writes.some((w) => w.id === 2 || w.id === 3), "Leadership is never written");
+  assert.ok(!writes.some((w) => w.id === 60), "no proposal, no write");
+  assert.deepEqual(planTeamWrites(people.map((x) => ({ ...x, team: writes.find((w) => w.id === x.id)?.to ?? x.team })), ROWS), [], "a second pass writes nothing");
 });

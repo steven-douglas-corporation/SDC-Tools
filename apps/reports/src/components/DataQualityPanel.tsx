@@ -604,7 +604,7 @@ function RosterSection({ roster }: { roster: RosterQuality }) {
         {
           key: "shownButInactive",
           title: "Shown here, inactive in Paylocity",
-          rule: "People still shown in this app whom Paylocity lists as inactive — usually someone who has left. The sync never hides anyone, so hide them from their panel on the Employees page if they're gone.",
+          rule: "People still shown in this app whom Paylocity lists as inactive — usually someone who has left. The sync hides them on its next pass, unless a file marks more than half of the shown roster inactive at once — that is held as a broken export, and these people stay listed here.",
           count: f.shownButInactive.length,
           unit: "people",
           body: <PeopleTable people={f.shownButInactive} />,
@@ -658,8 +658,8 @@ function RosterSection({ roster }: { roster: RosterQuality }) {
       description={
         <>
           Every hour the sync adds anyone new from Paylocity&apos;s roster file — hidden until someone chooses Show on
-          the Employees page — and keeps supervisors and job titles as Paylocity has them. It never decides who is
-          shown, so these checks list where Paylocity and this app disagree about that.
+          the Employees page — keeps supervisors and job titles as Paylocity has them, and hides people Paylocity marks
+          inactive. These checks list where Paylocity and this app still disagree about who is shown.
         </>
       }
     >

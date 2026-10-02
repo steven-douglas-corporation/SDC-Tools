@@ -7,8 +7,9 @@ import type { OrgChart as OrgChartData, OrgNode } from "@/lib/org-chart";
 // The Org Chart page (2026-10-02): the "SDC Team Branches" chart drawn from live
 // data — Leadership centred on top, then a band per leader with a card per
 // team, each card the branch heads and everyone under them on connector lines.
-// A server component: the hover notes are CSS (group-hover / focus), so the
-// page ships no script. Data and the rule behind the teams: lib/org-chart.ts.
+// No hooks: the hover notes are CSS (group-hover / focus), so it renders as a
+// server or a client component. The Employees page uses it as a view. Data
+// and the rule behind the teams: lib/org-chart.ts.
 
 // Connectors: an elbow into each person, and a trunk down past every sibling
 // but the last. Pseudo-elements, so the tree is plain nested lists.
@@ -32,11 +33,20 @@ function Note({ text }: { text: string }) {
   );
 }
 
-function Person({ n, root }: { n: OrgNode; root?: boolean }) {
+type Select = ((id: number) => void) | undefined;
+
+function Person({ n, root, onSelect }: { n: OrgNode; root?: boolean; onSelect: Select }) {
+  const nameCls = `text-sm text-sdc-navy ${root || n.isHead ? "font-semibold" : "font-medium"}`;
   return (
     <div className="relative grid gap-px">
       <span className="flex items-center gap-1.5">
-        <span className={`text-sm text-sdc-navy ${root || n.isHead ? "font-semibold" : "font-medium"}`}>{n.name}</span>
+        {onSelect ? (
+          <button type="button" onClick={() => onSelect(n.id)} className={`${nameCls} rounded-sm text-left hover:text-sdc-blue hover:underline focus-visible:outline-2 focus-visible:outline-sdc-blue`}>
+            {n.name}
+          </button>
+        ) : (
+          <span className={nameCls}>{n.name}</span>
+        )}
         {n.note && <Note text={n.note} />}
       </span>
       <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-sdc-gray-600">
@@ -52,13 +62,13 @@ function Person({ n, root }: { n: OrgNode; root?: boolean }) {
   );
 }
 
-function Tree({ nodes, roots }: { nodes: OrgNode[]; roots?: boolean }) {
+function Tree({ nodes, roots, onSelect }: { nodes: OrgNode[]; roots?: boolean; onSelect: Select }) {
   return (
     <ul className={roots ? "grid gap-2.5" : TREE_UL}>
       {nodes.map((n) => (
         <li key={n.id} className={roots ? "" : TREE_LI}>
-          <Person n={n} root={roots} />
-          {n.reports.length > 0 && <Tree nodes={n.reports} />}
+          <Person n={n} root={roots} onSelect={onSelect} />
+          {n.reports.length > 0 && <Tree nodes={n.reports} onSelect={onSelect} />}
         </li>
       ))}
     </ul>
@@ -78,7 +88,8 @@ function TeamCard({ team, title, count, children, className = "" }: { team: stri
   );
 }
 
-export function OrgChart({ chart }: { chart: OrgChartData }) {
+/** `onSelectPerson` makes each name a button (the Employees page opens that person's panel). */
+export function OrgChart({ chart, onSelectPerson }: { chart: OrgChartData; onSelectPerson?: (id: number) => void }) {
   if (!chart.ready) {
     return (
       <EmptyState
@@ -91,7 +102,7 @@ export function OrgChart({ chart }: { chart: OrgChartData }) {
     <div className="grid gap-8">
       <section className="flex justify-center" aria-label="Executive Leadership">
         <TeamCard team="exec" title="Executive Leadership" count={chart.leaderCount} className="w-full max-w-sm">
-          <Tree nodes={chart.leaders} roots />
+          <Tree nodes={chart.leaders} roots onSelect={onSelectPerson} />
         </TeamCard>
       </section>
 
@@ -107,7 +118,7 @@ export function OrgChart({ chart }: { chart: OrgChartData }) {
           <div className="grid items-start gap-3.5 [grid-template-columns:repeat(auto-fill,minmax(270px,1fr))]">
             {b.cards.map((c) => (
               <TeamCard key={c.team ?? "none"} team={c.team} title={c.name} count={c.people}>
-                <Tree nodes={c.heads} roots />
+                <Tree nodes={c.heads} roots onSelect={onSelectPerson} />
               </TeamCard>
             ))}
           </div>
@@ -134,16 +145,16 @@ export function OrgChart({ chart }: { chart: OrgChartData }) {
   );
 }
 
-/** What switching the rule on would change. */
+/** Team changes the rule has worked out but the hourly sync has not written yet. */
 export function PendingTeamChanges({ pending }: { pending: OrgChartData["pending"] }) {
   return (
     <section className={card("p-5")} aria-labelledby="pending-h">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="pending-h" className="font-heading text-base font-bold text-sdc-navy">
-          Pending team changes
+          Waiting for the next hourly sync
         </h2>
         <span className="text-xs text-sdc-gray-600">
-          {pending.length === 0 ? "None — every shown person's team already matches." : `${pending.length} ${pending.length === 1 ? "person" : "people"} — not applied yet`}
+          {`${pending.length} ${pending.length === 1 ? "team change" : "team changes"} — the chart already shows them`}
         </span>
       </div>
       {pending.length > 0 && (

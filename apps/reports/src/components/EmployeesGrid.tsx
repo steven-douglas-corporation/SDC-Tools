@@ -27,6 +27,8 @@ import {
 } from "@/lib/employee-workforce-groups";
 import { countOpenings } from "@/lib/hiring-openings";
 import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
+import { OrgChart, PendingTeamChanges } from "@/components/OrgChart";
+import type { OrgChart as OrgChartData } from "@/lib/org-chart";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
 import type { HiringPosition } from "@/lib/hiring-positions";
 import { MenuBulkActions, MenuCheckbox } from "@/components/MenuStatus";
@@ -167,6 +169,7 @@ export function EmployeesGrid({
   hiringError,
   canAssignHiring,
   year,
+  orgChart,
 }: {
   rows: EmployeeRow[];
   disciplines: string[];
@@ -177,7 +180,12 @@ export function EmployeesGrid({
   canAssignHiring: boolean;
   /** For workforce-capacity-policy.ts/workforce-capacity.ts — see page.tsx's own note on why this is computed once, server-side. */
   year: number;
+  /** The Org chart view (2026-10-02): the same people, nested by reporting line — see lib/org-chart.ts. */
+  orgChart: OrgChartData;
 }) {
+  // Cards (departments) or Org chart (reporting lines). The filters below
+  // narrow the cards only; the chart is always the whole organisation.
+  const [view, setView] = useState<"cards" | "chart">("cards");
   const [q, setQ] = useState("");
   // Entire Team vs Execution Team (2026-08-24). Deliberately ONE piece of state
   // feeding the two existing choke points below (`scopedToTeam` for people,
@@ -426,75 +434,96 @@ export function EmployeesGrid({
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        {/* Team scope — first in the toolbar because it is a level ABOVE the
-            filters beside it: those narrow who you are looking at within a
-            roster, this chooses which roster. A segmented control rather than a
-            <select>, so both options and the current one are readable at a
-            glance; radios rather than buttons so it announces itself as one
-            choice of two to a screen reader. */}
-        <div role="radiogroup" aria-label="Team scope" className="flex items-center rounded-lg border border-sdc-border bg-white p-0.5">
-          {(["entire", "execution"] as const).map((scope) => {
-            const selected = teamScope === scope;
-            return (
-              <button
-                key={scope}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => setTeamScope(scope)}
-                title={
-                  scope === "execution"
-                    ? "Engineering, Shop and Project Management only"
-                    : "Every department, including Growth, Finance, Executive Leadership and Operations"
-                }
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold motion-interactive ${
-                  selected ? "bg-sdc-blue text-white" : "text-sdc-gray-600 hover:bg-sdc-blue-light"
-                }`}
-              >
-                {TEAM_SCOPE_LABEL[scope]}
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex items-center gap-2.5 rounded-lg border border-sdc-border bg-white px-3.5">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-sdc-gray-400">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search…"
-            className="w-56 border-none bg-transparent py-2 text-sm text-sdc-navy outline-none placeholder:text-sdc-gray-400"
-          />
-        </div>
-        <select value={discipline} onChange={(e) => setDiscipline(e.target.value)} aria-label="Filter by discipline" className={SELECT}>
-          <option value="">All disciplines</option>
-          {disciplines.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
+        <div role="radiogroup" aria-label="View" className="flex items-center rounded-lg border border-sdc-border bg-white p-0.5">
+          {([["cards", "Cards"], ["chart", "Org chart"]] as const).map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              role="radio"
+              aria-checked={view === v}
+              onClick={() => setView(v)}
+              title={v === "chart" ? "Everyone nested by who they report to" : "People by department card"}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold motion-interactive ${
+                view === v ? "bg-sdc-navy text-white" : "text-sdc-gray-600 hover:bg-sdc-blue-light"
+              }`}
+            >
+              {label}
+            </button>
           ))}
-        </select>
-        <DepartmentMenu options={departments} selected={dept} onChange={setDept} />
-        <label className="flex items-center gap-2 text-xs font-medium text-sdc-gray-600">
-          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="h-3.5 w-3.5" />
-          Show inactive
-        </label>
-        <span className="text-xs text-sdc-gray-400">
-          {activeCount} active{showInactive ? ` · ${scopedToTeam.length - activeCount} inactive` : ""}
-          {/* Shown only when a filter is narrowing things, so the count doesn't
-              contradict the roster total on an unfiltered view. */}
-          {visible.length !== (showInactive ? scopedToTeam.length : activeCount) ? ` · ${visible.length} shown` : ""}
-        </span>
-        {hiddenInactiveMatches > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowInactive(true)}
-            className="text-xs font-medium text-sdc-blue hover:underline"
-          >
-            {hiddenInactiveMatches} inactive {hiddenInactiveMatches === 1 ? "person matches" : "people match"} — show them
-          </button>
+        </div>
+        {view === "cards" && (
+          <>
+            {/* Team scope — first in the toolbar because it is a level ABOVE the
+                filters beside it: those narrow who you are looking at within a
+                roster, this chooses which roster. A segmented control rather than a
+                <select>, so both options and the current one are readable at a
+                glance; radios rather than buttons so it announces itself as one
+                choice of two to a screen reader. */}
+            <div role="radiogroup" aria-label="Team scope" className="flex items-center rounded-lg border border-sdc-border bg-white p-0.5">
+              {(["entire", "execution"] as const).map((scope) => {
+                const selected = teamScope === scope;
+                return (
+                  <button
+                    key={scope}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setTeamScope(scope)}
+                    title={
+                      scope === "execution"
+                        ? "Engineering, Shop and Project Management only"
+                        : "Every department, including Growth, Finance, Executive Leadership and Operations"
+                    }
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold motion-interactive ${
+                      selected ? "bg-sdc-blue text-white" : "text-sdc-gray-600 hover:bg-sdc-blue-light"
+                    }`}
+                  >
+                    {TEAM_SCOPE_LABEL[scope]}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2.5 rounded-lg border border-sdc-border bg-white px-3.5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-sdc-gray-400">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search…"
+                className="w-56 border-none bg-transparent py-2 text-sm text-sdc-navy outline-none placeholder:text-sdc-gray-400"
+              />
+            </div>
+            <select value={discipline} onChange={(e) => setDiscipline(e.target.value)} aria-label="Filter by discipline" className={SELECT}>
+              <option value="">All disciplines</option>
+              {disciplines.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+            <DepartmentMenu options={departments} selected={dept} onChange={setDept} />
+            <label className="flex items-center gap-2 text-xs font-medium text-sdc-gray-600">
+              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="h-3.5 w-3.5" />
+              Show inactive
+            </label>
+            <span className="text-xs text-sdc-gray-400">
+              {activeCount} active{showInactive ? ` · ${scopedToTeam.length - activeCount} inactive` : ""}
+              {/* Shown only when a filter is narrowing things, so the count doesn't
+                  contradict the roster total on an unfiltered view. */}
+              {visible.length !== (showInactive ? scopedToTeam.length : activeCount) ? ` · ${visible.length} shown` : ""}
+            </span>
+            {hiddenInactiveMatches > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowInactive(true)}
+                className="text-xs font-medium text-sdc-blue hover:underline"
+              >
+                {hiddenInactiveMatches} inactive {hiddenInactiveMatches === 1 ? "person matches" : "people match"} — show them
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -504,85 +533,100 @@ export function EmployeesGrid({
         </p>
       )}
 
-      <WorkforceSummaryCards
-        rows={visible}
-        placeholders={placeholders}
-        hiringPositions={openHiring}
-        year={year}
-        onSelectCapacity={setCapacityDrill}
-      />
+      {view === "chart" ? (
+        <div className="grid gap-6">
+          {orgChart.pending.length > 0 && <PendingTeamChanges pending={orgChart.pending} />}
+          <OrgChart
+            chart={orgChart}
+            onSelectPerson={(id) => {
+              const r = rows.find((x) => x.id === id);
+              if (r) selectEmployee(r);
+            }}
+          />
+        </div>
+      ) : (
+        <>
+          <WorkforceSummaryCards
+            rows={visible}
+            placeholders={placeholders}
+            hiringPositions={openHiring}
+            year={year}
+            onSelectCapacity={setCapacityDrill}
+          />
 
-      {/* The expansion (2026-08-21) — rendered UNDER the overview cards, which
-          stay on screen, rather than replacing them. Clicking Engineering used
-          to swap the whole area out and push you into an "Overview /
-          Engineering / Controls Engineering" trail; now every department of
-          the clicked group, with its people, opens right here in the same
-          Employees tab and the other groups are still one click away. */}
-      {(
-        bands.map((band) => (
-          <section key={band.key} className="mt-6">
-            {/* The band heading — a rule across the full width and uppercase
-                tracking, so the page reads as two places (execution work,
-                business support) rather than one long run of equally-weighted
-                cards. It is the only header in the band now: the per-group
-                headers were removed so all of a band's cards share one flow. */}
-            <div className="mb-3 flex items-baseline gap-3 border-b-2 border-sdc-navy pb-1.5">
-              <h2 className="text-base font-bold uppercase tracking-wider text-sdc-navy">{band.title}</h2>
-              <span className="text-xs text-sdc-muted">{band.blurb}</span>
-              <span className="ml-auto text-xs text-sdc-muted">
-                <span className="font-bold tabular-nums text-sdc-navy">
-                  {band.rows.filter((r) => r.active).length}
-                </span>{" "}
-                active
-              </span>
-            </div>
-            {/* Group containers in a flex row, so several share a line when they
-                fit (2026-08-24). Each keeps its own header and its own cards, and
-                a group either fits on the current line or wraps whole — cards are
-                never interleaved between groups to fill space.
-
-                The width comes from the group's own card count: flex-basis is
-                ~17rem per card, so Project Management (1 card) asks for a narrow
-                box and Engineering (3) a wide one, and PM + Engineering pack onto
-                one line where Engineering alone would have left two thirds of it
-                empty. `flex-1` lets them then stretch to fill the row exactly, and
-                max-w-full stops a wide group overflowing a narrow screen.
-
-                No breakpoints here on purpose: the packing is whatever the widths
-                allow, and EmployeesCards now picks its column count from the
-                container it lands in rather than from the viewport. */}
-            <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
-              {band.sections.map((sec) => (
-                <div
-                  key={sec.key}
-                  className="min-w-0 max-w-full flex-1"
-                  style={{ flexBasis: `${Math.max(1, sec.cardCount) * 17}rem` }}
-                >
-                  <h3 className="mb-2 border-b border-sdc-border pb-1 text-xs font-bold uppercase tracking-wider text-sdc-muted">
-                    {workforceGroupLongTitle(sec.key)}
-                    <span className="ml-2 font-normal normal-case tracking-normal text-sdc-gray-400">
-                      {sec.rows.filter((r) => r.active).length} active
-                      {countOpenings(sec.hiring) > 0 && ` · ${countOpenings(sec.hiring)} hiring`}
-                    </span>
-                  </h3>
-                  <EmployeesCards
-                    rows={sec.rows}
-                    placeholders={sec.placeholders}
-                    alwaysShowKeys={sec.alwaysShow}
-                    canAddEmployees={canAddEmployees}
-                    onSelectEmployee={selectEmployee}
-                    focusDepartment={null}
-                    hiringPositions={sec.hiring}
-                    onSelectHiringPosition={selectHiringPosition}
-                    year={year}
-                    onSelectCapacity={setCapacityDrill}
-                    canAssignHiring={canAssignHiring}
-                  />
+          {/* The expansion (2026-08-21) — rendered UNDER the overview cards, which
+              stay on screen, rather than replacing them. Clicking Engineering used
+              to swap the whole area out and push you into an "Overview /
+              Engineering / Controls Engineering" trail; now every department of
+              the clicked group, with its people, opens right here in the same
+              Employees tab and the other groups are still one click away. */}
+          {(
+            bands.map((band) => (
+              <section key={band.key} className="mt-6">
+                {/* The band heading — a rule across the full width and uppercase
+                    tracking, so the page reads as two places (execution work,
+                    business support) rather than one long run of equally-weighted
+                    cards. It is the only header in the band now: the per-group
+                    headers were removed so all of a band's cards share one flow. */}
+                <div className="mb-3 flex items-baseline gap-3 border-b-2 border-sdc-navy pb-1.5">
+                  <h2 className="text-base font-bold uppercase tracking-wider text-sdc-navy">{band.title}</h2>
+                  <span className="text-xs text-sdc-muted">{band.blurb}</span>
+                  <span className="ml-auto text-xs text-sdc-muted">
+                    <span className="font-bold tabular-nums text-sdc-navy">
+                      {band.rows.filter((r) => r.active).length}
+                    </span>{" "}
+                    active
+                  </span>
                 </div>
-              ))}
-            </div>
-          </section>
-        ))
+                {/* Group containers in a flex row, so several share a line when they
+                    fit (2026-08-24). Each keeps its own header and its own cards, and
+                    a group either fits on the current line or wraps whole — cards are
+                    never interleaved between groups to fill space.
+
+                    The width comes from the group's own card count: flex-basis is
+                    ~17rem per card, so Project Management (1 card) asks for a narrow
+                    box and Engineering (3) a wide one, and PM + Engineering pack onto
+                    one line where Engineering alone would have left two thirds of it
+                    empty. `flex-1` lets them then stretch to fill the row exactly, and
+                    max-w-full stops a wide group overflowing a narrow screen.
+
+                    No breakpoints here on purpose: the packing is whatever the widths
+                    allow, and EmployeesCards now picks its column count from the
+                    container it lands in rather than from the viewport. */}
+                <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
+                  {band.sections.map((sec) => (
+                    <div
+                      key={sec.key}
+                      className="min-w-0 max-w-full flex-1"
+                      style={{ flexBasis: `${Math.max(1, sec.cardCount) * 17}rem` }}
+                    >
+                      <h3 className="mb-2 border-b border-sdc-border pb-1 text-xs font-bold uppercase tracking-wider text-sdc-muted">
+                        {workforceGroupLongTitle(sec.key)}
+                        <span className="ml-2 font-normal normal-case tracking-normal text-sdc-gray-400">
+                          {sec.rows.filter((r) => r.active).length} active
+                          {countOpenings(sec.hiring) > 0 && ` · ${countOpenings(sec.hiring)} hiring`}
+                        </span>
+                      </h3>
+                      <EmployeesCards
+                        rows={sec.rows}
+                        placeholders={sec.placeholders}
+                        alwaysShowKeys={sec.alwaysShow}
+                        canAddEmployees={canAddEmployees}
+                        onSelectEmployee={selectEmployee}
+                        focusDepartment={null}
+                        hiringPositions={sec.hiring}
+                        onSelectHiringPosition={selectHiringPosition}
+                        year={year}
+                        onSelectCapacity={setCapacityDrill}
+                        canAssignHiring={canAssignHiring}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))
+          )}
+        </>
       )}
 
       {/* Hiring Positions last, after Execution and Operations (2026-08-24).

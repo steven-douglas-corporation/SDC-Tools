@@ -95,12 +95,13 @@ export function buildDepartmentCards(rows: EmployeeRow[], placeholders: Schedule
     .sort((a, b) => compareGroupOrder(a.key, b.key))
     .map((c) => ({
       ...c,
-      // Matches Scheduler's own card order: lead first, then sort_order,
+      // Leadership first (2026-10-02), then Scheduler's own card order: lead first, then sort_order,
       // then name. Someone with no Scheduler match at all (sortOrder null)
       // sorts after everyone who has one — not yet reconciled, not yet
       // ordered.
       people: [...c.people].sort(
         (a, b) =>
+          Number(b.isLeadership ?? false) - Number(a.isLeadership ?? false) ||
           Number(b.isLead) - Number(a.isLead) ||
           (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity) ||
           a.name.localeCompare(b.name),

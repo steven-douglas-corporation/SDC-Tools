@@ -138,7 +138,7 @@ test("quality: lists where Paylocity and the app disagree about who is current",
   assert.deepEqual(q.awaitingShow.map((p) => p.name), ["Jane Doe"]);
   assert.deepEqual(q.shownButInactive.map((p) => p.name), ["Old Timer"]);
   assert.deepEqual(q.shownNotInFile.map((p) => p.name), ["Temp Person"]);
-  assert.equal(q.pending, null, "an up-to-date app has nothing pending");
+  assert.match(q.pending ?? "", /1 leaver hidden/, "the shown leaver is the next pass's only change");
   assert.equal(q.fileRows, 4);
   // The agreeing cells: Pat Boss (shown, active) and Gone Guy (hidden, inactive).
   assert.equal(q.shownAndActive, 1);
@@ -172,6 +172,29 @@ test("position code: optional column, mirrored when present, blank clears, absen
 
   // A column present but blank top to bottom is a broken export.
   assert.throws(() => parseRosterGrid([header, ["100042", "Pat", "Boss", "President", "", "Yes", ""], ["100001", "Jane", "Doe", "Engineer", "100042", "Yes", ""]]), /Every Position Code/);
+});
+
+test("plan: a shown person marked No is hidden; a hidden person marked Yes is not brought back", () => {
+  const boss = app({ id: 1, name: "Pat Boss", paylocityId: "100042", positionTitle: "President" });
+  const leaver = app({ id: 2, name: "Old Timer", paylocityId: "100002", positionTitle: "Builder", supervisorId: 1 });
+  const keptOff = app({ id: 3, name: "Back Office", paylocityId: "100003", positionTitle: "Clerk", supervisorId: 1, active: false });
+  const file = parseRosterGrid(
+    grid(BOSS, ["100002", "Old", "Timer", "Builder", "", "100042", "No"], ["100003", "Back", "Office", "Clerk", "", "100042", "Yes"]),
+  );
+  const plan = planRosterSync(file, [boss, leaver, keptOff]);
+  assert.deepEqual(plan.hide, [{ paylocityId: "100002", name: "Old Timer" }]);
+  assert.equal(plan.hideHeld, false);
+  assert.equal(isEmptyPlan(plan), false);
+});
+
+test("plan: hiding more than half the shown roster is held as a broken export", () => {
+  const boss = app({ id: 9, name: "Pat Boss", paylocityId: "100042", positionTitle: "President" });
+  const people = [0, 1, 2].map((i) => app({ id: i + 1, name: `P ${i}`, paylocityId: `10000${i}`, positionTitle: "Builder", supervisorId: 9 }));
+  const file = parseRosterGrid(grid(BOSS, ...people.map((p, i) => [p.paylocityId!, "P", `${i}`, "Builder", "", "100042", "No"])));
+  const plan = planRosterSync(file, [boss, ...people]);
+  assert.equal(plan.hide.length, 3);
+  assert.equal(plan.hideHeld, true, "3 of 4 shown");
+  assert.ok(isEmptyPlan(plan), "a held hide is not a change to apply");
 });
 
 test("plan: a second pass over the same file changes nothing", () => {

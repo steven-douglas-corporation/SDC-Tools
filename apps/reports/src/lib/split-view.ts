@@ -155,7 +155,6 @@ export const SPLIT_ROUTES: readonly {
   { path: "/job-cost-explorer", label: "Profitability", params: ["asOf"], instanceParam: "asOf" },
   { path: "/cash-flow", label: "Cash Flow", params: ["as", "compare"], instanceParam: "as" },
   { path: "/employees", label: "Employees", params: [] },
-  { path: "/org-chart", label: "Org Chart", params: [] },
   { path: "/audit-log", label: "Audit Log", params: [] },
   // The route most worth splitting: the queue on one side, the disputed report
   // on the other, at the submitter's own job and month. `params` is transcribed

@@ -22,8 +22,6 @@ export const ROUTE_PERMISSIONS: readonly { path: string; permission: Permission 
   { path: "/etc", permission: "monthly-etc:view" },
   { path: "/hours", permission: "hours:view" },
   { path: "/employees", permission: "employees:view" },
-  // The Org Chart (2026-10-02) shows the same roster, so the same audience.
-  { path: "/org-chart", permission: "employees:view" },
   { path: "/audit-log", permission: "audit-log:view" },
   { path: "/job-cost-explorer", permission: "profitability:view" },
   // Added 2026-09-01 with the cash-flow:view permission. Until then this route

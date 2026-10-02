@@ -21,8 +21,9 @@ import { codeKey, mergePositionFamilies, LEADERSHIP_FAMILY, type PositionFamilyR
 //   4. Branch head with no family: the person's own family decides. Neither
 //      has one: no proposal, and the team is left as it is.
 //
-// Nothing here writes. The Org Chart page shows these proposals and what would
-// change; the roster sync applies them once that is switched on.
+// Nothing here writes. The hourly roster sync (paylocity-roster-sync.ts)
+// applies planTeamWrites() on every pass, after supervisors are up to date, so
+// Paylocity's reporting line wins over a team set any other way.
 
 /** Family → team code (Employee.team's vocabulary; see lib/disciplines.ts). */
 export const FAMILY_TEAM: Readonly<Record<string, string>> = {
@@ -114,6 +115,22 @@ export function resolveTeams(people: TeamPerson[], rows: PositionFamilyRow[]): M
     });
   }
   return out;
+}
+
+/**
+ * What the roster sync writes each pass: every person — hidden ones too, so a
+ * new hire is already on the right team when someone chooses Show — whose
+ * proposal differs from the stored team. Leadership and "no proposal" are
+ * never written.
+ */
+export function planTeamWrites(people: TeamPerson[], rows: PositionFamilyRow[]): { id: number; name: string; from: string | null; to: string }[] {
+  const res = resolveTeams(people, rows);
+  return people
+    .flatMap((p) => {
+      const r = res.get(p.id);
+      return r && !r.leader && r.proposedTeam && r.proposedTeam !== p.team ? [{ id: p.id, name: p.name, from: p.team, to: r.proposedTeam }] : [];
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export type TeamChange = { id: number; name: string; from: string | null; to: string; reason: string };
