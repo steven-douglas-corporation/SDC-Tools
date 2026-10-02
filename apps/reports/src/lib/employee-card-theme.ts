@@ -41,10 +41,25 @@ const CARD_COLORS: Record<string, CardColors> = {
   hr: { bg: "#a5f3fc", text: "#164e63" },
 };
 
+/**
+ * The view-transition name a department card carries in BOTH Employees views
+ * (2026-10-02), by its Cards-view key: the browser then animates each card from
+ * its Org chart position to its Cards position and back. Keys can be raw
+ * department strings, so anything outside [a-z0-9] becomes a dash.
+ */
+export function cardTransitionName(cardKey: string): string {
+  return `emp-card-${cardKey.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
+
+/** The Cards-view key of a team code's card (Scheduler's "ops" is the Operations card). */
+export function cardKeyForTeam(team: string): string {
+  return team === "ops" ? "operations" : team;
+}
+
 /** A team code's card colours (Employee.team vocabulary; Scheduler's "ops" is the Operations card). */
 export function teamColors(team: string | null): CardColors {
   if (!team) return OTHER_COLORS;
-  return CARD_COLORS[team === "ops" ? "operations" : team] ?? OTHER_COLORS;
+  return CARD_COLORS[cardKeyForTeam(team)] ?? OTHER_COLORS;
 }
 
 // Anything not in the map above — a genuinely unknown department, or the

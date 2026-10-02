@@ -1218,6 +1218,43 @@ table[data-grid] textarea:disabled {
   animation: motion-skeleton 1.4s var(--ease-in-out) infinite;
 }
 
+/* ── Employees: Org chart ⇄ Cards (2026-10-02) ──────────────────────────── */
+/* The one view transition in the app (EmployeesGrid's switchView): each
+ * department card carries the same view-transition-name in both views, and the
+ * browser moves it from one layout to the other. Twice a panel's duration,
+ * because a card here travels across the page rather than opening in place —
+ * at one --motion-panel the move is over before the eye can follow it. Reduced
+ * motion never starts the transition (switchView checks), so nothing here needs
+ * the block below. */
+::view-transition-group(*) {
+  animation-duration: calc(var(--motion-panel) * 2);
+  animation-timing-function: var(--ease-in-out);
+}
+/* A card's contents differ between the views (a nested tree, a flat list), so
+ * the browser's default cross-fade shows both at once mid-move and the names
+ * ghost over each other. Instead the old contents leave in the first half and
+ * the new arrive in the second, while the card itself keeps moving. */
+@keyframes view-swap-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes view-swap-in {
+  0%,
+  45% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+::view-transition-old(*) {
+  animation: view-swap-out var(--motion-panel) var(--ease-out) both;
+}
+::view-transition-new(*) {
+  animation: view-swap-in calc(var(--motion-panel) * 2) var(--ease-out) both;
+}
+
 /* ── Reduced motion (§36.16) ─────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   /* Collapse everything rather than removing it: an animation with a 0.01ms
