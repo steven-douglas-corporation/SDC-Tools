@@ -1,7 +1,7 @@
 import { card } from "@/components/ui/classnames";
 import { SectionTitle } from "@/components/ui/Typography";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { teamColors, cardTransitionName, cardKeyForTeam } from "@/lib/employee-card-theme";
+import { teamColors } from "@/lib/employee-card-theme";
 import type { OrgChart as OrgChartData, OrgNode } from "@/lib/org-chart";
 
 // The Org Chart page (2026-10-02): the "SDC Team Branches" chart drawn from live
@@ -75,25 +75,10 @@ function Tree({ nodes, roots, onSelect }: { nodes: OrgNode[]; roots?: boolean; o
   );
 }
 
-function TeamCard({
-  team,
-  title,
-  count,
-  children,
-  className = "",
-  transitionName,
-}: {
-  team: string | null;
-  title: string;
-  count: number;
-  children: React.ReactNode;
-  className?: string;
-  /** Matches the same card in the Cards view, so switching views animates it into place. */
-  transitionName?: string;
-}) {
+function TeamCard({ team, title, count, children, className = "" }: { team: string | null; title: string; count: number; children: React.ReactNode; className?: string }) {
   const c = teamColors(team);
   return (
-    <article className={`rounded-xl border border-sdc-border bg-white shadow-sm ${className}`} style={transitionName ? { viewTransitionName: transitionName } : undefined}>
+    <article className={`rounded-xl border border-sdc-border bg-white shadow-sm ${className}`}>
       <div className="flex items-baseline justify-between gap-2 rounded-t-xl px-3 py-2" style={{ background: c.bg, color: c.text }}>
         <h3 className="font-heading text-sm font-bold">{title}</h3>
         <span className="font-mono text-xs tabular-nums">{count}</span>
@@ -113,20 +98,10 @@ export function OrgChart({ chart, onSelectPerson }: { chart: OrgChartData; onSel
       />
     );
   }
-  // A transition name has to be unique on the page, so a team drawn under two
-  // leaders animates from its first card only.
-  const named = new Set<string>(["exec"]);
-  const nameFor = (team: string | null) => {
-    if (!team) return undefined;
-    const key = cardKeyForTeam(team);
-    if (named.has(key)) return undefined;
-    named.add(key);
-    return cardTransitionName(key);
-  };
   return (
     <div className="grid gap-5">
       <section className="flex justify-center" aria-label="Executive Leadership">
-        <TeamCard team="exec" title="Executive Leadership" count={chart.leaderCount} className="w-full max-w-sm" transitionName={cardTransitionName("exec")}>
+        <TeamCard team="exec" title="Executive Leadership" count={chart.leaderCount} className="w-full max-w-sm">
           <Tree nodes={chart.leaders} roots onSelect={onSelectPerson} />
         </TeamCard>
       </section>
@@ -152,7 +127,7 @@ export function OrgChart({ chart, onSelectPerson }: { chart: OrgChartData; onSel
             {/* A grid, not a wrapping row: a card that wraps keeps its width instead of stretching across the box. */}
             <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))]">
               {b.cards.map((c) => (
-                <TeamCard key={c.team ?? "none"} team={c.team} title={c.name} count={c.people} transitionName={nameFor(c.team)}>
+                <TeamCard key={c.team ?? "none"} team={c.team} title={c.name} count={c.people}>
                   <Tree nodes={c.heads} roots onSelect={onSelectPerson} />
                 </TeamCard>
               ))}
