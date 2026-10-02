@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { flushSync } from "react-dom";
 import { CARD_RENDER_ORDER } from "@/components/WorkforceSummaryCards";
 import { buildDepartmentCards, alwaysShowKeysForGroup } from "@/lib/employee-department-cards";
 import { EmployeesCards } from "@/components/EmployeesCards";
@@ -188,21 +187,7 @@ export function EmployeesGrid({
   // (departments). The filters below narrow the cards only; the chart is
   // always the whole organisation.
   const [view, setView] = useState<"cards" | "chart">("chart");
-  // Switching views animates each department card from where it sits in one
-  // view to where it sits in the other (2026-10-02): both views give the same
-  // card the same view-transition name (cardTransitionName), and the browser
-  // morphs it. flushSync so the new view is in the DOM before the browser takes
-  // its "after" snapshot. No View Transitions support, or reduced motion: an
-  // instant switch, as before.
-  function switchView(next: "cards" | "chart") {
-    if (next === view) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce || typeof document.startViewTransition !== "function") {
-      setView(next);
-      return;
-    }
-    document.startViewTransition(() => flushSync(() => setView(next)));
-  }
+  const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const [q, setQ] = useState("");
   // Entire Team vs Execution Team (2026-08-24). Deliberately ONE piece of state
   // feeding the two existing choke points below (`scopedToTeam` for people,
@@ -458,7 +443,7 @@ export function EmployeesGrid({
               type="button"
               role="radio"
               aria-checked={view === v}
-              onClick={() => switchView(v)}
+              onClick={() => setView(v)}
               title={v === "chart" ? "Everyone nested by who they report to" : "People by department card"}
               className={`rounded-md px-3 py-1.5 text-xs font-semibold motion-interactive ${
                 view === v ? "bg-sdc-navy text-white" : "text-sdc-gray-600 hover:bg-sdc-blue-light"
@@ -552,14 +537,17 @@ export function EmployeesGrid({
 
       {view === "chart" ? (
         <div className="grid gap-6">
-          {orgChart.pending.length > 0 && <PendingTeamChanges pending={orgChart.pending} />}
-          <OrgChart
-            chart={orgChart}
-            onSelectPerson={(id) => {
-              const r = rows.find((x) => x.id === id);
-              if (r) selectEmployee(r);
-            }}
+          {/* The same headcount strip and group tiles as Cards, for the whole
+              organisation — the chart is not narrowed by the filters. */}
+          <WorkforceSummaryCards
+            rows={rows}
+            placeholders={placeholders}
+            hiringPositions={openHiring}
+            year={year}
+            onSelectCapacity={setCapacityDrill}
           />
+          {orgChart.pending.length > 0 && <PendingTeamChanges pending={orgChart.pending} />}
+          <OrgChart chart={orgChart} people={rowsById} onSelectPerson={selectEmployee} />
         </div>
       ) : (
         <>

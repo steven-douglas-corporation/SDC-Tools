@@ -40,7 +40,7 @@ export type OrgChart = {
   leaderCount: number;
   bands: OrgBand[];
   /** Shown, not Leadership, with no leader above and no team from the rule. */
-  unplaced: { name: string; title: string | null; detail: string }[];
+  unplaced: { id: number; name: string; title: string | null; detail: string }[];
   pending: (TeamChange & { fromName: string | null; toName: string })[];
 };
 
@@ -167,6 +167,7 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
     .filter((e) => !drawn.has(e.id))
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((e) => ({
+      id: e.id,
       name: e.name,
       title: e.positionTitle?.trim() || null,
       detail: !inPaylocity(e.paylocityId) ? "Not in Paylocity — set a supervisor on the Employees page" : e.supervisorId == null ? "No supervisor in Paylocity" : "No Leadership above them",
