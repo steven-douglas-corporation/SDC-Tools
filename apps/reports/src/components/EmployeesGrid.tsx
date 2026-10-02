@@ -26,6 +26,7 @@ import {
   type WorkforceGroupKey,
 } from "@/lib/employee-workforce-groups";
 import { countOpenings } from "@/lib/hiring-openings";
+import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
 import type { HiringPosition } from "@/lib/hiring-positions";
 import { MenuBulkActions, MenuCheckbox } from "@/components/MenuStatus";
@@ -587,20 +588,22 @@ export function EmployeesGrid({
       {/* Hiring Positions last, after Execution and Operations (2026-08-24).
           Full width, and hidden entirely when nothing is open — the same rule the
           old aside followed. */}
-      <HiringPositionsSummary
+      {HIRING_POSITIONS_ENABLED && (
+        <HiringPositionsSummary
           hiringPositions={openHiring}
           year={year}
           onSelectHiring={openHiringView}
           onSelectCapacity={setCapacityDrill}
-        expanded={showHiring}
-      />
+          expanded={showHiring}
+        />
+      )}
 
       {/* The list opens BELOW the summary that toggles it, and the workforce
           bands stay on screen (2026-08-24). It used to replace them and render
           at the top — which was fine while the summary card was up there too,
           and disorienting once the summary moved to the bottom: you clicked at
           the foot of the page and the content you were looking at vanished. */}
-      {showHiring && (
+      {HIRING_POSITIONS_ENABLED && showHiring && (
         <div className="mt-4">
           <GroupHeader title="Hiring Positions" activeCount={0} hiringCount={countOpenings(openHiring)} departmentCount={0} onCollapse={collapse} />
           <HiringPositionsList
@@ -629,7 +632,7 @@ export function EmployeesGrid({
         />
       )}
 
-      {selectedHiringPosition && (
+      {HIRING_POSITIONS_ENABLED && selectedHiringPosition && (
         <HiringPositionDetailDrawer
           position={selectedHiringPosition}
           canAssign={canAssignHiring}
@@ -639,7 +642,7 @@ export function EmployeesGrid({
         />
       )}
 
-      {creatingHiringPosition && (
+      {HIRING_POSITIONS_ENABLED && creatingHiringPosition && (
         <CreateHiringPositionDrawer onClose={() => setCreatingHiringPosition(false)} onCreated={applyHiringCreate} />
       )}
 

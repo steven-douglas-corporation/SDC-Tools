@@ -11,6 +11,7 @@ import { normalizeName } from "@/lib/sync-scheduler-team";
 import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";
 import { getHiringPositions, redactHiddenPositions } from "@/lib/hiring-positions";
+import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
 
 // Team groupings, matching the SDC Scheduler app's team_members.discipline
 // categories. Now a sortable AG Grid column (Community can't do row grouping).
@@ -37,7 +38,8 @@ export async function EmployeesView() {
     fetchEmployeeTeams(),
     fetchSchedulerOverlay(),
     fetchSchedulerPlaceholders(),
-    getHiringPositions(),
+    // Decommissioned for now (lib/hiring-feature.ts): no workbook read, no positions.
+    HIRING_POSITIONS_ENABLED ? getHiringPositions() : Promise.resolve({ positions: [], error: null }),
   ]);
 
   // id → name across the WHOLE roster, so a supervisor who has since been
