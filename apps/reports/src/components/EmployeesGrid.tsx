@@ -183,9 +183,10 @@ export function EmployeesGrid({
   /** The Org chart view (2026-10-02): the same people, nested by reporting line — see lib/org-chart.ts. */
   orgChart: OrgChartData;
 }) {
-  // Cards (departments) or Org chart (reporting lines). The filters below
-  // narrow the cards only; the chart is always the whole organisation.
-  const [view, setView] = useState<"cards" | "chart">("cards");
+  // Org chart (reporting lines, the default since 2026-10-02) or Cards
+  // (departments). The filters below narrow the cards only; the chart is
+  // always the whole organisation.
+  const [view, setView] = useState<"cards" | "chart">("chart");
   const [q, setQ] = useState("");
   // Entire Team vs Execution Team (2026-08-24). Deliberately ONE piece of state
   // feeding the two existing choke points below (`scopedToTeam` for people,
@@ -435,7 +436,7 @@ export function EmployeesGrid({
     <>
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <div role="radiogroup" aria-label="View" className="flex items-center rounded-lg border border-sdc-border bg-white p-0.5">
-          {([["cards", "Cards"], ["chart", "Org chart"]] as const).map(([v, label]) => (
+          {([["chart", "Org chart"], ["cards", "Cards"]] as const).map(([v, label]) => (
             <button
               key={v}
               type="button"

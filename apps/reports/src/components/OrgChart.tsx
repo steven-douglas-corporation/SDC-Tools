@@ -99,48 +99,59 @@ export function OrgChart({ chart, onSelectPerson }: { chart: OrgChartData; onSel
     );
   }
   return (
-    <div className="grid gap-8">
+    <div className="grid gap-5">
       <section className="flex justify-center" aria-label="Executive Leadership">
         <TeamCard team="exec" title="Executive Leadership" count={chart.leaderCount} className="w-full max-w-sm">
           <Tree nodes={chart.leaders} roots onSelect={onSelectPerson} />
         </TeamCard>
       </section>
 
-      {chart.bands.map((b) => (
-        <section key={b.leader.id} className="grid gap-3">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b-2 border-sdc-navy pb-1.5">
-            <SectionTitle>Reporting to {b.leader.name}</SectionTitle>
-            <span className="text-sm text-sdc-gray-600 tabular-nums">
-              {b.leader.title ? `${b.leader.title} · ` : ""}
-              {b.people} {b.people === 1 ? "person" : "people"}
-            </span>
-          </div>
-          <div className="grid items-start gap-3.5 [grid-template-columns:repeat(auto-fill,minmax(270px,1fr))]">
-            {b.cards.map((c) => (
-              <TeamCard key={c.team ?? "none"} team={c.team} title={c.name} count={c.people}>
-                <Tree nodes={c.heads} roots onSelect={onSelectPerson} />
-              </TeamCard>
-            ))}
-          </div>
-        </section>
-      ))}
+      {/* One box per leader, wrapping side by side (2026-10-02): a box asks for
+          about one card-width per team card it holds, so Finance's single card
+          sits beside a wide Operations box instead of each taking a full row. */}
+      <div className="flex flex-wrap items-start gap-4">
+        {chart.bands.map((b) => (
+          <section
+            key={b.leader.id}
+            aria-label={`Reporting to ${b.leader.name}`}
+            className="min-w-0 max-w-full flex-1 rounded-xl border border-sdc-border bg-sdc-gray-50 p-3"
+            style={{ flexBasis: `${Math.min(b.cards.length, 6) * 17}rem` }}
+          >
+            <div className="mb-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-0.5">
+              <SectionTitle>Reporting to {b.leader.name}</SectionTitle>
+              <span className="text-xs text-sdc-gray-600 tabular-nums">
+                {b.leader.title ? `${b.leader.title} · ` : ""}
+                {b.people} {b.people === 1 ? "person" : "people"}
+              </span>
+            </div>
+            {/* A grid, not a wrapping row: a card that wraps keeps its width instead of stretching across the box. */}
+            <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))]">
+              {b.cards.map((c) => (
+                <TeamCard key={c.team ?? "none"} team={c.team} title={c.name} count={c.people}>
+                  <Tree nodes={c.heads} roots onSelect={onSelectPerson} />
+                </TeamCard>
+              ))}
+            </div>
+          </section>
+        ))}
 
-      {chart.unplaced.length > 0 && (
-        <section className="grid gap-3">
-          <div className="flex flex-wrap items-baseline gap-x-3 border-b-2 border-sdc-navy pb-1.5">
-            <SectionTitle>Not placed</SectionTitle>
-            <span className="text-sm text-sdc-gray-600">no Leadership above them — their team is left as it is</span>
-          </div>
-          <div className={`${card("p-0")} max-w-xl divide-y divide-sdc-border-soft`}>
-            {chart.unplaced.map((u) => (
-              <div key={u.name} className="grid gap-px px-3 py-2">
-                <span className="text-sm font-medium text-sdc-navy">{u.name}</span>
-                <span className="text-xs text-sdc-gray-600">{[u.title, u.detail].filter(Boolean).join(" · ")}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+        {chart.unplaced.length > 0 && (
+          <section aria-label="Not placed" className="min-w-0 max-w-full flex-1 basis-[17rem] rounded-xl border border-dashed border-sdc-border p-3">
+            <div className="mb-2.5 grid gap-0.5 px-0.5">
+              <SectionTitle>Not placed</SectionTitle>
+              <span className="text-xs text-sdc-gray-600">No Leadership above them — their team is left as it is</span>
+            </div>
+            <div className={`${card("p-0")} divide-y divide-sdc-border-soft`}>
+              {chart.unplaced.map((u) => (
+                <div key={u.name} className="grid gap-px px-3 py-2">
+                  <span className="text-sm font-medium text-sdc-navy">{u.name}</span>
+                  <span className="text-xs text-sdc-gray-600">{[u.title, u.detail].filter(Boolean).join(" · ")}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   );
 }
