@@ -154,6 +154,19 @@ const GROUPS: NavGroup[] = [
           </Icon>
         ),
       },
+      {
+        href: "/org-chart",
+        label: "Org Chart",
+        isActive: (p) => p === "/org-chart",
+        icon: (
+          <Icon>
+            <rect x="5.5" y="1.5" width="5" height="3.5" rx="0.8" />
+            <rect x="1.5" y="11" width="5" height="3.5" rx="0.8" />
+            <rect x="9.5" y="11" width="5" height="3.5" rx="0.8" />
+            <path d="M8 5 V8 M4 11 V8 H12 V11" strokeLinecap="round" strokeLinejoin="round" />
+          </Icon>
+        ),
+      },
     ],
   },
   {

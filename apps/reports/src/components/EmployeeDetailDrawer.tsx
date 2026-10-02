@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { BuildReadinessDrawer } from "@/components/build-readiness/BuildReadinessDrawer";
-import { DASH, type EmployeeRow } from "@/lib/employee-row";
+import { DASH, isPaylocityId, type EmployeeRow } from "@/lib/employee-row";
 import { workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
-import { setEmployeeActive } from "@/lib/employee-actions";
+import { setEmployeeActive, setEmployeeSupervisor } from "@/lib/employee-actions";
 
 // Level 3 of the Employees tab (2026-08-19, by request) — net new; there was
 // no per-employee detail view before this. Reuses the same generic drawer
@@ -37,11 +37,68 @@ function Field({ label, value, note }: { label: string; value: string; note?: st
 // drawer says where to change them rather than offering an edit.
 const FROM_PAYLOCITY = "From Paylocity — change it there";
 
+// For someone not in Paylocity (2026-10-02) no sync owns the supervisor, and the
+// Org Chart places people by who they report to, so it is picked here instead.
+function SupervisorPicker({
+  employeeId,
+  current,
+  options,
+}: {
+  employeeId: number;
+  current: number | null;
+  options: { id: number; name: string }[];
+}) {
+  const [value, setValue] = useState<number | null>(current);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function change(next: number | null) {
+    const before = value;
+    setValue(next);
+    setError(null);
+    startTransition(async () => {
+      try {
+        await setEmployeeSupervisor(employeeId, next);
+      } catch (err) {
+        setValue(before);
+        setError(err instanceof Error ? err.message : "Could not save.");
+      }
+    });
+  }
+
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-sdc-border-soft px-4 py-2.5">
+      <label htmlFor={`supervisor-${employeeId}`} className="text-xs font-semibold uppercase tracking-wide text-sdc-muted">
+        Supervisor
+      </label>
+      <span className="flex min-w-0 flex-col items-end gap-0.5">
+        <select
+          id={`supervisor-${employeeId}`}
+          value={value ?? ""}
+          disabled={pending}
+          onChange={(e) => change(e.target.value ? Number(e.target.value) : null)}
+          className="max-w-[14rem] rounded-md border border-sdc-border bg-white px-2 py-1 text-sm text-sdc-navy disabled:opacity-50"
+        >
+          <option value="">No supervisor</option>
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+        <span className="text-label text-sdc-muted">{pending ? "Saving…" : "Not in Paylocity — set here"}</span>
+        {error && <span className="text-label text-red-700">{error}</span>}
+      </span>
+    </div>
+  );
+}
+
 export function EmployeeDetailDrawer({
   employee,
   departmentTitle,
   workforceGroup,
   canEdit,
+  supervisorOptions = [],
   onClose,
 }: {
   employee: EmployeeRow;
@@ -50,6 +107,8 @@ export function EmployeeDetailDrawer({
   workforceGroup: WorkforceGroupKey;
   /** employees:edit — the same permission setEmployeeActive enforces server-side. */
   canEdit: boolean;
+  /** Shown people to pick a supervisor from — used only for someone not in Paylocity. */
+  supervisorOptions?: { id: number; name: string }[];
   onClose: () => void;
 }) {
   // Local, because `employee` is the snapshot taken when the drawer opened; the
@@ -86,7 +145,15 @@ export function EmployeeDetailDrawer({
         <Field label="Department" value={departmentTitle} />
         <Field label="Title" value={employee.positionTitle} note={employee.paylocityId ? FROM_PAYLOCITY : undefined} />
         <Field label="Discipline" value={employee.discipline} />
-        <Field label="Supervisor" value={employee.supervisor} note={employee.paylocityId ? FROM_PAYLOCITY : undefined} />
+        {canEdit && !isPaylocityId(employee.paylocityId) ? (
+          <SupervisorPicker
+            employeeId={employee.id}
+            current={employee.supervisorId ?? null}
+            options={supervisorOptions.filter((o) => o.id !== employee.id)}
+          />
+        ) : (
+          <Field label="Supervisor" value={employee.supervisor} note={isPaylocityId(employee.paylocityId) ? FROM_PAYLOCITY : undefined} />
+        )}
         <Field label="Level / Specialty" value={employee.specialty ?? DASH} />
         <Field label="Status" value={active ? "Shown" : "Hidden"} />
         {employee.isLead && <Field label="Department Lead" value="Yes" />}

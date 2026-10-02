@@ -52,6 +52,7 @@ export async function EmployeesView() {
       discipline: DISCIPLINES.includes(e.discipline ?? "") ? (e.discipline as string) : DASH,
       positionTitle: e.positionTitle?.trim() || DASH,
       supervisor: e.supervisorId != null ? (nameById.get(e.supervisorId) ?? DASH) : DASH,
+      supervisorId: e.supervisorId,
       department: e.department ?? "",
       team: teamById.get(e.id) ?? null,
       active: e.active,

@@ -621,6 +621,10 @@ export function EmployeesGrid({
           departmentTitle={selectedEmployeeGroup?.title ?? selectedEmployee.department?.trim() ?? DASH}
           workforceGroup={workforceGroupForCardKey(selectedEmployeeGroup?.key ?? "")}
           canEdit={canAddEmployees}
+          supervisorOptions={rows
+            .filter((r) => r.active)
+            .map((r) => ({ id: r.id, name: r.name }))
+            .sort((a, b) => a.name.localeCompare(b.name))}
           onClose={() => setSelectedEmployee(null)}
         />
       )}

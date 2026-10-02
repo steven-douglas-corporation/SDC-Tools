@@ -9,6 +9,7 @@ import type { SupervisorImportResult } from "@/lib/import-employee-supervisors";
 import { assertActionPermission } from "@/lib/require-permission";
 import { DISCIPLINE_LABEL } from "@/lib/disciplines";
 import { pushTeamMemberToScheduler } from "@/lib/scheduler-push";
+import { isPaylocityId } from "@/lib/employee-row";
 
 // Employees are NEVER hard-deleted — departed people keep their historical
 // hours (Dan's requirement). Deactivate/reactivate only.
@@ -96,6 +97,64 @@ export async function updateEmployee(id: number, formData: FormData) {
     { action: "employee.update" },
   );
   revalidatePath("/employees");
+}
+
+// Supervisor for someone NOT in Paylocity (2026-10-02). For everyone in
+// Paylocity's roster the hourly sync owns the supervisor and this refuses; for
+// temps and hand-entered people (TEMP1, P6 — see isPaylocityId) no sync does, and
+// the Org Chart places people by who they report to, so it has to be settable.
+export async function setEmployeeSupervisor(id: number, supervisorId: number | null): Promise<void> {
+  await assertActionPermission("employees:edit");
+  const employee = await prisma.employee.findUnique({ where: { id }, select: { id: true, name: true, paylocityId: true, supervisorId: true } });
+  if (!employee) throw new Error("That person no longer exists.");
+  if (isPaylocityId(employee.paylocityId)) {
+    throw new Error(`${employee.name}'s supervisor comes from Paylocity every hour — change it there.`);
+  }
+  if (supervisorId === employee.supervisorId) return;
+
+  let supervisorName: string | null = null;
+  if (supervisorId != null) {
+    if (supervisorId === id) throw new Error("Someone can't be their own supervisor.");
+    const everyone = await prisma.employee.findMany({ select: { id: true, name: true, supervisorId: true } });
+    const byId = new Map(everyone.map((e) => [e.id, e]));
+    const sup = byId.get(supervisorId);
+    if (!sup) throw new Error("That supervisor no longer exists.");
+    // Refuse a loop: walking up from the new supervisor must not reach this person.
+    for (let cur = sup, steps = 0; cur.supervisorId != null && steps < everyone.length; steps++) {
+      if (cur.supervisorId === id) throw new Error(`${sup.name} already reports up to ${employee.name}, so that would make a loop.`);
+      const next = byId.get(cur.supervisorId);
+      if (!next) break;
+      cur = next;
+    }
+    supervisorName = sup.name;
+  }
+  const previousName = employee.supervisorId != null
+    ? ((await prisma.employee.findUnique({ where: { id: employee.supervisorId }, select: { name: true } }))?.name ?? null)
+    : null;
+
+  await prisma.employee.update({ where: { id }, data: { supervisorId } });
+  await logAudit({
+    action: "employee.setSupervisor",
+    entityType: "Employee",
+    entityId: id,
+    summary: `Supervisor of ${employee.name} set to ${supervisorName ?? "(none)"}`,
+    metadata: { before: employee.supervisorId, after: supervisorId },
+  });
+  await recordChanges(
+    [{
+      tab: "Employees",
+      rowRef: employee.name,
+      columnName: "Supervisor",
+      previousValue: previousName,
+      newValue: supervisorName,
+      changeType: classifyChange(previousName, supervisorName),
+      entityType: "Employee",
+      entityId: id,
+    }],
+    { action: "employee.setSupervisor" },
+  );
+  revalidatePath("/employees");
+  revalidatePath("/org-chart");
 }
 
 // The editable employee fields, as a human reads them. Also the allow-list for what

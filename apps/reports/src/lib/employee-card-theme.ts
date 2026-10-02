@@ -36,7 +36,16 @@ const CARD_COLORS: Record<string, CardColors> = {
   // is the established color for this department, named explicitly now that it
   // is a card rather than falling through to the neutral default.
   operations: { bg: "#e2e8f0", text: "#1e293b" },
+  // Human Resources (2026-10-02), the team of position family 103. Cyan, apart
+  // from every other back-office tone. Only the Org Chart draws it so far.
+  hr: { bg: "#a5f3fc", text: "#164e63" },
 };
+
+/** A team code's card colours (Employee.team vocabulary; Scheduler's "ops" is the Operations card). */
+export function teamColors(team: string | null): CardColors {
+  if (!team) return OTHER_COLORS;
+  return CARD_COLORS[team === "ops" ? "operations" : team] ?? OTHER_COLORS;
+}
 
 // Anything not in the map above — a genuinely unknown department, or the
 // no-department bucket — gets this neutral tone rather than an arbitrary
