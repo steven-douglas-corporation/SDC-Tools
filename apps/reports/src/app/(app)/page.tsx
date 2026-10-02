@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getDataQuality, getPunchExplorer } from "@/lib/data-quality";
 import { getRosterQuality } from "@/lib/paylocity-roster-sync";
+import { getPositionFamilyQuality } from "@/lib/position-families-sync";
 import { DashboardTabs } from "@/components/DashboardTabs";
 import { DataQualityPanel } from "@/components/DataQualityPanel";
 import { recentRefreshRuns, currentRefresh } from "@/lib/refresh-service";
@@ -65,7 +66,7 @@ export async function DashboardView({ params }: { params: {
   // client state alone.
   const onQualityTab = sp.tab === "quality";
 
-  const [overview, dataQuality, explorer, roster, freshnessRows, refreshRuns, liveRefresh] = await Promise.all([
+  const [overview, dataQuality, explorer, roster, families, freshnessRows, refreshRuns, liveRefresh] = await Promise.all([
     getDashboardOverview(month),
     // The Power BI report's Data Quality page, rebuilt locally — see
     // lib/data-quality.ts for where each rule comes from.
@@ -76,6 +77,8 @@ export async function DashboardView({ params }: { params: {
     // The Paylocity roster section reads the roster file live — same reason as the
     // explorer for running only on the Data Quality tab.
     onQualityTab ? getRosterQuality() : null,
+    // Position families: the table the hourly sync builds, read only on that tab too.
+    onQualityTab ? getPositionFamilyQuality() : null,
     prisma.powerBiFreshness.findMany(),
     // The last few passes (§25.11). ONE would answer "who refreshed and when",
     // which is all the old card asked; the health panel also draws each source's
@@ -124,7 +127,7 @@ export async function DashboardView({ params }: { params: {
 
       <DashboardTabs
         issueCount={dataQuality.future.count + dataQuality.afterCompletion.count + dataQuality.undefinedEmployees.count}
-        dataQuality={<DataQualityPanel dq={dataQuality} explorer={explorer} roster={roster} />}
+        dataQuality={<DataQualityPanel dq={dataQuality} explorer={explorer} roster={roster} families={families} />}
         overview={
           // Four labelled bands, not five equal blocks in a stack. The KPI
           // strip and the first two bands live inside DashboardOverviewPanel;

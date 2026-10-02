@@ -123,6 +123,11 @@ model Employee {
   // supplies department/supervisor. No other upstream (Paylocity/Scheduler)
   // carries a title today, so this is that sheet's own field alone.
   positionTitle String?
+  // Paylocity's Position Code (e.g. "MB01", "ME SR"), mirrored by the hourly
+  // roster sync from the file's Position Code column. Its family is looked up
+  // in PositionFamily below at read time, not copied here, so an edit to the
+  // overrides file takes effect without re-touching people.
+  positionCode  String?
   billingGroup  String? // e.g. Engineering / Shop
   // Team grouping, matching the SDC Scheduler app's team_members.discipline
   // categories: "Project Management" | "Mechanical Engineers" | "Controls
@@ -153,6 +158,29 @@ model Employee {
   user          User?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+}
+
+// Which family each Paylocity Position Code belongs to (2026-10-02), mirrored
+// every hourly pass from two files of the same layout: Paylocity's
+// Position_Families report, and our Position_Families_Overrides file. An
+// override row replaces Paylocity's rows for its position code, so it can both
+// fill a code Paylocity's report lacks and correct one it files wrongly. Delete
+// the override once Paylocity has it right. See lib/position-families-sync.ts.
+//
+// A code may sit in several families (SCE is in 106, 301 and 500), hence one
+// row per (code, family, source). The whole table is replaced on each pass.
+model PositionFamily {
+  id           Int      @id @default(autoincrement())
+  positionCode String
+  familyCode   String
+  familyName   String
+  title        String?
+  headcount    Int?
+  source       String // "paylocity" | "override"
+  createdAt    DateTime @default(now())
+
+  @@unique([positionCode, familyCode, source])
+  @@index([positionCode])
 }
 
 // Source of jobs: manual entry for now (Phase 1).

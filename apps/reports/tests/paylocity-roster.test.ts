@@ -145,6 +145,35 @@ test("quality: lists where Paylocity and the app disagree about who is current",
   assert.equal(q.hiddenAndInactive, 1);
 });
 
+test("position code: optional column, mirrored when present, blank clears, absent leaves alone", () => {
+  const header = ["Employee Id", "First Name", "Last Name", "Job Title", "Supervisor's Employee ID", "Is Active", "Position Code"];
+  const rows = parseRosterGrid([
+    header,
+    ["100042", "Pat", "Boss", "President", "", "Yes", "PRES"],
+    ["100001", "Jane", "Doe", "Engineer", "100042", "Yes", "ME SR"],
+    ["100002", "Sam", "Lee", "Builder", "100042", "Yes", ""],
+    ["100003", "New", "Hire", "Builder", "100042", "Yes", "MB01"],
+  ]);
+  assert.deepEqual(rows.map((r) => r.positionCode), ["PRES", "ME SR", null, "MB01"]);
+  const boss = app({ id: 1, name: "Pat Boss", paylocityId: "100042", positionTitle: "President", positionCode: "PRES" });
+  const jane = app({ id: 2, name: "Jane Doe", paylocityId: "100001", positionTitle: "Engineer", supervisorId: 1, positionCode: "ME01" });
+  const sam = app({ id: 3, name: "Sam Lee", paylocityId: "100002", positionTitle: "Builder", supervisorId: 1, positionCode: "MB01" });
+  const plan = planRosterSync(rows, [boss, jane, sam]);
+  assert.deepEqual(plan.positionCodeChanges, [
+    { paylocityId: "100001", name: "Jane Doe", from: "ME01", to: "ME SR" },
+    { paylocityId: "100002", name: "Sam Lee", from: "MB01", to: null },
+  ]);
+  assert.equal(plan.create[0]?.positionCode, "MB01", "a new person is created with their code");
+
+  // An older export without the column: codes are left as they are.
+  const old = parseRosterGrid(grid(BOSS, ["100001", "Jane", "Doe", "Engineer", "", "100042", "Yes"]));
+  assert.equal(old[1].positionCode, undefined);
+  assert.equal(planRosterSync(old, [boss, jane]).positionCodeChanges.length, 0);
+
+  // A column present but blank top to bottom is a broken export.
+  assert.throws(() => parseRosterGrid([header, ["100042", "Pat", "Boss", "President", "", "Yes", ""], ["100001", "Jane", "Doe", "Engineer", "100042", "Yes", ""]]), /Every Position Code/);
+});
+
 test("plan: a second pass over the same file changes nothing", () => {
   const boss = app({ id: 1, name: "Pat Boss", paylocityId: "100042", positionTitle: "President" });
   const jane = app({ id: 3, name: "Jane Doe", paylocityId: "100001", positionTitle: "Engineer", supervisorId: 1, active: false });

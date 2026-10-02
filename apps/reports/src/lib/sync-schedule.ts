@@ -63,8 +63,13 @@ export const SYNC_SOURCES = [
   // and upserts are keyed per month so an older snapshot is never touched by
   // a newer file arriving.
   { source: "job_cost_inventory", label: "Job Cost inventory (monthly file)", monthScoped: false },
+  // Position Code → family, from Paylocity's Position_Families report plus our
+  // overrides file (2026-10-02). Ahead of the roster, which it feeds. See
+  // lib/position-families-sync.ts.
+  { source: "position_families", label: "Position families (Paylocity file)", monthScoped: false },
   // The Paylocity employee roster file (2026-09-30) — adds new people (hidden)
-  // and mirrors supervisor and job title. Never removes or deactivates anyone.
+  // and mirrors supervisor, job title and position code. Never removes or
+  // deactivates anyone.
   // See lib/paylocity-roster-sync.ts.
   { source: "employee_roster", label: "Employee roster (Paylocity file)", monthScoped: false },
   { source: "standard_pools", label: "Standard Fees pools", monthScoped: true },

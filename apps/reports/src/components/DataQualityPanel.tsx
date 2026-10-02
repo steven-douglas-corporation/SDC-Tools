@@ -7,6 +7,8 @@ import { SectionTitle } from "@/components/ui/Typography";
 import type { DataQuality, PunchExplorer } from "@/lib/data-quality";
 import type { RosterQuality } from "@/lib/paylocity-roster-sync";
 import type { RosterPerson } from "@/lib/paylocity-roster-parse";
+import type { PositionFamilyQuality } from "@/lib/position-families-sync";
+import type { FamilyFinding } from "@/lib/position-families-parse";
 import { DataQualityExplorer } from "@/components/DataQualityExplorer";
 import { DataQualityDrill, EmployeeIdDrill } from "@/components/DataQualityDrill";
 import { hours as fmtHours } from "@/components/ui/format";
@@ -21,7 +23,8 @@ import { hours as fmtHours } from "@/components/ui/format";
 // states its rule, its size, and the rows behind it.
 //
 // ── Layout (2026-09-30) ─────────────────────────────────────────────────────
-// Three sections — Job punches, Employee roster, Customers — each with its checks
+// Four sections — Job punches, Employee roster, Position families (2026-10-02),
+// Customers — each with its checks
 // as a row of tiles. A tile carries the headline (status, count, hours); clicking
 // it opens that check's rows in ONE detail panel under the row. Before this every
 // check was a full-width card with its table open beneath it, stacked, which made
@@ -669,20 +672,148 @@ function RosterSection({ roster }: { roster: RosterQuality }) {
   );
 }
 
+// ── Position families (Paylocity) ──────────────────────────────────
+//
+// The PositionFamily table the hourly sync builds from Paylocity's
+// Position_Families report and our overrides file
+// (lib/position-families-parse.ts positionFamilyFindings). Each check is a gap
+// someone closes in Paylocity, in the overrides file, or on the Employees page.
+
+function findingsTable(rows: FamilyFinding[]) {
+  const people = rows.map((r) => ({ name: r.name, paylocityId: r.paylocityId, title: null }));
+  return <PeopleTable people={people} note={(p) => rows.find((r) => r.name === p.name && r.paylocityId === p.paylocityId)?.detail ?? null} />;
+}
+
+function FamiliesStatusCard({ families }: { families: PositionFamilyQuality }) {
+  const f = families.findings;
+  const last = families.lastSuccess ? new Date(families.lastSuccess).toLocaleString() : null;
+  const statusIsProblem = families.lastStatus != null && /^(Failed|Waiting)/.test(families.lastStatus);
+  const problem = !families.configured ? "not configured" : statusIsProblem ? "last pass failed" : !f ? "not imported yet" : null;
+  return (
+    <div className={`${card("p-5")} ${problem ? "border-sdc-yellow" : ""}`}>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-sdc-gray-600">Hourly sync</p>
+        {problem ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-sdc-yellow-bg px-2 py-0.5 text-label font-semibold text-sdc-yellow-text">
+            ! {problem}
+          </span>
+        ) : (
+          <StatusMark clean />
+        )}
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-3">
+        <div>
+          <p className="font-heading text-2xl font-bold tabular-nums text-sdc-navy">{f ? f.codes.toLocaleString() : "—"}</p>
+          <p className="text-label text-sdc-muted">position codes</p>
+        </div>
+        <div>
+          <p className="font-heading text-2xl font-bold tabular-nums text-sdc-navy">{f ? f.overrides.toLocaleString() : "—"}</p>
+          <p className="text-label text-sdc-muted">from overrides</p>
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-sdc-navy">{last ?? "Never"}</p>
+          <p className="text-label text-sdc-muted">last successful sync</p>
+        </div>
+      </div>
+      {!families.configured && (
+        <p className="mt-3 text-xs text-sdc-yellow-text">
+          Set <code>PAYLOCITY_POSITION_FAMILIES_LOCAL_PATH</code> in the server&apos;s .env to Paylocity&apos;s Position_Families file.
+        </p>
+      )}
+      {families.configured && !families.overridesConfigured && (
+        <p className="mt-3 text-xs text-sdc-gray-600">
+          No overrides file configured (<code>PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH</code>), so only Paylocity&apos;s report is used.
+        </p>
+      )}
+      {statusIsProblem && <p className="mt-3 text-xs text-sdc-yellow-text">{families.lastStatus}</p>}
+    </div>
+  );
+}
+
+function FamiliesSection({ families }: { families: PositionFamilyQuality }) {
+  const f = families.findings;
+  const checks: Check[] = f
+    ? [
+        {
+          key: "unknownCodes",
+          title: "Position codes in neither file",
+          rule: "Active people whose Paylocity position code isn't in the Position_Families report or the overrides file, so nothing says which family they belong to. Add the code in Paylocity, or add a row for it to the overrides file.",
+          count: f.unknownCodes.length,
+          unit: "people",
+          body: findingsTable(f.unknownCodes),
+        },
+        {
+          key: "noCode",
+          title: "No position code",
+          rule: "Active people with no position code — blank in Paylocity, or not in Paylocity at all. Their family can only come from whoever they report to.",
+          count: f.noCode.length,
+          unit: "people",
+          body: findingsTable(f.noCode),
+        },
+        {
+          key: "noSupervisor",
+          title: "No supervisor",
+          rule: "Active people who aren't Leadership (family 100) and have no supervisor, so there is no reporting line to place them by. Set it in Paylocity, or on the Employees page for someone who isn't in Paylocity.",
+          count: f.noSupervisor.length,
+          unit: "people",
+          body: findingsTable(f.noSupervisor),
+        },
+        {
+          key: "overridesCovered",
+          title: "Overrides Paylocity now covers",
+          rule: "Codes in the overrides file that Paylocity's report now lists too. The override still wins; if Paylocity's families are right, delete the override row.",
+          count: f.overridesCovered.length,
+          unit: "codes",
+          body: (
+            <PeopleTable
+              people={f.overridesCovered.map((o) => ({ name: o.positionCode, paylocityId: null, title: null }))}
+              note={(p) => {
+                const o = f.overridesCovered.find((x) => x.positionCode === p.name);
+                return o ? `Override: ${o.override} · Paylocity: ${o.paylocity}` : null;
+              }}
+            />
+          ),
+        },
+      ]
+    : [];
+  const [selected, setSelected] = useState<string | null>(() => firstWithIssues(checks));
+
+  return (
+    <Section
+      title="Position families (Paylocity)"
+      badge={checks.length ? <IssueTally checks={checks} /> : undefined}
+      description={
+        <>
+          Every hour the sync reads Paylocity&apos;s Position_Families report and the overrides file, which together say
+          which family each position code belongs to. An override row replaces Paylocity&apos;s for its code. These checks
+          list the people and codes those files can&apos;t place yet.
+        </>
+      }
+    >
+      <FamiliesStatusCard families={families} />
+      {checks.length > 0 && <CheckBoard checks={checks} selected={selected} onSelect={setSelected} />}
+    </Section>
+  );
+}
+
 export function DataQualityPanel({
   dq,
   explorer,
   roster,
+  families,
 }: {
   dq: DataQuality;
   explorer: PunchExplorer | null;
   roster: RosterQuality | null;
+  families: PositionFamilyQuality | null;
 }) {
   return (
     <div className="space-y-10">
       <PunchesSection dq={dq} explorer={explorer} />
 
       {roster && <RosterSection roster={roster} />}
+
+      {families && <FamiliesSection families={families} />}
 
       <Section
         title="Customers"
