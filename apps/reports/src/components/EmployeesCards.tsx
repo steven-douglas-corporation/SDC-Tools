@@ -8,6 +8,7 @@ import { DISCIPLINE_LABEL } from "@/lib/disciplines";
 import { buildDepartmentCards } from "@/lib/employee-department-cards";
 import { DASH, type EmployeeRow } from "@/lib/employee-row";
 import type { HiringPosition } from "@/lib/hiring-positions";
+import { cardTransitionName } from "@/lib/employee-card-theme";
 import { HiringStatusPill } from "@/components/HiringStatusPill";
 import { hiringStatusStyle } from "@/lib/hiring-position-status";
 import { employeeCapacityHours, hiringCapacityHours } from "@/lib/workforce-capacity";
@@ -167,6 +168,7 @@ export function EmployeesCards({
           <section
             key={card.key}
             ref={card.key === focusDepartment ? focusRef : undefined}
+            style={{ viewTransitionName: cardTransitionName(card.key) }}
             className={`mb-4 flex flex-col overflow-hidden rounded-xl border bg-white shadow-sm break-inside-avoid-column ${
               card.key === focusDepartment ? "border-sdc-blue ring-2 ring-sdc-blue/40" : "border-sdc-border"
             }`}

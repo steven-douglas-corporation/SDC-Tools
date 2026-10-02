@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { CARD_RENDER_ORDER } from "@/components/WorkforceSummaryCards";
 import { buildDepartmentCards, alwaysShowKeysForGroup } from "@/lib/employee-department-cards";
 import { EmployeesCards } from "@/components/EmployeesCards";
@@ -187,6 +188,21 @@ export function EmployeesGrid({
   // (departments). The filters below narrow the cards only; the chart is
   // always the whole organisation.
   const [view, setView] = useState<"cards" | "chart">("chart");
+  // Switching views animates each department card from where it sits in one
+  // view to where it sits in the other (2026-10-02): both views give the same
+  // card the same view-transition name (cardTransitionName), and the browser
+  // morphs it. flushSync so the new view is in the DOM before the browser takes
+  // its "after" snapshot. No View Transitions support, or reduced motion: an
+  // instant switch, as before.
+  function switchView(next: "cards" | "chart") {
+    if (next === view) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || typeof document.startViewTransition !== "function") {
+      setView(next);
+      return;
+    }
+    document.startViewTransition(() => flushSync(() => setView(next)));
+  }
   const [q, setQ] = useState("");
   // Entire Team vs Execution Team (2026-08-24). Deliberately ONE piece of state
   // feeding the two existing choke points below (`scopedToTeam` for people,
@@ -442,7 +458,7 @@ export function EmployeesGrid({
               type="button"
               role="radio"
               aria-checked={view === v}
-              onClick={() => setView(v)}
+              onClick={() => switchView(v)}
               title={v === "chart" ? "Everyone nested by who they report to" : "People by department card"}
               className={`rounded-md px-3 py-1.5 text-xs font-semibold motion-interactive ${
                 view === v ? "bg-sdc-navy text-white" : "text-sdc-gray-600 hover:bg-sdc-blue-light"
