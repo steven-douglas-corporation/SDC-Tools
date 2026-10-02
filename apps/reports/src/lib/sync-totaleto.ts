@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES } from "@/lib/job-filters";
 import { applyRefundSign, sqlRefundSigned } from "@/lib/parts-refund";
 import { isSdcVendor } from "@/lib/vendor-normalize";
+import { splitActualBySdc, type PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
 
 // The exact query Power BI's 'Part Purchase' table runs against this same
 // SQL server (extracted verbatim from the semantic model's TMDL). Verified
@@ -704,6 +705,43 @@ export async function getPartsActualByJob(): Promise<Map<string, number>> {
     }
     return map;
   }, { requestTimeout: 180_000, feed: "parts_actual.by_job" });
+}
+
+// ── Lifetime Parts Actual split into "SDC billed" and the rest (2026-10-02) ───
+//
+// For the Projects export's "excl. SDC" columns, and nothing else: the Projects grid
+// and Job.costActualHistorical are untouched and keep SDC in.
+//
+// The first branch of getPartsActualByJob above, grouped by vendor too, so the SDC share
+// can be decided in TypeScript against the one isSdcVendor definition instead of a second
+// SQL pattern. Same predicate (glPostedAp), same amount (AP_LINE_AMOUNT), same
+// ProjectID attribution — so `actual` here equals getPartsActualByJob's figure for every
+// job it returns (verified job-for-job against live Total ETO when this was written).
+//
+// Only jobs with at least one GL-posted AP line appear. The zero-fill branches are left
+// out on purpose: a job with no AP spend has nothing for SDC to be a share of.
+//
+// attempts: 1 and a short request timeout, unlike the sync's 180s with retries: this runs
+// inside an export click, where a person is waiting, and the caller degrades to blank
+// columns rather than failing the whole file.
+export async function getPartsActualSdcSplitByJob(): Promise<Map<string, PartsActualSdcSplit>> {
+  return withTotalEto(async (pool) => {
+    const result = await pool.request().query(
+      `SELECT APDD.ProjectID AS JobId, SFC.CName AS Vendor, SUM(${AP_LINE_AMOUNT}) AS Amount
+         FROM tblAPDocumentDetails APDD WITH(NOLOCK)
+              INNER JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
+              ${sageFirstJoin("SFC")}
+        WHERE APDD.ProjectID IS NOT NULL AND ${glPostedAp("SFC")}
+        GROUP BY APDD.ProjectID, SFC.CName`,
+    );
+    return splitActualBySdc(
+      result.recordset.map((r: Record<string, unknown>) => ({
+        jobId: String(Number(r.JobId)),
+        vendor: r.Vendor == null ? null : String(r.Vendor),
+        amount: Number(r.Amount),
+      })),
+    );
+  }, { requestTimeout: 40_000, attempts: 1, feed: "parts_actual.sdc_split_by_job" });
 }
 
 // Parts COMMITMENT (not actual) per job, straight from TotalETO — SUM(Total

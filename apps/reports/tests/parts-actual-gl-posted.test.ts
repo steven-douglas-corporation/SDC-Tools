@@ -464,9 +464,14 @@ test("the flag is tested in exactly ONE place, and every site calls it", () => {
   // GL-posted test at all while parts-budget-projection.ts asserted it shared a basis
   // with Parts Actual. $56,740.45 of August was counted by one and not the other.
   // The arrow definition does not self-match.
+  //
+  // Six since 2026-10-02: getPartsActualSdcSplitByJob (the Projects export's excl. SDC
+  // columns) is a sixth caller of the shared predicate, on purpose — it must share
+  // getPartsActualByJob's basis exactly, which is what a copy of the flag test could
+  // not promise.
   assert.equal(
     (totalEtoCode.match(/glPostedAp\(/g) ?? []).length,
-    5,
+    6,
     "every site that decides posted-vs-billed must call the shared predicate",
   );
   // Money Spent Month specifically, because it is the one that drives the forecast.
