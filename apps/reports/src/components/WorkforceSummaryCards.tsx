@@ -11,6 +11,7 @@ import { employeeCapacityHours, hiringCapacityHours } from "@/lib/workforce-capa
 import { hasYearPolicy } from "@/lib/workforce-capacity-policy";
 import { hours as fmtHours } from "@/components/ui/format";
 import { countOpenings } from "@/lib/hiring-openings";
+import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
 
 // Card render order (2026-08-19, by request): PM, Engineering, Shop, then
 // whatever's left (just "other," if it has any cards) -- Hiring Positions is
@@ -130,13 +131,18 @@ export function WorkforceSummaryCards({
           <span className="font-bold tabular-nums text-sdc-navy">{activeHeadcount}</span>{" "}
           <span className="text-sdc-muted">Active Headcount</span>
         </span>
-        <span>
-          <span className="font-bold tabular-nums text-sdc-navy">{openPositions}</span> <span className="text-sdc-muted">Open Positions</span>
-        </span>
-        <span>
-          <span className="font-bold tabular-nums text-sdc-navy">{plannedHeadcount}</span>{" "}
-          <span className="text-sdc-muted">Planned Headcount</span>
-        </span>
+        {/* Without hiring (lib/hiring-feature.ts) there are no openings, and planned headcount is just active headcount. */}
+        {HIRING_POSITIONS_ENABLED && (
+          <>
+            <span>
+              <span className="font-bold tabular-nums text-sdc-navy">{openPositions}</span> <span className="text-sdc-muted">Open Positions</span>
+            </span>
+            <span>
+              <span className="font-bold tabular-nums text-sdc-navy">{plannedHeadcount}</span>{" "}
+              <span className="text-sdc-muted">Planned Headcount</span>
+            </span>
+          </>
+        )}
         {unassignedHiring > 0 && (
           <span>
             <span className="font-bold tabular-nums text-sdc-navy">{unassignedHiring}</span>{" "}

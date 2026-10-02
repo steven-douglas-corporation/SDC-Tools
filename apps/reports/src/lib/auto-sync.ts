@@ -595,6 +595,13 @@ export async function runAllSyncs(
         return await syncJobCostInventorySnapshots();
       });
 
+      // Paylocity position families + our overrides file (2026-10-02). Before the
+      // roster step, so the codes the roster brings in already have their families.
+      await step("position_families", labelFor("position_families"), true, async () => {
+        const { syncPositionFamilies } = await import("@/lib/position-families-sync");
+        return await syncPositionFamilies();
+      });
+
       // The Paylocity employee roster file — local file + MySQL like the step above,
       // so it shares this lane rather than the hours chain's single workbook parse.
       await step("employee_roster", labelFor("employee_roster"), true, async () => {

@@ -1,6 +1,6 @@
 import "server-only";
-import { readFile, stat } from "fs/promises";
 import { prisma } from "@/lib/prisma";
+import { readStableFile } from "@/lib/read-stable-file";
 import { logAudit } from "@/lib/audit";
 import { recordChanges, type CellChange } from "@/lib/change-log";
 import {
@@ -10,17 +10,21 @@ import {
   describePlan,
   rosterQualityFindings,
   RosterFileError,
+  type RosterFileRow,
   type RosterPlan,
   type RosterQualityFindings,
 } from "@/lib/paylocity-roster-parse";
+import { planTeamWrites } from "@/lib/team-resolution";
+import type { PositionFamilyRow } from "@/lib/position-families-parse";
 
 // ── The Paylocity employee roster, synced from a file (2026-09-30) ──────────
 //
 // One step of the hourly refresh (auto-sync.ts, source "employee_roster"): read
-// the roster report Paylocity drops into the SFTP folder, then add new people
-// and keep supervisors and job titles in step. The rules — what may and may not
-// change — are declared and tested in paylocity-roster-parse.ts; this file is
-// only the disk read and the writes.
+// the roster report Paylocity drops into the SFTP folder, then add new people,
+// keep supervisors, job titles and position codes in step, hide leavers, and
+// set teams by the team rule (lib/team-resolution.ts). The rules — what may
+// and may not change — are declared and tested in paylocity-roster-parse.ts
+// and team-resolution.ts; this file is only the disk read and the writes.
 //
 // Configured by PAYLOCITY_EMPLOYEES_LOCAL_PATH, the same convention as
 // JOB_HOURS_LOCAL_PATH: a path to the file, no default. Unset means the step is
@@ -38,34 +42,11 @@ export function rosterFilePath(): string | null {
 
 const NOT_CONFIGURED = "not configured — set PAYLOCITY_EMPLOYEES_LOCAL_PATH in .env to the Paylocity employee roster file";
 
-// Size and mtime unchanged across the read, the same guard paylocity-workbook.ts
-// uses on the hours file: an upload in progress is refused, not half-imported.
-// /* turbopackIgnore */: the path points outside the project; see hiring-workbook.ts.
-async function readStable(path: string): Promise<Buffer> {
-  let before;
-  try {
-    before = await stat(/* turbopackIgnore: true */ path);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    throw new RosterFileError(
-      code === "ENOENT"
-        ? `No roster file at ${path}. Check that the Paylocity upload landed and that this server can reach the folder.`
-        : `Could not read the roster file at ${path}: ${(err as Error).message}`,
-    );
-  }
-  if (!before.isFile()) throw new RosterFileError(`${path} is not a file.`);
-  if (before.size === 0) throw new RosterFileError(`The roster file at ${path} is 0 bytes — the upload is incomplete.`);
-  const buf = await readFile(/* turbopackIgnore: true */ path);
-  const after = await stat(/* turbopackIgnore: true */ path);
-  if (after.size !== before.size || after.mtimeMs !== before.mtimeMs) {
-    throw new RosterFileError("The roster file changed while it was being read — probably still uploading. Nothing was imported; the next refresh will pick it up.");
-  }
-  return buf;
-}
+const readStable = (path: string) => readStableFile(path, "roster file", (m) => new RosterFileError(m));
 
 async function loadAppEmployees() {
   return prisma.employee.findMany({
-    select: { id: true, name: true, paylocityId: true, positionTitle: true, supervisorId: true, active: true },
+    select: { id: true, name: true, paylocityId: true, positionTitle: true, positionCode: true, supervisorId: true, active: true },
   });
 }
 
@@ -121,11 +102,15 @@ export async function syncPaylocityRoster(): Promise<string | { skip: string }> 
   const rows = parseRosterWorkbook(await readStable(path));
   const app = await loadAppEmployees();
   const plan = planRosterSync(rows, app);
-  // A string, not null, when nothing moved: null means "skipped" to the runner,
-  // which would leave the freshness row unstamped and the source looking stale
-  // on every quiet day.
-  if (isEmptyPlan(plan)) return `no changes — ${describePlan(plan)}`;
+  // Always a string, never null: null means "skipped" to the runner, which would
+  // leave the freshness row unstamped and the source looking stale on every quiet day.
+  const roster = isEmptyPlan(plan) ? `no roster changes — ${describePlan(plan)}` : await applyRosterPlan(path, rows, plan);
+  // The team rule runs every pass, not only when the file changed: a new
+  // override, or a supervisor set on the Employees page, moves people too.
+  return `${roster}; ${await applyTeamRule()}`;
+}
 
+async function applyRosterPlan(path: string, rows: RosterFileRow[], plan: RosterPlan): Promise<string> {
   // One transaction: a pass either lands whole or not at all, so a failure
   // halfway can't leave new people created without their reporting lines.
   await prisma.$transaction(
@@ -136,11 +121,19 @@ export async function syncPaylocityRoster(): Promise<string | { skip: string }> 
       for (const r of plan.create) {
         // Hidden on arrival — see paylocity-roster-parse.ts's header.
         await tx.employee.create({
-          data: { paylocityId: r.paylocityId, name: r.name, positionTitle: r.positionTitle, active: false },
+          data: { paylocityId: r.paylocityId, name: r.name, positionTitle: r.positionTitle, positionCode: r.positionCode ?? null, active: false },
         });
       }
       for (const t of plan.titleChanges) {
         await tx.employee.update({ where: { paylocityId: t.paylocityId }, data: { positionTitle: t.to } });
+      }
+      for (const c of plan.positionCodeChanges) {
+        await tx.employee.update({ where: { paylocityId: c.paylocityId }, data: { positionCode: c.to } });
+      }
+      if (!plan.hideHeld) {
+        for (const h of plan.hide) {
+          await tx.employee.update({ where: { paylocityId: h.paylocityId }, data: { active: false } });
+        }
       }
 
       // Supervisors last, once every person they can point at exists.
@@ -166,6 +159,9 @@ export async function syncPaylocityRoster(): Promise<string | { skip: string }> 
       created: plan.create.map((r) => ({ paylocityId: r.paylocityId, name: r.name })),
       linked: plan.link,
       titleChanges: plan.titleChanges,
+      positionCodeChanges: plan.positionCodeChanges,
+      hidden: plan.hideHeld ? [] : plan.hide,
+      hideHeld: plan.hideHeld ? plan.hide : [],
       supervisorChanges: plan.supervisorChanges,
       ambiguous: plan.ambiguous,
       unresolvedSupervisors: plan.unresolvedSupervisors,
@@ -201,6 +197,38 @@ export async function syncPaylocityRoster(): Promise<string | { skip: string }> 
       changeType: "edited" as const,
       system: true,
     })),
+    // Position codes: one row per person for a handful, one row between them for
+    // a bulk fill (the first pass sets ~140 at once) — same idea as new people.
+    ...(plan.positionCodeChanges.length > 5
+      ? [
+          {
+            tab: "Employees",
+            rowRef: "Paylocity roster",
+            columnName: "Position code",
+            previousValue: null,
+            newValue: `${plan.positionCodeChanges.length} people`,
+            changeType: "edited" as const,
+            system: true,
+          },
+        ]
+      : plan.positionCodeChanges.map((c) => ({
+          tab: "Employees",
+          rowRef: c.name,
+          columnName: "Position code",
+          previousValue: c.from,
+          newValue: c.to,
+          changeType: "edited" as const,
+          system: true,
+        }))),
+    ...(plan.hideHeld ? [] : plan.hide).map((h) => ({
+      tab: "Employees",
+      rowRef: h.name,
+      columnName: "Shown",
+      previousValue: "Shown",
+      newValue: "Hidden (inactive in Paylocity)",
+      changeType: "edited" as const,
+      system: true,
+    })),
     ...plan.supervisorChanges.filter((s) => !created.has(s.paylocityId)).map((s) => ({
       tab: "Employees",
       rowRef: s.name,
@@ -214,4 +242,34 @@ export async function syncPaylocityRoster(): Promise<string | { skip: string }> 
   await recordChanges(changes, { action: "employee.rosterSync" });
 
   return summary;
+}
+
+// The team rule (lib/team-resolution.ts), applied. Reads the people as they are
+// AFTER the roster plan landed, so today's supervisors and position codes decide.
+async function applyTeamRule(): Promise<string> {
+  const familyRows = await prisma.positionFamily.findMany({
+    select: { positionCode: true, familyCode: true, familyName: true, title: true, headcount: true, source: true },
+  });
+  // Without families the rule has nothing to go on, and must not clear anyone.
+  if (!familyRows.length) return "teams left alone (position families not imported yet)";
+  const people = await prisma.employee.findMany({ select: { id: true, name: true, positionCode: true, supervisorId: true, team: true } });
+  const writes = planTeamWrites(people, familyRows.map((r) => ({ ...r, source: r.source as PositionFamilyRow["source"] })));
+  if (!writes.length) return "teams unchanged";
+
+  await prisma.$transaction(writes.map((w) => prisma.employee.update({ where: { id: w.id }, data: { team: w.to } })));
+  await logAudit({
+    action: "employee.teamRule",
+    entityType: "Employee",
+    entityId: 0,
+    summary: `Team rule: ${writes.length} team${writes.length === 1 ? "" : "s"} set from position families and reporting lines`,
+    metadata: { writes },
+  });
+  // Same bulk rule as position codes: the first pass sets most of the roster.
+  await recordChanges(
+    writes.length > 5
+      ? [{ tab: "Employees", rowRef: "Team rule", columnName: "Team", previousValue: null, newValue: `${writes.length} people`, changeType: "edited" as const, system: true }]
+      : writes.map((w) => ({ tab: "Employees", rowRef: w.name, columnName: "Team", previousValue: w.from, newValue: w.to, changeType: "edited" as const, system: true })),
+    { action: "employee.teamRule" },
+  );
+  return `${writes.length} team${writes.length === 1 ? "" : "s"} set`;
 }

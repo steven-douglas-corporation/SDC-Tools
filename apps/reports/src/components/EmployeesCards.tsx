@@ -260,9 +260,14 @@ export function EmployeesCards({
                       </span>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className={`truncate text-sm font-medium ${p.isLead ? "font-bold" : ""} ${p.active ? "text-sdc-navy" : "text-sdc-muted"}`}>{p.name}</div>
+                      <div className={`truncate text-sm font-medium ${p.isLead || p.isLeadership ? "font-bold" : ""} ${p.active ? "text-sdc-navy" : "text-sdc-muted"}`}>{p.name}</div>
                       {role !== DASH && <div className="truncate text-xs text-sdc-muted">{role}</div>}
                     </div>
+                    {p.isLeadership && (
+                      <span className="shrink-0 rounded-full bg-sdc-navy px-2 py-0.5 text-label font-semibold uppercase tracking-wide text-white" title="Leadership (position family 100)">
+                        Leadership
+                      </span>
+                    )}
                     {p.specialty && (
                       <span className="shrink-0 truncate rounded-full border border-sdc-border px-2 py-0.5 text-label text-sdc-muted" title={`Level / specialty: ${p.specialty}`}>
                         {p.specialty}

@@ -36,7 +36,16 @@ const CARD_COLORS: Record<string, CardColors> = {
   // is the established color for this department, named explicitly now that it
   // is a card rather than falling through to the neutral default.
   operations: { bg: "#e2e8f0", text: "#1e293b" },
+  // Human Resources (2026-10-02), the team of position family 103. Cyan, apart
+  // from every other back-office tone.
+  hr: { bg: "#a5f3fc", text: "#164e63" },
 };
+
+/** A team code's card colours (Employee.team vocabulary; Scheduler's "ops" is the Operations card). */
+export function teamColors(team: string | null): CardColors {
+  if (!team) return OTHER_COLORS;
+  return CARD_COLORS[team === "ops" ? "operations" : team] ?? OTHER_COLORS;
+}
 
 // Anything not in the map above — a genuinely unknown department, or the
 // no-department bucket — gets this neutral tone rather than an arbitrary
@@ -87,6 +96,18 @@ const NAMED_OTHER: { match: (dept: string) => boolean; key: string; title: strin
   { match: (d) => d === "operations", key: "operations", title: "Operations" },
 ];
 
+// The same cards, keyed by the team code Employee.team carries (lib/disciplines.ts),
+// plus Human Resources, which only the team rule produces (family 103). Scheduler
+// calls Operations "ops"; its card here is "operations".
+const BACK_OFFICE_TEAM: Record<string, { key: string; title: string }> = {
+  growth: { key: "growth", title: "Growth / Business Development" },
+  finance: { key: "finance", title: "Finance" },
+  sales: { key: "sales", title: "Sales" },
+  exec: { key: "exec", title: "Executive Leadership" },
+  ops: { key: "operations", title: "Operations" },
+  hr: { key: "hr", title: "Human Resources" },
+};
+
 /**
  * Which card a row belongs to, or null if it belongs to none (hidden
  * departments like Operations/Unassigned). Reuses teamFor() for the seven
@@ -101,6 +122,12 @@ export function resolveEmployeeGroup(
 ): EmployeeGroup | null {
   const team = teamFor(r);
   if (team) return { key: team.schedulerCode, title: team.name, colors: CARD_COLORS[team.schedulerCode] ?? OTHER_COLORS };
+
+  // A back-office team code wins over department, the same way a delivery code
+  // does inside teamFor(): since 2026-10-02 the roster sync sets team from
+  // position families and the reporting line, so it is the fresher record.
+  const backOffice = BACK_OFFICE_TEAM[r.team?.trim().toLowerCase() ?? ""];
+  if (backOffice) return { key: backOffice.key, title: backOffice.title, colors: CARD_COLORS[backOffice.key] ?? OTHER_COLORS };
 
   if (matchesGrowth(r)) return { key: "growth", title: "Growth / Business Development", colors: CARD_COLORS.growth };
 
@@ -119,7 +146,7 @@ export function resolveEmployeeGroup(
 // departments, then any other real department A→Z, with "No department"
 // forced last — same ordering rule EmployeesTable.tsx used for its "extras".
 export function compareGroupOrder(a: string, b: string): number {
-  const fixed = [...EMPLOYEE_TEAMS.map((t) => t.schedulerCode), "growth", "sales", "finance", "exec", "operations"];
+  const fixed = [...EMPLOYEE_TEAMS.map((t) => t.schedulerCode), "growth", "sales", "finance", "exec", "operations", "hr"];
   const ai = fixed.indexOf(a);
   const bi = fixed.indexOf(b);
   if (ai !== -1 || bi !== -1) return (ai === -1 ? fixed.length : ai) - (bi === -1 ? fixed.length : bi);

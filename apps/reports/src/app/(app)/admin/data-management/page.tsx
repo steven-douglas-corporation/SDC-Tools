@@ -66,7 +66,9 @@ export default async function AdminDataManagementPage() {
             through on the next refresh.
           </p>
           <p className="mt-1.5 text-sm text-sdc-gray-600">
-            The sync never removes or hides anyone, and never changes a name, department or team.
+            The sync never removes anyone or changes a name or department. It hides people Paylocity marks
+            inactive, and sets each person&apos;s team from their position family and reporting line — see the Org
+            Chart view on the Employees page.
           </p>
         </section>
       </div>

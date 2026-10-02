@@ -53,6 +53,7 @@ const FAMILY_OVERRIDES: Record<string, SourceFamily> = {
   hours_actual: "Paylocity",
   job_cost_inventory: "Monthly file",
   employee_roster: "Paylocity",
+  position_families: "Paylocity",
 };
 
 export function familyFor(source: string): SourceFamily {

@@ -1,0 +1,61 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { buildOrgChart, type OrgEmployee, type OrgNode } from "../src/lib/org-chart";
+import type { PositionFamilyRow } from "../src/lib/position-families-parse";
+
+// The Org Chart's shape (2026-10-02): Leadership on top, a band per leader, a
+// card per team of the branch heads under that leader. See src/lib/org-chart.ts.
+
+const fam = (positionCode: string, familyCode: string): PositionFamilyRow =>
+  ({ positionCode, familyCode, familyName: "", title: null, headcount: null, source: "paylocity" });
+const ROWS = [fam("PRES", "100"), fam("VPO", "100"), fam("SEM", "500"), fam("SVCTECH", "404"), fam("MBS", "401"), fam("MB01", "401"), fam("AII", "108")];
+
+const e = (id: number, name: string, positionCode: string | null, supervisorId: number | null, extra: Partial<OrgEmployee> = {}): OrgEmployee =>
+  ({ id, name, paylocityId: String(100000 + id), positionTitle: null, positionCode, supervisorId, active: true, team: null, ...extra });
+
+const PEOPLE = [
+  e(1, "Dan", "PRES", null),
+  e(2, "Pat", "VPO", 1),
+  e(10, "Monica", "SEM", 2),
+  e(11, "Billy", "SVCTECH", 10),
+  e(20, "Sean", "MBS", 2),
+  e(21, "Hidden Lead", "MB01", 20, { active: false }),
+  e(22, "Frank", "MB01", 21),
+  e(30, "Moses", "AII", 1),
+  e(31, "Suhith", null, 1, { paylocityId: "TEMP7", discipline: "AI" }),
+  e(40, "Deborah", null, null),
+];
+const chart = buildOrgChart(PEOPLE, ROWS);
+const names = (ns: OrgNode[]): string[] => ns.flatMap((n) => [n.name, ...names(n.reports)]);
+
+test("Leadership is its own tree, top down", () => {
+  assert.equal(chart.leaderCount, 2);
+  assert.deepEqual(names(chart.leaders), ["Dan", "Pat"]);
+});
+
+test("a band per leader, cards in delivery order, branch heads with their people", () => {
+  assert.deepEqual(chart.bands.map((b) => [b.leader.name, b.people]), [["Dan", 2], ["Pat", 4]]);
+  const pat = chart.bands[1];
+  assert.deepEqual(pat.cards.map((c) => [c.team, c.people]), [["build", 2], ["service", 2]]);
+  assert.deepEqual(names(pat.cards[1].heads), ["Monica", "Billy"]);
+});
+
+test("a hidden manager's reports are lifted to the nearest shown manager", () => {
+  assert.deepEqual(names(chart.bands[1].cards[0].heads), ["Sean", "Frank"]);
+});
+
+test("notes explain who isn't placed by their own family", () => {
+  const billy = chart.bands[1].cards[1].heads[0].reports[0];
+  assert.equal(billy.note, "Placed by reporting line · own family says Manufacturing Operations");
+  const suhith = chart.bands[0].cards.flatMap((c) => c.heads).find((h) => h.name === "Suhith")!;
+  assert.equal(suhith.note, "Not in Paylocity · supervisor set here: Dan");
+  assert.equal(suhith.team, "ai", "no code and no team: the app's discipline label, for display");
+});
+
+test("people with no Leadership above them are listed apart", () => {
+  assert.deepEqual(chart.unplaced.map((u) => [u.name, u.detail]), [["Deborah", "No supervisor in Paylocity"]]);
+});
+
+test("pending changes list only what the rule would write", () => {
+  assert.deepEqual(chart.pending.map((c) => [c.name, c.to]).sort(), [["Billy", "service"], ["Frank", "build"], ["Monica", "service"], ["Moses", "ai"], ["Sean", "build"]]);
+});

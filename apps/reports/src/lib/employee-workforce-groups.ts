@@ -101,7 +101,9 @@ export const WORKFORCE_GROUPS: WorkforceGroupDef[] = [
   { key: "growth", title: "Growth / Business Development", teamCodes: [], cardKeys: ["growth", "sales"] },
   { key: "finance", title: "Finance", teamCodes: [], cardKeys: ["finance"] },
   { key: "exec", title: "Executive Leadership", teamCodes: [], cardKeys: ["exec"] },
-  { key: "operations", title: "Operations", teamCodes: [], cardKeys: ["operations"] },
+  // Human Resources (2026-10-02, position family 103) sits with Operations, the
+  // way Sales sits with Growth.
+  { key: "operations", title: "Operations", teamCodes: [], cardKeys: ["operations", "hr"] },
   // Still last, and still a real destination: a department string nobody has
   // mapped yet (a new Paylocity department, say) must land SOMEWHERE, or the
   // people in it would vanish from the tab. It renders no card when empty —

@@ -34,6 +34,35 @@ test("rows fold into one card per resolved group, not one per raw department spe
   assert.equal(cards[0].people.length, 2);
 });
 
+test("a back-office team code wins over a department that says otherwise; HR has its own card", () => {
+  const cards = buildDepartmentCards(
+    [
+      row({ name: "Jackie", team: "ops", department: "Manufacturing Operations" }),
+      row({ name: "Lisa", team: "finance", department: "Finance" }),
+      row({ name: "Heather", team: "hr", department: "" }),
+    ],
+    [],
+  );
+  const byKey = new Map(cards.map((c) => [c.key, c.people.map((p) => p.name)]));
+  assert.deepEqual(byKey.get("operations"), ["Jackie"]);
+  assert.deepEqual(byKey.get("finance"), ["Lisa"]);
+  assert.deepEqual(byKey.get("hr"), ["Heather"]);
+  assert.equal(cards.find((c) => c.key === "hr")?.title, "Human Resources");
+  assert.ok(!byKey.has("Manufacturing Operations") && !byKey.has("mfgops"));
+});
+
+test("Leadership is listed first on its card, ahead of the Scheduler lead", () => {
+  const cards = buildDepartmentCards(
+    [
+      row({ name: "Aaron", team: "finance", isLead: true }),
+      row({ name: "Lisa Andreani", team: "finance", isLeadership: true }),
+      row({ name: "Sandra", team: "finance" }),
+    ],
+    [],
+  );
+  assert.deepEqual(cards[0].people.map((p) => p.name), ["Lisa Andreani", "Aaron", "Sandra"]);
+});
+
 test("a placeholder with nobody real on it yet still gets its own card", () => {
   const placeholders: SchedulerPlaceholder[] = [{ discipline: "wire", name: "Wire Placeholder" }];
   const cards = buildDepartmentCards([], placeholders);

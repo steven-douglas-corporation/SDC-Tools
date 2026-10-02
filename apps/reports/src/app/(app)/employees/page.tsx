@@ -11,6 +11,10 @@ import { normalizeName } from "@/lib/sync-scheduler-team";
 import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";
 import { getHiringPositions, redactHiddenPositions } from "@/lib/hiring-positions";
+import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
+import { resolveTeams } from "@/lib/team-resolution";
+import { buildOrgChart } from "@/lib/org-chart";
+import type { PositionFamilyRow } from "@/lib/position-families-parse";
 
 // Team groupings, matching the SDC Scheduler app's team_members.discipline
 // categories. Now a sortable AG Grid column (Community can't do row grouping).
@@ -33,12 +37,21 @@ export async function EmployeesView() {
   // SAME source (see employee-scheduler-overlay.ts) — both fail soft to
   // "nothing extra shown" if the Scheduler DB isn't reachable, so a roster
   // load never depends on Scheduler being up.
-  const [teamById, overlayByName, placeholders, hiring] = await Promise.all([
+  const [teamById, overlayByName, placeholders, hiring, familyRows] = await Promise.all([
     fetchEmployeeTeams(),
     fetchSchedulerOverlay(),
     fetchSchedulerPlaceholders(),
-    getHiringPositions(),
+    // Decommissioned for now (lib/hiring-feature.ts): no workbook read, no positions.
+    HIRING_POSITIONS_ENABLED ? getHiringPositions() : Promise.resolve({ positions: [], error: null }),
+    // Position families (2026-10-02): who is Leadership, and the Org chart view.
+    prisma.positionFamily.findMany({
+      select: { positionCode: true, familyCode: true, familyName: true, title: true, headcount: true, source: true },
+    }),
   ]);
+  const families = familyRows.map((r) => ({ ...r, source: r.source as PositionFamilyRow["source"] }));
+  const peopleForRule = employees.map((e) => ({ ...e, team: teamById.get(e.id) ?? null }));
+  const teamRule = resolveTeams(peopleForRule, families);
+  const orgChart = buildOrgChart(peopleForRule, families);
 
   // id → name across the WHOLE roster, so a supervisor who has since been
   // deactivated still resolves to a name instead of showing as a dash.
@@ -52,12 +65,14 @@ export async function EmployeesView() {
       discipline: DISCIPLINES.includes(e.discipline ?? "") ? (e.discipline as string) : DASH,
       positionTitle: e.positionTitle?.trim() || DASH,
       supervisor: e.supervisorId != null ? (nameById.get(e.supervisorId) ?? DASH) : DASH,
+      supervisorId: e.supervisorId,
       department: e.department ?? "",
       team: teamById.get(e.id) ?? null,
       active: e.active,
       billingGroup: e.billingGroup ?? "",
       paylocityId: e.paylocityId ?? "",
       isLead: overlay?.isLead ?? false,
+      isLeadership: teamRule.get(e.id)?.leader ?? false,
       specialty: overlay?.specialty ?? null,
       sortOrder: overlay?.sortOrder ?? null,
     };
@@ -85,12 +100,13 @@ export async function EmployeesView() {
           <p className="max-w-4xl text-sm text-sdc-gray-600">
             Replaces the Project Planner workbook&apos;s Employees tab. Start at the Engineering / Shop / PM workforce
             overview, then open one card to see all of that group&apos;s departments and their people right here — a
-            person&apos;s own detail opens in a side panel. Deactivated employees
-            keep all historical hours. Team grouping is shared live with SDC Scheduler&apos;s board — the roster here
-            is read-only, maintained through Scheduler&apos;s own board and, for bulk roster maintenance,
-            Admin &rsaquo; Data Management. New people, supervisors and job titles sync from Paylocity every
-            hour — change those in Paylocity. New people arrive hidden; open one and choose Show to put them on
-            the roster.
+            person&apos;s own detail opens in a side panel. Deactivated employees keep all historical hours. Switch to
+            Org chart to see everyone nested by who they report to. New people, supervisors, job titles and
+            position codes sync from Paylocity every hour — change those in Paylocity. Each person&apos;s team follows
+            their reporting line: the person they report up to just below Leadership sets the team for that whole
+            branch, by their Paylocity position family. Leadership is badged and listed first on its card. New
+            people arrive hidden; open one and choose Show to put them on the roster, and people Paylocity marks
+            inactive are hidden for you.
           </p>
         </div>
       </div>
@@ -105,6 +121,7 @@ export async function EmployeesView() {
           hiringError={hiring.error}
           canAssignHiring={canAssignHiring}
           year={year}
+          orgChart={orgChart}
         />
       </div>
     </div>
