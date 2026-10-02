@@ -187,6 +187,7 @@ export function EmployeesGrid({
   // (departments). The filters below narrow the cards only; the chart is
   // always the whole organisation.
   const [view, setView] = useState<"cards" | "chart">("chart");
+  const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const [q, setQ] = useState("");
   // Entire Team vs Execution Team (2026-08-24). Deliberately ONE piece of state
   // feeding the two existing choke points below (`scopedToTeam` for people,
@@ -536,14 +537,17 @@ export function EmployeesGrid({
 
       {view === "chart" ? (
         <div className="grid gap-6">
-          {orgChart.pending.length > 0 && <PendingTeamChanges pending={orgChart.pending} />}
-          <OrgChart
-            chart={orgChart}
-            onSelectPerson={(id) => {
-              const r = rows.find((x) => x.id === id);
-              if (r) selectEmployee(r);
-            }}
+          {/* The same headcount strip and group tiles as Cards, for the whole
+              organisation — the chart is not narrowed by the filters. */}
+          <WorkforceSummaryCards
+            rows={rows}
+            placeholders={placeholders}
+            hiringPositions={openHiring}
+            year={year}
+            onSelectCapacity={setCapacityDrill}
           />
+          {orgChart.pending.length > 0 && <PendingTeamChanges pending={orgChart.pending} />}
+          <OrgChart chart={orgChart} people={rowsById} onSelectPerson={selectEmployee} />
         </div>
       ) : (
         <>

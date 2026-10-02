@@ -8,6 +8,7 @@ import { DISCIPLINE_LABEL } from "@/lib/disciplines";
 import { buildDepartmentCards } from "@/lib/employee-department-cards";
 import { DASH, type EmployeeRow } from "@/lib/employee-row";
 import type { HiringPosition } from "@/lib/hiring-positions";
+import { DepartmentCardHeader, EmployeePersonRow } from "@/components/EmployeePersonRow";
 import { HiringStatusPill } from "@/components/HiringStatusPill";
 import { hiringStatusStyle } from "@/lib/hiring-position-status";
 import { employeeCapacityHours, hiringCapacityHours } from "@/lib/workforce-capacity";
@@ -47,17 +48,8 @@ export type { EmployeeRow };
 // same row shape and the exact same card list (for its department line items
 // and counts) without a second, driftable copy of either. Re-exported below
 // so every existing `from "@/components/EmployeesCards"` import keeps working.
-
-// Title/discipline, whichever adds information — showing the card's own
-// department name again under every row inside it would just repeat the
-// header, so a person's discipline is only printed when it says something
-// their card doesn't already.
-function roleOf(r: EmployeeRow, cardTitle: string): string {
-  if (r.positionTitle !== DASH) return r.positionTitle;
-  if (r.discipline !== DASH && r.discipline !== cardTitle) return r.discipline;
-  return DASH;
-}
-
+// A card's header and person rows live in EmployeePersonRow.tsx (2026-10-02),
+// shared with the Org chart view so a card looks the same in both.
 export function EmployeesCards({
   rows,
   placeholders,
@@ -171,19 +163,7 @@ export function EmployeesCards({
               card.key === focusDepartment ? "border-sdc-blue ring-2 ring-sdc-blue/40" : "border-sdc-border"
             }`}
           >
-            <header className="px-3.5 py-2.5" style={{ background: card.colors.bg, color: card.colors.text }}>
-              <h3 className="flex items-center gap-1 truncate text-sm font-bold">
-                {card.title}
-                {/* AI department marker (2026-09-22) — a small bot glyph after the
-                    card name, matching the way the lead star sits beside a person's
-                    name below, so the card reads as AI-related at a glance. */}
-                {card.key === "ai" && (
-                  <span className="text-sm" title="AI department" aria-hidden>
-                    🤖
-                  </span>
-                )}
-              </h3>
-            </header>
+            <DepartmentCardHeader title={card.title} colors={card.colors} isAi={card.key === "ai"} />
             <div className="flex items-baseline gap-1.5 border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-1.5 text-xs text-sdc-muted">
               <span className="font-bold tabular-nums text-sdc-navy">{activeCount}</span>
               <span>active</span>
@@ -233,54 +213,11 @@ export function EmployeesCards({
               </button>
             )}
             <ul className="min-h-[72px] p-1.5">
-              {card.people.map((p) => {
-                const role = roleOf(p, card.title);
-                return (
-                  <li
-                    key={p.id}
-                    title={`${p.name} — ${role === DASH ? "no title/discipline on file" : role}, reports to ${p.supervisor}, ${p.department?.trim() || DASH}`}
-                    onClick={onSelectEmployee ? () => onSelectEmployee(p) : undefined}
-                    onKeyDown={
-                      onSelectEmployee
-                        ? (e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              onSelectEmployee(p);
-                            }
-                          }
-                        : undefined
-                    }
-                    role={onSelectEmployee ? "button" : undefined}
-                    tabIndex={onSelectEmployee ? 0 : undefined}
-                    className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-sdc-blue-light/40 ${onSelectEmployee ? "cursor-pointer" : ""} ${p.active ? "" : "opacity-70"}`}
-                  >
-                    {p.isLead && (
-                      <span className="shrink-0 text-sm text-sdc-yellow" title="Department lead" aria-hidden>
-                        ★
-                      </span>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className={`truncate text-sm font-medium ${p.isLead || p.isLeadership ? "font-bold" : ""} ${p.active ? "text-sdc-navy" : "text-sdc-muted"}`}>{p.name}</div>
-                      {role !== DASH && <div className="truncate text-xs text-sdc-muted">{role}</div>}
-                    </div>
-                    {p.isLeadership && (
-                      <span className="shrink-0 rounded-full bg-sdc-navy px-2 py-0.5 text-label font-semibold uppercase tracking-wide text-white" title="Leadership (position family 100)">
-                        Leadership
-                      </span>
-                    )}
-                    {p.specialty && (
-                      <span className="shrink-0 truncate rounded-full border border-sdc-border px-2 py-0.5 text-label text-sdc-muted" title={`Level / specialty: ${p.specialty}`}>
-                        {p.specialty}
-                      </span>
-                    )}
-                    {!p.active && (
-                      <span className="shrink-0 rounded-full bg-sdc-gray-100 px-1.5 py-0.5 text-label font-semibold uppercase tracking-wide text-sdc-muted">
-                        Inactive
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
+              {card.people.map((p) => (
+                <li key={p.id}>
+                  <EmployeePersonRow p={p} cardTitle={card.title} onSelect={onSelectEmployee} />
+                </li>
+              ))}
             </ul>
             {/* Hiring — open positions from the Excel workbook, assigned to
                 this exact department (hiring-positions.ts). Deliberately its
