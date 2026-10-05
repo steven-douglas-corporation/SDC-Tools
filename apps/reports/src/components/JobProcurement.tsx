@@ -1588,10 +1588,25 @@ function PartsListTab({
             // question about parts that were delivered.
             dateType === "delivered" ? p.receivedDate :
             p.expectedDate; // "exp"
-          if (!d) return false;
-          const day = d.slice(0, 10);
-          if (from && day < from) return false;
-          if (to && day > to) return false;
+          const inRange = (v: string | null | undefined) => {
+            if (!v) return false;
+            const day = v.slice(0, 10);
+            return !(from && day < from) && !(to && day > to);
+          };
+          // A grouped row (e.g. one "Expense reimbursement" row holding seven
+          // invoices) shows only its NEWEST line's date, so judging the row on that
+          // alone hid the whole row — and every in-range line in it — as soon as one
+          // line fell after the range (job 1150: a 10/2 invoice hid the 9/18 one
+          // from a "to 9/30" Purchase filter). Match if the row OR any of its PO
+          // groups has a date in range. Req Date has no per-group value, so it
+          // keeps the row-level test.
+          const groupDate = (g: (typeof p.poBreakdown)[number]) =>
+            dateType === "purchase" ? g.purchaseDate :
+            dateType === "invoice" ? g.invoicedDate :
+            dateType === "delivered" ? g.deliveredDate :
+            dateType === "exp" ? g.expectedDate :
+            null;
+          if (!inRange(d) && !p.poBreakdown.some((g) => inRange(groupDate(g)))) return false;
         }
       }
       if (q) {

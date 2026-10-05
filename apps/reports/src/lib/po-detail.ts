@@ -177,8 +177,14 @@ export function fmtDate(s: string | null | undefined): string {
   if (!s) return "—";
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "—";
-  const monthDay = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  return `${monthDay} '${String(d.getFullYear() % 100).padStart(2, "0")}`;
+  // A calendar date ("2026-09-04", or midnight-UTC of one) parses as UTC midnight, which
+  // a US-timezone locale formatter then renders as the PREVIOUS day (Sep 4 -> "Sep 3").
+  // Those are dates, not instants, so format them in UTC; a real timestamp stays local.
+  const calendarDate = /^\d{4}-\d{2}-\d{2}(T00:00:00(\.0+)?Z)?$/.test(s);
+  const tz = calendarDate ? "UTC" : undefined;
+  const monthDay = d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: tz });
+  const year = calendarDate ? d.getUTCFullYear() : d.getFullYear();
+  return `${monthDay} '${String(year % 100).padStart(2, "0")}`;
 }
 
 // Days between two ISO dates (b − a), or null if either is missing/invalid.
