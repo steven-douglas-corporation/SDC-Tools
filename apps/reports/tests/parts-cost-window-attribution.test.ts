@@ -251,6 +251,6 @@ test("off-BOM lines are bucketed under the key the non-BOM rows use, and still s
 
 test("leftoverKey falls back to the description, then to a placeholder, when there is no part number", () => {
   assert.equal(leftoverKey("  ab  c ", "x"), "AB C");
-  assert.equal(leftoverKey(null, " Expense  reimbursement "), " blank:EXPENSE REIMBURSEMENT");
-  assert.equal(leftoverKey(null, null), " blank:(none)");
+  assert.equal(leftoverKey(null, " Expense  reimbursement "), "\u0000blank:EXPENSE REIMBURSEMENT");
+  assert.equal(leftoverKey(null, null), "\u0000blank:(none)");
 });
