@@ -362,6 +362,17 @@ export async function refreshAllData(input: {
   userName?: string | null;
 }): Promise<RefreshOutcome> {
   const refreshId = randomUUID();
+  // Local dev switch — see instrumentation.ts. Covers the Refresh Data button too:
+  // refusing here, before the lock and before any run record, means nothing is
+  // written and no source connection is attempted.
+  if (process.env.SDC_DEV_DISABLE_SYNC === "1") {
+    return {
+      ok: false,
+      reason: "error",
+      message: "Refresh is disabled in this development environment (SDC_DEV_DISABLE_SYNC=1).",
+      refreshId,
+    };
+  }
   const lock = await acquireLock(refreshId);
   if (!lock.got) {
     // Not an error: a refresh IS happening, which is what the caller wanted. Reported
