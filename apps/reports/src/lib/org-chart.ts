@@ -104,7 +104,9 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
       return sup ? `Not in Paylocity · supervisor set here: ${sup.name}` : "Not in Paylocity · no supervisor set yet";
     }
     if (r.how === "branch" && r.ownTeam && r.ownTeam !== r.proposedTeam) return `Placed by reporting line · own family says ${teamName(r.ownTeam)}`;
-    if (r.how === "branch" && !e.positionCode && e.supervisorId != null) return "Placed by reporting line · no position code in Paylocity";
+    // No note for someone placed by their branch who has no usable position
+    // code (2026-10-05, by request): the gap is Paylocity's to fix, nothing on
+    // this page can act on it, and Data Quality already lists them.
     return null;
   }
 
