@@ -399,6 +399,12 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
   // fetches its own bom/partsLines for a single PO via a Server Action rather
   // than rendering this whole component.)
   const parts = useMemo<FlatPart[]>(() => flattenBomParts(bom, partsLines, activeAttribution), [bom, partsLines, activeAttribution]);
+  const unattachedResidual = useMemo(() => {
+    if (!activeAttribution) return 0;
+    const onRows = parts.reduce((sum, p) => (p.nonBom ? sum + p.invoicedAmount : sum), 0);
+    const left = activeAttribution.unattachedAmount - onRows;
+    return Math.abs(left) < 0.005 ? 0 : Math.round(left * 100) / 100;
+  }, [parts, activeAttribution]);
   const partPanelPart = useMemo(
     () => (partPanelId === null ? null : (parts.find((p) => p.id === partPanelId) ?? null)),
     [parts, partPanelId],
@@ -674,8 +680,11 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
             pending: pendingWindow,
             error: windowError,
             active: activeAttribution !== null,
-            unattachedAmount: activeAttribution?.unattachedAmount ?? 0,
-            unattachedCount: activeAttribution?.unattachedCount ?? 0,
+            // Money with no row on screen. Off-BOM invoices now get a "Not on the BOM"
+            // row, so only what those rows do NOT carry (SDC-supplied lines, which
+            // never count as invoiced) remains here.
+            unattachedAmount: unattachedResidual,
+            unattachedCount: unattachedResidual === 0 ? 0 : (activeAttribution?.unattachedCount ?? 0),
           }}
         />
       )}

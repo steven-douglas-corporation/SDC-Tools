@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normPn, attributeInvoicedWindow, collectBomPartNumbers } from "../src/lib/parts-cost-window-attribution";
+import { normPn, attributeInvoicedWindow, collectBomPartNumbers, leftoverKey } from "../src/lib/parts-cost-window-attribution";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import type { BomNode } from "../src/lib/job-bom-rules";
 
@@ -225,4 +225,32 @@ test("an invoice against a self-buy assembly's own number attributes to its row 
   const result = attributeInvoicedWindow([line({ partNumber: "1116-DB-000", invoicedAmount: 1430 })], collectBomPartNumbers(roots));
   assert.equal(result.byPartNumber.get("1116-DB-000"), 1430);
   assert.equal(result.unattachedAmount, 0);
+});
+
+// ── Non-BOM money is bucketed for its own rows (job 1160, Sept 2026) ─────────
+//
+// The windowed Parts List priced every "Not on the BOM" row at $0 and dropped it, so the
+// table fell $3,149 short of the month's Money Spent. nonBomByKey carries that money,
+// keyed exactly as the non-BOM rows are grouped.
+
+test("off-BOM lines are bucketed under the key the non-BOM rows use, and still sum to the unattached total", () => {
+  const lines = [
+    line({ partNumber: "Shipping", invoicedAmount: 460 }),
+    line({ partNumber: " shipping ", invoicedAmount: 296 }),
+    line({ partNumber: null, description: "SDC CC", invoicedAmount: 1082.13 }),
+    line({ partNumber: "IN-BOM", invoicedAmount: 10 }),
+  ];
+  const r = attributeInvoicedWindow(lines, bomOf("IN-BOM"));
+  assert.equal(r.nonBomByKey.get(leftoverKey("Shipping", null))?.amount, 756);
+  assert.equal(r.nonBomByKey.get(leftoverKey("Shipping", null))?.lines.length, 2);
+  assert.equal(r.nonBomByKey.get(leftoverKey(null, "sdc cc"))?.amount, 1082.13);
+  assert.equal(r.nonBomByKey.has(leftoverKey("IN-BOM", null)), false);
+  const bucketed = [...r.nonBomByKey.values()].reduce((s, b) => s + b.amount, 0);
+  assert.ok(Math.abs(bucketed - r.unattachedAmount) < 1e-9);
+});
+
+test("leftoverKey falls back to the description, then to a placeholder, when there is no part number", () => {
+  assert.equal(leftoverKey("  ab  c ", "x"), "AB C");
+  assert.equal(leftoverKey(null, " Expense  reimbursement "), " blank:EXPENSE REIMBURSEMENT");
+  assert.equal(leftoverKey(null, null), " blank:(none)");
 });
