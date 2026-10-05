@@ -1,0 +1,361 @@
+table 'Function Hierarchy'
+	lineageTag: cc850b35-0b52-4dca-b576-58803d806a5d
+
+	column 'Section Function Name'
+		dataType: string
+		lineageTag: 13c0b533-fcb3-4096-99c7-e17ea7780d6d
+		summarizeBy: none
+		sourceColumn: Section Function Name
+		sortByColumn: 'Section Function Order'
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section Function Group'
+		dataType: string
+		lineageTag: e7aa3298-4fe1-47bb-985e-dfc35a20e342
+		summarizeBy: none
+		sourceColumn: Section Function Group
+		sortByColumn: 'Section Function Group Order'
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section Name'
+		dataType: string
+		lineageTag: db657e59-6367-4637-8fb9-ea25fda1c7e8
+		summarizeBy: none
+		sourceColumn: Section Name
+		sortByColumn: 'Section Order'
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section-Function Code'
+		dataType: string
+		lineageTag: bc559d94-a387-49ef-a560-63862cff5050
+		summarizeBy: none
+		sourceColumn: Section-Function Code
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Data Source'
+		dataType: string
+		lineageTag: b066ba33-a40f-404c-bb3f-f37535fc2642
+		summarizeBy: none
+		sourceColumn: Data Source
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Billing Group'
+		dataType: string
+		lineageTag: 3743b109-d305-4a8f-93e5-edfa1203c16e
+		summarizeBy: none
+		sourceColumn: Billing Group
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Engineering'
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 8b4c078b-3919-49e3-b410-86d10309e5b2
+		summarizeBy: none
+		sourceColumn: Is Engineering
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Shop'
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: f34bc109-fb72-4ae4-ad8c-00f15fca38e5
+		summarizeBy: none
+		sourceColumn: Is Shop
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section Id'
+		dataType: string
+		lineageTag: 6c447038-bea0-49b2-aa62-46c474f9047e
+		summarizeBy: none
+		sourceColumn: Section Id
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Function Id'
+		dataType: string
+		lineageTag: dd7ac754-9b13-4246-8658-034de4ce1d25
+		summarizeBy: none
+		sourceColumn: Function Id
+
+		annotation SummarizationSetBy = Automatic
+
+	column Section
+		dataType: string
+		lineageTag: c826ef27-29c9-4cd7-a40d-0a0ffa720f5a
+		summarizeBy: none
+		sourceColumn: Section
+
+		annotation SummarizationSetBy = Automatic
+
+	column Function
+		dataType: string
+		lineageTag: c1aba387-720b-43a9-a143-3655cc30c4b7
+		summarizeBy: none
+		sourceColumn: Function
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Sub-Section Id'
+		dataType: string
+		lineageTag: d815171a-3331-4dcb-8d24-9eff8c29bd43
+		summarizeBy: none
+		sourceColumn: Sub-Section Id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Valid'
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 3fee44e4-5548-4596-8308-b1f57147b93d
+		summarizeBy: none
+		sourceColumn: Is Valid
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section Order'
+		dataType: double
+		formatString: 0
+		lineageTag: aab03a8e-19a8-40fd-bb11-d7869f6d2fe6
+		summarizeBy: none
+		sourceColumn: Section Order
+
+		annotation SummarizationSetBy = User
+
+	column 'Is Total'
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 396fdf11-480e-43d2-bba1-00b25b4c569c
+		summarizeBy: none
+		sourceColumn: Is Total
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Function Department Name'
+		dataType: string
+		lineageTag: 692ef4c5-e0af-4b19-8df3-e8f84294ff91
+		summarizeBy: none
+		sourceColumn: Function Department Name
+		sortByColumn: 'Function Department Order'
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Function Department Order'
+		dataType: double
+		lineageTag: 9e179b34-7ffb-4a66-b689-a2cd7bd95ec9
+		summarizeBy: none
+		sourceColumn: Function Department Order
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Function Name'
+		dataType: string
+		lineageTag: e4867679-697d-4038-b1ba-33548b541122
+		summarizeBy: none
+		sourceColumn: Function Name
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section Function Group Order'
+		dataType: double
+		lineageTag: df09522c-8755-49fb-86b5-6c678ca791f3
+		summarizeBy: none
+		sourceColumn: Section Function Group Order
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Section Function Order'
+		dataType: double
+		lineageTag: 5770b718-af3f-4c7b-bba4-62b25a0c0534
+		summarizeBy: none
+		sourceColumn: Section Function Order
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Section Function Name Dynamic' =
+			
+			IF(
+			    'Function Hierarchy'[Section Function Name] = "Use Employee Department",
+			    SWITCH(
+			        CALCULATE(
+			            FIRSTNONBLANK(Employee[Employee Department], 1),
+			            RELATEDTABLE('Hours Actual')
+			        ),
+			        "Mechanical Engineering", "ME",
+			        "Controls Engineering", "CE",
+			        "Invalid"
+			    ),
+			    'Function Hierarchy'[Section Function Name]
+			)
+		lineageTag: 20bc78b2-71b3-462c-9da1-7ee15df4642b
+		summarizeBy: none
+		sortByColumn: 'Section Function Name Dynamic Order'
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section Function Name Dynamic Order' =
+			
+			IF(
+			    'Function Hierarchy'[Section Function Name] = "Use Employee Department",
+			    SWITCH(
+			        CALCULATE(
+			            FIRSTNONBLANK(Employee[Employee Department], 1),
+			            RELATEDTABLE('Hours Actual')
+			        ),
+			        "Mechanical Engineering", 13.00,
+			        "Controls Engineering", 14.00,
+			        16.00  // Invalid - use a new number
+			    ),
+			    'Function Hierarchy'[Section Function Order]
+			)
+		lineageTag: 33314e4f-3d8d-469e-a829-52dc086e2f03
+		summarizeBy: sum
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	hierarchy 'Function Department Hierarchy'
+		lineageTag: d09af515-141b-4369-adf0-166d5044d0bf
+
+		level 'Function Department Name'
+			lineageTag: c8927ba4-a84e-4d89-9eda-8763b148d0a9
+			column: 'Function Department Name'
+
+		level 'Function Name'
+			lineageTag: b6cdfa25-6e1b-40b0-89f1-023235e8d9b2
+			column: 'Function Name'
+
+	hierarchy 'Section Function Hierarchy'
+		lineageTag: f034ee69-1d23-4293-97f1-a9ed87c209d3
+
+		level 'Section Name'
+			lineageTag: 45ff7e4d-69e9-4fd8-96bc-da10c48ec08d
+			column: 'Section Name'
+
+		level 'Section Function Group'
+			lineageTag: 9e7d8f10-9518-4ada-b760-7e135c9f2bcf
+			column: 'Section Function Group'
+
+		level 'Section Function Name Dynamic'
+			lineageTag: 3f16dafb-c4d8-4df4-a257-43fc3ed51051
+			column: 'Section Function Name Dynamic'
+
+	partition 'Function Hierarchy' = m
+		mode: import
+		queryGroup: Dimensions
+		source = ```
+				let
+				    Source = Table.Combine({#"Function Hierarchy Prep", #"Function Hierarchy Total"}),
+				    #"Replaced Value" = Table.ReplaceValue(Source,null,false,Replacer.ReplaceValue,{"Is Total"}),
+				    
+				    // Modified merge to exclude order columns
+				    #"Merged Queries" = Table.NestedJoin(#"Replaced Value", {"Function Id"}, #"Function Department Import", {"Function Id"}, "Function Department Import.1", JoinKind.LeftOuter),
+				    #"Expanded Function Department Import.1" = Table.ExpandTableColumn(#"Merged Queries", "Function Department Import.1", {"Function Department", "Function", "Function Department Order"}, {"Function Department", "Function.1", "Function Department Order"}),
+				    
+				    // Modified column renaming - rename first so we can work with correct column names
+				    #"Renamed Columns" = Table.RenameColumns(#"Expanded Function Department Import.1",{
+				        {"Function Name", "Section Function Name"}, 
+				        {"Function Id", "Hierarchy Function Id"}, 
+				        {"Function.1", "Function Name"}, 
+				        {"Function Department", "Function Department Name"}, 
+				        {"Function Group", "Section Function Group"}
+				    }),
+				    
+				    #"Renamed Columns1" = Table.RenameColumns(#"Renamed Columns",{
+				        {"Hierarchy Function Id", "Function Id"}, 
+				        {"Function Hierarchy Id", "Section-Function Code"}
+				    }),
+				    
+				    // Get unique values maintaining the order of first appearance
+				    #"Added Index" = Table.AddIndexColumn(#"Renamed Columns1", "OriginalOrder", 0, 1),
+				    
+				    // Get first index for each distinct Section Function Name
+				    #"Grouped Rows" = Table.Group(#"Added Index", {"Section Function Name"}, {
+				        {"MinIndex", each List.Min([OriginalOrder]), type number}
+				    }),
+				    #"Sorted Rows" = Table.Sort(#"Grouped Rows",{{"MinIndex", Order.Ascending}}),
+				    #"Added Rank" = Table.AddIndexColumn(#"Sorted Rows", "Section Function Order", 1, 1),
+				    #"Removed Columns" = Table.RemoveColumns(#"Added Rank",{"MinIndex"}),
+				    
+				    // Create distinct lists with order for Section Name and Section Function Group
+				    DistinctSections = Table.Group(#"Added Index", {"Section Name"}, {
+				        {"MinIndex", each List.Min([OriginalOrder]), type number}
+				    }),
+				    SortedSections = Table.Sort(DistinctSections,{{"MinIndex", Order.Ascending}}),
+				    SectionOrderTable = Table.AddIndexColumn(SortedSections, "Section Order", 1, 1),
+				    #"Removed MinIndex" = Table.RemoveColumns(SectionOrderTable,{"MinIndex"}),
+				    
+				    DistinctGroups = Table.Group(#"Added Index", {"Section Function Group"}, {
+				        {"MinIndex", each List.Min([OriginalOrder]), type number}
+				    }),
+				    SortedGroups = Table.Sort(DistinctGroups,{{"MinIndex", Order.Ascending}}),
+				    GroupOrderTable = Table.AddIndexColumn(SortedGroups, "Section Function Group Order", 1, 1),
+				    
+				    // New step: Adjust the Shop order to be Engineering order + 0.1
+				    #"Find Shop and Engineering" = Table.AddColumn(GroupOrderTable, "IsShop", each [Section Function Group] = "Shop"),
+				    #"Find Engineering" = Table.AddColumn(#"Find Shop and Engineering", "IsEngineering", each [Section Function Group] = "Engineering"),
+				    
+				    // Get the Engineering order value (or default if not found)
+				    EngineeringRows = Table.SelectRows(#"Find Engineering", each [IsEngineering] = true),
+				    EngineeringOrder = if Table.RowCount(EngineeringRows) > 0 then EngineeringRows{0}[Section Function Group Order] else 6,
+				    
+				    // Adjust Shop's order to be just after Engineering
+				    #"Adjusted Shop Order" = Table.ReplaceValue(
+				        #"Find Engineering", 
+				        each [Section Function Group Order], 
+				        each if [IsShop] = true then EngineeringOrder + 0.1 else [Section Function Group Order],
+				        Replacer.ReplaceValue,
+				        {"Section Function Group Order"}
+				    ),
+				    
+				    // Cleanup temp columns
+				    #"Removed Helper Columns" = Table.RemoveColumns(#"Adjusted Shop Order", {"MinIndex", "IsShop", "IsEngineering"}),
+				    
+				    // Merge these back to the original table (without the OriginalOrder column)
+				    #"Removed OriginalOrder" = Table.RemoveColumns(#"Renamed Columns1", {"OriginalOrder"}, MissingField.Ignore),
+				    
+				    MergedWithSectionFunctionOrder = Table.NestedJoin(#"Removed OriginalOrder", {"Section Function Name"}, #"Removed Columns", {"Section Function Name"}, "SectionFunctionOrderTable", JoinKind.LeftOuter),
+				    ExpandedSectionFunctionOrder = Table.ExpandTableColumn(MergedWithSectionFunctionOrder, "SectionFunctionOrderTable", {"Section Function Order"}, {"Section Function Order"}),
+				    
+				    MergedWithSectionOrder = Table.NestedJoin(ExpandedSectionFunctionOrder, {"Section Name"}, #"Removed MinIndex", {"Section Name"}, "SectionOrderTable", JoinKind.LeftOuter),
+				    ExpandedSectionOrder = Table.ExpandTableColumn(MergedWithSectionOrder, "SectionOrderTable", {"Section Order"}, {"Section Order"}),
+				    
+				    MergedWithGroupOrder = Table.NestedJoin(ExpandedSectionOrder, {"Section Function Group"}, #"Removed Helper Columns", {"Section Function Group"}, "GroupOrderTable", JoinKind.LeftOuter),
+				    Result = Table.ExpandTableColumn(MergedWithGroupOrder, "GroupOrderTable", {"Section Function Group Order"}, {"Section Function Group Order"})
+				in
+				    Result
+				```
+
+	annotation PBI_ResultType = Table
+
+	annotation PBI_NavigationStepName = Navigation
+

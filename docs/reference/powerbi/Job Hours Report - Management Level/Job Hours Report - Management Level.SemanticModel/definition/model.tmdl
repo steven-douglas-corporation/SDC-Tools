@@ -1,0 +1,74 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+	dataAccessOptions
+		fastCombine
+		legacyRedirects
+		returnErrorValuesAsNull
+
+queryGroup Dimensions
+
+	annotation PBI_QueryGroupOrder = 0
+
+queryGroup Facts
+
+	annotation PBI_QueryGroupOrder = 1
+
+annotation PBI_QueryOrder = ["Employee from Hours Actual","Function Department Import","Function Hierarchy Import","Function Hierarchy Prep","Function Hierarchy Total","Functional Hierarchy Invalids from Hours Actual","Function Billing Group","Hours Actual 20250131","Hours Actual 2025 Import","Hours Actual 2025","Hours Actual YtD Import","Hours Actual YtD","Hours Estimated Import","Hours Estimated to Complete Import","Hours Estimated to Complete","Hours Quoted","Hours ME Estimated to Complete","Job from Hours Actual","Section Sub-Section","Measure Tables","Date","Employee","Function Hierarchy","Job","ME Estimate to Complete Function","Estimated to Complete Period","Meta","Hours Estimated","Hours Estimated to Complete History","Hours Actual","Cost Estimated","Part Purchase","Travel Expenses","Controls","Assembly","Standard Fees","Costs Estimated to Complete History","Job Sales","Sage Part Cost"]
+
+annotation __PBI_TimeIntelligenceEnabled = 1
+
+annotation PBI_ProTooling = ["DevMode"]
+
+ref table Job
+ref table 'Hours Actual'
+ref table 'Measure Tables'
+ref table 'Function Hierarchy'
+ref table Employee
+ref table Date
+ref table DateTableTemplate_8a87faaa-7850-439c-9752-b44836bbb806
+ref table LocalDateTable_039f8286-f633-4191-b80c-96f312fccd90
+ref table Meta
+ref table 'Hours Estimated'
+ref table 'Hours Type Selector'
+ref table Controls
+ref table LocalDateTable_96618d0e-56f3-4797-8541-d5cdcafc8f33
+ref table LocalDateTable_d5b1b1d3-4bff-48bd-8887-fcf0d6e5cda8
+ref table 'ME Estimate to Complete Function'
+ref table LocalDateTable_5c792a5b-246a-4641-9869-c1e1c885e3b6
+ref table LocalDateTable_10ce33fe-dc94-4d3c-b9ae-6d31269de0e3
+ref table LocalDateTable_ff90c369-3971-466a-85ea-ee17e91c05a9
+ref table 'Job Employee Hours'
+ref table LocalDateTable_dfd96a9a-ac2b-4b8c-829c-9a71f9f81d3d
+ref table LocalDateTable_56cce41d-a462-4bf5-814e-95e2e2f36607
+ref table 'Cost Estimated'
+ref table 'Travel Expenses'
+ref table LocalDateTable_ffdd1d33-eec6-4ad0-922f-7399ae01b670
+ref table LocalDateTable_caeff34a-fbcd-4a20-b456-48ce493aa7b8
+ref table LocalDateTable_8ba6bdb8-aa6d-4ee6-9898-2772419648b0
+ref table 'Part Purchase'
+ref table 'Part Purchase Date'
+ref table Assembly
+ref table 'Job Sales'
+ref table 'Estimated to Complete Period'
+ref table LocalDateTable_f5180c95-3677-4208-b9b2-62968839e7a1
+ref table LocalDateTable_6163780c-83f0-4598-8cbf-29ecec9a9a8a
+ref table LocalDateTable_0dc1c831-1adb-4ed5-bceb-7c3458ba7b7b
+ref table 'Hours Estimated to Complete History'
+ref table 'Profitability - Project Management %'
+ref table 'Standard Fees'
+ref table LocalDateTable_e3118963-dce4-4441-9001-91ec20334a73
+ref table 'Costs Estimated to Complete History'
+ref table LocalDateTable_d1ebf2af-1c93-46a7-8f0c-1c8cc261d054
+ref table LocalDateTable_d303ed07-1b3d-4a3e-aa2e-b72687b07a77
+ref table 'Profitability - Manufacturing %'
+ref table 'Profitability - Shop Rate'
+ref table 'Profitability - Engineering Rate'
+ref table 'Display Costs Header'
+ref table LocalDateTable_c215dfd9-3568-40f8-b37c-153f7f4b1e61
+ref table 'Sage Part Cost'
+ref table LocalDateTable_027b555c-cecb-47bf-b074-d8311438c29f
+
+ref cultureInfo en-US
+

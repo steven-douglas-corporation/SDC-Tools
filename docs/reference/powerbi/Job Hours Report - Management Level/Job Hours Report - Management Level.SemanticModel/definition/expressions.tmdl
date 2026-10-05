@@ -1,0 +1,434 @@
+expression 'Section Sub-Section' =
+		let
+		    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("Tc25DQAgEMTAXogvgOWv5UT/bQABwok1md1DisFulj0nWHCGC1zhBnd4wPNb+Apf4St8ha/Od20=", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [#"Section Id" = _t, #"Sub-Section Id" = _t])
+		in
+		    Source
+	lineageTag: 25486feb-474f-4855-9075-a9787d1f2908
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Functional Hierarchy Invalids from Hours Actual' = ```
+		let
+		    Source = #"Hours Actual YtD",
+		    #"Renamed Columns" = Table.RenameColumns(Source,{{"Section Id", "Sub-Section Id"}}),
+		    #"Added Custom4" = Table.AddColumn(#"Renamed Columns", "Function Hierarchy Id", each [#"Sub-Section Id"]&"-"&[Function Id]),
+		    #"Removed Other Columns" = Table.SelectColumns(#"Added Custom4",{"Sub-Section Id", "Function Id", "Data Source", "Function Hierarchy Id"}),
+		    #"Removed Duplicates" = Table.Distinct(#"Removed Other Columns"),
+		    #"Merged Queries" = Table.NestedJoin(#"Removed Duplicates", {"Sub-Section Id"}, #"Section Sub-Section", {"Sub-Section Id"}, "Section Sub-Section", JoinKind.LeftOuter),
+		    #"Expanded Section Sub-Section" = Table.ExpandTableColumn(#"Merged Queries", "Section Sub-Section", {"Section Id"}, {"Section Sub-Section.Section Id"}),
+		    #"Added Custom" = Table.AddColumn(#"Expanded Section Sub-Section", "Section Id", each if [#"Section Sub-Section.Section Id"] = null then [#"Sub-Section Id"] else [#"Section Sub-Section.Section Id"]),
+		    #"Removed Columns" = Table.RemoveColumns(#"Added Custom",{"Section Sub-Section.Section Id"}),
+		    #"Merged Queries2" = Table.NestedJoin(#"Removed Columns", {"Function Id"}, #"Function Billing Group", {"Function Id"}, "Function Billing Group", JoinKind.LeftOuter),
+		    #"Expanded Function Billing Group" = Table.ExpandTableColumn(#"Merged Queries2", "Function Billing Group", {"Billing Group"}, {"Billing Group"}),
+		    #"Added Custom1" = Table.AddColumn(#"Expanded Function Billing Group", "Function Group", each if [Billing Group] = null 
+		then "Invalid"
+		else [Billing Group]),
+		    #"Removed Columns2" = Table.RemoveColumns(#"Added Custom1",{"Billing Group"}),
+		    #"Added Custom3" = Table.AddColumn(#"Removed Columns2", "Function Name", each "Invalid"),
+		    #"Added Custom2" = Table.AddColumn(#"Added Custom3", "Section Name", each "Invalid"),
+		    #"Sorted Rows" = Table.Sort(#"Added Custom2",{{"Function Hierarchy Id", Order.Ascending}}),
+		    #"Added Custom5" = Table.AddColumn(#"Sorted Rows", "Is Valid", each false),
+		    #"Changed Type" = Table.TransformColumnTypes(#"Added Custom5",{{"Is Valid", type logical}}),
+		    #"Merged Queries1" = Table.NestedJoin(#"Changed Type", {"Function Hierarchy Id"}, #"Function Hierarchy Import", {"Function Hierarchy Id"}, "Function Hierarchy Import", JoinKind.LeftOuter),
+		    #"Expanded Function Hierarchy Import" = Table.ExpandTableColumn(#"Merged Queries1", "Function Hierarchy Import", {"Function Hierarchy Id"}, {"Function Hierarchy Import.Function Hierarchy Id"}),
+		    #"Filtered Rows" = Table.SelectRows(#"Expanded Function Hierarchy Import", each ([Function Hierarchy Import.Function Hierarchy Id] = null)),
+		    #"Removed Columns1" = Table.RemoveColumns(#"Filtered Rows",{"Function Hierarchy Import.Function Hierarchy Id"})
+		in
+		    #"Removed Columns1"
+		```
+	lineageTag: 05849d2b-5cfc-4548-9f52-5f63bc545f26
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Function Hierarchy Import' =
+		let
+		    Source = SharePoint.Files("https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/", [ApiVersion = 15]),
+		    #"Filtered Rows" = Table.SelectRows(Source, each ([Name] = "Project Planner Data Control.xlsx")),
+		    #"Project Planner Data Control xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/" = #"Filtered Rows"{[Name="Project Planner Data Control.xlsx",#"Folder Path"="https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/"]}[Content],
+		    #"Imported Excel Workbook" = Excel.Workbook(#"Project Planner Data Control xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/"),
+		    #"Function Hierarchy_Sheet" = #"Imported Excel Workbook"{[Item="FunctionHierarchy",Kind="Table"]}[Data],
+		    #"Changed Type" = Table.TransformColumnTypes(#"Function Hierarchy_Sheet",{{"Section Id", type text}, {"Function Id", type text}}),
+		    #"Merged Queries" = Table.NestedJoin(#"Changed Type", {"Section Id"}, #"Section Sub-Section", {"Section Id"}, "Function Hierarchy Sub-Section", JoinKind.LeftOuter),
+		    #"Expanded Function Hierarchy Sub-Section1" = Table.ExpandTableColumn(#"Merged Queries", "Function Hierarchy Sub-Section", {"Sub-Section Id"}, {"Function Hierarchy Sub-Section.Sub-Section Id"}),
+		    #"Added Custom2" = Table.AddColumn(#"Expanded Function Hierarchy Sub-Section1", "Sub-Section Id", each if [#"Function Hierarchy Sub-Section.Sub-Section Id"] = null then [Section Id] else [#"Function Hierarchy Sub-Section.Sub-Section Id"]),
+		    #"Removed Columns" = Table.RemoveColumns(#"Added Custom2",{"Function Hierarchy Sub-Section.Sub-Section Id"}),
+		    #"Added Custom5" = Table.AddColumn(#"Removed Columns", "Data Source", each "Control File"),
+		    #"Added Custom10" = Table.AddColumn(#"Added Custom5", "Function Hierarchy Id", each [#"Sub-Section Id"]&"-"&[Function Id]),
+		    #"Added Custom" = Table.AddColumn(#"Added Custom10", "Is Valid", each true),
+		    #"Changed Type1" = Table.TransformColumnTypes(#"Added Custom",{{"Is Valid", type logical}})
+		in
+		    #"Changed Type1"
+	lineageTag: 8e982632-e7c1-4baf-9ce0-9875ec5c46e3
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Hours Actual 20250131' =
+		let
+		    Source = #"Hours Estimated Import",
+		    #"Removed Columns2" = Table.RemoveColumns(Source,{"Column2", "Column3", "Column4", "Column5", "Column6", "Column7", "Column8", "Column9", "Column10", "Column11", "Column12", "Column13", "Column14", "Column15", "Column16", "Column17", "Column18", "Column19", "Column20", "Column21", "Column22", "Column23", "Column24", "Column25", "Column26","Column27"}),
+		    #"Removed Other Columns" = Table.SelectColumns(#"Removed Columns2",{"Column1", "Column28", "Column29", "Column30", "Column31", "Column32", "Column33", "Column34", "Column35", "Column36", "Column37", "Column38", "Column39", "Column40", "Column41", "Column42", "Column43", "Column44"}),
+		    #"Removed Top Rows" = Table.Skip(#"Removed Other Columns",6),
+		    #"Promoted Headers" = Table.PromoteHeaders(#"Removed Top Rows", [PromoteAllScalars=true]),
+		    #"Removed Top Rows1" = Table.Skip(#"Promoted Headers",1),
+		    #"Renamed Columns2" = Table.RenameColumns(#"Removed Top Rows1",{{"Column1", "Job Id"}}),
+		    #"Unpivoted Other Columns" = Table.UnpivotOtherColumns(#"Renamed Columns2", {"Job Id"}, "Attribute", "Value"),
+		    #"Removed Errors" = Table.RemoveRowsWithErrors(#"Unpivoted Other Columns", {"Value"}),
+		    #"Renamed Columns" = Table.RenameColumns(#"Removed Errors",{{"Value", "Hours Actual"}, {"Attribute", "Function Hierarchy Id"}}),
+		    #"Added Custom" = Table.AddColumn(#"Renamed Columns", "Date Id", each 20250131),
+		    #"Added Custom1" = Table.AddColumn(#"Added Custom", "Employee Id", each 0),
+		    #"Changed Type1" = Table.TransformColumnTypes(#"Added Custom1",{{"Date Id", Int64.Type}, {"Employee Id", Int64.Type}, {"Job Id", type text}, {"Hours Actual", type number}}),
+		    #"Filtered Rows" = Table.SelectRows(#"Changed Type1", each [Hours Actual] >= 1),
+		    // Add leading zero to 3-digit numeric Job Ids
+		    #"Padded Job Id" = Table.TransformColumns(#"Filtered Rows", {{"Job Id", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}}),
+		    #"Added Custom2" = Table.AddColumn(#"Padded Job Id", "Data Source", each "Historical Import 20250131"),
+		    #"Duplicated Column" = Table.DuplicateColumn(#"Added Custom2", "Function Hierarchy Id", "Function Hierarchy Id - Copy"),
+		    #"Split Column by Delimiter" = Table.SplitColumn(#"Duplicated Column", "Function Hierarchy Id - Copy", Splitter.SplitTextByEachDelimiter({"-"}, QuoteStyle.Csv, false), {"Function Hierarchy Id - Copy.1", "Function Hierarchy Id - Copy.2"}),
+		    #"Changed Type2" = Table.TransformColumnTypes(#"Split Column by Delimiter",{{"Function Hierarchy Id - Copy.1", Int64.Type}, {"Function Hierarchy Id - Copy.2", Int64.Type}}),
+		    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type2",{{"Function Hierarchy Id - Copy.1", "Section Id"}, {"Function Hierarchy Id - Copy.2", "Function Id"}}),
+		    #"Changed Type3" = Table.TransformColumnTypes(#"Renamed Columns1",{{"Function Id", type text}, {"Section Id", type text}, {"Employee Id", type text}, {"Data Source", type text}}),
+		    #"Reordered Columns" = Table.ReorderColumns(#"Changed Type3",{"Job Id", "Function Hierarchy Id", "Section Id", "Function Id", "Employee Id", "Date Id", "Hours Actual", "Data Source"}),
+		    #"Removed Columns1" = Table.RemoveColumns(#"Reordered Columns",{"Function Hierarchy Id"}),
+		    #"Replaced Value" = Table.ReplaceValue(#"Removed Columns1","512","412",Replacer.ReplaceText,{"Function Id"}),
+		    #"Added Custom3" = Table.AddColumn(#"Replaced Value", "Date", each #date(2025,01,31)),
+		    #"Added Custom4" = Table.AddColumn(#"Added Custom3", "Travel", each "Concord")
+		in
+		    #"Added Custom4"
+	lineageTag: 8fa90b72-15ba-49a1-b8e1-649dc7d9196b
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Hours Actual YtD' =
+		let
+		    Source = #"Hours Actual YtD Import",
+		    #"Renamed Columns" = Table.RenameColumns(Source,{{"Function", "Function Id"}, {"MachineSec", "Section Id"}, {"Work Date", "Date"}, {"Jobs", "Job Id"}, {"Total Hours Worked", "Hours Actual"}, {"Jobs Name", "Job Name"}}),
+		    #"Replaced Value" = Table.ReplaceValue(#"Renamed Columns","512","412",Replacer.ReplaceText,{"Function Id"}),
+		    #"Added Custom" = Table.AddColumn(#"Replaced Value", "Date Id", each Number.FromText(Date.ToText([Date], "yyyyMMdd"))),
+		    #"Filtered Rows2" = Table.SelectRows(#"Added Custom", each [Date Id] >= 20250201),
+		    #"Changed Type1" = Table.TransformColumnTypes(#"Filtered Rows2",{{"Job Id", type text}, {"Hours Actual", type number}, {"Date", type date}, {"Section Id", type text}, {"Date Id", Int64.Type}}),
+		    // Add leading zero to 3-digit numeric Job Ids
+		    #"Padded Job Id" = Table.TransformColumns(#"Changed Type1", {{"Job Id", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}}),
+		    #"Added Custom2" = Table.AddColumn(#"Padded Job Id", "Data Source", each "Paylocity Hours"),
+		    #"Removed Columns" = Table.RemoveColumns(#"Added Custom2",{"Job Name"})
+		in
+		    #"Removed Columns"
+	lineageTag: 59b98be4-8ba2-4724-9965-dd83a56443d7
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Hours Actual YtD Import' =
+		let
+		    Source = SharePoint.Files("https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/", [ApiVersion = 15]),
+		    #"Filtered Rows" = Table.SelectRows(Source, each ([Name] = "Current_Job_Hours.xlsx")),
+		    #"Current_Job_Hours xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Hours From Paylocity/" = #"Filtered Rows"{[Name="Current_Job_Hours.xlsx",#"Folder Path"="https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Hours From Paylocity/"]}[Content],
+		    #"Imported Excel Workbook" = Excel.Workbook(#"Current_Job_Hours xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Hours From Paylocity/"),
+		    Report_Sheet = #"Imported Excel Workbook"{[Item="Report",Kind="Sheet"]}[Data],
+		    #"Promoted Headers" = Table.PromoteHeaders(Report_Sheet, [PromoteAllScalars=true]),
+		    #"Grouped Rows" = Table.Group(#"Promoted Headers", {"Jobs", "Jobs Name", "MachineSec", "Function", "Employee Id", "Travel", "Work Date"}, {{"Row Count", each Table.RowCount(_), Int64.Type}, {"Total Hours Worked", each List.Sum([Total Hours Worked]), type number}}),
+		    #"Renamed Columns" = Table.RenameColumns(#"Grouped Rows",{{"Function", "Function Original"}}),
+		    #"Added Custom" = Table.AddColumn(#"Renamed Columns", "Function", each if [Function Original] = "315" then "518" else [Function Original]),
+		    #"Removed Columns" = Table.RemoveColumns(#"Added Custom",{"Function Original"}),
+		    #"Replaced Value" = Table.ReplaceValue(#"Removed Columns","Not Defined","Concord",Replacer.ReplaceText,{"Travel"}),
+		    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value","TRAVEL","Travel",Replacer.ReplaceText,{"Travel"})
+		in
+		    #"Replaced Value1"
+	lineageTag: da27b199-61f3-4dbf-9390-e307279df9fe
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Function Billing Group' =
+		let
+		    Source = #"Function Hierarchy Import",
+		    #"Removed Other Columns" = Table.SelectColumns(Source,{"Function Group", "Function Id"}),
+		    #"Removed Duplicates" = Table.Distinct(#"Removed Other Columns"),
+		    #"Reordered Columns" = Table.ReorderColumns(#"Removed Duplicates",{"Function Id", "Function Group"}),
+		    #"Added Custom" = Table.AddColumn(#"Reordered Columns", "Billing Group", each if List.Contains({"413", "414"}, [Function Id]) then "Manufacturing"
+		else [Function Group]),
+		    #"Removed Columns" = Table.RemoveColumns(#"Added Custom",{"Function Group"}),
+		    #"Replaced Value" = Table.ReplaceValue(#"Removed Columns","General Engineering","Engineering",Replacer.ReplaceText,{"Billing Group"}),
+		    #"Filtered Rows" = Table.SelectRows(#"Replaced Value", each ([Billing Group] <> "CE" and [Billing Group] <> "General Engineering" and [Billing Group] <> "ME")),
+		    #"Sorted Rows" = Table.Sort(#"Filtered Rows",{{"Function Id", Order.Ascending}})
+		in
+		    #"Sorted Rows"
+	lineageTag: c0124511-e855-48a2-abba-c8a63f69cbf1
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Hours Estimated Import' =
+		let
+		    Source = SharePoint.Files("https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/", [ApiVersion = 15]),
+		    #"Filtered Rows" = Table.SelectRows(Source, each ([Name] = "Project Planner Data Control.xlsx")),
+		    #"Project Planner Data Control xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/" = #"Filtered Rows"{[Name="Project Planner Data Control.xlsx",#"Folder Path"="https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/"]}[Content],
+		    #"Imported Excel Workbook" = Excel.Workbook(#"Project Planner Data Control xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/"),
+		    Estimates_Sheet = #"Imported Excel Workbook"{[Item="Estimated Hours",Kind="Sheet"]}[Data]
+		in
+		    Estimates_Sheet
+	lineageTag: a3bbba81-c139-482b-97fb-336024239dd6
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Hours Quoted' =
+		let
+		    Source = #"Hours Estimated Import",
+		    #"Removed Columns" = Table.RemoveColumns(Source,{"Column2", "Column3", "Column4", "Column5", "Column6", "Column7", "Column8", "Column9"}),
+		    #"Removed Other Columns" = Table.SelectColumns(#"Removed Columns",{"Column1", "Column10", "Column11", "Column12", "Column13", "Column14", "Column15", "Column16", "Column17", "Column18", "Column19", "Column20", "Column21", "Column22", "Column23", "Column24", "Column25", "Column26"}),
+		    #"Removed Top Rows" = Table.Skip(#"Removed Other Columns",6),
+		    #"Promoted Headers" = Table.PromoteHeaders(#"Removed Top Rows", [PromoteAllScalars=true]),
+		    #"Renamed Columns" = Table.RenameColumns(#"Promoted Headers",{{"Column1", "Job Id"}}),
+		    #"Filtered Rows1" = Table.SelectRows(#"Renamed Columns", each ([Job Id] <> "Job#")),
+		    #"Unpivoted Other Columns" = Table.UnpivotOtherColumns(#"Filtered Rows1", {"Job Id"}, "Attribute", "Value"),
+		    #"Renamed Columns1" = Table.RenameColumns(#"Unpivoted Other Columns",{{"Attribute", "Function Hierarchy Id"}, {"Value", "Hours Estimated"}}),
+		    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns1",{{"Hours Estimated", type number}}),
+		    #"Replaced Errors" = Table.ReplaceErrorValues(#"Changed Type1", {{"Hours Estimated", 0}}),
+		    #"Renamed Columns2" = Table.RenameColumns(#"Replaced Errors",{{"Hours Estimated", "Hours Quoted"}}),
+		    #"Changed Type2" = Table.TransformColumnTypes(#"Renamed Columns2",{{"Job Id", type text}}),
+		    // Add leading zero to 3-digit numeric Job Ids
+		    #"Padded Job Id" = Table.TransformColumns(#"Changed Type2", {{"Job Id", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}})
+		in
+		    #"Padded Job Id"
+	lineageTag: 8f5827b3-12d4-42c7-a098-e08361b46229
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Hours Estimated to Complete' =
+		let
+		    Source = #"Hours Estimated to Complete Import",
+		    #"Filtered Rows" = Table.SelectRows(Source, each ([IsActive] = true)),
+		    #"Removed Columns" = Table.RemoveColumns(#"Filtered Rows",{"PartCost", "User", "CreatedDateTime", "IsActive", "EstimateToClosePeriodKey"}),
+		    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Removed Columns", {"JobID"}, "Attribute", "Value"),
+		    #"Renamed Columns" = Table.RenameColumns(#"Unpivoted Columns",{{"Value", "Hours Estimated to Complete"}, {"Attribute", "Function Hierarchy Id"}, {"JobID", "Job Id"}}),
+		    // Add leading zero to 3-digit numeric Job Ids
+		    #"Padded Job Id" = Table.TransformColumns(#"Renamed Columns", {{"Job Id", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}})
+		in
+		    #"Padded Job Id"
+	lineageTag: 0dc42f86-a699-4a97-8c45-4b045d48a1cd
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Function Department Import' = ```
+		let
+		    Source = SharePoint.Files("https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/", [ApiVersion = 15]),
+		    #"Filtered Rows" = Table.SelectRows(Source, each ([Name] = "Project Planner Data Control.xlsx")),
+		    #"Project Planner Data Control xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/" = #"Filtered Rows"{[Name="Project Planner Data Control.xlsx",#"Folder Path"="https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/"]}[Content],
+		    #"Imported Excel Workbook" = Excel.Workbook(#"Project Planner Data Control xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/"),
+		    Estimates_Sheet = #"Imported Excel Workbook"{[Item="FunctionDepartment",Kind="Table"]}[Data],
+		    #"Changed Type" = Table.TransformColumnTypes(Estimates_Sheet,{{"Function Id", type text}}),
+		    
+		    // Create distinct lists with order assigned - more efficient approach
+		    DistinctFunctions = Table.Distinct(Table.SelectColumns(#"Changed Type", {"Function"})),
+		    FunctionOrderTable = Table.AddIndexColumn(DistinctFunctions, "Function Order", 1, 1),
+		    
+		    DistinctFunctionDepartments = Table.Distinct(Table.SelectColumns(#"Changed Type", {"Function Department"})),
+		    FunctionDepartmentOrderTable = Table.AddIndexColumn(DistinctFunctionDepartments, "Function Department Order", 1, 1),
+		    
+		    // Merge these back to the original table
+		    MergedWithFunctionOrder = Table.NestedJoin(#"Changed Type", {"Function"}, FunctionOrderTable, {"Function"}, "FunctionOrderTable", JoinKind.LeftOuter),
+		    ExpandedFunctionOrder = Table.ExpandTableColumn(MergedWithFunctionOrder, "FunctionOrderTable", {"Function Order"}, {"Function Order"}),
+		    
+		    MergedWithDepartmentOrder = Table.NestedJoin(ExpandedFunctionOrder, {"Function Department"}, FunctionDepartmentOrderTable, {"Function Department"}, "FunctionDepartmentOrderTable", JoinKind.LeftOuter),
+		    Result = Table.ExpandTableColumn(MergedWithDepartmentOrder, "FunctionDepartmentOrderTable", {"Function Department Order"}, {"Function Department Order"})
+		in
+		    Result
+		```
+	lineageTag: 8d52dfcd-9fe5-447e-b8b9-60a004bbfa76
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Function Hierarchy Prep' =
+		let
+		    Source = #"Function Hierarchy Import",
+		    #"Appended Query" = Table.Combine({Source, #"Functional Hierarchy Invalids from Hours Actual"}),
+		    #"Merged Queries" = Table.NestedJoin(#"Appended Query", {"Function Id"}, #"Function Billing Group", {"Function Id"}, "Function Billing Group", JoinKind.LeftOuter),
+		    #"Expanded Function Billing Group" = Table.ExpandTableColumn(#"Merged Queries", "Function Billing Group", {"Billing Group"}, {"Billing Group"}),
+		    #"Replaced Value" = Table.ReplaceValue(#"Expanded Function Billing Group",null,"Invalid",Replacer.ReplaceValue,{"Billing Group"}),
+		    #"Added Custom8" = Table.AddColumn(#"Replaced Value", "Is Engineering", each if [Billing Group] = "Engineering" then "True" else "False"),
+		    #"Added Custom9" = Table.AddColumn(#"Added Custom8", "Is Shop", each if [Billing Group] = "Shop" then "True" else "False"),
+		    #"Changed Type1" = Table.TransformColumnTypes(#"Added Custom9",{{"Is Shop", type logical}, {"Is Engineering", type logical}}),
+		    #"Added Section" = Table.AddColumn(#"Changed Type1", "Section", each if [Is Valid] = true
+		then [Section Id]&"-"&[Section Name]
+		else "98-Invalid"),
+		    #"Added Custom1" = Table.AddColumn(#"Added Section", "Function", each if [Is Valid] = true
+		then [Function Id]&"-"&[Function Name]
+		else "998-Invalid"),
+		    #"Reordered Columns" = Table.ReorderColumns(#"Added Custom1",{"Section Id", "Section Name", "Sub-Section Id", "Function Hierarchy Id", "Function Group", "Function Id", "Function Name", "Data Source", "Billing Group", "Is Engineering", "Is Shop", "Section", "Function"}),
+		    #"Changed Type" = Table.TransformColumnTypes(#"Reordered Columns",{})
+		in
+		    #"Changed Type"
+	lineageTag: 62ef68d1-1062-4b96-839c-0a1b4a59fb4a
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Job from Hours Actual' =
+		let
+		    Source = #"Hours Actual YtD Import",
+		    #"Removed Other Columns" = Table.SelectColumns(Source,{"Jobs", "Jobs Name"}),
+		    #"Removed Duplicates" = Table.Distinct(#"Removed Other Columns"),
+		    #"Filtered Rows" = Table.SelectRows(#"Removed Duplicates", each ([Jobs] <> null)),
+		    #"Sorted Rows" = Table.Sort(#"Filtered Rows",{{"Jobs", Order.Ascending}}),
+		    #"Renamed Columns" = Table.RenameColumns(#"Sorted Rows",{{"Jobs", "Job Id"}, {"Jobs Name", "Job Name"}}),
+		    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns",{{"Job Id", type text}}),
+		    // Add leading zero to 3-digit numeric Job Ids
+		    #"Padded Job Id" = Table.TransformColumns(#"Changed Type", {{"Job Id", each if _ = null then _ else let s = Text.From(_) in if Text.Length(s) = 3 and (try Number.FromText(s) otherwise null) <> null then "0" & s else s, type text}})
+		in
+		    #"Padded Job Id"
+	lineageTag: aef029d5-71b0-43d5-8915-eaf92cda5e04
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Function Hierarchy Total' = ```
+		let
+		    Source = #"Function Hierarchy Prep", //Create Totals
+		    #"Replace Section Id"= Table.TransformColumns(Source, {"Section Id", each "99", type text}),
+		    #"Replace Section Name"= Table.TransformColumns(#"Replace Section Id", {"Section Name", each "Total", type text}),
+		    #"Replace Section"= Table.TransformColumns(#"Replace Section Name", {"Section", each "99-Total", type text}),
+		    #"Renamed Function Group" = Table.RenameColumns(#"Replace Section", {{"Function Group", "Old Function Group"}}),
+		    #"Added Function Group" = Table.AddColumn(#"Renamed Function Group", "Function Group", each if [Is Valid] = false then 
+		            "Total Invalid"
+		        else 
+		            "Total " & [Billing Group]),
+		    #"Removed Old Function Group" = Table.RemoveColumns(#"Added Function Group", {"Old Function Group"}),
+		    #"Removed Function Name" = Table.RemoveColumns(#"Removed Old Function Group",{"Function Name"}),
+		    #"Added Function Name" = Table.AddColumn(#"Removed Function Name", "Function Name", each if [Is Valid] = false then "Total Invalid "
+		else  "Total "&[Billing Group]),
+		    #"Replace Function Id" = Table.ReplaceValue(#"Added Function Name",
+		        each [Function Id],
+		        each if [Billing Group] = "PM" then 990
+		            else if [Billing Group] = "Engineering" then 991
+		            else if [Billing Group] = "Shop" then 992
+		            else if [Billing Group] = "Manufacturing" then 993
+		            else if [Is Valid] = false then 998
+		            else 999,
+		        Replacer.ReplaceValue,
+		        {"Function Id"}),
+		    #"Removed Columns" = Table.RemoveColumns(#"Replace Function Id",{"Function"}),
+		    #"Added Custom" = Table.AddColumn(#"Removed Columns", "Function", each Number.ToText([Function Id])&"-"&[Function Name]),
+		    #"Added Custom3" = Table.AddColumn(#"Added Custom", "Is Total", each true),
+		    #"Changed Type" = Table.TransformColumnTypes(#"Added Custom3",{{"Is Total", type logical}}),
+		    #"Sorted Rows" = Table.Sort(#"Changed Type",{{"Is Valid", Order.Descending}, {"Function Id", Order.Ascending}})
+		in
+		    #"Sorted Rows"
+		```
+	lineageTag: 8674c4a0-d440-483a-b420-d5ed905310ef
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Hours ME Estimated to Complete' =
+		let
+		    Source = #"Hours Estimated Import",
+		    #"Removed Columns" = Table.RemoveColumns(Source,{"Column2", "Column3", "Column4", "Column5", "Column6", "Column7", "Column8", "Column9", "Column10", "Column11", "Column12", "Column13", "Column14", "Column15", "Column16", "Column17", "Column18", "Column19", "Column20", "Column21", "Column22", "Column23", "Column24", "Column25", "Column26", "Column27", "Column28", "Column29", "Column30", "Column31", "Column32", "Column33", "Column34", "Column35", "Column36", "Column37", "Column38", "Column39", "Column40", "Column41", "Column42", "Column43", "Column44", "Column45", "Column46", "Column47", "Column48", "Column49", "Column50", "Column51", "Column52", "Column53", "Column54", "Column55", "Column56", "Column57", "Column58", "Column59", "Column60", "Column61", "Column62", "Column63", "Column64", "Column65", "Column66", "Column67", "Column68", "Column69", "Column70", "Column71", "Column72", "Column73", "Column74", "Column75"}),
+		    #"Removed Other Columns" = Table.SelectColumns(#"Removed Columns",{"Column1", "Column76", "Column77", "Column78", "Column79", "Column80", "Column81", "Column82", "Column83", "Column84", "Column85", "Column86"}),
+		    #"Removed Top Rows" = Table.Skip(#"Removed Other Columns",6),
+		    #"Promoted Headers" = Table.PromoteHeaders(#"Removed Top Rows", [PromoteAllScalars=true]),
+		    #"Renamed Columns" = Table.RenameColumns(#"Promoted Headers",{{"Column1", "Job Id"}}),
+		    #"Filtered Rows1" = Table.SelectRows(#"Renamed Columns", each ([Job Id] <> "Job#")),
+		    #"Unpivoted Other Columns" = Table.UnpivotOtherColumns(#"Filtered Rows1", {"Job Id"}, "Attribute", "Value"),
+		    #"Renamed Columns1" = Table.RenameColumns(#"Unpivoted Other Columns",{{"Attribute", "Function Hierarchy Id"}, {"Value", "Hours ME"}}),
+		    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns1",{{"Hours ME", type number}}),
+		    #"Changed Type2" = Table.TransformColumnTypes(#"Changed Type1",{{"Job Id", type text}}),
+		    // Add leading zero to 3-digit numeric Job Ids
+		    #"Padded Job Id" = Table.TransformColumns(#"Changed Type2", {{"Job Id", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}})
+		in
+		    #"Padded Job Id"
+	lineageTag: 59926116-0582-4db4-8b1a-627cef70db6d
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Employee from Hours Actual' =
+		let
+		    Source = #"Hours Actual YtD",
+		    #"Removed Other Columns" = Table.SelectColumns(Source,{"Employee Id"}),
+		    #"Removed Duplicates" = Table.Distinct(#"Removed Other Columns"),
+		    #"Sorted Rows" = Table.Sort(#"Removed Duplicates",{{"Employee Id", Order.Ascending}})
+		in
+		    #"Sorted Rows"
+	lineageTag: 25b1e57e-fbb2-4df6-b0f1-5c57f3623667
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Hours Estimated to Complete Import' =
+		let
+		    Source = Sql.Database("ixt2ry3uwdpureqiskgh3zw4yy-hhghvviya5guhil4cjq5swsnda.database.fabric.microsoft.com,1433", "SDC-DataWarehouse-16d09d69-e06b-4e00-94b9-be7ccf8f2b1f", [Query="select#(lf)[etc].*#(lf), [p].[IsActive]#(lf)from [dbo].[EstimateToClose] as [etc]#(lf)join [dbo].[EstimateToClosePeriod] as [p]#(lf)#(tab)on [p].[Key] = [etc].[EstimateToClosePeriodKey]#(lf);"]),
+		    #"Changed Type" = Table.TransformColumnTypes(Source,{{"JobID", type text}}),
+		    // Add leading zero to 3-digit numeric Job IDs
+		    #"Padded Job Id" = Table.TransformColumns(#"Changed Type", {{"JobID", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}})
+		in
+		    #"Padded Job Id"
+	lineageTag: 0996ad62-9070-4eed-b721-6568586d8153
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Hours Actual 2025 Import' =
+		let
+		    Source = SharePoint.Files("https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/", [ApiVersion = 15]),
+		    #"Filtered Rows" = Table.SelectRows(Source, each ([Name] = "Job_Hours_2025.xlsx")),
+		    #"Current_Job_Hours xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Hours From Paylocity/" = #"Filtered Rows"{[Name="Job_Hours_2025.xlsx",#"Folder Path"="https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Hours From Paylocity/"]}[Content],
+		    #"Imported Excel Workbook" = Excel.Workbook(#"Current_Job_Hours xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Hours From Paylocity/"),
+		    Report_Sheet = #"Imported Excel Workbook"{[Item="Report",Kind="Sheet"]}[Data],
+		    #"Promoted Headers" = Table.PromoteHeaders(Report_Sheet, [PromoteAllScalars=true]),
+		    #"Grouped Rows" = Table.Group(#"Promoted Headers", {"Jobs", "Jobs Name", "MachineSec", "Function", "Employee Id", "Travel", "Work Date"}, {{"Row Count", each Table.RowCount(_), Int64.Type}, {"Total Hours Worked", each List.Sum([Total Hours Worked]), type number}}),
+		    #"Renamed Columns" = Table.RenameColumns(#"Grouped Rows",{{"Function", "Function Original"}}),
+		    #"Added Custom" = Table.AddColumn(#"Renamed Columns", "Function", each if [Function Original] = "315" then "518" else [Function Original]),
+		    #"Removed Columns" = Table.RemoveColumns(#"Added Custom",{"Function Original"}),
+		    #"Replaced Value" = Table.ReplaceValue(#"Removed Columns","Not Defined","Concord",Replacer.ReplaceText,{"Travel"}),
+		    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value","TRAVEL","Travel",Replacer.ReplaceText,{"Travel"})
+		in
+		    #"Replaced Value1"
+	lineageTag: 35747097-2231-4ec8-b456-0567a70bb58e
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
+expression 'Hours Actual 2025' =
+		let
+		    Source = #"Hours Actual 2025 Import",
+		    #"Renamed Columns" = Table.RenameColumns(Source,{{"Function", "Function Id"}, {"MachineSec", "Section Id"}, {"Work Date", "Date"}, {"Jobs", "Job Id"}, {"Total Hours Worked", "Hours Actual"}, {"Jobs Name", "Job Name"}}),
+		    #"Replaced Value" = Table.ReplaceValue(#"Renamed Columns","512","412",Replacer.ReplaceText,{"Function Id"}),
+		    #"Added Custom" = Table.AddColumn(#"Replaced Value", "Date Id", each Number.FromText(Date.ToText([Date], "yyyyMMdd"))),
+		    #"Filtered Rows2" = Table.SelectRows(#"Added Custom", each [Date Id] >= 20250201 and [Date Id] < 20260101),
+		    #"Changed Type1" = Table.TransformColumnTypes(#"Filtered Rows2",{{"Job Id", type text}, {"Hours Actual", type number}, {"Date", type date}, {"Section Id", type text}, {"Date Id", Int64.Type}}),
+		    // Add leading zero to 3-digit numeric Job Ids
+		    #"Padded Job Id" = Table.TransformColumns(#"Changed Type1", {{"Job Id", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}}),
+		    #"Added Custom2" = Table.AddColumn(#"Padded Job Id", "Data Source", each "Paylocity Hours"),
+		    #"Removed Columns" = Table.RemoveColumns(#"Added Custom2",{"Job Name"})
+		in
+		    #"Removed Columns"
+	lineageTag: ebcc1d89-e7b1-406e-83c3-6de969576e2b
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

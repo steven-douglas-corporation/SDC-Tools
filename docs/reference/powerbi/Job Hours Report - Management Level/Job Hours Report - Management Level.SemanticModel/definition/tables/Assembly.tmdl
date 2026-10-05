@@ -1,0 +1,793 @@
+table Assembly
+	lineageTag: 23eb16d5-d22d-41ae-8491-a57a2883d630
+
+	measure EntityBrowseDepth = ```
+			
+			    ISINSCOPE ( Assembly[Level0_Part] )
+			    + ISINSCOPE ( Assembly[Level1_Part] )
+			    + ISINSCOPE ( Assembly[Level2_Part] )
+			    + ISINSCOPE ( Assembly[Level3_Part] )
+			    + ISINSCOPE ( Assembly[Level4_Part] )
+			    + ISINSCOPE ( Assembly[Level5_Part] )
+			    + ISINSCOPE ( Assembly[Level6_Part] )
+			    + ISINSCOPE ( Assembly[Level7_Part] )
+			    + ISINSCOPE ( Assembly[Level8_Part] )
+			    + ISINSCOPE ( Assembly[Level9_Part] )
+			```
+		formatString: 0
+		lineageTag: eddcdff6-900c-4b56-8ca9-1aea5344ba70
+
+	measure 'Max Level' = ```
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    MAX ( Assembly[Level]),
+			    BLANK()
+			)
+			
+			```
+		formatString: 0
+		lineageTag: 4a79c4c5-6750-4d89-b38e-1dd72241d5ad
+
+	measure 'Sum Part Quantity' =
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    SUM(Assembly[Part Quantity]),
+			    BLANK()
+			)
+		formatString: #,0
+		lineageTag: e897233a-a15c-43a0-9fe3-9f9ba1a45836
+
+	measure 'Row Count' =
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    COUNTROWS(Assembly),
+			    BLANK()
+			)
+			
+			/*
+			VAR Val = COUNTROWS(Assembly)
+			VAR EntityShowRow =
+			    [EntityBrowseDepth] <= [Max Level]
+			VAR Result =
+			    IF ( EntityShowRow, Val )
+			RETURN
+			    Result
+			*/
+		formatString: 0
+		lineageTag: c5eb452c-d48d-4fc3-a293-d03ca9ac1737
+
+	measure 'Sum Part Cost' =
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    SUM(Assembly[Extended Cost]),
+			    BLANK()
+			)
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 672c3437-e43d-47e1-b152-450e31db8af5
+
+	measure 'Sum Assembly Quantity' =
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    SUM(Assembly[Assembly Quantity]),
+			    BLANK()
+			)
+		formatString: #,0
+		lineageTag: 53b3f081-73ff-484f-a786-c61bdc7da0cf
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	measure 'Show Row In Hierarchy' =
+			
+			SWITCH(
+			    TRUE(),
+			    AND(ISINSCOPE(Assembly[Level0_Part]), ISBLANK(VALUES(Assembly[Level0_Part]))), FALSE(),
+			    AND(ISINSCOPE(Assembly[Level1_Part]), ISBLANK(VALUES(Assembly[Level1_Part]))), FALSE(),
+			    AND(ISINSCOPE(Assembly[Level2_Part]), ISBLANK(VALUES(Assembly[Level2_Part]))), FALSE(),
+			    AND(ISINSCOPE(Assembly[Level3_Part]), ISBLANK(VALUES(Assembly[Level3_Part]))), FALSE(),
+			    AND(ISINSCOPE(Assembly[Level4_Part]), ISBLANK(VALUES(Assembly[Level4_Part]))), FALSE(),
+			    AND(ISINSCOPE(Assembly[Level5_Part]), ISBLANK(VALUES(Assembly[Level5_Part]))), FALSE(),
+			    AND(ISINSCOPE(Assembly[Level6_Part]), ISBLANK(VALUES(Assembly[Level6_Part]))), FALSE(),
+			    AND(ISINSCOPE(Assembly[Level7_Part]), ISBLANK(VALUES(Assembly[Level7_Part]))), FALSE(),
+			    AND(ISINSCOPE(Assembly[Level8_Part]), ISBLANK(VALUES(Assembly[Level8_Part]))), FALSE(),
+			    AND(ISINSCOPE(Assembly[Level9_Part]), ISBLANK(VALUES(Assembly[Level9_Part]))), FALSE(),
+			    TRUE()
+			)
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: dc37c468-0207-4453-a579-874dba3a9c37
+
+	measure 'Level Count' =
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    DISTINCTCOUNT(Assembly[Level]),
+			    BLANK()
+			)
+		formatString: 0
+		lineageTag: 0b1c4d9f-8b35-40ac-b6d1-f7876330212a
+
+	measure 'Line Assembly Quantity' = ```
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    VAR CurrentLevel0 = SELECTEDVALUE(Assembly[Level0_Part])
+			    VAR CurrentLevel1 = SELECTEDVALUE(Assembly[Level1_Part])
+			    VAR CurrentLevel2 = SELECTEDVALUE(Assembly[Level2_Part])
+			    VAR CurrentLevel3 = SELECTEDVALUE(Assembly[Level3_Part])
+			    VAR CurrentLevel4 = SELECTEDVALUE(Assembly[Level4_Part])
+			    VAR CurrentLevel5 = SELECTEDVALUE(Assembly[Level5_Part])
+			    VAR CurrentLevel6 = SELECTEDVALUE(Assembly[Level6_Part])
+			    VAR CurrentLevel7 = SELECTEDVALUE(Assembly[Level7_Part])
+			    VAR CurrentLevel8 = SELECTEDVALUE(Assembly[Level8_Part])
+			    VAR CurrentLevel9 = SELECTEDVALUE(Assembly[Level9_Part])
+			    
+			    VAR DeepestLevel = 
+			        SWITCH(TRUE(),
+			            ISINSCOPE(Assembly[Level9_Part]) && NOT ISBLANK(CurrentLevel9), 9,
+			            ISINSCOPE(Assembly[Level8_Part]) && NOT ISBLANK(CurrentLevel8), 8,
+			            ISINSCOPE(Assembly[Level7_Part]) && NOT ISBLANK(CurrentLevel7), 7,
+			            ISINSCOPE(Assembly[Level6_Part]) && NOT ISBLANK(CurrentLevel6), 6,
+			            ISINSCOPE(Assembly[Level5_Part]) && NOT ISBLANK(CurrentLevel5), 5,
+			            ISINSCOPE(Assembly[Level4_Part]) && NOT ISBLANK(CurrentLevel4), 4,
+			            ISINSCOPE(Assembly[Level3_Part]) && NOT ISBLANK(CurrentLevel3), 3,
+			            ISINSCOPE(Assembly[Level2_Part]) && NOT ISBLANK(CurrentLevel2), 2,
+			            ISINSCOPE(Assembly[Level1_Part]) && NOT ISBLANK(CurrentLevel1), 1,
+			            ISINSCOPE(Assembly[Level0_Part]) && NOT ISBLANK(CurrentLevel0), 0,
+			            -1
+			        )
+			    
+			    RETURN
+			        CALCULATE(
+			            SUM(Assembly[Assembly Quantity]),
+			            Assembly[Level0_Part] = CurrentLevel0,
+			            IF(DeepestLevel >= 1, Assembly[Level1_Part] = CurrentLevel1, ISBLANK(Assembly[Level1_Part])),
+			            IF(DeepestLevel >= 2, Assembly[Level2_Part] = CurrentLevel2, ISBLANK(Assembly[Level2_Part])),
+			            IF(DeepestLevel >= 3, Assembly[Level3_Part] = CurrentLevel3, ISBLANK(Assembly[Level3_Part])),
+			            IF(DeepestLevel >= 4, Assembly[Level4_Part] = CurrentLevel4, ISBLANK(Assembly[Level4_Part])),
+			            IF(DeepestLevel >= 5, Assembly[Level5_Part] = CurrentLevel5, ISBLANK(Assembly[Level5_Part])),
+			            IF(DeepestLevel >= 6, Assembly[Level6_Part] = CurrentLevel6, ISBLANK(Assembly[Level6_Part])),
+			            IF(DeepestLevel >= 7, Assembly[Level7_Part] = CurrentLevel7, ISBLANK(Assembly[Level7_Part])),
+			            IF(DeepestLevel >= 8, Assembly[Level8_Part] = CurrentLevel8, ISBLANK(Assembly[Level8_Part])),
+			            IF(DeepestLevel >= 9, Assembly[Level9_Part] = CurrentLevel9, ISBLANK(Assembly[Level9_Part]))
+			        ),
+			    BLANK()
+			)
+			```
+		formatString: 0
+		lineageTag: c25dc966-b02b-4de6-9127-1dabfa4e3492
+
+	measure 'Min Level' = ```
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    MIN ( Assembly[Level]),
+			    BLANK()
+			)
+			
+			```
+		formatString: 0
+		lineageTag: 1281d35d-e738-44eb-9aaa-0ecb1bb7d3da
+
+	measure 'Line Assembly Part Quantity' = ```
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    VAR CurrentLevel0 = VALUES(Assembly[Level0_Part])
+			    VAR CurrentLevel1 = VALUES(Assembly[Level1_Part])
+			    VAR CurrentLevel2 = VALUES(Assembly[Level2_Part])
+			    VAR CurrentLevel3 = VALUES(Assembly[Level3_Part])
+			    VAR CurrentLevel4 = VALUES(Assembly[Level4_Part])
+			    VAR CurrentLevel5 = VALUES(Assembly[Level5_Part])
+			    VAR CurrentLevel6 = VALUES(Assembly[Level6_Part])
+			    VAR CurrentLevel7 = VALUES(Assembly[Level7_Part])
+			    VAR CurrentLevel8 = VALUES(Assembly[Level8_Part])
+			    VAR CurrentLevel9 = VALUES(Assembly[Level9_Part])
+			    
+			    VAR DeepestLevel = 
+			        SWITCH(TRUE(),
+			            ISINSCOPE(Assembly[Level9_Part]) && NOT ISBLANK(CurrentLevel9), 9,
+			            ISINSCOPE(Assembly[Level8_Part]) && NOT ISBLANK(CurrentLevel8), 8,
+			            ISINSCOPE(Assembly[Level7_Part]) && NOT ISBLANK(CurrentLevel7), 7,
+			            ISINSCOPE(Assembly[Level6_Part]) && NOT ISBLANK(CurrentLevel6), 6,
+			            ISINSCOPE(Assembly[Level5_Part]) && NOT ISBLANK(CurrentLevel5), 5,
+			            ISINSCOPE(Assembly[Level4_Part]) && NOT ISBLANK(CurrentLevel4), 4,
+			            ISINSCOPE(Assembly[Level3_Part]) && NOT ISBLANK(CurrentLevel3), 3,
+			            ISINSCOPE(Assembly[Level2_Part]) && NOT ISBLANK(CurrentLevel2), 2,
+			            ISINSCOPE(Assembly[Level1_Part]) && NOT ISBLANK(CurrentLevel1), 1,
+			            ISINSCOPE(Assembly[Level0_Part]) && NOT ISBLANK(CurrentLevel0), 0,
+			            -1
+			        )
+			    
+			    RETURN
+			        CALCULATE(
+			            VALUES(Assembly[Hierarchical Quantity]),
+			            Assembly[Level0_Part] = CurrentLevel0,
+			            IF(DeepestLevel >= 1, Assembly[Level1_Part] = CurrentLevel1, ISBLANK(Assembly[Level1_Part])),
+			            IF(DeepestLevel >= 2, Assembly[Level2_Part] = CurrentLevel2, ISBLANK(Assembly[Level2_Part])),
+			            IF(DeepestLevel >= 3, Assembly[Level3_Part] = CurrentLevel3, ISBLANK(Assembly[Level3_Part])),
+			            IF(DeepestLevel >= 4, Assembly[Level4_Part] = CurrentLevel4, ISBLANK(Assembly[Level4_Part])),
+			            IF(DeepestLevel >= 5, Assembly[Level5_Part] = CurrentLevel5, ISBLANK(Assembly[Level5_Part])),
+			            IF(DeepestLevel >= 6, Assembly[Level6_Part] = CurrentLevel6, ISBLANK(Assembly[Level6_Part])),
+			            IF(DeepestLevel >= 7, Assembly[Level7_Part] = CurrentLevel7, ISBLANK(Assembly[Level7_Part])),
+			            IF(DeepestLevel >= 8, Assembly[Level8_Part] = CurrentLevel8, ISBLANK(Assembly[Level8_Part])),
+			            IF(DeepestLevel >= 9, Assembly[Level9_Part] = CurrentLevel9, ISBLANK(Assembly[Level9_Part])),
+			            NOT ISBLANK(Assembly[Part Quantity])
+			        ),
+			    BLANK()
+			)
+			```
+		formatString: 0
+		lineageTag: 030cba19-4dc5-49f4-a4da-9879e03e97a4
+
+	measure 'Line Assembly Part Cost' = ```
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    VAR CurrentLevel0 = VALUES(Assembly[Level0_Part])
+			    VAR CurrentLevel1 = VALUES(Assembly[Level1_Part])
+			    VAR CurrentLevel2 = VALUES(Assembly[Level2_Part])
+			    VAR CurrentLevel3 = VALUES(Assembly[Level3_Part])
+			    VAR CurrentLevel4 = VALUES(Assembly[Level4_Part])
+			    VAR CurrentLevel5 = VALUES(Assembly[Level5_Part])
+			    VAR CurrentLevel6 = VALUES(Assembly[Level6_Part])
+			    VAR CurrentLevel7 = VALUES(Assembly[Level7_Part])
+			    VAR CurrentLevel8 = VALUES(Assembly[Level8_Part])
+			    VAR CurrentLevel9 = VALUES(Assembly[Level9_Part])
+			    
+			    VAR DeepestLevel = 
+			        SWITCH(TRUE(),
+			            ISINSCOPE(Assembly[Level9_Part]) && NOT ISBLANK(CurrentLevel9), 9,
+			            ISINSCOPE(Assembly[Level8_Part]) && NOT ISBLANK(CurrentLevel8), 8,
+			            ISINSCOPE(Assembly[Level7_Part]) && NOT ISBLANK(CurrentLevel7), 7,
+			            ISINSCOPE(Assembly[Level6_Part]) && NOT ISBLANK(CurrentLevel6), 6,
+			            ISINSCOPE(Assembly[Level5_Part]) && NOT ISBLANK(CurrentLevel5), 5,
+			            ISINSCOPE(Assembly[Level4_Part]) && NOT ISBLANK(CurrentLevel4), 4,
+			            ISINSCOPE(Assembly[Level3_Part]) && NOT ISBLANK(CurrentLevel3), 3,
+			            ISINSCOPE(Assembly[Level2_Part]) && NOT ISBLANK(CurrentLevel2), 2,
+			            ISINSCOPE(Assembly[Level1_Part]) && NOT ISBLANK(CurrentLevel1), 1,
+			            ISINSCOPE(Assembly[Level0_Part]) && NOT ISBLANK(CurrentLevel0), 0,
+			            -1
+			        )
+			    
+			    VAR HierQty = 
+			        CALCULATE(
+			            SUM(Assembly[Hierarchical Quantity]),
+			            Assembly[Level0_Part] = CurrentLevel0,
+			            IF(DeepestLevel >= 1, Assembly[Level1_Part] = CurrentLevel1, ISBLANK(Assembly[Level1_Part])),
+			            IF(DeepestLevel >= 2, Assembly[Level2_Part] = CurrentLevel2, ISBLANK(Assembly[Level2_Part])),
+			            IF(DeepestLevel >= 3, Assembly[Level3_Part] = CurrentLevel3, ISBLANK(Assembly[Level3_Part])),
+			            IF(DeepestLevel >= 4, Assembly[Level4_Part] = CurrentLevel4, ISBLANK(Assembly[Level4_Part])),
+			            IF(DeepestLevel >= 5, Assembly[Level5_Part] = CurrentLevel5, ISBLANK(Assembly[Level5_Part])),
+			            IF(DeepestLevel >= 6, Assembly[Level6_Part] = CurrentLevel6, ISBLANK(Assembly[Level6_Part])),
+			            IF(DeepestLevel >= 7, Assembly[Level7_Part] = CurrentLevel7, ISBLANK(Assembly[Level7_Part])),
+			            IF(DeepestLevel >= 8, Assembly[Level8_Part] = CurrentLevel8, ISBLANK(Assembly[Level8_Part])),
+			            IF(DeepestLevel >= 9, Assembly[Level9_Part] = CurrentLevel9, ISBLANK(Assembly[Level9_Part])),
+			            NOT ISBLANK(Assembly[Part Quantity])
+			        )
+			    
+			    VAR UnitCost = 
+			        CALCULATE(
+			            SUM(Assembly[Unit Cost]),
+			            Assembly[Level0_Part] = CurrentLevel0,
+			            IF(DeepestLevel >= 1, Assembly[Level1_Part] = CurrentLevel1, ISBLANK(Assembly[Level1_Part])),
+			            IF(DeepestLevel >= 2, Assembly[Level2_Part] = CurrentLevel2, ISBLANK(Assembly[Level2_Part])),
+			            IF(DeepestLevel >= 3, Assembly[Level3_Part] = CurrentLevel3, ISBLANK(Assembly[Level3_Part])),
+			            IF(DeepestLevel >= 4, Assembly[Level4_Part] = CurrentLevel4, ISBLANK(Assembly[Level4_Part])),
+			            IF(DeepestLevel >= 5, Assembly[Level5_Part] = CurrentLevel5, ISBLANK(Assembly[Level5_Part])),
+			            IF(DeepestLevel >= 6, Assembly[Level6_Part] = CurrentLevel6, ISBLANK(Assembly[Level6_Part])),
+			            IF(DeepestLevel >= 7, Assembly[Level7_Part] = CurrentLevel7, ISBLANK(Assembly[Level7_Part])),
+			            IF(DeepestLevel >= 8, Assembly[Level8_Part] = CurrentLevel8, ISBLANK(Assembly[Level8_Part])),
+			            IF(DeepestLevel >= 9, Assembly[Level9_Part] = CurrentLevel9, ISBLANK(Assembly[Level9_Part])),
+			            NOT ISBLANK(Assembly[Part Quantity])
+			        )
+			    
+			    RETURN HierQty * UnitCost,
+			    BLANK()
+			)
+			```
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: e73a953d-ada8-469c-a3fe-cc16d7c65ac7
+
+	measure 'Assembly Total Part Cost' =
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    CALCULATE(
+			        SUMX(
+			            FILTER(Assembly, NOT ISBLANK(Assembly[Part Quantity])),
+			            Assembly[Hierarchical Quantity] * Assembly[Unit Cost]
+			        )
+			    ),
+			    BLANK()
+			)
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 721682ad-e7e5-4369-a42f-61c37d69b6f8
+
+	measure 'Assembly Total Part Quantity' =
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    CALCULATE(
+			        SUM(Assembly[Hierarchical Quantity]),
+			        NOT ISBLANK(Assembly[Part Quantity])  // Only sum parts, not assemblies
+			    ),
+			    BLANK()
+			)
+		formatString: #,0
+		lineageTag: 0488c77d-592e-4be2-82d0-d9ffbf01f6f6
+
+	measure 'Assembly Count' =
+			
+			IF(
+			    [Show Row In Hierarchy],
+			    CALCULATE(
+			        COUNTROWS(Assembly),
+			        NOT ISBLANK(Assembly[Assembly Quantity])  // Only count assembly rows
+			    ),
+			    BLANK()
+			)
+		formatString: 0
+		lineageTag: dcacea02-3db2-46fd-9f95-5bc3f6a96a07
+
+	column SpecID
+		dataType: string
+		lineageTag: 3b09f314-8c3b-4bfd-94f3-e7ec65fbef82
+		summarizeBy: none
+		sourceColumn: SpecID
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level
+		dataType: int64
+		formatString: 0
+		lineageTag: 343f6c0a-e9f9-428e-a1e4-da6b6f7956dd
+		summarizeBy: sum
+		sourceColumn: Level
+
+		annotation SummarizationSetBy = Automatic
+
+	column VisualHierarchy
+		dataType: string
+		lineageTag: e327bd31-6f78-4c05-8ab1-d503dd7a9ec5
+		summarizeBy: none
+		sourceColumn: VisualHierarchy
+
+		annotation SummarizationSetBy = Automatic
+
+	column ParentID
+		dataType: int64
+		formatString: 0
+		lineageTag: 3f1c4f9f-f439-428b-ab39-0f98fbfbafdb
+		summarizeBy: count
+		sourceColumn: ParentID
+
+		annotation SummarizationSetBy = Automatic
+
+	column ParentPartNumber
+		dataType: string
+		lineageTag: 16d6ca69-e2ed-469f-a0cc-9c68401734e1
+		summarizeBy: none
+		sourceColumn: ParentPartNumber
+
+		annotation SummarizationSetBy = Automatic
+
+	column ParentDescription
+		dataType: string
+		lineageTag: 0178ea45-5cc3-4f47-a32b-23e93c40cc4b
+		summarizeBy: none
+		sourceColumn: ParentDescription
+
+		annotation SummarizationSetBy = Automatic
+
+	column ChildID
+		dataType: int64
+		formatString: 0
+		lineageTag: 8e992403-ce7d-44d3-a833-1b5cbf45d030
+		summarizeBy: count
+		sourceColumn: ChildID
+
+		annotation SummarizationSetBy = Automatic
+
+	column ChildPartNumber
+		dataType: string
+		lineageTag: 4000ecde-df8f-4343-bca6-686e25f7c93f
+		summarizeBy: none
+		sourceColumn: ChildPartNumber
+
+		annotation SummarizationSetBy = Automatic
+
+	column ChildDescription
+		dataType: string
+		lineageTag: e7ac942e-48b0-4932-bdeb-9760a2f6ef2b
+		summarizeBy: none
+		sourceColumn: ChildDescription
+
+		annotation SummarizationSetBy = Automatic
+
+	column TreeView
+		dataType: string
+		lineageTag: 1b6c01c6-d0a5-4954-b0c5-26c6446378bb
+		summarizeBy: none
+		sourceColumn: TreeView
+
+		annotation SummarizationSetBy = Automatic
+
+	column FullPath
+		dataType: string
+		lineageTag: 7fa2de58-455e-42f9-b528-717fe398bd49
+		summarizeBy: none
+		sourceColumn: FullPath
+
+		annotation SummarizationSetBy = Automatic
+
+	column PartType
+		dataType: string
+		lineageTag: 615c8acb-414f-40a4-acae-09d18d7a7f43
+		summarizeBy: none
+		sourceColumn: PartType
+
+		annotation SummarizationSetBy = Automatic
+
+	column ItemCutLength
+		dataType: double
+		lineageTag: 4c85479d-c360-47f7-95e5-ad6ba760143f
+		summarizeBy: sum
+		sourceColumn: ItemCutLength
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column ItemLastRevision
+		dataType: string
+		lineageTag: 126ff68a-551f-4fc6-af01-c63692a444ec
+		summarizeBy: none
+		sourceColumn: ItemLastRevision
+
+		annotation SummarizationSetBy = Automatic
+
+	column UOMType
+		dataType: string
+		lineageTag: 4b478106-2089-418a-be29-c9c5e110d206
+		summarizeBy: none
+		sourceColumn: UOMType
+
+		annotation SummarizationSetBy = Automatic
+
+	column CategoryDescription
+		dataType: string
+		lineageTag: 8693298c-9fe8-4b7c-96f7-7545de04d036
+		summarizeBy: none
+		sourceColumn: CategoryDescription
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level0_Part
+		dataType: string
+		lineageTag: 02a075fc-0d19-4b6b-a06f-27ebe7ea20a2
+		summarizeBy: none
+		sourceColumn: Level0_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level1_Part
+		dataType: string
+		lineageTag: 39cb7ceb-fa91-46e7-9bdf-1257b8c8a304
+		summarizeBy: none
+		sourceColumn: Level1_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level2_Part
+		dataType: string
+		lineageTag: a0015185-9e78-4f27-af7e-0e44b48e68c8
+		summarizeBy: none
+		sourceColumn: Level2_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level3_Part
+		dataType: string
+		lineageTag: 3cb92f4b-237e-431c-ab2a-ce8c9e2846fa
+		summarizeBy: none
+		sourceColumn: Level3_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level4_Part
+		dataType: string
+		lineageTag: 40d7fce5-310d-42d1-bb6d-c6dfe59e6c69
+		summarizeBy: none
+		sourceColumn: Level4_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level5_Part
+		dataType: string
+		lineageTag: 6dc1932f-6371-43f2-83e1-b562fa142955
+		summarizeBy: none
+		sourceColumn: Level5_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level6_Part
+		dataType: string
+		lineageTag: d2f641a0-f905-4113-a9a0-4367aa84c160
+		summarizeBy: none
+		sourceColumn: Level6_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level7_Part
+		dataType: string
+		lineageTag: 1f8ce966-4c3e-4ef4-a5dc-9a24a791e730
+		summarizeBy: none
+		sourceColumn: Level7_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level8_Part
+		dataType: string
+		lineageTag: 7ae190fa-a3c4-4cad-953e-daf1ada4b9cd
+		summarizeBy: none
+		sourceColumn: Level8_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level9_Part
+		dataType: string
+		lineageTag: ca751840-0698-4194-bc3b-336e74a3beab
+		summarizeBy: none
+		sourceColumn: Level9_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Unit Cost'
+		dataType: double
+		lineageTag: 35143475-38ed-4975-9455-5cc84d8bbd91
+		summarizeBy: sum
+		sourceColumn: Unit Cost
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Extended Cost'
+		dataType: double
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 920c1a63-7fe3-4a26-a376-16b7f884a453
+		summarizeBy: sum
+		sourceColumn: Extended Cost
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Purchase Price'
+		dataType: double
+		lineageTag: 9e73aa65-c9fe-462f-a46f-d17b73697fa5
+		summarizeBy: sum
+		sourceColumn: Purchase Price
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Quantity Purchased'
+		dataType: double
+		lineageTag: 7b135e38-948e-47b7-8cd3-89c46e5cc83f
+		summarizeBy: sum
+		sourceColumn: Quantity Purchased
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Total Invoiced'
+		dataType: double
+		lineageTag: 2392601b-6c16-4a62-acca-1250f33e7ff4
+		summarizeBy: sum
+		sourceColumn: Total Invoiced
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Level 0 Part and Description' = Assembly[Level0_Part] & " - " & Assembly[ParentDescription]
+		lineageTag: bbe0ba57-2590-4bcd-b35d-019cfbb895d4
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Level 1 Part and Description' = Assembly[Level1_Part] & " - " & Assembly[ParentDescription]
+		lineageTag: 8852bb77-6c9f-474e-a0ce-e4de5e7460a0
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Level 2 Part and Description' = Assembly[Level2_Part] & " - " & Assembly[ParentDescription]
+		lineageTag: d7d91481-15d3-4c19-a0e7-ebb0ceaba371
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level10_Part
+		dataType: string
+		lineageTag: 839fddb1-c85a-46ad-8bc2-d3c8c4054dfd
+		summarizeBy: none
+		sourceColumn: Level10_Part
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Assembly Quantity'
+		dataType: int64
+		formatString: #,0
+		lineageTag: b777e1b6-6097-4f77-8915-4a69ec3becb6
+		summarizeBy: none
+		sourceColumn: Assembly Quantity
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	column 'Part Quantity'
+		dataType: int64
+		formatString: 0
+		lineageTag: 7e0cd1a6-35ca-4138-a5fb-1e1326a67747
+		summarizeBy: sum
+		sourceColumn: Part Quantity
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Hierarchical Quantity'
+		dataType: int64
+		formatString: 0
+		lineageTag: 2497fea7-c5b0-44c6-8d53-2cedf356da7f
+		summarizeBy: sum
+		sourceColumn: Hierarchical Quantity
+
+		annotation SummarizationSetBy = Automatic
+
+	column ProjectID
+		dataType: string
+		lineageTag: 95974533-a4c9-4eab-a313-c93a6b24d40d
+		summarizeBy: none
+		sourceColumn: ProjectID
+
+		annotation SummarizationSetBy = Automatic
+
+	column PowerBISortOrder
+		dataType: string
+		lineageTag: eedbda9a-59dd-47d7-be0e-ba87c9a63383
+		summarizeBy: none
+		sourceColumn: PowerBISortOrder
+
+		annotation SummarizationSetBy = Automatic
+
+	column HierarchySortKey
+		dataType: string
+		lineageTag: 6405e45b-8c93-4bd7-94db-5d34d1274597
+		summarizeBy: none
+		sourceColumn: HierarchySortKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column ItemKey
+		dataType: string
+		lineageTag: 37a8eaf2-705b-40d6-932d-2c105732d604
+		summarizeBy: none
+		sourceColumn: ItemKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column ParentKey
+		dataType: string
+		lineageTag: 91d527d1-560f-4f02-912d-f13670238b01
+		summarizeBy: none
+		sourceColumn: ParentKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level0_Sort
+		dataType: string
+		lineageTag: b4695bed-d2a7-4f52-9989-e4ac7c3ae66c
+		summarizeBy: none
+		sourceColumn: Level0_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level1_Sort
+		dataType: string
+		lineageTag: fe6d902f-02c7-4a77-841e-3082da26d5c0
+		summarizeBy: none
+		sourceColumn: Level1_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level2_Sort
+		dataType: string
+		lineageTag: eacaee7c-2521-4da2-bbff-191801b0bf81
+		summarizeBy: none
+		sourceColumn: Level2_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level3_Sort
+		dataType: string
+		lineageTag: b11efd86-4db2-4929-a9c7-3886a27cf13d
+		summarizeBy: none
+		sourceColumn: Level3_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level4_Sort
+		dataType: string
+		lineageTag: 20af1231-626d-4006-9dff-11c21475fd5e
+		summarizeBy: none
+		sourceColumn: Level4_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level5_Sort
+		dataType: string
+		lineageTag: 09ab9e3d-caf8-4ac2-8287-b9a6ceed9319
+		summarizeBy: none
+		sourceColumn: Level5_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level6_Sort
+		dataType: string
+		lineageTag: 3ac143fa-29e2-46e3-9ef7-f8a4e07c1107
+		summarizeBy: none
+		sourceColumn: Level6_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level7_Sort
+		dataType: string
+		lineageTag: e515d7ad-d7bd-4189-b3ba-1608e6e60352
+		summarizeBy: none
+		sourceColumn: Level7_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level8_Sort
+		dataType: string
+		lineageTag: 8ad52e35-9d06-4c8c-823f-74e49e4e6581
+		summarizeBy: none
+		sourceColumn: Level8_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level9_Sort
+		dataType: string
+		lineageTag: 88af64c8-1932-4a52-b528-e3886a60fe4b
+		summarizeBy: none
+		sourceColumn: Level9_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	column Level10_Sort
+		dataType: string
+		lineageTag: 67727a13-c6a6-4fe7-b0bc-9faf8b8b5efa
+		summarizeBy: none
+		sourceColumn: Level10_Sort
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Assembly = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				    Source = Sql.Database("10.0.0.7:1433", "SDC", [Query="DECLARE @bitExplodeStandardAssemblies bit = 1#(lf)#(lf);WITH SpecList AS (#(lf)    SELECT S.ProjectID, S.SpecID#(lf)    FROM tblSpec S WITH (NOLOCK)#(lf)        INNER JOIN tlkpMachineTypes MT WITH (NOLOCK) ON S.MachineType = MT.MachineType#(lf)    WHERE MachineTypeSystemID <> 2#(lf)),#(lf)AllSpecsData AS (#(lf)    SELECT ERB.*#(lf)    FROM SpecList SL#(lf)        CROSS APPLY dbo.udfEngReportsBaseWithStandardAssemblyExplode(#(lf)            SL.ProjectID,  -- Changed from @intProjectID to SL.ProjectID#(lf)            SL.SpecID, #(lf)            NULL, #(lf)            @bitExplodeStandardAssemblies#(lf)        ) ERB#(lf)),#(lf)-- Add pricing information#(lf)BOMWithPricing AS (#(lf)    SELECT #(lf)        A.*,#(lf)        ISNULL(EIM.ItemLastCost, 0) AS UnitCost,#(lf)        ISNULL(EIM.ItemLastCost, 0) * A.ItemQty AS ExtendedCost,#(lf)        case when CategoryDescription = 'Assembly' then A.ItemQty else null end AS AssemblyQty,#(lf)        case when CategoryDescription != 'Assembly' then A.ItemQty else null end AS PartQty,#(lf)        PC.PurchasePrice,#(lf)        PC.TotalPurchased,#(lf)        PC.TotalInvoiced#(lf)    FROM AllSpecsData A#(lf)        LEFT JOIN tblEngItemMaster EIM WITH (NOLOCK) ON A.ChildID = EIM.ItemID#(lf)        LEFT JOIN (#(lf)            SELECT #(lf)                POD.ItemID,#(lf)                POD.ProjectID,#(lf)                POD.SpecID,#(lf)                SUM(POD.PurchaseQty) AS TotalPurchased,#(lf)                AVG(POD.PurchasePrice) AS PurchasePrice,#(lf)                SUM(ISNULL(INV.TotalInvoicedAmount, 0)) AS TotalInvoiced#(lf)            FROM tblPurchaseOrderDetails POD WITH(NOLOCK)#(lf)                LEFT JOIN (#(lf)                    SELECT #(lf)                        APDD.PurchaseDetailID,#(lf)                        SUM(APDocQty * APDocUnitPrice * (1 - APDocItemPctDisc) * APDocCurrRate) AS TotalInvoicedAmount#(lf)                    FROM tblAPDocumentDetails APDD WITH(NOLOCK)#(lf)                        INNER JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID#(lf)                    WHERE BatchEntryTypeID NOT IN (2, 3) AND APDD.PurchaseDetailID IS NOT NULL#(lf)                    GROUP BY APDD.PurchaseDetailID#(lf)                ) INV ON POD.PurchaseDetailID = INV.PurchaseDetailID#(lf)            GROUP BY POD.ItemID, POD.ProjectID, POD.SpecID#(lf)        ) PC ON A.ChildID = PC.ItemID AND A.ProjectID = PC.ProjectID AND A.SpecID = PC.SpecID  -- Added SpecID to join#(lf)),#(lf)-- Parse the hierarchy path into numbered rows WITH descriptions#(lf)ParsedPaths AS (#(lf)    SELECT #(lf)        B.*,#(lf)        CA.ItemNum,#(lf)        CA.PartAtLevel,#(lf)        CA.DescAtLevel#(lf)    FROM BOMWithPricing B#(lf)        CROSS APPLY (#(lf)            -- Parse the parent hierarchy AND add the child as the final level#(lf)            SELECT #(lf)                ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS ItemNum,#(lf)                LTRIM(RTRIM(Split.a.value('.', 'NVARCHAR(500)'))) AS PartAtLevel,#(lf)                -- Get the description for each part in the hierarchy#(lf)                (SELECT TOP 1 EIM2.ItemDescription #(lf)                 FROM tblEngItemMaster EIM2 WITH (NOLOCK)#(lf)                 WHERE EIM2.ItemCompanyID = LTRIM(RTRIM(Split.a.value('.', 'NVARCHAR(500)')))) AS DescAtLevel#(lf)            FROM (#(lf)                -- Append the child part to the parent hierarchy path and escape XML special characters#(lf)                SELECT CAST('<X>' + #(lf)                    REPLACE(#(lf)                        REPLACE(#(lf)                            REPLACE(#(lf)                                REPLACE(#(lf)                                    REPLACE(B.PartNumberHierarchy + '\' + B.ItemCompanyID, '&', '&amp;'),#(lf)                                '<', '&lt;'),#(lf)                            '>', '&gt;'),#(lf)                        '""', '&quot;'),#(lf)                    '\', '</X><X>') + '</X>' AS XML) AS String#(lf)            ) AS A #(lf)            CROSS APPLY String.nodes('/X') AS Split(a)#(lf)            WHERE LTRIM(RTRIM(Split.a.value('.', 'NVARCHAR(500)'))) <> ''#(lf)        ) CA#(lf))#(lf)#(lf)-- Pivot the parsed paths into columns with part number + description#(lf)SELECT  #(lf)    CAST(ProjectID AS NVARCHAR(50)) AS ProjectID,#(lf)    CAST(SpecID AS NVARCHAR(50)) AS SpecID,#(lf)    -- Keys for parent-child hierarchy - use PartNumberHierarchy path to make unique#(lf)    -- Standardize by trimming slashes and adding them back consistently#(lf)    TRIM('\' FROM TRIM(PartNumberHierarchy + ItemCompanyID)) AS ItemKey,#(lf)    CASE #(lf)        WHEN Indent = 0 THEN TRIM('\' FROM TRIM(PItemCompanyID))  -- Point to root record#(lf)        ELSE TRIM('\' FROM TRIM(PartNumberHierarchy))#(lf)    END AS ParentKey,#(lf)    Indent+2 AS Level,  -- Add 2 since we're adding a root level#(lf)    LTRIM(RTRIM(#(lf)        REPLACE(#(lf)            REPLACE(#(lf)                REPLACE(PartNumberHierarchy + '\' + ItemCompanyID, '\\', '\'),#(lf)                '\\', '\'#(lf)            ),#(lf)            '\', ' > '#(lf)        )#(lf)    )) AS FullPath,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 0 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 1 THEN N'  ' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level0_Part,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 1 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 2 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level1_Part,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 2 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 3 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level2_Part,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 3 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 4 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level3_Part,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 4 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 5 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level4_Part,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 5 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 6 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level5_Part,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 6 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 7 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level6_Part,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 7 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 8 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level7_Part,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 8 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 9 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level8_Part,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 9 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 10 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level9_Part,#(lf)    #(lf)    MAX(CASE WHEN ItemNum = 10 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 11 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level10_Part,#(lf)    #(lf)    -- Power BI Sort columns for each level#(lf)    MAX(CASE WHEN ItemNum = 0 THEN PartAtLevel END) AS Level0_Sort,#(lf)    MAX(CASE WHEN ItemNum = 1 THEN PartAtLevel END) AS Level1_Sort,#(lf)    MAX(CASE WHEN ItemNum = 2 THEN PartAtLevel END) AS Level2_Sort,#(lf)    MAX(CASE WHEN ItemNum = 3 THEN PartAtLevel END) AS Level3_Sort,#(lf)    MAX(CASE WHEN ItemNum = 4 THEN PartAtLevel END) AS Level4_Sort,#(lf)    MAX(CASE WHEN ItemNum = 5 THEN PartAtLevel END) AS Level5_Sort,#(lf)    MAX(CASE WHEN ItemNum = 6 THEN PartAtLevel END) AS Level6_Sort,#(lf)    MAX(CASE WHEN ItemNum = 7 THEN PartAtLevel END) AS Level7_Sort,#(lf)    MAX(CASE WHEN ItemNum = 8 THEN PartAtLevel END) AS Level8_Sort,#(lf)    MAX(CASE WHEN ItemNum = 9 THEN PartAtLevel END) AS Level9_Sort,#(lf)    MAX(CASE WHEN ItemNum = 10 THEN PartAtLevel END) AS Level10_Sort,#(lf)    #(lf)    REPLICATE('  ', Indent) + ItemCompanyID AS VisualHierarchy,#(lf)    ParentID,#(lf)    PItemCompanyID AS ParentPartNumber,#(lf)    PItemDescription AS ParentDescription,#(lf)    ChildID,#(lf)    ItemCompanyID AS ChildPartNumber,#(lf)    ItemDescription AS ChildDescription,#(lf)    REPLICATE('--', Indent) + '> ' + ItemCompanyID AS TreeView,#(lf)    CASE #(lf)        WHEN CategoryDescription = 'Assembly' THEN '1-' + ItemCompanyID#(lf)        ELSE '2-' + ItemCompanyID#(lf)    END AS PowerBISortOrder,#(lf)    AssemblyQty as [Assembly Quantity],#(lf)    PartQty as [Part Quantity],#(lf)    CASE #(lf)        WHEN CategoryDescription = 'Assembly' THEN AssemblyQty#(lf)        ELSE PartQty * HierarchicalQuantity #(lf)    END AS [Hierarchical Quantity],#(lf)    UnitCost AS [Unit Cost],#(lf)    ExtendedCost AS [Extended Cost],#(lf)    PurchasePrice AS [Purchase Price],#(lf)    TotalPurchased AS [Quantity Purchased],#(lf)    TotalInvoiced AS [Total Invoiced],#(lf)    CASE WHEN StandardAssemblyPart = 1 THEN 'Standard Assembly' ELSE 'Regular Part' END AS PartType,#(lf)    ItemCutLength,#(lf)    ItemLastRevision,#(lf)    UOMType,#(lf)    CategoryDescription,#(lf)    HierarchySortKey#(lf)    #(lf)FROM ParsedPaths#(lf)GROUP BY #(lf)    ProjectID,#(lf)    SpecID, Indent, ParentID, PItemCompanyID, PItemDescription, ChildID, #(lf)    ItemCompanyID, ItemDescription, PartNumberHierarchy, AssemblyQty, PartQty,#(lf)    HierarchicalQuantity, UnitCost, ExtendedCost, PurchasePrice, #(lf)    TotalPurchased, TotalInvoiced, StandardAssemblyPart, ItemCutLength,#(lf)    ItemLastRevision, UOMType, CategoryDescription, HierarchySortKey#(lf)#(lf)UNION ALL#(lf)#(lf)-- Create root records from the ParentID where ParentID != 0 at the top level#(lf)-- These are the actual root items that aren't appearing as children#(lf)SELECT DISTINCT#(lf)    CAST(ProjectID AS NVARCHAR(50)) AS ProjectID,#(lf)    CAST(SpecID AS NVARCHAR(50)) AS SpecID,#(lf)    TRIM('\' FROM TRIM(PItemCompanyID)) AS ItemKey,  -- Root trimmed of slashes#(lf)    CAST(NULL AS NVARCHAR(200)) AS ParentKey,#(lf)    1 AS Level,  -- Root is level 1#(lf)    PItemCompanyID AS FullPath,#(lf)    (CASE WHEN ItemNum = 0 THEN #(lf)        CASE WHEN CategoryDescription != 'Assembly' AND Indent+2 = 1 THEN N'' ELSE N'⬢ ' END + #(lf)        PartAtLevel + ' - ' + ISNULL(DescAtLevel, '') #(lf)    END) AS Level0_Part,#(lf)    NULL AS Level1_Part,#(lf)    NULL AS Level2_Part,#(lf)    NULL AS Level3_Part,#(lf)    NULL AS Level4_Part,#(lf)    NULL AS Level5_Part,#(lf)    NULL AS Level6_Part,#(lf)    NULL AS Level7_Part,#(lf)    NULL AS Level8_Part,#(lf)    NULL AS Level9_Part,#(lf)    NULL AS Level10_Part,#(lf)    PItemCompanyID AS Level0_Sort,#(lf)    NULL AS Level1_Sort,#(lf)    NULL AS Level2_Sort,#(lf)    NULL AS Level3_Sort,#(lf)    NULL AS Level4_Sort,#(lf)    NULL AS Level5_Sort,#(lf)    NULL AS Level6_Sort,#(lf)    NULL AS Level7_Sort,#(lf)    NULL AS Level8_Sort,#(lf)    NULL AS Level9_Sort,#(lf)    NULL AS Level10_Sort,#(lf)    PItemCompanyID AS VisualHierarchy,#(lf)    ParentID,#(lf)    NULL AS ParentPartNumber,#(lf)    NULL AS ParentDescription,#(lf)    ParentID AS ChildID,#(lf)    PItemCompanyID AS ChildPartNumber,#(lf)    PItemDescription AS ChildDescription,#(lf)    PItemCompanyID AS TreeView,#(lf)    '0-' + PItemCompanyID AS PowerBISortOrder,#(lf)    NULL AS [Assembly Quantity],#(lf)    NULL AS [Part Quantity],#(lf)    NULL AS [Hierarchical Quantity],#(lf)    0.0 AS [Unit Cost],#(lf)    0.0 AS [Extended Cost],#(lf)    NULL AS [Purchase Price],#(lf)    NULL AS [Quantity Purchased],#(lf)    NULL AS [Total Invoiced],#(lf)    'Root' AS PartType,#(lf)    NULL AS ItemCutLength,#(lf)    NULL AS ItemLastRevision,#(lf)    NULL AS UOMType,#(lf)    'Root' AS CategoryDescription,#(lf)    '' AS HierarchySortKey#(lf)FROM ParsedPaths#(lf)WHERE Indent = 0 AND ParentID <> 0"])
+				in
+				    Source
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

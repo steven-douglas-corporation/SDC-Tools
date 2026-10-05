@@ -1,0 +1,5485 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "58be4fe95ad08ab1a005",
+  "position": {
+    "x": 0,
+    "y": 89,
+    "z": 1000,
+    "height": 843,
+    "width": 1700,
+    "tabOrder": 0
+  },
+  "visual": {
+    "visualType": "pivotTable",
+    "query": {
+      "queryState": {
+        "Columns": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Section Name"
+                }
+              },
+              "queryRef": "Function Hierarchy.Section Name",
+              "nativeQueryRef": "Section Name",
+              "active": true
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Section Function Group"
+                }
+              },
+              "queryRef": "Function Group.Function Group",
+              "nativeQueryRef": "Function Group1",
+              "active": true
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Section Function Name"
+                }
+              },
+              "queryRef": "Function Group.Function Name",
+              "nativeQueryRef": "Function Name",
+              "active": true
+            }
+          ]
+        },
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Job"
+                    }
+                  },
+                  "Property": "Job Id"
+                }
+              },
+              "queryRef": "Job.Job Id",
+              "nativeQueryRef": "Job#",
+              "active": true,
+              "displayName": "Job#"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Job"
+                    }
+                  },
+                  "Property": "Job Name"
+                }
+              },
+              "queryRef": "Job.Job Name",
+              "nativeQueryRef": "Description",
+              "active": true,
+              "displayName": "Description"
+            }
+          ]
+        },
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Hours Type Selector"
+                    }
+                  },
+                  "Property": "Dynamic Hours Variance"
+                }
+              },
+              "queryRef": "Hours Type Selector.Dynamic Hours Variance",
+              "nativeQueryRef": "Diff",
+              "displayName": "Diff"
+            }
+          ]
+        }
+      }
+    },
+    "expansionStates": [
+      {
+        "roles": [
+          "Rows"
+        ],
+        "levels": [
+          {
+            "queryRefs": [
+              "Job.Job Id"
+            ],
+            "isPinned": true
+          },
+          {
+            "queryRefs": [
+              "Job.Job Name"
+            ],
+            "isCollapsed": true,
+            "isPinned": true
+          },
+          {
+            "queryRefs": [
+              "Job.Job Original"
+            ],
+            "isCollapsed": true,
+            "identityKeys": [
+              {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Job"
+                    }
+                  },
+                  "Property": "Job"
+                }
+              }
+            ],
+            "isPinned": true
+          }
+        ],
+        "root": {}
+      }
+    ],
+    "objects": {
+      "columnWidth": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "112.98440979955456D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function"
+                          }
+                        },
+                        "Property": "Function Display Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'312 - Design and Drawings'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "49.861079476762974D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'10-Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Mechine Design'"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "metadata": "Measure Tables.Hours Estimated"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "42.198611149008386D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'10-Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Design and Drawings'"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "metadata": "Measure Tables.Hours Estimated"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "66D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME General'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "112D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Design and Drawings'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "53D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Software'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "32D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'General Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'HMI'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "40D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'General Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Robot'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "41D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'General Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Vision'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "111D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'General Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Database and Device'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "92D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Mechanical Build'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "80D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Electrical Build'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "81D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Manufacturing'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "75D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'PM'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Management'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "39D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Machine Testing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "39D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Machine Testing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "92D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Machine Testing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Mechanical Build'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "80D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Machine Testing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Electrical Build'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "30D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "38D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "92D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Mechanical Build'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "80D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Electrical Build'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "80D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Manufacturing'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "123D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Job.Job Id"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "256D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Job.Job Name"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "66D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME General'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'211'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "112D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Design and Drawings'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'312'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "53D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Software'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'313'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "32D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'General Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'HMI'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'515'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "40D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'General Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Robot'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'516'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "41D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'General Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Vision'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'517'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "111D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'General Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Database and Device'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'518'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "92D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Mechanical Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'411'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "80D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Electrical Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'412'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "29D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Manufacturing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'413'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "52D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Manufacturing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'414'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "75D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'PM'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Management'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'111'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "37D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Machine Testing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'311'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "29D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Machine Testing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'312'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "29D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Machine Testing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'313'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "29D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Machine Testing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'211'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "92D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Machine Testing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Mechanical Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'411'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "80D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Machine Testing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Electrical Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'412'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "29D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'311'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "29D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'312'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "29D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'313'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "29D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'211'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "92D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Mechanical Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'411'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "80D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Electrical Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'412'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "29D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Manufacturing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'413'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "51D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Warranty'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Manufacturing'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Function Id"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'414'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "29D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Teardown and Install'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "39D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Teardown and Install'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Engineering'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "92D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Teardown and Install'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Mechanical Build'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "80D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Teardown and Install'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Shop'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Electrical Build'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "28D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'PM'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'PM'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "grid": [
+        {
+          "properties": {
+            "textSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "values": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {},
+          "selector": {
+            "data": [
+              {
+                "dataViewWildcard": {
+                  "matchingOption": 1
+                }
+              }
+            ],
+            "metadata": "Measure Tables.Hours Estimated"
+          }
+        },
+        {
+          "properties": {},
+          "selector": {
+            "data": [
+              {
+                "dataViewWildcard": {
+                  "matchingOption": 1
+                }
+              }
+            ],
+            "metadata": "Hours Type Selector.Dynamic Hours Variance"
+          }
+        },
+        {
+          "properties": {
+            "fontColor": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Conditional": {
+                      "Cases": [
+                        {
+                          "Condition": {
+                            "And": {
+                              "Left": {
+                                "Comparison": {
+                                  "ComparisonKind": 2,
+                                  "Left": {
+                                    "Measure": {
+                                      "Expression": {
+                                        "SourceRef": {
+                                          "Entity": "Hours Type Selector"
+                                        }
+                                      },
+                                      "Property": "Dynamic Hours Variance"
+                                    }
+                                  },
+                                  "Right": {
+                                    "Literal": {
+                                      "Value": "-9999999D"
+                                    }
+                                  }
+                                }
+                              },
+                              "Right": {
+                                "Comparison": {
+                                  "ComparisonKind": 3,
+                                  "Left": {
+                                    "Measure": {
+                                      "Expression": {
+                                        "SourceRef": {
+                                          "Entity": "Hours Type Selector"
+                                        }
+                                      },
+                                      "Property": "Dynamic Hours Variance"
+                                    }
+                                  },
+                                  "Right": {
+                                    "Literal": {
+                                      "Value": "0D"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "Value": {
+                            "Literal": {
+                              "Value": "'#FF0000'"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "dataViewWildcard": {
+                  "matchingOption": 0
+                }
+              }
+            ],
+            "metadata": "Hours Type Selector.Dynamic Hours Variance"
+          }
+        }
+      ],
+      "columnHeaders": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            },
+            "autoSizeColumnWidth": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "rowHeaders": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "subTotals": [
+        {
+          "properties": {
+            "columnSubtotals": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "perColumnLevel": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "rowSubtotals": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "levelSubtotalEnabled": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Function Group.Function Name"
+          }
+        }
+      ],
+      "columnFormatting": [
+        {
+          "properties": {
+            "styleHeader": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "styleValues": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "backColor": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "ThemeDataColor": {
+                      "ColorId": 2,
+                      "Percent": 0.4
+                    }
+                  }
+                }
+              }
+            },
+            "styleSubtotals": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Measure Tables.Hours Estimated"
+          }
+        },
+        {
+          "properties": {
+            "backColor": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "ThemeDataColor": {
+                      "ColorId": 0,
+                      "Percent": -0.1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Measure Tables.Hours Quoted"
+          }
+        }
+      ],
+      "general": [
+        {
+          "properties": {
+            "layout": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Tabular'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "stylePreset": [
+        {
+          "properties": {
+            "name": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Condensed'"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "border": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "''"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "8ee26182e3b45b69230e",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Job"
+              }
+            },
+            "Property": "Job Status"
+          }
+        },
+        "type": "Categorical",
+        "filter": {
+          "Version": 2,
+          "From": [
+            {
+              "Name": "j",
+              "Entity": "Job",
+              "Type": 0
+            }
+          ],
+          "Where": [
+            {
+              "Condition": {
+                "In": {
+                  "Expressions": [
+                    {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Source": "j"
+                          }
+                        },
+                        "Property": "Job Status"
+                      }
+                    }
+                  ],
+                  "Values": [
+                    [
+                      {
+                        "Literal": {
+                          "Value": "'Active'"
+                        }
+                      }
+                    ]
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "howCreated": "User"
+      }
+    ]
+  }
+}

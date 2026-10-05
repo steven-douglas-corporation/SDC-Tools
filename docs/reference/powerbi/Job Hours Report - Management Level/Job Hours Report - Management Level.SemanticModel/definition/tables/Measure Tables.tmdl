@@ -1,0 +1,1392 @@
+table 'Measure Tables'
+	lineageTag: 2d363c8f-3c36-466b-9a1d-ebe8dfdbe90f
+
+	measure 'Hours Actual' =
+			
+			CALCULATE(sum('Hours Actual'[Hours Actual]))
+		formatString: #,0
+		lineageTag: 40cb567e-6f96-4ee3-9c39-99a5f4f46205
+
+	measure 'Hours Quoted' =
+			
+			CALCULATE(
+			    SUM('Hours Estimated'[Hours Quoted]),
+			    ALL('Date')
+			)
+		formatString: #,0
+		lineageTag: acbd3bd9-4710-4c33-afec-ce45c35f7bd7
+
+	measure 'Hours Quoted Remaining' = [Hours Quoted] - [Hours Actual]
+		formatString: #,0
+		lineageTag: ea6ef5b6-e4d9-4fd0-9da6-34c3226a5924
+
+	measure 'Is Overrun' = if([Hours Quoted Remaining] < 0,TRUE(),FALSE())
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: d8e80785-f762-4fb2-b9a3-7827b8c37637
+
+	measure 'Job Display' = ```
+			
+			VAR SelectedJobCount = DISTINCTCOUNT(Job[Job])
+			VAR FirstJob = IF(SelectedJobCount = 1, FIRSTNONBLANK(Job[Job], 1), "")
+			VAR AllJobsCount = CALCULATE(DISTINCTCOUNT(Job[Job]), REMOVEFILTERS(Job))
+			RETURN
+			    IF(
+			        SelectedJobCount = 1, 
+			        FirstJob,  // Show the specific job when exactly one job is selected
+			        IF(
+			            SelectedJobCount = AllJobsCount,
+			            "All Jobs Selected",  // Show "All Jobs" when all jobs are selected
+			            "Multiple Jobs Selected"  // Show this text when multiple (but not all) jobs are selected
+			        )
+			    )
+			```
+		displayFolder: _Display
+		lineageTag: caa92cc5-a0b0-49ef-bd3d-3b67fb8f95fe
+
+	measure 'Is Shop Overrun' = ```
+			
+			IF(
+			    CALCULATE([Hours Quoted Remaining], 
+			        FILTER('function hierarchy', 'function hierarchy'[Is Shop] = TRUE())
+			    ) < 0,
+			    TRUE(),
+			    FALSE()
+			)
+			```
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 7cc4703d-7d55-442b-b48f-fc3df8a73745
+
+	measure 'Is Engineering Overrun' = ```
+			
+			IF(
+			    CALCULATE([Hours Quoted Remaining], 
+			        FILTER('function hierarchy', 'Function Hierarchy'[Is Engineering] = TRUE())
+			    ) < 0,
+			    TRUE(),
+			    FALSE()
+			)
+			```
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 49eaa5ce-ff3a-46b5-97cc-41059a55bbf5
+
+	measure Jobs = CALCULATE(COUNT(Job[Job Id]))
+		formatString: 0
+		lineageTag: 690efd7e-053d-480c-ae2e-1041f9bbff20
+
+	measure 'Hours Date Max' =
+			
+			VAR DateIdText = FORMAT(max('Hours Actual'[Date Id]), "0")
+			RETURN
+			    DATE(
+			        VALUE(LEFT(DateIdText, 4)),
+			        VALUE(MID(DateIdText, 5, 2)),
+			        VALUE(RIGHT(DateIdText, 2))
+			    )
+		formatString: Short Date
+		lineageTag: a343ef04-5460-4726-bf37-dc1715cfe31c
+
+	measure 'Hours Date Min' =
+			
+			
+			VAR DateIdText = FORMAT(min('Hours Actual'[Date Id]), "0")
+			RETURN
+			    DATE(
+			        VALUE(LEFT(DateIdText, 4)),
+			        VALUE(MID(DateIdText, 5, 2)),
+			        VALUE(RIGHT(DateIdText, 2))
+			    )
+		formatString: Short Date
+		lineageTag: 6a5818be-573e-49a8-81a8-29c50055ca55
+
+	measure 'Model Refresh Date Time' =
+			
+			max(Meta[Model Refresh Date Time])
+		formatString: General Date
+		displayFolder: _Meta
+		lineageTag: 813c1716-9229-456b-bfd7-f1c83a774cc0
+
+	measure 'Overrun %' = DIVIDE([Hours Actual] - [Hours Quoted] , [Hours Quoted],BLANK())
+		lineageTag: 7dbe07db-80e5-45e0-b906-ae050d9c0256
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Relative Days' =
+			
+			VAR minDate = MIN('Date'[Date])
+			VAR maxDate = MAX('Date'[Date])
+			VAR days = DATEDIFF(MinDate, MaxDate, DAY) + 1
+			RETURN
+			    days
+		formatString: 0
+		lineageTag: 0e6db650-70a5-438f-a77c-9cc2c33eb7e1
+
+	measure 'Actual Hours Exceptions Last N Days' = "Actual Hours Exceptions - "&MIN('Date'[Date])&" to " &max('Date'[Date])
+		displayFolder: _Display
+		lineageTag: 10146644-81e0-4aed-ae1f-583667d5a185
+
+	measure 'Hours Estimated to Complete' =
+			
+			CALCULATE(
+			    SUM('Hours Estimated'[Hours Estimated to Complete]),
+			    REMOVEFILTERS('Date')
+			)
+		formatString: #,0
+		lineageTag: 7b88b013-8fea-40a9-936a-9a81a347eaf0
+
+	measure 'Hours Actual, Est to Date' = ```
+			
+			    CALCULATE(
+			        SUM('Hours Actual'[Hours Actual]),
+			        FILTER(
+			            'Hours Actual',
+			            RELATED('Date'[Date]) > [Estimated to Complete As Of Date]
+			        )
+			    )
+			```
+		formatString: #,0
+		lineageTag: 89130a2b-d93d-4b55-a0ac-e8af7544b2f3
+
+	measure 'Hours Quoted Variance' = [Hours Quoted] - [Hours Actual]
+		lineageTag: f50a6f14-c62b-4d6e-9517-8abd51f4f50c
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Hours ETC Variance, Cumulative' = [Hours Estimated to Complete] - [Hours Actual, Est to Date Cumulative]
+		formatString: #,0
+		lineageTag: b278cf18-717b-48e4-b0e6-a65e872928ed
+
+	measure 'Hours Actual, Cumulative' =
+			
+			CALCULATE(
+			    [Hours Actual],
+			    FILTER(
+			        ALL('Date'),
+			        'Date'[Date] <= MAX('Date'[Date])
+			    )
+			)
+		lineageTag: 18dc646b-afb7-4427-971e-36c6cdf5f037
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Hours Actual, Est to Date Cumulative' =
+			
+			CALCULATE(
+			    [Hours Actual],
+			    FILTER(
+			        ALL('Date'),
+			        'Date'[Date] > [Estimated to Complete As Of Date] &&
+			        'Date'[Date] <= MAX('Date'[Date])
+			    )
+			)
+		lineageTag: 3f4629a6-5e75-4dab-b055-79daee163fde
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Hours ETC Variance' = [Hours Estimated to Complete] - [Hours Actual, Est to Date]
+		formatString: #,0
+		lineageTag: 0c4ac66c-70e9-4856-a3b8-442c83846345
+
+	measure 'Estimated to Complete As Of Date' = ```
+			
+			VAR ActiveBeginDate = 
+			    CALCULATE(
+			        MAX('Estimated to Complete Period'[ETC Begin Date]),
+			        'Estimated to Complete Period'[ETC Is Active] = TRUE()
+			    )
+			VAR LastDayOfPriorMonth = EOMONTH(ActiveBeginDate, -1)
+			RETURN
+			LastDayOfPriorMonth
+			```
+		formatString: mmm dd, yyyy
+		displayFolder: _Meta
+		lineageTag: a5fb0fa1-bc65-4bd5-b06a-b2687c39f137
+
+		annotation PBI_FormatHint = {"isCustom":true}
+
+	measure 'Engineering Employees' =
+			
+			max(Controls[Engineering Employees])
+		formatString: #,0
+		lineageTag: cad7d132-09dc-4ad8-90df-f9b6f620595d
+
+	measure 'Shop Employees' = max(Controls[Shop Employees])
+		formatString: #,0
+		lineageTag: 68fc0360-63e9-4dfd-892b-423ab1e9fad7
+
+	measure 'Work Hours Per Day' = max(Controls[Work Hours per Day])
+		formatString: #,0
+		lineageTag: 5f92d3d5-3e4d-4096-a940-f7d1f05785b0
+
+	measure 'Working Days' =
+			
+			CALCULATE(
+			    COUNTROWS('Date'),
+			    'Date'[Is Weekend] = FALSE()
+			)
+		formatString: 0
+		lineageTag: 8e78d357-e505-401a-be65-6b0f19df9634
+
+	measure 'Utilization Hours Expected' =
+			
+			CALCULATE(
+			    [Hours Actual],
+			    KEEPFILTERS(Employee[Employee Department] IN {"Controls Engineering","Machine Building","Machine Wiring","Mechanical Engineering","Manufacturing"})
+			)
+		formatString: #,0
+		lineageTag: 61dfc696-3391-4170-a22b-0fb99164ffb1
+
+	measure 'Utilization %' = ```
+			
+			    divide([Hours Actual Billable] , [Utilization Hours Expected] , BLANK())
+			```
+		formatString: 0%;-0%;0%
+		lineageTag: 484bcd69-5124-4cca-928a-3514ef8b935c
+
+	measure 'Hours Actual Average' =
+			
+			CALCULATE(AVERAGE('Hours Actual'[Hours Actual]))
+		lineageTag: ef3ce740-24d6-44b7-9f17-44c9cae9dbfa
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Hours Refreshed Thru' =
+			
+			MAX(Meta[Hours Refreshed Thru])
+		formatString: Short Date
+		displayFolder: _Meta
+		lineageTag: 9a47023e-96e8-4119-9bfe-48a82ee723bd
+
+	measure 'Utilization Thru' = ```
+			
+			    [Hours Refreshed Thru]-1
+			    
+			```
+		formatString: Short Date
+		displayFolder: _Meta
+		lineageTag: 455b387e-c6e4-4a1d-b9e8-d70d37706d6e
+
+	measure 'Hours Actual Billable' =
+			
+			CALCULATE(
+			    SUM('Hours Actual'[Hours Actual]),
+			    Employee[Employee Department] IN {"Controls Engineering","Machine Building","Machine Wiring","Mechanical Engineering","Manufacturing"},
+			    FILTER(
+			        'Hours Actual',
+			        (
+			            (ISBLANK(RELATED('Job'[Effective Close Date])) || 'Hours Actual'[Date] <= RELATED('Job'[Effective Close Date])) &&
+			            NOT(LEFT('Hours Actual'[Section-Function Code], 2) IN {"98"}) && //98=Invalid
+			            NOT('Hours Actual'[Job Id] IN {"4000","1083","7000","10000"})
+			        )
+			        ||
+			        (
+			            NOT(ISBLANK(RELATED('Job'[Effective Close Date]))) && 'Hours Actual'[Date] > RELATED('Job'[Effective Close Date]) &&
+			            LEFT('Hours Actual'[Section-Function Code], 2) IN {"70","80","90"} && //70=Warranty, 80=Service, 90=Spare Parts
+			            NOT('Hours Actual'[Job Id] IN {"4000","1083","7000","10000"})
+			        )
+			    )
+			)
+		formatString: #,0
+		lineageTag: 82fa7207-d584-4127-8f25-62fd03407550
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	measure 'Estimated Remaining Days Shop' =
+			
+			CALCULATE(
+			    DIVIDE([Hours ETC Variance], ([Shop Employees]*[Work Hours Per Day])),
+			    KEEPFILTERS('Function Hierarchy'[Billing Group] = "Shop"),
+			    KEEPFILTERS(Job[Is Active Job] = TRUE())
+			) * 7/5  // Convert from calendar days to workdays
+		lineageTag: 77e4dc60-80ee-4b85-8f7d-befb8090044f
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Estimated Remaining Days Engineering' =
+			
+			CALCULATE(
+			    DIVIDE([Hours ETC Variance], ([Engineering Employees]*[Work Hours Per Day])),
+			    KEEPFILTERS('Function Hierarchy'[Billing Group] = "Engineering"),
+			    KEEPFILTERS(Job[Is Active Job] = TRUE())
+			) * 7/5  // Convert from calendar days to workdays
+		lineageTag: a4eecdda-073e-4b37-8cc4-89f72f2d0aef
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Estimated Engineering Work Thru' = [Hours Refreshed Thru] + [Estimated Remaining Days Engineering]
+		formatString: Short Date
+		lineageTag: cf9252c7-f4a6-474b-91e4-fc062ca64649
+
+	measure 'Estimated Shop Work Thru' = [Hours Refreshed Thru] + [Estimated Remaining Days Shop]
+		formatString: Short Date
+		lineageTag: c3b6623b-0142-4496-94d0-42c3884f47f6
+
+	measure 'Hours Actual Billable Warranty' =
+			
+			CALCULATE(
+			    SUM('Hours Actual'[Hours Actual]),
+			    Employee[Employee Department] IN {"Controls Engineering","Machine Building","Machine Wiring","Mechanical Engineering","Manufacturing"},
+			    FILTER(
+			        'Hours Actual',
+			        LEFT('Hours Actual'[Section-Function Code], 2) IN {"70"} && //70=Warranty
+			        NOT('Hours Actual'[Job Id] IN {"4000","1083","6000","7000","10000"})
+			    )
+			)
+		formatString: #,0
+		lineageTag: 7a87a6c8-e2d0-4675-a905-e27077068aef
+
+	measure 'Hours Actual Billable Service' =
+			
+			CALCULATE(
+			    SUM('Hours Actual'[Hours Actual]),
+			    Employee[Employee Department] IN {"Controls Engineering","Machine Building","Machine Wiring","Mechanical Engineering","Manufacturing"},
+			    FILTER(
+			        'Hours Actual',
+			        (
+			            //RELATED('Job'[Is Active Job]) = FALSE() &&
+			            LEFT('Hours Actual'[Section-Function Code], 2) = "80" && //80=Service
+			            NOT('Hours Actual'[Job Id] IN {"4000","1083","6000","7000","10000"})
+			        )
+			    )
+			)
+		formatString: #,0
+		lineageTag: 28bba120-d49a-48f4-8625-8f81aa594b2e
+
+	measure 'Hours Actual Billable Active' =
+			
+			CALCULATE(
+			    SUM('Hours Actual'[Hours Actual]),
+			    Employee[Employee Department] IN {"Controls Engineering","Machine Building","Machine Wiring","Mechanical Engineering","Manufacturing"},
+			    FILTER(
+			        'Hours Actual',
+			        (
+			            (ISBLANK(RELATED('Job'[Effective Close Date])) || 'Hours Actual'[Date] <= RELATED('Job'[Effective Close Date])) &&
+			            NOT(LEFT('Hours Actual'[Section-Function Code], 2) IN {"70", "80", "90", "98"}) && //70=Warranty, 80=Service, 90=Spare Parts, 98=Invalid
+			            NOT('Hours Actual'[Job Id] IN {"4000","1083","6000","7000","10000"})
+			        )
+			    )
+			)
+		formatString: #,0
+		lineageTag: 69724944-6de7-4595-adf8-91823744b7ef
+
+	measure 'Hours Actual Non-Billable' =
+			
+			CALCULATE(
+			    SUM('Hours Actual'[Hours Actual]),
+			    Employee[Employee Department] IN {"Controls Engineering","Machine Building","Machine Wiring","Mechanical Engineering","Manufacturing"},
+			    FILTER(
+			        'Hours Actual',
+			        NOT('Hours Actual'[Job Id] = "6000") &&
+			        (
+			            (
+			                (ISBLANK(RELATED('Job'[Effective Close Date])) || 'Hours Actual'[Date] <= RELATED('Job'[Effective Close Date])) &&
+			                (
+			                    (LEFT('Hours Actual'[Section-Function Code], 2) IN {"98"}) || //98=Invalid
+			                    ('Hours Actual'[Job Id] IN {"4000","1083","7000","10000"})
+			                )
+			            )
+			            ||
+			            (
+			                NOT(ISBLANK(RELATED('Job'[Effective Close Date]))) && 'Hours Actual'[Date] > RELATED('Job'[Effective Close Date]) &&
+			                (
+			                    NOT(LEFT('Hours Actual'[Section-Function Code], 2) IN {"70","80","90"}) || //70=Warranty, 80=Service, 90=Spare Parts
+			                    ('Hours Actual'[Job Id] IN {"4000","1083","7000","10000"})
+			                )
+			            )
+			        )
+			    )
+			)
+		formatString: #,0
+		lineageTag: 43649c3e-e8d7-4b8e-8044-3e20a957ebf1
+
+	measure 'Hours Actual Billable Spare Parts' =
+			
+			CALCULATE(
+			    SUM('Hours Actual'[Hours Actual]),
+			    Employee[Employee Department] IN {"Controls Engineering","Machine Building","Machine Wiring","Mechanical Engineering","Manufacturing"},
+			    FILTER(
+			        'Hours Actual',
+			        (
+			            //RELATED('Job'[Is Active Job]) = FALSE() &&
+			            LEFT('Hours Actual'[Section-Function Code], 2) = "90" && //90=Spare Parts
+			            NOT('Hours Actual'[Job Id] IN {"4000","1083","6000","7000","10000"})
+			        )
+			    )
+			)
+		formatString: #,0
+		lineageTag: 316c992e-1b23-4763-9889-ab386ff014d6
+
+	measure 'Engineering Design to Debug Ratio' = ```
+			
+			VAR DesignHours = [Engineering Design Hours]
+			
+			VAR DebugHours = [Engineering Debug Hours]
+			
+			VAR Result = 
+			    IF(
+			        DebugHours < 200 || ISBLANK(DebugHours),
+			        BLANK(),
+			        DIVIDE(DesignHours, DebugHours)
+			    )
+			
+			
+			RETURN Result
+			```
+		formatString: 0.00
+		lineageTag: 8ae7c1b1-84b6-450d-ab46-8e58e3fc9f93
+
+	measure 'Engineering Design Hours' = ```
+			
+			    CALCULATE(
+			        SUM('Hours Actual'[Hours Actual]),
+			        'Function Hierarchy'[Section Id] = "10",
+			        'Function Hierarchy'[Billing Group] = "Engineering"
+			    )
+			```
+		formatString: #,0
+		lineageTag: ce361157-0c0a-48f8-b2c4-83d38df0f610
+
+	measure 'Engineering Debug Hours' = ```
+			
+			    CALCULATE(
+			        SUM('Hours Actual'[Hours Actual]),
+			        'Function Hierarchy'[Section Id] = "40",
+			        'Function Hierarchy'[Billing Group] = "Engineering"
+			    )
+			```
+		formatString: #,0
+		lineageTag: 5a420f0f-9842-4eb0-b927-58013c580b5d
+
+	measure Employees = count(Employee[Employee Id])
+		formatString: 0
+		lineageTag: 33b9794f-9224-4c57-af4c-9a041a2e4cd9
+
+	measure 'Theoretical Total Hours' = [Employees]*[Working Days]*8
+		formatString: #,0
+		lineageTag: 8d29ceb5-e5d0-45b3-bd7b-6b8624bc9ff9
+
+	measure 'Theoretical vs Actual Hours' = [Theoretical Total Hours] - [Hours Actual]
+		formatString: #,0
+		lineageTag: 4b5603c6-acd0-436e-b4e0-c6b850928527
+
+	measure 'Hours Estimated to Complete ME' =
+			
+			CALCULATE(SUM('Hours Estimated'[Hours ME Estimated to Complete]))
+		formatString: #,0
+		lineageTag: b14908ea-6aa2-4074-b521-9b05c04a8e27
+
+	measure 'Hours Actual ME' =
+			
+			CALCULATE(
+			    SUM('Hours Actual'[Hours Actual]),
+			    'Function Hierarchy'[Function Id] = "211"
+			)
+		formatString: #,0
+		lineageTag: e6e9d09a-263a-4c2b-9584-7ea71cb87421
+
+	measure 'Engineering Overtime Hours' =
+			
+			SUMX(
+			    FILTER(
+			        SUMMARIZE(
+			            FILTER(
+			                'Hours Actual',
+			                RELATED(Employee[Employee Billing Group]) = "Engineering"
+			            ),
+			            Employee[Employee Name],
+			            'Date'[Date]
+			        ),
+			        VAR DailyHours = CALCULATE(SUM('Hours Actual'[Hours Actual]))
+			        RETURN DailyHours > 8
+			    ),
+			    VAR DailyHours = CALCULATE(SUM('Hours Actual'[Hours Actual]))
+			    RETURN DailyHours - 8
+			)
+		formatString: #,0
+		lineageTag: c1183ac8-454c-4837-a27e-f68d0da9cea8
+
+	measure 'Available Hours %' = DIVIDE([Hours Actual],[Theoretical Total Hours])
+		formatString: 0%;-0%;0%
+		lineageTag: d1126888-752d-4b85-8e9e-404f9cbb13b9
+
+	measure 'Select One Job Display' =
+			
+			IF(
+			    COUNTROWS(VALUES('Job'[Job])) > 1,
+			    "Please select only one job to view this analysis",
+			    ""
+			)
+		displayFolder: _Display
+		lineageTag: 0d501c3e-f4d7-44d6-b6dd-29a648040546
+
+	measure Blank = BLANK()
+		formatString: 0
+		displayFolder: _Display
+		lineageTag: b0f5d559-5a6c-4308-ab6f-6d1e5c7faad9
+
+	measure 'Part Cost Quoted' = sum('Cost Estimated'[Cost Quoted])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: a11cb37f-3c8d-4a44-ab3c-d4418cdce7cd
+
+	measure 'Part Cost Estimated To Complete' = sum('Cost Estimated'[Cost Estimated To Complete])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 76d70422-7f63-4518-a77b-e5058e0aa11a
+
+	measure 'Part Cost Purchased' =
+			
+			SUM('Part Purchase'[Total Price])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 265986e5-c057-4db1-83e6-26ca480cea77
+
+	measure 'Part Cost Actual ETC to Date' =
+			
+			CALCULATE(
+			    [Part Cost Purchased],
+			    'Date'[Is ETC To Date] = TRUE
+			)
+		lineageTag: 37b5913a-2f2e-472c-b908-ae422e361c8a
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Part Cost Total Dynamic' = ```
+			
+			VAR SelectedMeasure = SELECTEDVALUE('Hours Type Selector'[Estimated Hours Fields])
+			RETURN
+			CALCULATE(
+			    IF(
+			        SelectedMeasure = NAMEOF('Measure Tables'[Hours Quoted]),
+			        [Part Cost Purchased], //quoted
+			        [Part Cost Actual ETC to Date] //etc
+			    ),
+			    ALL('Hours Type Selector')
+			)
+			
+			```
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 2686f871-18f7-40bc-9155-8cc0372d6ad2
+
+	measure 'Part Cost Estimated Dynamic' = ```
+			
+			VAR SelectedMeasure = SELECTEDVALUE('Hours Type Selector'[Estimated Hours Fields])
+			RETURN
+			CALCULATE(
+			    IF(
+			        SelectedMeasure = NAMEOF('Measure Tables'[Hours Quoted]),
+			        [Part Cost Quoted], //quoted
+			        [Part Cost Estimated To Complete] //etc
+			    ),
+			    ALL('Hours Type Selector')
+			)
+			
+			```
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 1192f8f3-6946-447e-90c4-f764f530cbfd
+
+	measure 'Travel Expense Amount' = CALCULATE(sum('Travel Expenses'[Expense Amount]))
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: bb47245f-eb5b-4ff9-825a-96cb8ce1c3dd
+
+	measure 'Service Hourly Rate' =
+			
+			var employeeDepartment = SELECTEDVALUE(Employee[Employee Department])
+			
+			RETURN
+			switch(true
+			,employeeDepartment = "Mechanical Engineering", 200
+			,employeeDepartment = "Controls ENgineering", 200
+			,employeeDepartment = "Machine Building", 150
+			,employeeDepartment = "Machine Wiring", 150
+			)
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: dc8924b9-783d-42f0-a1e8-578950c81dbe
+
+	measure 'Service Cost' = [Hours Actual] * [Service Hourly Rate]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 85a099d5-a6a5-45ba-9e77-6434665e7cdc
+
+	measure 'Part Cost Total with 1.3 Markup' = [Part Cost Purchased] * 1.3
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: aa893d84-c7b4-4d7a-9377-cb3dda81abe6
+
+	measure 'Part Purchase Quantity' = sum('Part Purchase'[Quantity])
+		lineageTag: 029ce62d-68b6-4628-9145-565b127998fb
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Part Purchase Price' = sum('Part Purchase'[Purchase Price])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 2002cb50-b201-44a8-9f0c-ace120c04061
+
+	measure 'Part Invoiced Amount' = sum('Part Purchase'[Invoiced Amount])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 98ffa418-ccf5-4d32-847d-867b165a7ca8
+
+	measure 'Part % Invoiced' = DIVIDE([Part Invoiced Amount],[Part Cost Purchased],BLANK())
+		formatString: 0%;-0%;0%
+		lineageTag: 95407ab4-e06b-4478-bdc3-d096e47198fb
+
+	measure 'Part Cost Invoiced Dynamic' = ```
+			
+			VAR SelectedMeasure = SELECTEDVALUE('Hours Type Selector'[Estimated Hours Fields])
+			RETURN
+			CALCULATE(
+			    IF(
+			        SelectedMeasure = NAMEOF('Measure Tables'[Hours Quoted]),
+			        [Part Invoiced Amount], //quoted
+			        [Part Invoiced ETC to Date] //etc
+			    ),
+			    ALL('Hours Type Selector')
+			)
+			
+			```
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 35fc1a43-89f9-414c-b9b0-28086f7c53f6
+
+	measure 'Part Invoiced ETC to Date' =
+			
+			CALCULATE(
+			    [Part Invoiced Amount],
+			    'Date'[Is ETC To Date] = TRUE
+			)
+		lineageTag: 537aef80-1653-4b32-af84-5435b12555fd
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Part Cost Left to Spend' = [Part Cost Purchased] - [Part Invoiced Amount]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 43b659b8-a5c6-45a3-9b17-78a80f1dd3f5
+
+	measure 'Part Cost Chart Max' = max([Part Cost Quoted], [Part Cost Purchased])
+		lineageTag: 36e856cc-1d79-4841-b639-2767ec1e917a
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Part Cost Total Chart Spacer' = [Part Cost Quoted Chart Spacer] + [Part Cost Quoted] - [Part Cost Purchased]
+		lineageTag: 94a1f7ab-24c4-4ac8-9865-47ccae73c8f9
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Part Cost Invoiced Chart Spacer' = [Part Cost Quoted Chart Spacer] + [Part Cost Quoted] - [Part Invoiced Amount]
+		lineageTag: 1c406ff4-7026-4e4b-8b97-0586409936ad
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Part Cost Quoted Chart Spacer' = [Part Cost Quoted]*.5
+		lineageTag: 635aa411-8215-4107-b249-9911bf967065
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'HTML IFRAME SMARTSHEETS' = "<IFRAME WIDTH=1000 HEIGHT=700 FRAMEBORDER=0 SRC=""https://app.smartsheet.com/b/publish?EQBCT=27b0dce1aeef4e03bc07746ca2dc0b13""></IFRAME>"
+		lineageTag: 947a79a0-99a9-41e3-b5a7-f47c1d26fd3f
+
+	measure 'ETC Monthly Process - Prior ETC' =
+			
+			VAR PriorMonthStart = EOMONTH(TODAY(), -2) + 1
+			RETURN
+			SUMX(
+			    VALUES('Job'[Job Id]),
+			    VAR JobStartDate = CALCULATE(MAX('Job'[Start Date]))
+			    RETURN
+			    IF(
+			        NOT(ISBLANK(JobStartDate)) && JobStartDate >= PriorMonthStart,
+			        [Hours Quoted],
+			        [Hours Estimated to Complete]
+			    )
+			)
+		formatString: #,0
+		lineageTag: 729381c9-0eed-4a4b-a32b-dcce8870c7e2
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	measure 'Budget Projection' = ```
+			
+			VAR CurrentMonth = DATE(YEAR(TODAY()), MONTH(TODAY()), 1)
+			VAR FilteredInvoiced = 
+			    CALCULATE(
+			        [Part Invoiced Amount],
+			        FILTER(
+			            ALL('Part Purchase'[Invoiced Date]),
+			            'Part Purchase'[Invoiced Date] < CurrentMonth
+			        )
+			    )
+			RETURN
+			    FilteredInvoiced + [Part Cost Estimated To Complete]
+			```
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 416e17a9-c1dd-4941-b47e-644d6c4112ee
+
+	measure 'Budget Projection % Of Quoted' = 1-DIVIDE([Budget Projection],[Part Cost Quoted],blank())
+		formatString: 0%;-0%;0%
+		lineageTag: 11681bb8-4016-4b97-82a9-36b70098c03d
+
+	measure 'Parts Cost Estimated To Purchase' = [Part Cost Estimated To Complete] - [Part Cost Left to Spend]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 1f48a4f0-a5c4-4719-b6f3-6e6ea9b460d4
+
+	measure 'Card Display - Part Cost Budget Projection' = ```
+			
+			"Part Cost Budget Projection: " & 
+			FORMAT([Budget Projection], "$#,##0") & " " & 
+			"("& FORMAT([Budget Projection % Of Quoted], "0%") &")"
+			```
+		displayFolder: _Display
+		lineageTag: a7b5bfb2-2f8d-4861-8858-c398761b8586
+
+	measure 'Card Display - Part Cost Budget' = ```
+			
+			"Part Cost Budget: " & 
+			FORMAT([Part Cost Quoted], "$#,##0")
+			```
+		displayFolder: _Display
+		lineageTag: ac150c37-7bfb-4601-8b55-d308b13ccec3
+
+	measure 'Card Display - Part Cost ETC' = ```
+			
+			"Part Cost ETC: " & 
+			FORMAT([Part Cost Estimated To Complete], "$#,##0")
+			```
+		displayFolder: _Display
+		lineageTag: 22cefeea-adf5-4d10-950f-e1c1ce1e2dec
+
+	measure 'Hours Actual Travel' =
+			
+			CALCULATE(
+			    SUM('Hours Actual'[Hours Actual]),
+			    'Hours Actual'[Travel] IN {"Travel"}
+			)
+		formatString: #,0
+		lineageTag: a1022035-04a9-4d39-b84d-282b3b5c5ec5
+
+	measure 'Hours Actual Travel %' = DIVIDE([Hours Actual Travel],[Hours Actual])
+		formatString: 0%;-0%;0%
+		lineageTag: 45d5b95b-a660-478c-85fd-9144c0100dfd
+
+	measure 'Overtime Hours' =
+			
+			SUMX(
+			    FILTER(
+			        SUMMARIZE(
+			            'Hours Actual',
+			            Employee[Employee Name],
+			            'Date'[Date]
+			        ),
+			        VAR DailyHours = CALCULATE(SUM('Hours Actual'[Hours Actual]))
+			        RETURN DailyHours > 8
+			    ),
+			    VAR DailyHours = CALCULATE(SUM('Hours Actual'[Hours Actual]))
+			    RETURN DailyHours - 8
+			)
+		formatString: #,0
+		lineageTag: 8f91f2e5-f4bb-4d94-b7e3-95195297d7fd
+
+	measure 'Change Order Amount' = calculate(sum('Job Sales'[Change Order Amount]))
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: bb12f591-5c62-42a8-ae54-d7b174905f73
+
+	measure 'Sales Amount' = calculate(sum('Job Sales'[Sale Amount]))
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 03b80891-513b-4cf8-a910-b8bdc0aaf1cb
+
+	measure 'Sales Total Amount' = [Sales Amount] + [Change Order Amount]
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 0dec4c45-269f-49c8-a44a-72ef30d54f95
+
+	measure 'Engineering Hours' = ```
+			
+			    CALCULATE(
+			        SUM('Hours Actual'[Hours Actual]),
+			        'Function Hierarchy'[Billing Group] = "Engineering"
+			    )
+			```
+		formatString: #,0
+		lineageTag: 10c0b043-10ac-45cc-b61c-484bb64b9d0f
+
+	measure 'Shop Hours' = ```
+			
+			    CALCULATE(
+			        SUM('Hours Actual'[Hours Actual]),
+			        'Function Hierarchy'[Billing Group] = "Shop"
+			    )
+			```
+		formatString: #,0
+		lineageTag: 9e73f507-b15f-40f7-8a75-09dbfddf159a
+
+	measure 'Other Hours' = ```
+			
+			    CALCULATE(
+			        SUM('Hours Actual'[Hours Actual]),
+			        NOT('Function Hierarchy'[Billing Group] IN {"Engineering", "Shop"})
+			    )
+			```
+		formatString: #,0
+		lineageTag: de7ccf80-3d8b-4b7a-9b97-1a73e5773864
+
+	measure 'Engineering Labor Cost' = [Engineering Hours] * 'Profitability - Engineering Rate'[Profitability - Engineering Rate Value]
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 9a9402b1-beb9-44aa-9337-0fbf8f8cb0b8
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	measure 'Shop Labor Cost' = [Engineering Hours] * 'Profitability - Shop Rate'[Profitability - Shop Rate Value]
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: f658f454-07f9-4235-af3b-d0f8d5353569
+
+	measure 'Project Management Labor Cost' = [Sales Total Amount] * divide('Profitability - Project Management %'[Profitability - Project Management % Value],100, Blank() )
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 49d0dfba-a8df-4e9a-bf63-4bad4497deed
+
+	measure 'Manufacturing Labor Cost' = [Sales Total Amount] * divide('Profitability - Manufacturing %'[Profitability - Manufacturing % Value],100, Blank() )
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 800d1bd9-bbf3-473f-bd74-5d687d027fa1
+
+	measure 'Total Labor Cost' = [Engineering Labor Cost] + [Shop Labor Cost] + [Project Management Labor Cost] + [Manufacturing Labor Cost]
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 23b6f1a1-cd0c-48f1-8b16-0326f13f636d
+
+	measure 'Job Sales Sage Cost, Percent of Sales' = DIVIDE([Job Sales Sage Cost], [Sales Total Amount], blank())
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: f72fd661-557c-4b91-ace2-600f5eb86a7d
+
+	measure 'Total Job Cost' = [Total Labor Cost] + [Job Sales Sage Cost]
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 976268b3-c2fd-4f29-8919-abd5ef90a044
+
+	measure 'ETC Historical Hours' = calculate(sum('Hours Estimated to Complete History'[Hours Estimated to Complete]))
+		formatString: #,0
+		lineageTag: 72a67161-d676-4ca4-b311-891417583694
+
+	measure 'Job Parts Cost, Excl SDC Supplier' = ```
+			
+			    CALCULATE(
+			        SUM('Part Purchase'[Invoiced Amount]),
+			        KEEPFILTERS('Part Purchase'[Supplier] <> "Steven Douglas Corp.")
+			    )
+			```
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: cda8d0d5-a2f3-4d9e-a9f7-638404a976d2
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	measure 'Job Profit/Loss' = [Sales Total Amount] - [Total Job Cost]
+		lineageTag: 6cc5f14b-48ea-4001-83ee-ca5d33a3cfa3
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Job Profitability %' = DIVIDE([Job Profit/Loss],[Sales Total Amount], blank())
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: 9251dcf2-0fe8-4491-99b7-54d5fa739a07
+
+	measure 'Job Cost % of Total' = ```
+			
+			DIVIDE(
+			    [Total Job Cost], 
+			    CALCULATE([Total Job Cost], ALLSELECTED()),
+			    BLANK()
+			)
+			```
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: f6dc7cfb-317c-4d1b-a88b-3d026e54a8d0
+
+	measure 'Job Cost % of Total Sales' = ```
+			
+			DIVIDE(
+			    [Total Job Cost], 
+			    CALCULATE([Sales Total Amount], ALLSELECTED()),
+			    BLANK()
+			)
+			```
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: e6a6d682-d83c-4eac-936c-8dfc39b30d09
+
+	measure 'ETC Historical Hours Prior Month' = ```
+			
+			VAR CurrentPeriodKey = SELECTEDVALUE('Estimated to Complete Period'[ETC Period Key])
+			VAR CurrentYear = INT(CurrentPeriodKey / 100)
+			VAR CurrentMonth = MOD(CurrentPeriodKey, 100)
+			VAR PriorYear = IF(CurrentMonth = 1, CurrentYear - 1, CurrentYear)
+			VAR PriorMonth = IF(CurrentMonth = 1, 12, CurrentMonth - 1)
+			VAR PriorPeriodKey = PriorYear * 100 + PriorMonth
+			RETURN
+			SUMX(
+			    VALUES(Job[Job Id]),
+			    VAR CurrentJobId = Job[Job Id]
+			    VAR JobStartDate = CALCULATE(MAX(Job[Start Date]), Job[Job Id] = CurrentJobId)
+			    VAR JobStartYearMonth = 
+			        IF(
+			            NOT(ISBLANK(JobStartDate)),
+			            YEAR(JobStartDate) * 100 + MONTH(JobStartDate),
+			            BLANK()
+			        )
+			    VAR Result = 
+			        IF(
+			            JobStartYearMonth = PriorPeriodKey,
+			            CALCULATE([Hours Quoted], Job[Job Id] = CurrentJobId),
+			            CALCULATE(
+			                SUM('Hours Estimated to Complete History'[Hours Estimated to Complete]),
+			                Job[Job Id] = CurrentJobId,
+			                REMOVEFILTERS('Estimated to Complete Period'),
+			                'Hours Estimated to Complete History'[ETC Period Key] = PriorPeriodKey
+			            )
+			        )
+			    RETURN Result
+			)
+			```
+		formatString: #,0
+		lineageTag: 889c7b3f-065b-4c2f-891a-ac8cece8d24b
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	measure 'ETC Historical Hours Diff' =
+			
+			[ETC Historical Hours Left] - [ETC Historical Hours]
+		formatString: #,0
+		lineageTag: 99c8ddf1-1de0-4c97-8c4b-067500c247a0
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	measure 'ETC Historical Hours Left' = [ETC Historical Hours Prior Month] - [Hours Actual Prior Month]
+		formatString: #,0
+		lineageTag: 9ee5b688-7648-41a2-ab97-bb4184d55c7b
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	measure 'Hours Actual Prior Month' =
+			
+			VAR CurrentPeriodKey = SELECTEDVALUE('Estimated to Complete Period'[ETC Period Key])
+			VAR CurrentYear = INT(CurrentPeriodKey / 100)
+			VAR CurrentMonth = MOD(CurrentPeriodKey, 100)
+			VAR PriorYear = IF(CurrentMonth = 1, CurrentYear - 1, CurrentYear)
+			VAR PriorMonth = IF(CurrentMonth = 1, 12, CurrentMonth - 1)
+			VAR PriorPeriodKey = PriorYear * 100 + PriorMonth
+			RETURN
+			SUMX(
+			    VALUES('Hours Estimated to Complete History'[Job Id]),
+			    VAR CurrentJobId = 'Hours Estimated to Complete History'[Job Id]
+			    RETURN
+			    CALCULATE(
+			        SUM('Hours Actual'[Hours Actual]),
+			        'Hours Actual'[Job Id] = CurrentJobId,
+			        REMOVEFILTERS('Date'),
+			        'Date'[Year Month Id] = PriorPeriodKey
+			    )
+			)
+		formatString: #,0
+		lineageTag: b42c4d58-cfc3-4137-9c0f-abea5f2edd7a
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	measure 'Hours Actual Prior Month, Employee Count' =
+			
+			VAR CurrentPeriodKey = SELECTEDVALUE('Estimated to Complete Period'[ETC Period Key])
+			VAR CurrentYear = INT(CurrentPeriodKey / 100)
+			VAR CurrentMonth = MOD(CurrentPeriodKey, 100)
+			VAR PriorYear = IF(CurrentMonth = 1, CurrentYear - 1, CurrentYear)
+			VAR PriorMonth = IF(CurrentMonth = 1, 12, CurrentMonth - 1)
+			VAR PriorPeriodKey = PriorYear * 100 + PriorMonth
+			RETURN
+			CALCULATE(
+			    DISTINCTCOUNT('Hours Actual'[Employee Id]),
+			    REMOVEFILTERS('Date'),
+			    'Date'[Year Month Id] = PriorPeriodKey
+			)
+		formatString: 0
+		lineageTag: 4b58900e-f9b6-4e15-9741-5ef34c51c6b8
+
+	measure 'Net Billable Hours Per Employee' = divide([Net BIllable Hours], [Hours Actual Prior Month, Employee Count], blank())
+		formatString: #,0
+		lineageTag: b85683b7-92f9-44b4-b95e-adccd7a01a1f
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	measure 'Net BIllable Hours' = [Hours Actual Prior Month] + [ETC Historical Hours Diff]
+		formatString: #,0
+		lineageTag: 7c13092a-5cb7-4ef4-81d0-0c76f05acfbd
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	measure 'Job Sales Sage Cost' = calculate(sum('Job Sales'[Sage Cost]))
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: a7ac3c3e-4841-4d61-a34b-da38a8cd8b0e
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	measure 'Weighted Average Profit' = [Job Profitability %] * [Job Cost % of Total Sales]
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: 84141bf4-73fa-48ec-a628-d07713987b0f
+
+	measure 'Project Progression Hours %' = DIVIDE([Net BIllable Hours], [Hours Actual Prior Month], blank()) - 1
+		formatString: 0%;-0%;0%
+		lineageTag: 86def1ca-d025-4704-8983-78d0870ae123
+
+	measure 'Has Quoted Hours' = if([Hours Quoted]>0,1,0)
+		formatString: 0
+		lineageTag: aa271f5a-ee99-4da3-a87b-6b1806ee8274
+
+	measure 'Standard Fees Hours Pulled' = sum('Standard Fees'[Hours being pulled this month])
+		formatString: #,0
+		lineageTag: c404970b-d570-4796-b719-2e9e13aeb5ad
+
+	measure 'Total Net Billable Hours' = [Net BIllable Hours] + [Hours Actual Billable Service Prior Month] + [Standard Fees Hours Pulled]
+		formatString: #,0
+		lineageTag: 3c135553-7bef-421f-be7c-d759d208c4c6
+
+	measure 'Total Net Billable Hours Per Employee' = divide([Total Net Billable Hours], [Hours Actual Prior Month, Employee Count], blank())
+		formatString: #,0
+		lineageTag: 0084c385-fe46-49fa-8d1a-704f4663a225
+
+	measure 'Hours Actual Billable Service Prior Month' =
+			
+			VAR CurrentPeriodKey = SELECTEDVALUE('Estimated to Complete Period'[ETC Period Key])
+			VAR CurrentYear = INT(CurrentPeriodKey / 100)
+			VAR CurrentMonth = MOD(CurrentPeriodKey, 100)
+			VAR PriorYear = IF(CurrentMonth = 1, CurrentYear - 1, CurrentYear)
+			VAR PriorMonth = IF(CurrentMonth = 1, 12, CurrentMonth - 1)
+			VAR PriorPeriodKey = PriorYear * 100 + PriorMonth
+			RETURN
+			CALCULATE(
+			    SUM('Hours Actual'[Hours Actual]),
+			    REMOVEFILTERS('Date'),
+			    REMOVEFILTERS('Job'),
+			    ALLEXCEPT('Function Hierarchy', 'Function Hierarchy'[Billing Group]),
+			    'Date'[Year Month Id] = PriorPeriodKey,
+			    Employee[Employee Department] IN {"Controls Engineering","Machine Building","Machine Wiring","Mechanical Engineering","Manufacturing"},
+			    FILTER(
+			        ALL('Hours Actual'[Section-Function Code]),
+			        LEFT('Hours Actual'[Section-Function Code], 2) = "80"
+			    ),
+			    'Job'[Is Active Job] = FALSE(),
+			    NOT('Hours Actual'[Job Id] IN {"4000","1083"})
+			)
+		formatString: #,0
+		lineageTag: bd6f22ae-cd6d-4ccd-8249-59402490f30a
+
+	measure 'Prior Month Start' = DATE(YEAR(EOMONTH(TODAY(), -1)), MONTH(EOMONTH(TODAY(), -1)), 1)
+		formatString: Short Date
+		lineageTag: 28ed47a5-36cb-40c1-a961-60b4656e9898
+
+	measure 'ETC Historical Costs' = calculate(sum('Costs Estimated to Complete History'[Costs Estimated to Complete]))
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: e5d91b57-8d24-44aa-9544-a7aa0f34d742
+
+	measure 'Costs Actual Prior Month' =
+			
+			VAR CurrentPeriodKey = SELECTEDVALUE('Estimated to Complete Period'[ETC Period Key])
+			VAR CurrentYear = INT(CurrentPeriodKey / 100)
+			VAR CurrentMonth = MOD(CurrentPeriodKey, 100)
+			VAR PriorYear = IF(CurrentMonth = 1, CurrentYear - 1, CurrentYear)
+			VAR PriorMonth = IF(CurrentMonth = 1, 12, CurrentMonth - 1)
+			VAR PriorPeriodKey = PriorYear * 100 + PriorMonth
+			RETURN
+			SUMX(
+			    VALUES('Hours Estimated to Complete History'[Job Id]),
+			    VAR CurrentJobId = 'Hours Estimated to Complete History'[Job Id]
+			    RETURN
+			    CALCULATE(
+			        SUM('Part Purchase'[Invoiced Amount]),
+			        ALL('Part Purchase'),
+			        'Part Purchase'[Job Id] = CurrentJobId,
+			        'Part Purchase'[Supplier] <> "Steven Douglas Corp.",
+			        YEAR('Part Purchase'[Invoiced Date]) * 100 + MONTH('Part Purchase'[Invoiced Date]) = PriorPeriodKey
+			    )
+			)
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: ba88d33e-6cc4-4bf9-a105-b47b6f6a8dc2
+
+	measure 'ETC Historical Costs Left' = [ETC Historical Costs Prior Month] - [Costs Actual Prior Month]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 5484553e-3a49-44a8-9f87-0408f5adf989
+
+	measure 'ETC Historical Costs Prior Month' = ```
+			
+			VAR CurrentPeriodKey = SELECTEDVALUE('Estimated to Complete Period'[ETC Period Key])
+			VAR CurrentYear = INT(CurrentPeriodKey / 100)
+			VAR CurrentMonth = MOD(CurrentPeriodKey, 100)
+			VAR PriorYear = IF(CurrentMonth = 1, CurrentYear - 1, CurrentYear)
+			VAR PriorMonth = IF(CurrentMonth = 1, 12, CurrentMonth - 1)
+			VAR PriorPeriodKey = PriorYear * 100 + PriorMonth
+			RETURN
+			SUMX(
+			    VALUES(Job[Job Id]),
+			    VAR CurrentJobId = Job[Job Id]
+			    VAR JobStartDate = CALCULATE(MAX(Job[Start Date]), Job[Job Id] = CurrentJobId)
+			    VAR JobStartYearMonth = 
+			        IF(
+			            NOT(ISBLANK(JobStartDate)),
+			            YEAR(JobStartDate) * 100 + MONTH(JobStartDate),
+			            BLANK()
+			        )
+			    VAR Result = 
+			        IF(
+			            JobStartYearMonth = PriorPeriodKey,
+			            CALCULATE([Part Cost Quoted], Job[Job Id] = CurrentJobId),
+			            CALCULATE(
+			                SUM('Costs Estimated to Complete History'[Costs Estimated to Complete]),
+			                Job[Job Id] = CurrentJobId,
+			                REMOVEFILTERS('Estimated to Complete Period'),
+			                'Costs Estimated to Complete History'[ETC Period Key] = PriorPeriodKey
+			            )
+			        )
+			    RETURN Result
+			)
+			```
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 5e3240ff-9fd8-41e9-8210-3c83af7798c5
+
+	measure 'ETC Historical Costs Diff' =
+			
+			[ETC Historical Costs Left] - [ETC Historical Costs]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: f8904a9f-62d2-42b4-b0c3-84700d8706c1
+
+	measure 'Net BIllable Costs' = [Costs Actual Prior Month] + [ETC Historical Costs Diff]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 34b6f6f1-e51b-4279-b4e5-11866b038180
+
+	measure 'Project Progression Costs %' = DIVIDE([Net BIllable Costs], [Costs Actual Prior Month], blank()) - 1
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 5cbba911-aede-42ed-811d-99d58374377a
+
+	measure 'ETC Historical Working Days' =
+			
+			VAR CurrentPeriodKey = SELECTEDVALUE('Estimated to Complete Period'[ETC Period Key])
+			VAR CurrentYear = INT(CurrentPeriodKey / 100)
+			VAR CurrentMonth = MOD(CurrentPeriodKey, 100)
+			VAR PriorYear = IF(CurrentMonth = 1, CurrentYear - 1, CurrentYear)
+			VAR PriorMonth = IF(CurrentMonth = 1, 12, CurrentMonth - 1)
+			VAR PriorPeriodKey = PriorYear * 100 + PriorMonth
+			RETURN
+			CALCULATE(
+			    COUNTROWS('Date'),
+			    'Date'[Is Weekend] = FALSE(),
+			    'Date'[Year Month Id] = PriorPeriodKey
+			)
+		formatString: 0
+		lineageTag: f6f57ca4-59e3-44a7-81fa-4bad1c5271e3
+
+	measure 'Standard Fees - Monthly Process - Hours Quoted by ETC Period' = ```
+			
+			VAR CurrentETCPeriodKey = 
+			    SELECTEDVALUE('Estimated to Complete Period'[ETC Period Key])
+			VAR CurrentETCYear = INT(CurrentETCPeriodKey / 100)
+			VAR CurrentETCMonth = MOD(CurrentETCPeriodKey, 100)
+			
+			RETURN
+			CALCULATE(
+			    SUM('Hours Estimated'[Hours Quoted]),
+			    ALL('Date'),
+			    FILTER(
+			        ALL('Job'),
+			        YEAR('Job'[Start Date]) = CurrentETCYear &&
+			        MONTH('Job'[Start Date]) = CurrentETCMonth
+			    ),
+			    FILTER(
+			        ALL('Function Hierarchy'),
+			        VAR CurrentDepartment = SELECTEDVALUE('Standard Fees'[Department])
+			        VAR CurrentBillingGroup = SELECTEDVALUE('Standard Fees'[Billing Group])
+			        RETURN
+			        SWITCH(
+			            TRUE(),
+			            
+			            -- PM Department
+			            CurrentDepartment = "PM",
+			                'Function Hierarchy'[Section Function Name] = "PM" &&
+			                'Function Hierarchy'[Section Id] = "10",
+			            
+			            -- Manufacturing Department
+			            CurrentDepartment = "Manufacturing",
+			                'Function Hierarchy'[Section Function Name] = "Manufacturing" &&
+			                'Function Hierarchy'[Section Id] = "10",
+			            
+			            -- Warranty + Engineering
+			            CurrentDepartment = "Warranty" && CurrentBillingGroup = "Engineering",
+			                'Function Hierarchy'[Billing Group] = "Engineering" &&
+			                'Function Hierarchy'[Section Id] = "70",
+			            
+			            -- Warranty + Shop
+			            CurrentDepartment = "Warranty" && CurrentBillingGroup = "Shop",
+			                'Function Hierarchy'[Billing Group] = "Shop" &&
+			                'Function Hierarchy'[Section Id] = "70",
+			            
+			            -- Default: keep all rows
+			            FALSE()
+			        )
+			    )
+			)
+			```
+		formatString: #,0
+		lineageTag: 89bc915a-07bd-486e-b904-e5275a507a62
+
+	measure 'Standard Fees - Monthly Process - Hours Actual by ETC Period' = ```
+			
+			VAR CurrentETCPeriodKey = 
+			    SELECTEDVALUE('Estimated to Complete Period'[ETC Period Key])
+			VAR CurrentETCYear = INT(CurrentETCPeriodKey / 100)
+			VAR CurrentETCMonth = MOD(CurrentETCPeriodKey, 100)
+			VAR CurrentDepartment = SELECTEDVALUE('Standard Fees'[Department])
+			
+			RETURN
+			
+			IF(
+			    // PM department always return 0
+			    CurrentDepartment IN {"PM"},
+			    0,
+			    
+			    CALCULATE(
+			        SUM('Hours Actual'[Hours Actual]),
+			        FILTER(
+			            ALL('Date'),
+			            YEAR('Date'[Date]) = CurrentETCYear &&
+			            MONTH('Date'[Date]) = CurrentETCMonth
+			        ),
+			        FILTER(
+			            ALL('Function Hierarchy'),
+			            VAR CurrentBillingGroup = SELECTEDVALUE('Standard Fees'[Billing Group])
+			            RETURN
+			            SWITCH(
+			                TRUE(),
+			                -- Manufacturing Department
+			                CurrentDepartment = "Manufacturing",
+			                'Function Hierarchy'[Section Function Name] = "Manufacturing" &&
+			                'Function Hierarchy'[Section Id] = "10",
+			
+			                -- Warranty + Engineering
+			                CurrentDepartment = "Warranty" && CurrentBillingGroup = "Engineering",
+			                    'Function Hierarchy'[Billing Group] = "Engineering" &&
+			                    'Function Hierarchy'[Section Id] = "70",
+			                
+			                -- Warranty + Shop
+			                CurrentDepartment = "Warranty" && CurrentBillingGroup = "Shop",
+			                    'Function Hierarchy'[Billing Group] = "Shop" &&
+			                    'Function Hierarchy'[Section Id] = "70",
+			                
+			                -- Default: keep all rows
+			                FALSE()
+			            )
+			        )
+			    )
+			)
+			```
+		formatString: #,0
+		lineageTag: 0ea41b8f-c2a9-444c-b34e-034acad87778
+
+	measure 'Standard Fees - Monthly Process - Previous Month Pulled Hours' = CALCULATE(SUM('Standard Fees'[New ETC Hours]))
+		formatString: #,0
+		lineageTag: b1f64f1a-cc00-41d9-b4aa-e8fd62894cee
+
+	measure 'Job Parts Cost, Excl SDC Mfg vs Sage Job Cost' = [Job Parts Cost, Excl SDC Supplier] - [Job Sage Cost]
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 21e5befc-a670-4248-971d-344b9ac4bcfd
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	measure 'Job Sage Cost' = calculate(sum('Sage Part Cost'[Net DR/CR]))
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 98a15129-89d1-4c33-a673-f3829fa6830c
+
+	measure 'ETC Monthly Process - Prior ETC Cost' =
+			
+			VAR PriorMonthStart = EOMONTH(TODAY(), -2) + 1
+			RETURN
+			SUMX(
+			    VALUES('Job'[Job Id]),
+			    VAR JobStartDate = CALCULATE(MAX('Job'[Start Date]))
+			    RETURN
+			    IF(
+			        NOT(ISBLANK(JobStartDate)) && JobStartDate >= PriorMonthStart,
+			        [Part Cost Quoted],
+			        [Part Cost Estimated To Complete]
+			    )
+			)
+		lineageTag: f025c090-282c-4fae-84bb-676156fa3f65
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Costs Estimated to Complete' =
+			
+			CALCULATE(
+			    SUM('Cost Estimated'[Cost Estimated To Complete]),
+			    REMOVEFILTERS('Date')
+			)
+		lineageTag: aea4db72-1e6b-4166-bc01-64bb978c28c3
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Job Parts Cost, Excl SDC Mfg vs Sage Job Cost %' = DIVIDE([Job Parts Cost, Excl SDC Supplier] - [Job Sage Cost],[Job Parts Cost, Excl SDC Supplier],0)
+		formatString: #,0%;-#,0%;#,0%
+		lineageTag: 7ca8be45-5c0c-4fb6-954c-820c4cfa1794
+
+	measure 'Hours Actual Billable Bellco' =
+			
+			CALCULATE(
+			    SUM('Hours Actual'[Hours Actual]),
+			    Employee[Employee Department] IN {"Controls Engineering","Machine Building","Machine Wiring","Mechanical Engineering","Manufacturing"},
+			    FILTER(
+			        'Hours Actual',
+			        'Hours Actual'[Job Id] = "6000"
+			    )
+			)
+		formatString: #,0
+		lineageTag: b1a2c3d4-e5f6-7890-abcd-ef1234567890
+
+	measure 'Part Cost Actual Historical' = CALCULATE(SUM('Part Purchase'[Total Price]), 'Part Purchase'[Cost Type] = "Historical Cost")
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: d5e6f7a8-b9c0-1234-d5e6-f7a8b9c01234
+
+	measure 'PM Hours' =
+			
+			CALCULATE (
+			    SUM ( 'Hours Actual'[Hours Actual] ),
+			    REMOVEFILTERS ( 'Function Hierarchy'[Is Total] ),
+			    REMOVEFILTERS ( 'Employee'[Is Include Employee Department] ),
+			    'Function Hierarchy'[Section Function Group] = "PM"
+			)
+		formatString: #,0
+		lineageTag: 2f62e541-e107-405b-909d-edb36ab34121
+
+	measure 'Manufacturing Hours' = ```
+			
+			CALCULATE (
+			    SUM ( 'Hours Actual'[Hours Actual] ),
+			    REMOVEFILTERS ( 'Function Hierarchy'[Is Total] ),
+			    REMOVEFILTERS ( 'Employee'[Is Include Employee Department] ),
+			    'Function Hierarchy'[Section Function Name Dynamic] = "Manufacturing"
+			)
+			 
+			```
+		formatString: #,0
+		lineageTag: a401d6d8-dd65-4a97-86a7-a6b9195605db
+
+	measure 'Expense Reports' =
+			
+			CALCULATE (
+			    SUM ( 'Part Purchase'[Total Price] ),
+			    SEARCH ( "expense reports", 'Part Purchase'[Supplier], 1, 0 ) > 0
+			)
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: eab4966f-329d-4bd2-bd8a-a3a47b75be52
+
+	measure 'SDC Manufactured Parts Sales Price' =
+			
+			CALCULATE (
+			    SUM ( 'Part Purchase'[Total Price] ),
+			    REMOVEFILTERS ( 'Function Hierarchy'[Is Total] ),
+			    'Part Purchase'[Manufacturer] = "SDC",
+			    'Part Purchase'[Supplier] = "Steven Douglas Corp."
+			)
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 00beb736-0397-4cb1-a1f8-c30a5d608b31
+
+	partition 'Measure Tables' = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i44FAA==", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [Column1 = _t]),
+				    #"Changed Type" = Table.TransformColumnTypes(Source,{{"Column1", type text}}),
+				    #"Removed Columns" = Table.RemoveColumns(#"Changed Type",{"Column1"})
+				in
+				    #"Removed Columns"
+
+	annotation PBI_ResultType = Table
+
+	annotation PBI_NavigationStepName = Navigation
+

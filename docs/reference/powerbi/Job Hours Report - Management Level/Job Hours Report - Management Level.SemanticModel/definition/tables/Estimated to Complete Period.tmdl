@@ -1,0 +1,127 @@
+table 'Estimated to Complete Period'
+	lineageTag: 7a9de52d-71c1-41cd-b37c-0b051bec58a2
+
+	column 'ETC Period Key'
+		dataType: int64
+		formatString: 0
+		lineageTag: 4d0c2cc4-94c6-45e5-8b38-146afb943b4a
+		summarizeBy: none
+		sourceColumn: ETC Period Key
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'ETC Name'
+		dataType: string
+		lineageTag: c0e3e7a3-173e-4bde-a7f0-3735c45fa10c
+		summarizeBy: none
+		sourceColumn: ETC Name
+		sortByColumn: 'ETC Period Key'
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'ETC Is Active'
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 9ed32e49-6b93-4920-bd16-a4e99a24329f
+		summarizeBy: none
+		sourceColumn: ETC Is Active
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'ETC Begin Date'
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: abc004a2-132a-4d0e-8e03-3aab55504608
+		summarizeBy: none
+		sourceColumn: ETC Begin Date
+
+		variation Variation
+			isDefault
+			relationship: f07cef31-cd50-4ed0-bf6d-fc9d36694999
+			defaultHierarchy: LocalDateTable_f5180c95-3677-4208-b9b2-62968839e7a1.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'ETC End Date'
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 60e52543-e3f8-4fd6-95fe-9299a1cc9abb
+		summarizeBy: none
+		sourceColumn: ETC End Date
+
+		variation Variation
+			isDefault
+			relationship: 69ba6e17-31c0-4235-a1ed-d4dabfc63327
+			defaultHierarchy: LocalDateTable_6163780c-83f0-4598-8cbf-29ecec9a9a8a.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'ETC Created By User'
+		dataType: string
+		lineageTag: dbf4888f-fc2e-4363-a1ba-08dc28b78600
+		summarizeBy: none
+		sourceColumn: ETC Created By User
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'ET Created Date Time'
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: cb35b3d5-8c8d-4569-9a82-586165865323
+		summarizeBy: none
+		sourceColumn: ET Created Date Time
+
+		variation Variation
+			isDefault
+			relationship: d6d14087-ad96-471b-9e1d-995d85ed5c94
+			defaultHierarchy: LocalDateTable_0dc1c831-1adb-4ed5-bceb-7c3458ba7b7b.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'ETC Period Relative Index'
+		dataType: double
+		formatString: 0
+		lineageTag: a474630e-0edf-4709-9565-47cacd8c6230
+		summarizeBy: none
+		sourceColumn: ETC Period Relative Index
+
+		annotation SummarizationSetBy = User
+
+	partition 'Estimated to Complete Period' = m
+		mode: import
+		queryGroup: Dimensions
+		source = ```
+				let
+				    Source = Sql.Database("ixt2ry3uwdpureqiskgh3zw4yy-hhghvviya5guhil4cjq5swsnda.database.fabric.microsoft.com,1433", "SDC-DataWarehouse-16d09d69-e06b-4e00-94b9-be7ccf8f2b1f", [Query="select#(lf)*#(lf)from [dbo].[EstimateToClosePeriod] as [p]#(lf);"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source,{{"Name", "ETC Name"}, {"Key", "ETC Key"}, {"IsActive", "ETC Is Active"}, {"BeginDate", "ETC Begin Date"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns",{{"ETC Begin Date", type date}}),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"EndDate", "ETC End Date"}, {"CreatedDateTime", "ET Created Date Time"}, {"User", "ETC Created By User"}, {"ETC Key", "ETC Period Key"}}),
+				    
+				    // Sort by ETC Period Key to ensure proper order
+				    #"Sorted Rows" = Table.Sort(#"Renamed Columns1",{{"ETC Period Key", Order.Ascending}}),
+				    
+				    // Add Index starting at 0
+				    #"Added Index" = Table.AddIndexColumn(#"Sorted Rows", "Index", 0, 1, Int64.Type),
+				    
+				    // Find the index where ETC Is Active = TRUE
+				    ActiveIndex = List.PositionOf(#"Added Index"[ETC Is Active], true),
+				    
+				    // Add Relative Index column
+				    #"Added Relative Index" = Table.AddColumn(#"Added Index", "ETC Period Relative Index", each 
+				        [Index] - ActiveIndex, 
+				    type number),
+				    
+				    // Remove the temporary Index column
+				    #"Removed Index" = Table.RemoveColumns(#"Added Relative Index",{"Index"})
+				in
+				    #"Removed Index"
+				```
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

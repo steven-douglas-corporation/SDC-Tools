@@ -1,0 +1,26 @@
+table 'Profitability - Manufacturing %'
+	lineageTag: fcc5e9a7-fbfb-4908-ae65-370c32e27632
+
+	measure 'Profitability - Manufacturing % Value' = SELECTEDVALUE('Profitability - Manufacturing %'[Profitability - Manufacturing %])
+		formatString: #,0.0
+		lineageTag: 1a5cd139-3f0d-4543-a938-1e37762ea545
+
+	column 'Profitability - Manufacturing %'
+		formatString: #,0.0
+		lineageTag: 026db5d9-b3cb-4eff-bf75-deaf7e9ee9b4
+		summarizeBy: none
+		sourceColumn: [Value]
+
+		extendedProperty ParameterMetadata =
+				{
+				  "version": 0
+				}
+
+		annotation SummarizationSetBy = User
+
+	partition 'Profitability - Manufacturing %' = calculated
+		mode: import
+		source = GENERATESERIES(CURRENCY(0), CURRENCY(20), CURRENCY(0.1))
+
+	annotation PBI_Id = c11b09a736ac4870bd5bd82cb5b01a06
+

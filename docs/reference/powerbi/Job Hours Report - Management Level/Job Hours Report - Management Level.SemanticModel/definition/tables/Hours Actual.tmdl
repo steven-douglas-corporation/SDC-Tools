@@ -1,0 +1,274 @@
+table 'Hours Actual'
+	lineageTag: a1205787-ad73-4675-b9a7-1d8c8c237428
+
+	column 'Job Id'
+		dataType: string
+		lineageTag: 90969ae2-a762-4eb5-95e8-a0f5e6ebbd7b
+		summarizeBy: none
+		sourceColumn: Job Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section-Function Code'
+		dataType: string
+		lineageTag: d48228c5-22f1-4b0c-8f6e-98d84dc5771c
+		summarizeBy: none
+		sourceColumn: Section-Function Code
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Hours Actual'
+		dataType: double
+		lineageTag: 0bf05b39-ea58-47ce-a24d-b1b4adc65fc4
+		summarizeBy: none
+		sourceColumn: Hours Actual
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Date Id'
+		dataType: int64
+		formatString: 0
+		lineageTag: 6ff230d4-64b0-4241-9cd9-776e2b2d7486
+		summarizeBy: none
+		sourceColumn: Date Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Employee Id'
+		dataType: string
+		lineageTag: 3140b55b-6356-4343-8d7b-2e565d558cf9
+		summarizeBy: none
+		sourceColumn: Employee Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Data Source'
+		dataType: string
+		lineageTag: 59ededba-a6f1-4472-b1df-22438f821981
+		summarizeBy: none
+		sourceColumn: Data Source
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Sub-Section Id'
+		dataType: string
+		lineageTag: 2a054299-d70a-41ea-951e-83b86225f191
+		summarizeBy: none
+		sourceColumn: Sub-Section Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Function Id'
+		dataType: string
+		lineageTag: 34c3593f-1a28-4c04-a294-71039163696d
+		summarizeBy: none
+		sourceColumn: Function Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column Date
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: ba865b79-9a2f-4c83-a7dc-3f03307f015f
+		summarizeBy: none
+		sourceColumn: Date
+
+		variation Variation
+			isDefault
+			relationship: 7af32153-09be-4f1d-a95b-74e562cfc728
+			defaultHierarchy: LocalDateTable_96618d0e-56f3-4797-8541-d5cdcafc8f33.'Date Hierarchy'
+
+		changedProperty = IsHidden
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Row Count'
+		dataType: double
+		lineageTag: 3a8b997b-4e17-4c56-86f6-b99909515f4a
+		summarizeBy: sum
+		sourceColumn: Row Count
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Hours Actual Est to Date' =
+			
+			IF(
+			    RELATED('Date'[Date]) > MAX('Controls'[Estimated to Complete Date]),
+			    'Hours Actual'[Hours Actual],
+			    blank()
+			)
+		lineageTag: ae725dc6-fbd6-403f-a455-2abed8c11c52
+		summarizeBy: sum
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Job Section Function Code'
+		dataType: string
+		lineageTag: 2929c75d-7d6f-4407-8a21-e8508191f5aa
+		summarizeBy: none
+		sourceColumn: Job Section Function Code
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Punch Valid' = ```
+			
+			VAR IsFuture = RELATED('Date'[Is Future Date])
+			VAR JobId = RELATED(Job[Job Id])
+			VAR JobStatus = RELATED(Job[Job Status])
+			VAR JobCompleteDate = RELATED(Job[Complete Date])
+			VAR SectionId = LEFT('Hours Actual'[Section-Function Code], 2)
+			VAR IsValid = LOOKUPVALUE(
+			    'Function Hierarchy'[Is Valid], 
+			    'Function Hierarchy'[Section-Function Code], 'Hours Actual'[Section-Function Code],
+			    'Function Hierarchy'[Is Total], FALSE()
+			)
+			
+			RETURN
+			SWITCH(
+			    TRUE(),
+			    IsFuture = TRUE(), FALSE(),
+			    JobId = "4000", TRUE(),
+			    JobId = "Not defined", FALSE(),
+			    JobStatus = "Complete" && (SectionId IN {"70", "80", "90"}), TRUE(),
+			    JobStatus = "Complete" && 'Hours Actual'[Date] > JobCompleteDate && NOT(SectionId IN {"70", "80", "90"}), FALSE(),
+			    IF(
+			        ISBLANK(IsValid), TRUE() //NEED TO INVESTIGATE, THERE SHOULD BE NO BLANKS
+			        , IsValid)
+			)
+			```
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 8e6f55c9-e10b-4672-93c9-d4aba901cd1c
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Punch Valid Reason' = ```
+			
+			VAR IsFuture = RELATED('Date'[Is Future Date])
+			VAR JobId = RELATED(Job[Job Id])
+			VAR JobStatus = RELATED(Job[Job Status])
+			VAR JobCompleteDate = RELATED(Job[Complete Date])
+			VAR SectionId = LEFT('Hours Actual'[Section-Function Code], 2)
+			VAR IsValid = 
+			    IFERROR(
+			        LOOKUPVALUE(
+			            'Function Hierarchy'[Is Valid], 
+			            'Function Hierarchy'[Section-Function Code], 'Hours Actual'[Section-Function Code],
+			            'Function Hierarchy'[Is Total], FALSE()
+			        ),
+			        FALSE()
+			    )
+			
+			RETURN
+			SWITCH(
+			    TRUE(),
+			    IsFuture = TRUE(), "Future",
+			    JobId = "4000", "Valid",
+			    JobId = "Not defined", "Job Id Not Defined",
+			    JobStatus = "Complete" && (SectionId IN {"70", "80", "90"}), "Valid",
+			    JobStatus = "Complete" && 'Hours Actual'[Date] > JobCompleteDate && NOT(SectionId IN {"70", "80", "90"}),"Completed Job and Not Sections 70, 80, 90",
+			    IF(
+			        ISBLANK(IsValid), TRUE() //NEED TO INVESTIGATE, THERE SHOULD BE NO BLANKS
+			        , IsValid) = FALSE(), "Section-Function Exception"
+			    ,"Valid"
+			)
+			```
+		dataType: string
+		lineageTag: 93bd2274-c6bc-4586-9e4e-a4f200a463ed
+		summarizeBy: none
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+	column Travel
+		dataType: string
+		lineageTag: eae9c6de-7237-4451-bed1-7ca7faa8e0c5
+		summarizeBy: none
+		sourceColumn: Travel
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Hours Actual > 0.5' = 'Hours Actual'[Hours Actual] > 0.5
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: b646949e-6e5e-461c-a9cb-c4eff001f1e2
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Hours Actual' = m
+		mode: import
+		queryGroup: Facts
+		source = ```
+				let
+				    Source = Table.Combine({#"Hours Actual 20250131",#"Hours Actual 2025", #"Hours Actual YtD"}),
+				    #"Changed Type" = Table.TransformColumnTypes(Source,{{"Job Id", type text}}),
+				    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Section Id", "Sub-Section Id"}}),
+				    #"Added Custom" = Table.AddColumn(#"Renamed Columns", "Function Hierarchy Id", each [#"Sub-Section Id"]&"-"&[Function Id]),
+				    #"Filtered Rows" = Table.SelectRows(#"Added Custom", each [Function Id] <> "417"),
+				    //SPLIT 10-311 into 312 and 313 by creating 2 sub-tables and then recombining
+				    // Filter out the 10-311 rows to keep separately
+				    RowsToSplit = Table.SelectRows(#"Filtered Rows", each [Function Hierarchy Id] = "10-311"),
+				    OtherRows = Table.SelectRows(#"Filtered Rows", each [Function Hierarchy Id] <> "10-311"),
+				    
+				    // Create first version of the rows to split (for 312) - 30%
+				    FirstSplit = Table.TransformColumns(RowsToSplit, {
+				        {"Function Hierarchy Id", each "10-312", type text},
+				        {"Function Id", each "312", type text},
+				        {"Hours Actual", each try if _ = null or _ = 0 then 0 else _ * 0.3 otherwise 0, type number}
+				    }),
+				    
+				    // Create second version of the rows to split (for 313) - 70%
+				    SecondSplit = Table.TransformColumns(RowsToSplit, {
+				        {"Function Hierarchy Id", each "10-313", type text},
+				        {"Function Id", each "313", type text},
+				        {"Hours Actual", each try if _ = null or _ = 0 then 0 else _ * 0.7 otherwise 0, type number}
+				    }),
+				    
+				    // Combine all three tables back together
+				    CombinedTable = Table.Combine({OtherRows, FirstSplit, SecondSplit}),
+				    #"Renamed Columns1" = Table.RenameColumns(CombinedTable,{{"Function Hierarchy Id", "Section-Function Code"}}),
+				    #"Replaced Value" = Table.ReplaceValue(#"Renamed Columns1",null,1,Replacer.ReplaceValue,{"Row Count"}),
+				    #"Added Custom1" = Table.AddColumn(#"Replaced Value", "Job Section Function Code", each [Job Id]&"|"&[#"Section-Function Code"])
+				in
+				    #"Added Custom1"
+				```
+
+	changedProperty = IsHidden
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

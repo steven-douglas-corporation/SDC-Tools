@@ -1,0 +1,109 @@
+table 'Hours Estimated to Complete History'
+	isHidden
+	lineageTag: 44bc982d-9916-4fe4-8598-7de197873ce4
+
+	column 'ETC Period Key'
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 989a16db-be7d-47f4-b0c3-7f859107e2a6
+		summarizeBy: none
+		sourceColumn: ETC Period Key
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Id'
+		dataType: string
+		isHidden
+		lineageTag: d2b31f49-3e7f-43c0-9063-d2528dec0034
+		summarizeBy: none
+		sourceColumn: Job Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Function Hierarchy Id'
+		dataType: string
+		isHidden
+		lineageTag: b76db9a6-af1a-495a-b943-9132d8c39544
+		summarizeBy: none
+		sourceColumn: Function Hierarchy Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Hours Estimated to Complete'
+		dataType: double
+		isHidden
+		lineageTag: c794e96b-9f42-4923-9bc7-d3dc1d529a00
+		summarizeBy: sum
+		sourceColumn: Hours Estimated to Complete
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column User
+		dataType: string
+		isHidden
+		lineageTag: 73f99ab8-2f48-4940-b9b7-54a201fa98b0
+		summarizeBy: none
+		sourceColumn: User
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Created Date Time'
+		dataType: dateTime
+		isHidden
+		formatString: General Date
+		lineageTag: 1fdfe07f-0328-4877-939c-1829557c8b24
+		summarizeBy: none
+		sourceColumn: Created Date Time
+
+		variation Variation
+			isDefault
+			relationship: 6972d934-6fbb-4434-8c80-3f8f04da2cc5
+			defaultHierarchy: LocalDateTable_d303ed07-1b3d-4a3e-aa2e-b72687b07a77.'Date Hierarchy'
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Active'
+		dataType: boolean
+		isHidden
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 48d7780a-65ee-44c8-96ec-ecbfa327c7b6
+		summarizeBy: none
+		sourceColumn: Is Active
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Hours Estimated to Complete History' = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				    Source = #"Hours Estimated to Complete Import",
+				    #"Removed Columns" = Table.RemoveColumns(Source,{"PartCost"}),
+				    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Removed Columns", {"JobID", "EstimateToClosePeriodKey","User","IsActive","CreatedDateTime"}, "Attribute", "Value"),
+				    #"Renamed Columns" = Table.RenameColumns(#"Unpivoted Columns",{{"Value", "Hours Estimated to Complete"}, {"Attribute", "Function Hierarchy Id"}, {"JobID", "Job Id"}, {"EstimateToClosePeriodKey", "ETC Period Key"}, {"IsActive", "Is Active"}, {"CreatedDateTime", "Created Date Time"}})
+				in
+				    #"Renamed Columns"
+
+	changedProperty = IsHidden
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

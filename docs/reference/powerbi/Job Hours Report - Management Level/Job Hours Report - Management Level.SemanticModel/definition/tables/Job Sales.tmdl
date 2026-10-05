@@ -1,0 +1,80 @@
+table 'Job Sales'
+	isHidden
+	lineageTag: 275345cb-962a-4ef2-af34-340a74142c09
+
+	column 'Job Id'
+		dataType: string
+		isHidden
+		lineageTag: 9b7e4ce5-6b25-4120-8c23-7312882916bb
+		summarizeBy: none
+		sourceColumn: Job Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Sale Amount'
+		dataType: double
+		isHidden
+		lineageTag: 9c005060-42c9-42b8-8af3-d4d1dc00e54c
+		summarizeBy: sum
+		sourceColumn: Sale Amount
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Change Order Amount'
+		dataType: double
+		isHidden
+		lineageTag: 61595c99-19fb-4fbe-be75-e9939edafe14
+		summarizeBy: sum
+		sourceColumn: Change Order Amount
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Sage Cost'
+		dataType: double
+		isHidden
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: e86bfdc1-e645-4b76-97f7-b2a55086d16d
+		summarizeBy: sum
+		sourceColumn: Sage Cost
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Job Sales' = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				    Source = SharePoint.Files("https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/", [ApiVersion = 15]),
+				    #"Filtered Rows" = Table.SelectRows(Source, each ([Name] = "Job Sales.xlsx")),
+				    #"Job Sales xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Sales/" = #"Filtered Rows"{[Name="Job Sales.xlsx",#"Folder Path"="https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Finance/"]}[Content],
+				    #"Imported Excel Workbook" = Excel.Workbook(#"Job Sales xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Sales/"),
+				    #"Job Sales_Sheet" = #"Imported Excel Workbook"{[Item="Job Sales",Kind="Sheet"]}[Data],
+				    #"Promoted Headers" = Table.PromoteHeaders(#"Job Sales_Sheet", [PromoteAllScalars=true]),
+				    #"Removed Other Columns" = Table.SelectColumns(#"Promoted Headers",{"Job", "Sales Price", "Change Orders", "Sage Cost"}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Removed Other Columns",{{"Job", Int64.Type}, {"Sales Price", type number}, {"Change Orders", type number}}),
+				    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Change Orders", "Change Order Amount"}, {"Sales Price", "Sale Amount"}}),
+				    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"Job", type text}, {"Sage Cost", type number}}),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type1",{{"Job", "Job Id"}}),
+				    // Add leading zero to 3-digit numeric Job Ids
+				    #"Padded Job Id" = Table.TransformColumns(#"Renamed Columns1", {{"Job Id", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}})
+				in
+				    #"Padded Job Id"
+
+	changedProperty = IsHidden
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Exception
+

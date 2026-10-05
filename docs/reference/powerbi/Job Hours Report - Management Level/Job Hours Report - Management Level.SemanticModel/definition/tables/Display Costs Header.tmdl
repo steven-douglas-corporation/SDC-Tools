@@ -1,0 +1,16 @@
+table 'Display Costs Header'
+	lineageTag: 10c0d2ef-7e67-4c5a-b087-f63101aea784
+
+	column 'Costs Header'
+		lineageTag: 19fe3a32-afae-4c22-905c-f149eacb3548
+		summarizeBy: none
+		sourceColumn: [Header]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Display Costs Header' = calculated
+		mode: import
+		source = DATATABLE("Header", STRING, {{"Costs"}})
+
+	annotation PBI_Id = a21e2644957d474381f9f7a36c75c96b
+

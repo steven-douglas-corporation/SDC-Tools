@@ -1,0 +1,301 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "ea4056d5482e060771c7",
+  "position": {
+    "x": 0,
+    "y": 449,
+    "z": 3000,
+    "height": 418,
+    "width": 1280,
+    "tabOrder": 2000
+  },
+  "visual": {
+    "visualType": "clusteredColumnChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "HierarchyLevel": {
+                  "Expression": {
+                    "Hierarchy": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Hierarchy": "Section Function Hierarchy"
+                    }
+                  },
+                  "Level": "Section Name"
+                }
+              },
+              "queryRef": "Function Hierarchy.Section Function Hierarchy.Section Name",
+              "nativeQueryRef": "Section Function Hierarchy Section Name",
+              "active": true
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Section Function Group"
+                }
+              },
+              "queryRef": "Function Hierarchy.Function Group",
+              "nativeQueryRef": "Function Group",
+              "active": true
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Section Function Name Dynamic"
+                }
+              },
+              "queryRef": "Function Hierarchy.Section Function Name Dynamic",
+              "nativeQueryRef": "Section Function Name Dynamic",
+              "active": true
+            }
+          ]
+        },
+        "Tooltips": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Hours Quoted"
+                }
+              },
+              "queryRef": "Measure Tables.Hours Quoted",
+              "nativeQueryRef": "Quoted",
+              "displayName": "Quoted"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Hours Type Selector"
+                    }
+                  },
+                  "Property": "Dynamic Hours Actual"
+                }
+              },
+              "queryRef": "Hours Type Selector.Dynamic Hours Actual",
+              "nativeQueryRef": "Actual",
+              "displayName": "Actual"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Hours Type Selector"
+                    }
+                  },
+                  "Property": "Dynamic Hours Variance"
+                }
+              },
+              "queryRef": "Hours Type Selector.Dynamic Hours Variance",
+              "nativeQueryRef": "Variance",
+              "displayName": "Variance"
+            }
+          ],
+          "fieldParameters": [
+            {
+              "parameterExpr": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Hours Type Selector"
+                    }
+                  },
+                  "Property": "Hours Type"
+                }
+              },
+              "index": 0,
+              "length": 1
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Hours Quoted"
+                }
+              },
+              "queryRef": "Measure Tables.Hours Quoted",
+              "nativeQueryRef": "Quoted",
+              "displayName": "Quoted"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Hours Type Selector"
+                    }
+                  },
+                  "Property": "Dynamic Hours Actual"
+                }
+              },
+              "queryRef": "Hours Type Selector.Dynamic Hours Actual",
+              "nativeQueryRef": "Actual",
+              "displayName": "Actual"
+            }
+          ],
+          "fieldParameters": [
+            {
+              "parameterExpr": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Hours Type Selector"
+                    }
+                  },
+                  "Property": "Hours Type"
+                }
+              },
+              "index": 0,
+              "length": 1
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "HierarchyLevel": {
+                "Expression": {
+                  "Hierarchy": {
+                    "Expression": {
+                      "SourceRef": {
+                        "Entity": "Function Hierarchy"
+                      }
+                    },
+                    "Hierarchy": "Section Function Hierarchy"
+                  }
+                },
+                "Level": "Section Name"
+              }
+            },
+            "direction": "Ascending"
+          },
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "Function Hierarchy"
+                  }
+                },
+                "Property": "Section Function Group"
+              }
+            },
+            "direction": "Ascending"
+          }
+        ]
+      }
+    },
+    "objects": {
+      "labels": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "optimizeLabelDisplay": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "labelDisplayUnits": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "categoryAxis": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "showAxisTitle": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "valueAxis": [
+        {
+          "properties": {
+            "showAxisTitle": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Estimate to Complete vs Actual'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

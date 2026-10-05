@@ -1,0 +1,806 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.9.0/schema.json",
+  "name": "b1488f5d63080a2b4bbc",
+  "position": {
+    "x": 0,
+    "y": 108.78099173553719,
+    "z": 3000,
+    "height": 287.29338842975204,
+    "width": 1117.5619834710744,
+    "tabOrder": 3000
+  },
+  "visual": {
+    "visualType": "pivotTable",
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level0_Part"
+                }
+              },
+              "queryRef": "Assembly.Level0_Part",
+              "nativeQueryRef": "Hierarchy",
+              "active": true,
+              "displayName": "Hierarchy"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level1_Part"
+                }
+              },
+              "queryRef": "Assembly.Level1_Part",
+              "nativeQueryRef": "Level1_Part",
+              "active": true
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level2_Part"
+                }
+              },
+              "queryRef": "Assembly.Level2_Part",
+              "nativeQueryRef": "Level2_Part",
+              "active": true
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level3_Part"
+                }
+              },
+              "queryRef": "Assembly.Level3_Part",
+              "nativeQueryRef": "Level3_Part",
+              "active": false
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level4_Part"
+                }
+              },
+              "queryRef": "Assembly.Level4_Part",
+              "nativeQueryRef": "Level4_Part",
+              "active": false
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level5_Part"
+                }
+              },
+              "queryRef": "Assembly.Level5_Part",
+              "nativeQueryRef": "Level5_Part",
+              "active": false
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level6_Part"
+                }
+              },
+              "queryRef": "Assembly.Level6_Part",
+              "nativeQueryRef": "Level6_Part",
+              "active": false
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level7_Part"
+                }
+              },
+              "queryRef": "Assembly.Level7_Part",
+              "nativeQueryRef": "Level7_Part",
+              "active": false
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level8_Part"
+                }
+              },
+              "queryRef": "Assembly.Level8_Part",
+              "nativeQueryRef": "Level8_Part",
+              "active": false
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level9_Part"
+                }
+              },
+              "queryRef": "Assembly.Level9_Part",
+              "nativeQueryRef": "Level9_Part",
+              "active": false
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level10_Part"
+                }
+              },
+              "queryRef": "Assembly.Level10_Part",
+              "nativeQueryRef": "Level10_Part",
+              "active": false
+            }
+          ]
+        },
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Sum Part Cost"
+                }
+              },
+              "queryRef": "Assembly.Sum Part Cost",
+              "nativeQueryRef": "Cost Per Assembly",
+              "displayName": "Cost Per Assembly"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Line Assembly Quantity"
+                }
+              },
+              "queryRef": "Assembly.Line Assembly Quantity",
+              "nativeQueryRef": "Assembly QTY",
+              "displayName": "Assembly QTY"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Assembly Total Part Cost"
+                }
+              },
+              "queryRef": "Assembly.Assembly Total Part Cost",
+              "nativeQueryRef": "Total Cost",
+              "displayName": "Total Cost"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Sum Part Quantity"
+                }
+              },
+              "queryRef": "Assembly.Test",
+              "nativeQueryRef": "Parts Per Assembly",
+              "displayName": "Parts Per Assembly"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Assembly Total Part Quantity"
+                }
+              },
+              "queryRef": "Assembly.Assembly Total Part Quantity",
+              "nativeQueryRef": "Total Part QTY",
+              "displayName": "Total Part QTY"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Assembly Count"
+                }
+              },
+              "queryRef": "Assembly.Assembly Count",
+              "nativeQueryRef": "QTY Nested Assemblies",
+              "displayName": "QTY Nested Assemblies"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "Assembly"
+                  }
+                },
+                "Property": "Level0_Part"
+              }
+            },
+            "direction": "Ascending"
+          },
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "Assembly"
+                  }
+                },
+                "Property": "Level1_Part"
+              }
+            },
+            "direction": "Ascending"
+          },
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "Assembly"
+                  }
+                },
+                "Property": "Level2_Part"
+              }
+            },
+            "direction": "Ascending"
+          }
+        ]
+      }
+    },
+    "expansionStates": [
+      {
+        "roles": [
+          "Rows"
+        ],
+        "levels": [
+          {
+            "queryRefs": [
+              "Assembly.Level0_Part"
+            ],
+            "identityKeys": [
+              {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level0_Part"
+                }
+              }
+            ],
+            "isPinned": true
+          },
+          {
+            "queryRefs": [
+              "Assembly.Level1_Part"
+            ],
+            "isCollapsed": true,
+            "identityKeys": [
+              {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level1_Part"
+                }
+              }
+            ],
+            "isPinned": true
+          },
+          {
+            "queryRefs": [
+              "Assembly.Level2_Part"
+            ],
+            "isCollapsed": true,
+            "identityKeys": [
+              {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level2_Part"
+                }
+              }
+            ],
+            "isPinned": true
+          },
+          {
+            "queryRefs": [
+              "Assembly.Level3_Part"
+            ],
+            "identityKeys": [
+              {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level3_Part"
+                }
+              }
+            ],
+            "isPinned": true
+          },
+          {
+            "queryRefs": [
+              "Assembly.Level4_Part"
+            ],
+            "identityKeys": [
+              {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level4_Part"
+                }
+              }
+            ],
+            "isPinned": true
+          },
+          {
+            "queryRefs": [
+              "Assembly.Level5_Part"
+            ],
+            "isCollapsed": true,
+            "identityKeys": [
+              {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Assembly"
+                    }
+                  },
+                  "Property": "Level5_Part"
+                }
+              }
+            ],
+            "isPinned": true
+          },
+          {
+            "queryRefs": [
+              "Assembly.Level6_Part"
+            ],
+            "isCollapsed": true,
+            "isPinned": true
+          },
+          {
+            "queryRefs": [
+              "Assembly.Level7_Part"
+            ],
+            "isCollapsed": true
+          },
+          {
+            "queryRefs": [
+              "Assembly.Level8_Part"
+            ],
+            "isCollapsed": true
+          },
+          {
+            "queryRefs": [
+              "Assembly.Level9_Part"
+            ],
+            "isCollapsed": true
+          },
+          {
+            "queryRefs": [
+              "Assembly.Level10_Part"
+            ],
+            "isCollapsed": true
+          }
+        ],
+        "root": {
+          "children": [
+            {
+              "identityValues": [
+                {
+                  "Literal": {
+                    "Value": "'TOP 1110-10 - Project:1110 and Section:10'"
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "identityValues": [
+                    {
+                      "Literal": {
+                        "Value": "'1110-A-000 - ONLY ELECTRICAL COMPONENTS'"
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "identityValues": [
+                        {
+                          "Literal": {
+                            "Value": "'1110-AD-005 - ABRASION SLIDE MID MOUNT PLATE'"
+                          }
+                        }
+                      ],
+                      "children": [
+                        {
+                          "identityValues": [
+                            {
+                              "Literal": {
+                                "Value": "null"
+                              }
+                            }
+                          ],
+                          "children": [
+                            {
+                              "identityValues": [
+                                {
+                                  "Literal": {
+                                    "Value": "null"
+                                  }
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "identityValues": [
+                                    {
+                                      "Literal": {
+                                        "Value": "null"
+                                      }
+                                    }
+                                  ],
+                                  "isToggled": true
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "identityValues": [
+                        {
+                          "Literal": {
+                            "Value": "'1110-AA-000 - REMOTE CABINET ASSY'"
+                          }
+                        }
+                      ],
+                      "children": [
+                        {
+                          "identityValues": [
+                            {
+                              "Literal": {
+                                "Value": "'1110-AB-000 - TDC HMI'"
+                              }
+                            }
+                          ],
+                          "children": [
+                            {
+                              "identityValues": [
+                                {
+                                  "Literal": {
+                                    "Value": "'CYCLE START PUSHBUTTON - CYCLE START PUSHBUTTON ASSEMBLY:\r\n704.609.9 FLAT WHITE MARKING PLATE\r\n42068-1 FEMALE DISCONNECT, 2.8MM FASTON\r\n704.602.5 FLUSH GREEN LENS\r\n10.2112.1065 GREEN LED\r\n14.435.036 NO ACTUATOR\r\n14.955.0 FRONT BEZEL SET'"
+                                  }
+                                }
+                              ],
+                              "children": [
+                                {
+                                  "identityValues": [
+                                    {
+                                      "Literal": {
+                                        "Value": "'10.2112.1065 - GREEN LED'"
+                                      }
+                                    }
+                                  ],
+                                  "isToggled": true
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "identityValues": [
+                {
+                  "Literal": {
+                    "Value": "'TOP 1118-10 - Project:1118 and Section:10'"
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "identityValues": [
+                    {
+                      "Literal": {
+                        "Value": "'1118-A-000 - AIR LOOP ASSEMBLY MACHINE'"
+                      }
+                    }
+                  ],
+                  "isToggled": true
+                }
+              ]
+            },
+            {
+              "identityValues": [
+                {
+                  "Literal": {
+                    "Value": "'⬢ TOP 1118-30 - Project:1118 and Section:30'"
+                  }
+                }
+              ],
+              "isToggled": true
+            },
+            {
+              "identityValues": [
+                {
+                  "Literal": {
+                    "Value": "'⬢ TOP 1118-90 - Project:1118 and Section:90'"
+                  }
+                }
+              ],
+              "isToggled": true
+            }
+          ]
+        }
+      }
+    ],
+    "objects": {
+      "values": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "columnHeaders": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            },
+            "autoSizeColumnWidth": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "rowHeaders": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            },
+            "steppedLayoutIndentation": {
+              "expr": {
+                "Literal": {
+                  "Value": "25D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "columnWidth": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "618.0708334904566D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Assembly.Level0_Part"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "69.22323644966461D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Assembly.Test"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "66.02672095256581D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Assembly.Sum Part Cost"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "79.33487608066548D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Assembly.Line Assembly Quantity"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "89.55425087831335D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Assembly.Assembly Total Part Cost"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "71.85792163716955D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Assembly.Assembly Total Part Quantity"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "66.00230733171702D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Assembly.Assembly Count"
+          }
+        }
+      ],
+      "grid": [
+        {
+          "properties": {
+            "gridHorizontal": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "gridVertical": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

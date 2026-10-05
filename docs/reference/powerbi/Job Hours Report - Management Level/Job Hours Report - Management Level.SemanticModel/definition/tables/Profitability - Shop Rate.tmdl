@@ -1,0 +1,26 @@
+table 'Profitability - Shop Rate'
+	lineageTag: 35e1db79-9f46-47db-84d5-4eab7295eb5a
+
+	measure 'Profitability - Shop Rate Value' = SELECTEDVALUE('Profitability - Shop Rate'[Profitability - Shop Rate])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: de257ab9-f795-481c-8bfc-2c5f247ac1f3
+
+	column 'Profitability - Shop Rate'
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 24e6b198-1885-4235-b533-47cedef36764
+		summarizeBy: none
+		sourceColumn: [Value]
+
+		extendedProperty ParameterMetadata =
+				{
+				  "version": 0
+				}
+
+		annotation SummarizationSetBy = User
+
+	partition 'Profitability - Shop Rate' = calculated
+		mode: import
+		source = GENERATESERIES(0, 200, 1)
+
+	annotation PBI_Id = f8ecced479044b11b613352441c11e3d
+

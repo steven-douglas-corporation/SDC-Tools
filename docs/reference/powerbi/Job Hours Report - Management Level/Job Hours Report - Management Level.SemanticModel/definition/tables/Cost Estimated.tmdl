@@ -1,0 +1,79 @@
+table 'Cost Estimated'
+	isHidden
+	lineageTag: c2211307-5b27-4f6b-bcb3-42b59e45b4e0
+
+	column 'Job Id'
+		dataType: string
+		isHidden
+		lineageTag: 5abb5f3e-9397-4bd2-a9a6-d3c2422c7655
+		summarizeBy: none
+		sourceColumn: Job Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Cost Quoted'
+		dataType: double
+		isHidden
+		formatString: 0
+		lineageTag: 02dda4fa-9648-4b59-9491-635c3212f884
+		summarizeBy: none
+		sourceColumn: Cost Quoted
+
+		changedProperty = IsHidden
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = User
+
+	column 'Cost Estimated To Complete'
+		dataType: double
+		isHidden
+		lineageTag: bde035cc-ec55-45ea-926c-29851418127c
+		summarizeBy: sum
+		sourceColumn: Cost Estimated To Complete
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Latest ETC'
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: f78f1109-4636-492b-958d-e853d0b2a7db
+		summarizeBy: none
+		sourceColumn: Latest ETC
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Cost Estimated' = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				    Source = #"Hours Estimated Import",
+				    #"Removed Other Columns" = Table.SelectColumns(Source,{"Column1", "Column88"}),
+				    #"Removed Top Rows" = Table.Skip(#"Removed Other Columns",7),
+				    #"Promoted Headers" = Table.PromoteHeaders(#"Removed Top Rows", [PromoteAllScalars=true]),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Job#", type any}, {"Column2", Int64.Type}}),
+				    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Job#", "Job Id"}, {"Column2", "Cost Quoted"}}),
+				    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"Job Id", type text}}),
+				    // Add leading zero to 3-digit numeric Job Ids BEFORE joining, so keys match the padded JobID in Hours Estimated to Complete Import
+				    #"Padded Job Id" = Table.TransformColumns(#"Changed Type1", {{"Job Id", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}}),
+				    #"Merged Queries" = Table.NestedJoin(#"Padded Job Id", {"Job Id"}, #"Hours Estimated to Complete Import", {"JobID"}, "Hours Estimated to Complete Import", JoinKind.LeftOuter),
+				    #"Filtered Rows" = Table.SelectRows(#"Merged Queries", each ([Job Id] <> null)),
+				    #"Expanded Hours Estimated to Complete Import" = Table.ExpandTableColumn(#"Filtered Rows", "Hours Estimated to Complete Import", {"PartCost", "IsActive"}, {"Hours Estimated to Complete Import.PartCost", "Hours Estimated to Complete Import.IsActive"}),
+				    #"Filtered Rows1" = Table.SelectRows(#"Expanded Hours Estimated to Complete Import", each ([Hours Estimated to Complete Import.IsActive] <> false)),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Filtered Rows1",{{"Hours Estimated to Complete Import.PartCost", "Cost Estimated To Complete"}, {"Hours Estimated to Complete Import.IsActive", "Latest ETC"}})
+				in
+				    #"Renamed Columns1"
+
+	changedProperty = IsHidden
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

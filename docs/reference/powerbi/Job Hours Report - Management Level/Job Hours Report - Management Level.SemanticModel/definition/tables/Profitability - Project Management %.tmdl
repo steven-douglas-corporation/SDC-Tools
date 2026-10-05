@@ -1,0 +1,27 @@
+table 'Profitability - Project Management %'
+	lineageTag: 273870b1-a227-48ce-9ef5-cdb918ec6aa6
+
+	measure 'Profitability - Project Management % Value' = SELECTEDVALUE('Profitability - Project Management %'[PM %])
+		formatString: 0.0
+		lineageTag: c131db27-d8d6-4fd8-a38d-578342a13975
+
+	column 'PM %'
+		dataType: double
+		formatString: 0.0
+		lineageTag: 8fd628df-34e3-4add-89c6-1389d5775d8c
+		summarizeBy: none
+		sourceColumn: [Value]
+
+		extendedProperty ParameterMetadata =
+				{
+				  "version": 0
+				}
+
+		annotation SummarizationSetBy = User
+
+	partition 'Profitability - Project Management %' = calculated
+		mode: import
+		source = GENERATESERIES(0, 100, 0.1)
+
+	annotation PBI_Id = 7300b97bec7e4677a0a7ec3ee59e3fbb
+

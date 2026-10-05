@@ -1,0 +1,601 @@
+{
+  "version": "1.1.0",
+  "diagrams": [
+    {
+      "ordinal": 0,
+      "scrollPosition": {
+        "x": 0,
+        "y": 0
+      },
+      "nodes": [
+        {
+          "location": {
+            "x": 551.36144600278089,
+            "y": 412.18401085205829
+          },
+          "nodeIndex": "Job",
+          "nodeLineageTag": "f89d410a-95c3-40e0-a200-a22ccf092131",
+          "size": {
+            "height": 223,
+            "width": 234
+          },
+          "zIndex": 17
+        },
+        {
+          "location": {
+            "x": 1207.6074918635468,
+            "y": 140.93331472388954
+          },
+          "nodeIndex": "Measure Tables",
+          "nodeLineageTag": "2d363c8f-3c36-466b-9a1d-ebe8dfdbe90f",
+          "size": {
+            "height": 72,
+            "width": 234
+          },
+          "zIndex": 14,
+          "expandedHeight": 104
+        },
+        {
+          "location": {
+            "x": 553.0945335260368,
+            "y": 264.84458276348721
+          },
+          "nodeIndex": "Employee",
+          "nodeLineageTag": "98c51c73-1df7-4c0c-a947-53e5e0f41f2c",
+          "size": {
+            "height": 128,
+            "width": 234
+          },
+          "zIndex": 19,
+          "expandedHeight": 224
+        },
+        {
+          "location": {
+            "x": 548.82394924184382,
+            "y": 0
+          },
+          "nodeIndex": "Function Hierarchy",
+          "nodeLineageTag": "cc850b35-0b52-4dca-b576-58803d806a5d",
+          "size": {
+            "height": 224,
+            "width": 234
+          },
+          "zIndex": 15
+        },
+        {
+          "location": {
+            "x": 27.625525262527134,
+            "y": 0
+          },
+          "nodeIndex": "Hours Actual",
+          "nodeLineageTag": "a1205787-ad73-4675-b9a7-1d8c8c237428",
+          "size": {
+            "height": 200,
+            "width": 234
+          },
+          "zIndex": 21
+        },
+        {
+          "location": {
+            "x": 552.04834411733452,
+            "y": 673.15580254017186
+          },
+          "nodeIndex": "Date",
+          "nodeLineageTag": "860ca4ae-208d-450d-9974-9873d633bf7e",
+          "size": {
+            "height": 224,
+            "width": 234
+          },
+          "zIndex": 24,
+          "expandedHeight": 300
+        },
+        {
+          "location": {
+            "x": 1190.9996697591555,
+            "y": 0
+          },
+          "nodeIndex": "Meta",
+          "nodeLineageTag": "81153420-e4b4-4614-88b2-97ef680a0b75",
+          "size": {
+            "height": 104,
+            "width": 234
+          },
+          "zIndex": 16,
+          "expandedHeight": 104
+        },
+        {
+          "location": {
+            "x": 26.567714022269442,
+            "y": 257.03890371323735
+          },
+          "nodeIndex": "Hours Estimated",
+          "nodeLineageTag": "3c3de025-dd23-44ad-a415-bebbba6ccc03",
+          "size": {
+            "height": 200,
+            "width": 234
+          },
+          "zIndex": 20
+        },
+        {
+          "location": {
+            "x": 1641.2948510712413,
+            "y": 302.43689839390061
+          },
+          "nodeIndex": "Controls",
+          "nodeLineageTag": "3338effa-57bb-40fb-a3ca-7a8cc0456ec3",
+          "size": {
+            "height": 104,
+            "width": 234
+          },
+          "zIndex": 12
+        },
+        {
+          "location": {
+            "x": 1199.8146223140279,
+            "y": 261.52490062703373
+          },
+          "nodeIndex": "Hours Type Selector",
+          "nodeLineageTag": "d931ab53-7891-4093-bbb0-2deb81d7336e",
+          "size": {
+            "height": 152,
+            "width": 234
+          },
+          "zIndex": 13
+        },
+        {
+          "location": {
+            "x": 549.68485239213419,
+            "y": 917.35959798155727
+          },
+          "nodeIndex": "ME Estimate to Complete Function",
+          "nodeLineageTag": "01ffba4f-d466-480a-917c-6a6dee6f3eb5",
+          "size": {
+            "height": 191.77659101884979,
+            "width": 234
+          },
+          "zIndex": 18
+        },
+        {
+          "location": {
+            "x": 23.203011427662389,
+            "y": 1281.0372297283839
+          },
+          "nodeIndex": "Job Employee Hours",
+          "nodeLineageTag": "58aecbc3-1a28-4a63-acf4-78e296f3a5da",
+          "size": {
+            "height": 200,
+            "width": 234
+          },
+          "zIndex": 22
+        },
+        {
+          "location": {
+            "x": 30.056262985446864,
+            "y": 432.16207164487872
+          },
+          "nodeIndex": "Cost Estimated",
+          "nodeLineageTag": "c2211307-5b27-4f6b-bcb3-42b59e45b4e0",
+          "size": {
+            "height": 152,
+            "width": 234
+          },
+          "zIndex": 27
+        },
+        {
+          "location": {
+            "x": 34.033836103794854,
+            "y": 958.67308476714163
+          },
+          "nodeIndex": "Travel Expenses",
+          "nodeLineageTag": "6dadd2fc-bc8f-409d-804e-f06fe198d258",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 11
+        },
+        {
+          "location": {
+            "x": 32.042253876295774,
+            "y": 627.75896632819479
+          },
+          "nodeIndex": "Part Purchase",
+          "nodeLineageTag": "f8ad6d18-d6ba-4003-832e-0187bfb2b3c8",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 28
+        },
+        {
+          "location": {
+            "x": 1653.488145775767,
+            "y": 452.929248750032
+          },
+          "nodeIndex": "Part Purchase Date",
+          "nodeLineageTag": "95de2a6c-5652-4240-97c5-fd60e075ce9f",
+          "size": {
+            "height": 152,
+            "width": 234
+          },
+          "zIndex": 9
+        },
+        {
+          "location": {
+            "x": 21.582345034497024,
+            "y": 1546.8141572757081
+          },
+          "nodeIndex": "Assembly",
+          "nodeLineageTag": "23eb16d5-d22d-41ae-8491-a57a2883d630",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 10
+        },
+        {
+          "location": {
+            "x": 19.004317314107169,
+            "y": 1877.7313102757084
+          },
+          "nodeIndex": "Job Sales",
+          "nodeLineageTag": "275345cb-962a-4ef2-af34-340a74142c09",
+          "size": {
+            "height": 152,
+            "width": 234
+          },
+          "zIndex": 23
+        },
+        {
+          "location": {
+            "x": 549.506154229576,
+            "y": 1125.1055800266372
+          },
+          "nodeIndex": "Estimated to Complete Period",
+          "nodeLineageTag": "7a9de52d-71c1-41cd-b37c-0b051bec58a2",
+          "size": {
+            "height": 248,
+            "width": 237.31471591823754
+          },
+          "zIndex": 26
+        },
+        {
+          "location": {
+            "x": 896.48579039512265,
+            "y": 303.69906250920576
+          },
+          "nodeIndex": "Hours Estimated to Complete History",
+          "nodeLineageTag": "44bc982d-9916-4fe4-8598-7de197873ce4",
+          "size": {
+            "height": 176,
+            "width": 234
+          },
+          "zIndex": 8
+        },
+        {
+          "location": {
+            "x": 1918.4838284616599,
+            "y": 902.86565513785422
+          },
+          "nodeIndex": "Profitability - Project Management %",
+          "size": {
+            "height": 224,
+            "width": 234
+          },
+          "zIndex": 7
+        },
+        {
+          "location": {
+            "x": 943.775757726731,
+            "y": 1019.5523979889372
+          },
+          "nodeIndex": "Standard Fees",
+          "nodeLineageTag": "77f13ebf-d7d1-4a4f-bb18-c3ff55c8ec40",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 25
+        },
+        {
+          "location": {
+            "x": 907.15401514394762,
+            "y": 513.05600762439951
+          },
+          "nodeIndex": "Costs Estimated to Complete History",
+          "nodeLineageTag": "2d2528c3-bcb6-4add-9f78-301197f036bc",
+          "size": {
+            "height": 224,
+            "width": 292.33333333333326
+          },
+          "zIndex": 1
+        },
+        {
+          "location": {
+            "x": 2183.4795111475528,
+            "y": 902.86565513785422
+          },
+          "nodeIndex": "Profitability - Manufacturing %",
+          "nodeLineageTag": "fcc5e9a7-fbfb-4908-ae65-370c32e27632",
+          "size": {
+            "height": 224,
+            "width": 234
+          },
+          "zIndex": 2
+        },
+        {
+          "location": {
+            "x": 2448.4751938334457,
+            "y": 0
+          },
+          "nodeIndex": "Profitability - Shop Rate",
+          "nodeLineageTag": "35e1db79-9f46-47db-84d5-4eab7295eb5a",
+          "size": {
+            "height": 224,
+            "width": 234
+          },
+          "zIndex": 3
+        },
+        {
+          "location": {
+            "x": 2713.4708765193386,
+            "y": 902.86565513785422
+          },
+          "nodeIndex": "Profitability - Engineering Rate",
+          "size": {
+            "height": 224,
+            "width": 234
+          },
+          "zIndex": 4
+        },
+        {
+          "location": {
+            "x": 2978.4665592052315,
+            "y": 914.86565513785422
+          },
+          "nodeIndex": "Display Costs Header",
+          "size": {
+            "height": 200,
+            "width": 234
+          },
+          "zIndex": 5
+        },
+        {
+          "location": {
+            "x": 948.4623775248059,
+            "y": 797.69898847118759
+          },
+          "nodeIndex": "Sage Part Cost",
+          "nodeLineageTag": "1abb520e-d478-45e0-bb0d-7388c65d02ea",
+          "size": {
+            "height": 176,
+            "width": 234
+          },
+          "zIndex": 6
+        }
+      ],
+      "name": "All tables",
+      "zoomValue": 72.000000000000014,
+      "pinKeyFieldsToTop": false,
+      "showExtraHeaderInfo": false,
+      "hideKeyFieldsWhenCollapsed": false,
+      "tablesLocked": false
+    },
+    {
+      "ordinal": 1,
+      "scrollPosition": {
+        "x": 120.80000305175781,
+        "y": 33.599998474121094
+      },
+      "nodes": [
+        {
+          "location": {
+            "x": 247,
+            "y": 0
+          },
+          "nodeIndex": "Travel Expenses",
+          "nodeLineageTag": "6dadd2fc-bc8f-409d-804e-f06fe198d258",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 5
+        },
+        {
+          "location": {
+            "x": 805,
+            "y": -5
+          },
+          "nodeIndex": "Job",
+          "nodeLineageTag": "f89d410a-95c3-40e0-a200-a22ccf092131",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 1
+        },
+        {
+          "location": {
+            "x": 817,
+            "y": 366
+          },
+          "nodeIndex": "Employee",
+          "nodeLineageTag": "98c51c73-1df7-4c0c-a947-53e5e0f41f2c",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 2
+        },
+        {
+          "location": {
+            "x": 805,
+            "y": 706
+          },
+          "nodeIndex": "Function Hierarchy",
+          "nodeLineageTag": "cc850b35-0b52-4dca-b576-58803d806a5d",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 3
+        },
+        {
+          "location": {
+            "x": 477,
+            "y": 737
+          },
+          "nodeIndex": "Date",
+          "nodeLineageTag": "860ca4ae-208d-450d-9974-9873d633bf7e",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 4
+        }
+      ],
+      "name": "Travel Expense",
+      "zoomValue": 100,
+      "pinKeyFieldsToTop": false,
+      "showExtraHeaderInfo": false,
+      "hideKeyFieldsWhenCollapsed": false,
+      "tablesLocked": false
+    },
+    {
+      "ordinal": 2,
+      "scrollPosition": {
+        "x": 0,
+        "y": 178.39999389648438
+      },
+      "nodes": [
+        {
+          "location": {
+            "x": 19,
+            "y": 94
+          },
+          "nodeIndex": "Hours Estimated",
+          "nodeLineageTag": "3c3de025-dd23-44ad-a415-bebbba6ccc03",
+          "size": {
+            "height": 248,
+            "width": 234
+          },
+          "zIndex": 0
+        },
+        {
+          "location": {
+            "x": 24,
+            "y": 414
+          },
+          "nodeIndex": "Hours Actual",
+          "nodeLineageTag": "a1205787-ad73-4675-b9a7-1d8c8c237428",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 0
+        },
+        {
+          "location": {
+            "x": 481,
+            "y": 53
+          },
+          "nodeIndex": "Date",
+          "nodeLineageTag": "860ca4ae-208d-450d-9974-9873d633bf7e",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 0
+        }
+      ],
+      "name": "Hours",
+      "zoomValue": 100,
+      "pinKeyFieldsToTop": false,
+      "showExtraHeaderInfo": false,
+      "hideKeyFieldsWhenCollapsed": false,
+      "tablesLocked": false
+    },
+    {
+      "ordinal": 3,
+      "scrollPosition": {
+        "x": 0,
+        "y": 0
+      },
+      "nodes": [
+        {
+          "location": {
+            "x": 811,
+            "y": 200
+          },
+          "nodeIndex": "Hours Estimated to Complete History",
+          "nodeLineageTag": "44bc982d-9916-4fe4-8598-7de197873ce4",
+          "size": {
+            "height": 176,
+            "width": 348
+          },
+          "zIndex": 5
+        },
+        {
+          "location": {
+            "x": 477,
+            "y": 36
+          },
+          "nodeIndex": "Date",
+          "nodeLineageTag": "860ca4ae-208d-450d-9974-9873d633bf7e",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 2
+        },
+        {
+          "location": {
+            "x": 465,
+            "y": 491
+          },
+          "nodeIndex": "Job",
+          "nodeLineageTag": "f89d410a-95c3-40e0-a200-a22ccf092131",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 3
+        },
+        {
+          "location": {
+            "x": 1138,
+            "y": 441
+          },
+          "nodeIndex": "Estimated to Complete Period",
+          "nodeLineageTag": "7a9de52d-71c1-41cd-b37c-0b051bec58a2",
+          "size": {
+            "height": 248,
+            "width": 304
+          },
+          "zIndex": 4
+        },
+        {
+          "location": {
+            "x": 1330,
+            "y": 0
+          },
+          "nodeIndex": "Function Hierarchy",
+          "nodeLineageTag": "cc850b35-0b52-4dca-b576-58803d806a5d",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 1
+        }
+      ],
+      "name": "ETC Historical",
+      "zoomValue": 100,
+      "pinKeyFieldsToTop": false,
+      "showExtraHeaderInfo": false,
+      "hideKeyFieldsWhenCollapsed": false,
+      "tablesLocked": false
+    }
+  ],
+  "selectedDiagram": "All tables",
+  "defaultDiagram": "All tables"
+}

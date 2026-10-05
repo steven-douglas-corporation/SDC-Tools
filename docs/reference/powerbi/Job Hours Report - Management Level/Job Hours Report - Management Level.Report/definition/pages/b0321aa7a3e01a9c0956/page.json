@@ -1,0 +1,164 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "name": "b0321aa7a3e01a9c0956",
+  "displayName": "Hours Detail",
+  "displayOption": "FitToPage",
+  "height": 720,
+  "width": 1280,
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "0d4bdb74c83d10a73c95",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Hours Type Selector"
+              }
+            },
+            "Property": "Hours Type"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "Drillthrough"
+      },
+      {
+        "name": "ec9bd1be37ce0046a646",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Hours Actual"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "Drillthrough"
+      },
+      {
+        "name": "6bd472c27ea524012a28",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Hours Type Selector"
+              }
+            },
+            "Property": "Dynamic Hours Actual"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "Drillthrough"
+      },
+      {
+        "name": "b4ee79f280a5273ec189",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Hours Actual, Est to Date"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "Drillthrough"
+      },
+      {
+        "name": "f46e003d8dac308e73b3",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Employee"
+              }
+            },
+            "Property": "Employee Name"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "Drillthrough"
+      }
+    ]
+  },
+  "pageBinding": {
+    "name": "7bd5c61f06c6b0d73e40",
+    "type": "Drillthrough",
+    "parameters": [
+      {
+        "name": "861d651de4c2203ac1b8",
+        "boundFilter": "0d4bdb74c83d10a73c95",
+        "fieldExpr": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Hours Type Selector"
+              }
+            },
+            "Property": "Hours Type"
+          }
+        }
+      },
+      {
+        "name": "6ee22f933762ebb25051",
+        "boundFilter": "ec9bd1be37ce0046a646",
+        "fieldExpr": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Hours Actual"
+          }
+        }
+      },
+      {
+        "name": "bb355c6e6e4db590a753",
+        "boundFilter": "6bd472c27ea524012a28",
+        "fieldExpr": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Hours Type Selector"
+              }
+            },
+            "Property": "Dynamic Hours Actual"
+          }
+        }
+      },
+      {
+        "name": "8258d4612139a33723a8",
+        "boundFilter": "b4ee79f280a5273ec189",
+        "fieldExpr": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Hours Actual, Est to Date"
+          }
+        }
+      },
+      {
+        "name": "9827e604834ccc0bac42",
+        "boundFilter": "f46e003d8dac308e73b3",
+        "fieldExpr": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Employee"
+              }
+            },
+            "Property": "Employee Name"
+          }
+        }
+      }
+    ]
+  },
+  "visibility": "HiddenInViewMode"
+}

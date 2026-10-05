@@ -1,0 +1,60 @@
+table 'ME Estimate to Complete Function'
+	lineageTag: 01ffba4f-d466-480a-917c-6a6dee6f3eb5
+
+	column 'Job Id'
+		dataType: string
+		lineageTag: 4af5ad26-e640-4895-9eef-a5fe4bf77ac7
+		summarizeBy: none
+		sourceColumn: Job Id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section-Function Code'
+		dataType: string
+		lineageTag: 847e1039-74cc-4dc2-8426-2e81e262bb25
+		summarizeBy: none
+		sourceColumn: Section-Function Code
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'ME Function Name'
+		dataType: string
+		lineageTag: dad63297-a5e8-46d4-b89b-afe26900dda1
+		summarizeBy: none
+		sourceColumn: ME Function Name
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Section Function Code'
+		dataType: string
+		lineageTag: ab25d87d-9ca7-4078-8e16-c75d9a7c791f
+		summarizeBy: none
+		sourceColumn: Job Section Function Code
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'ME Estimate to Complete Function' = m
+		mode: import
+		queryGroup: Dimensions
+		source =
+				let
+				    Source = #"Hours Estimated Import",
+				    #"Removed Columns" = Table.RemoveColumns(Source,{"Column2", "Column3", "Column4", "Column5", "Column6", "Column7", "Column8", "Column9", "Column10", "Column11", "Column12", "Column13", "Column14", "Column15", "Column16", "Column17", "Column18", "Column19", "Column20", "Column21", "Column22", "Column23", "Column24", "Column25", "Column26", "Column27", "Column28", "Column29", "Column30", "Column31", "Column32", "Column33", "Column34", "Column35", "Column36", "Column37", "Column38", "Column39", "Column40", "Column41", "Column42", "Column43", "Column44", "Column45", "Column46", "Column47", "Column48", "Column49", "Column50", "Column51", "Column52", "Column53", "Column54", "Column55", "Column56", "Column57", "Column58", "Column59", "Column60", "Column61", "Column62", "Column63"}),
+				    #"Removed Other Columns" = Table.SelectColumns(#"Removed Columns",{"Column1", "Column64", "Column65", "Column66", "Column67", "Column68", "Column69", "Column70", "Column71", "Column72", "Column73", "Column74"}),
+				    #"Removed Top Rows" = Table.Skip(#"Removed Other Columns",6),
+				    #"Promoted Headers" = Table.PromoteHeaders(#"Removed Top Rows", [PromoteAllScalars=true]),
+				    #"Renamed Columns" = Table.RenameColumns(#"Promoted Headers",{{"Column1", "Job Id"}}),
+				    #"Filtered Rows1" = Table.SelectRows(#"Renamed Columns", each ([Job Id] <> "Job#")),
+				    #"Unpivoted Other Columns" = Table.UnpivotOtherColumns(#"Filtered Rows1", {"Job Id"}, "Attribute", "Value"),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Unpivoted Other Columns",{{"Attribute", "Section-Function Code"}, {"Value", "ME Function Name"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns1",{{"Job Id", type text}}),
+				    // Add leading zero to 3-digit numeric Job Ids
+				    #"Padded Job Id" = Table.TransformColumns(#"Changed Type", {{"Job Id", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}}),
+				    #"Added Custom" = Table.AddColumn(#"Padded Job Id", "Job Section Function Code", each [Job Id]&"|"&[#"Section-Function Code"])
+				in
+				    #"Added Custom"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

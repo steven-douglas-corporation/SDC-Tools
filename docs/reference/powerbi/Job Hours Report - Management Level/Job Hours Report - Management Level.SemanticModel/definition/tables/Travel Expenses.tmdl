@@ -1,0 +1,183 @@
+table 'Travel Expenses'
+	lineageTag: 6dadd2fc-bc8f-409d-804e-f06fe198d258
+
+	column 'Date Submitted'
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 24c77589-611a-4472-8092-be21329c6463
+		summarizeBy: none
+		sourceColumn: Date Submitted
+
+		variation Variation
+			isDefault
+			relationship: 97e1d861-3338-48e0-bbd2-9f75c10d758c
+			defaultHierarchy: LocalDateTable_ffdd1d33-eec6-4ad0-922f-7399ae01b670.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Date Approved'
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 87b41fcd-407f-444a-8330-4a37bb5d8113
+		summarizeBy: none
+		sourceColumn: Date Approved
+
+		variation Variation
+			isDefault
+			relationship: 7a81c839-ff82-4fcb-8e7a-cb21a245cac2
+			defaultHierarchy: LocalDateTable_caeff34a-fbcd-4a20-b456-48ce493aa7b8.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Date Paid'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 21ffbaf5-7f2f-4e35-b710-e09158e3f05e
+		summarizeBy: none
+		sourceColumn: Date Paid
+
+		variation Variation
+			isDefault
+			relationship: 2392cd63-39d6-4535-becf-ba125265faab
+			defaultHierarchy: LocalDateTable_8ba6bdb8-aa6d-4ee6-9898-2772419648b0.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Expense Report Status'
+		dataType: string
+		lineageTag: 61a4ed14-1ac6-40e9-9046-34482dc078a2
+		summarizeBy: none
+		sourceColumn: Expense Report Status
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Employee Id'
+		dataType: string
+		lineageTag: 717ed1f1-8548-4554-8128-b33e8fe9948d
+		summarizeBy: none
+		sourceColumn: Employee Id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Preferred/First Name'
+		dataType: string
+		lineageTag: ab79c863-a746-433e-9239-e1d012e08905
+		summarizeBy: none
+		sourceColumn: Preferred/First Name
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Last Name'
+		dataType: string
+		lineageTag: fb2a3d4f-bd3c-4c20-9b01-84940ab96686
+		summarizeBy: none
+		sourceColumn: Last Name
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Id'
+		dataType: string
+		lineageTag: 21d197d7-db4e-4580-b333-fecb531f8304
+		summarizeBy: none
+		sourceColumn: Job Id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section Id'
+		dataType: string
+		lineageTag: 53e65aba-d6d8-4c2a-a176-2c3e0edb8b60
+		summarizeBy: none
+		sourceColumn: Section Id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Function Id'
+		dataType: string
+		lineageTag: 87ea53bc-21ba-40fb-aec5-e3e269c46e48
+		summarizeBy: none
+		sourceColumn: Function Id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Expense Report Name'
+		dataType: string
+		lineageTag: f5c6c023-a1ba-4eff-9560-1c368a652d08
+		summarizeBy: none
+		sourceColumn: Expense Report Name
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Expense Title'
+		dataType: string
+		lineageTag: c1622089-0319-4952-a9df-7677b75ff5c6
+		summarizeBy: none
+		sourceColumn: Expense Title
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Expense Amount'
+		dataType: double
+		isHidden
+		lineageTag: c016fb1a-93e0-4a9a-8cd8-39ce5f378c3b
+		summarizeBy: sum
+		sourceColumn: Expense Amount
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Transaction Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: ca8ab9de-6d5e-4246-9706-ad0a1da627dd
+		summarizeBy: none
+		sourceColumn: Transaction Date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Expense Comment(s)'
+		dataType: string
+		lineageTag: 260ebc2a-3dc1-4b7e-b66b-c796b005f228
+		summarizeBy: none
+		sourceColumn: Expense Comment(s)
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section-Funtion Code'
+		dataType: string
+		lineageTag: 5b6305bd-6117-427b-b948-aa394f1f9fe6
+		summarizeBy: none
+		sourceColumn: Section-Funtion Code
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Travel Expenses' = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				    Source = SharePoint.Files("https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/", [ApiVersion = 15]),
+				    #"Filtered Rows" = Table.SelectRows(Source, each ([Name] = "Paid_Expenses___DSB.xlsx")),
+				    #"Paid_Expenses___DSB xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Travel Expenses/" = #"Filtered Rows"{[Name="Paid_Expenses___DSB.xlsx",#"Folder Path"="https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Travel Expenses/"]}[Content],
+				    #"Imported Excel Workbook" = Excel.Workbook(#"Paid_Expenses___DSB xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Travel Expenses/"),
+				    Report_Sheet = #"Imported Excel Workbook"{[Item="Report",Kind="Sheet"]}[Data],
+				    #"Promoted Headers" = Table.PromoteHeaders(Report_Sheet, [PromoteAllScalars=true]),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Date Submitted", type datetime}, {"Date Approved", type datetime}, {"Date Paid", type date}, {"Expense Report Status", type text}, {"Employee Id", type text}, {"Preferred/First Name", type text}, {"Last Name", type text}, {"Expense Report Job Code", type text}, {"Section # Code", type text}, {"Function Code", type text}, {"Expense Report Name", type text}, {"Expense Title", type text}, {"Expense Amount", type number}, {"Transaction Date", type date}, {"Expense Comment(s)", type text}}),
+				    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Expense Report Job Code", "Job Id"}, {"Section # Code", "Section Id"}, {"Function Code", "Function Id"}}),
+				    // Standardize Job Id to 4-digit format: strip one existing leading zero then re-add if result is 3-digit numeric
+				    #"Padded Job Id" = Table.TransformColumns(#"Renamed Columns", {{"Job Id", each if _ = null then _ else let stripped = if Text.StartsWith(_, "0") and Text.Length(_) > 1 then Text.RemoveRange(_, 0, 1) else _ in if Text.Length(stripped) = 3 and (try Number.FromText(stripped) otherwise null) <> null then "0" & stripped else stripped, type text}}),
+				    #"Added Custom" = Table.AddColumn(#"Padded Job Id", "Section-Funtion Code", each [#"Section Id"]&"-"&[Function Id]),
+				    #"Replaced Value" = Table.ReplaceValue(#"Added Custom","","4000",Replacer.ReplaceValue,{"Job Id"})
+				in
+				    #"Replaced Value"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

@@ -1,0 +1,665 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
+  "name": "674acb4c70aac432394d",
+  "position": {
+    "x": 0,
+    "y": 1462,
+    "z": 20000,
+    "height": 538,
+    "width": 1793,
+    "tabOrder": 14000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Part Purchase"
+                    }
+                  },
+                  "Property": "Purchase Date"
+                }
+              },
+              "queryRef": "Purchase Orders.Purchase Date",
+              "nativeQueryRef": "Purchase Date"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Part Purchase"
+                    }
+                  },
+                  "Property": "Invoiced Date"
+                }
+              },
+              "queryRef": "Part Purchase.Invoiced Date",
+              "nativeQueryRef": "Invoiced Date"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Part Purchase"
+                    }
+                  },
+                  "Property": "Manufacturer"
+                }
+              },
+              "queryRef": "Part Purchase Orders.Manufacturer",
+              "nativeQueryRef": "Manufacturer"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Part Purchase"
+                    }
+                  },
+                  "Property": "Supplier"
+                }
+              },
+              "queryRef": "Part Purchase Orders.Supplier",
+              "nativeQueryRef": "Supplier"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Part Purchase"
+                    }
+                  },
+                  "Property": "Category"
+                }
+              },
+              "queryRef": "Part Purchase Orders.Category",
+              "nativeQueryRef": "Category"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Part Purchase"
+                    }
+                  },
+                  "Property": "PO Number"
+                }
+              },
+              "queryRef": "Part Purchase Orders.PO Number",
+              "nativeQueryRef": "PO Number"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Part Purchase"
+                    }
+                  },
+                  "Property": "Part Number"
+                }
+              },
+              "queryRef": "Part Purchase Orders.Part Number",
+              "nativeQueryRef": "Part Number"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Part Purchase"
+                    }
+                  },
+                  "Property": "Description"
+                }
+              },
+              "queryRef": "Cost Actual.Description",
+              "nativeQueryRef": "Description"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Part Purchase Quantity"
+                }
+              },
+              "queryRef": "Measure Tables.Part Purchase Order Quantity",
+              "nativeQueryRef": "Quantity",
+              "displayName": "Quantity"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Part Purchase Price"
+                }
+              },
+              "queryRef": "Measure Tables.Part Purchase Price",
+              "nativeQueryRef": "Unit Price",
+              "displayName": "Unit Price"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Part Cost Purchased"
+                }
+              },
+              "queryRef": "Measure Tables.Cost Actual",
+              "nativeQueryRef": "Total Price",
+              "displayName": "Total Price"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Part Invoiced Amount"
+                }
+              },
+              "queryRef": "Measure Tables.Part Invoiced Amount",
+              "nativeQueryRef": "Invoiced Amount",
+              "displayName": "Invoiced Amount"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Part % Invoiced"
+                }
+              },
+              "queryRef": "Measure Tables.Part % Invoiced",
+              "nativeQueryRef": "% Invoiced",
+              "displayName": "% Invoiced"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Job Parts Cost, Excl SDC Supplier"
+                }
+              },
+              "queryRef": "Measure Tables.Job Parts Cost, Excl SDC Supplier",
+              "nativeQueryRef": "Job Parts Cost, Excl SDC Supplier"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Part Cost Left to Spend"
+                }
+              },
+              "queryRef": "Measure Tables.Part Cost Left to Spend",
+              "nativeQueryRef": "Left to Spend",
+              "displayName": "Left to Spend"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "Part Purchase"
+                  }
+                },
+                "Property": "Purchase Date"
+              }
+            },
+            "direction": "Ascending"
+          }
+        ]
+      }
+    },
+    "objects": {
+      "general": [
+        {
+          "properties": {}
+        }
+      ],
+      "grid": [
+        {
+          "properties": {
+            "gridVertical": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "columnHeaders": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "values": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "columnWidth": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "303.37728351443445D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Cost Actual.Description"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "121D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Measure Tables.Cost Actual"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "274.1787038377966D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Part Purchase Orders.Supplier"
+          }
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Parts Cost'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "7ab1dbe36809906640a0",
+        "ordinal": 0,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Date"
+              }
+            },
+            "Property": "Date"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "User"
+      },
+      {
+        "name": "b3bf6b98864c12684497",
+        "ordinal": 1,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Employee"
+              }
+            },
+            "Property": "Employee Department"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "User"
+      },
+      {
+        "name": "a838e243cdeb2a75340e",
+        "ordinal": 2,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Employee"
+              }
+            },
+            "Property": "Employee Name"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "User"
+      },
+      {
+        "name": "1d2f36e6baee67608ec3",
+        "ordinal": 3,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Job"
+              }
+            },
+            "Property": "Job"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "User"
+      },
+      {
+        "name": "4ee53371048803ce0241",
+        "ordinal": 4,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Job"
+              }
+            },
+            "Property": "Job Status"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "User"
+      },
+      {
+        "name": "e30d7cb573220a93558a",
+        "ordinal": 5,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Function Hierarchy"
+              }
+            },
+            "Property": "Section-Function Code"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "User"
+      },
+      {
+        "name": "8dd46e7ea0658fe960b3",
+        "ordinal": 6,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Part Purchase"
+              }
+            },
+            "Property": "Description"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "07d36564020b6e707ad4",
+        "ordinal": 7,
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Part Cost Purchased"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "07bd2347c79a33ab1f22",
+        "ordinal": 8,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Part Purchase"
+              }
+            },
+            "Property": "Purchase Date"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "62db53455196bf7e161b",
+        "ordinal": 9,
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Part Purchase Quantity"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "bfeae46a1a33f134395f",
+        "ordinal": 10,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Part Purchase"
+              }
+            },
+            "Property": "Category"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "c750f3ac54b52a7d97a5",
+        "ordinal": 11,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Part Purchase"
+              }
+            },
+            "Property": "Manufacturer"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "772cd07e8b0fbd9f3357",
+        "ordinal": 12,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Part Purchase"
+              }
+            },
+            "Property": "Supplier"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "87f80810657ca388fc5f",
+        "ordinal": 13,
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Part Purchase Price"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "8486ee3650c9f5ccacf6",
+        "ordinal": 14,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Part Purchase"
+              }
+            },
+            "Property": "PO Number"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "aa9cdb55384987ff6bda",
+        "ordinal": 15,
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Part Purchase"
+              }
+            },
+            "Property": "Part Number"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "6f45fe0f96181b7a4c85",
+        "ordinal": 16,
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Part Invoiced Amount"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "7a71d526b8c20c76f08e",
+        "ordinal": 17,
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Part % Invoiced"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "6959c845dbeff71520ef",
+        "ordinal": 18,
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Part Cost Left to Spend"
+          }
+        },
+        "type": "Advanced"
+      }
+    ],
+    "filterSortOrder": "Custom"
+  }
+}

@@ -1,0 +1,157 @@
+table 'Hours Type Selector'
+	lineageTag: d931ab53-7891-4093-bbb0-2deb81d7336e
+
+	measure 'Dynamic Hours Variance, Cumulative' = ```
+			
+			VAR SelectedMeasure = SELECTEDVALUE('Hours Type Selector'[Estimated Hours Fields])
+			RETURN
+			CALCULATE(
+			    IF(
+			        SelectedMeasure = NAMEOF('Measure Tables'[Hours Quoted]),
+			        [Hours Quoted] - [Hours Actual, Cumulative], //quoted
+			        [Hours Estimated to Complete] - [Hours Actual, Est to Date Cumulative] //etc
+			    ),
+			    ALL('Hours Type Selector')
+			)
+			
+			```
+		formatString: #,0
+		lineageTag: 74094362-29fd-488c-bba6-9a4720e7b526
+
+	measure 'Dynamic Hours Variance' = ```
+			
+			VAR SelectedMeasure = SELECTEDVALUE('Hours Type Selector'[Estimated Hours Fields])
+			RETURN
+			CALCULATE(
+			    IF(
+			        SelectedMeasure = NAMEOF('Measure Tables'[Hours Quoted]),
+			        [Hours Quoted] - [Hours Actual], //quoted
+			        [Hours Estimated to Complete] - [Hours Actual, Est to Date] //etc
+			    ),
+			    ALL('Hours Type Selector')
+			)
+			
+			```
+		formatString: #,0
+		lineageTag: 9930c616-464b-4a03-9d89-013be6d359d1
+
+	measure 'Dynamic Hours Actual' = ```
+			
+			VAR SelectedMeasure = SELECTEDVALUE('Hours Type Selector'[Estimated Hours Fields])
+			RETURN
+			CALCULATE(
+			    IF(
+			        SelectedMeasure = NAMEOF('Measure Tables'[Hours Quoted]),
+			        [Hours Actual], //quoted
+			        [Hours Actual, Est to Date] //etc
+			    ),
+			    ALL('Hours Type Selector')
+			)
+			
+			```
+		formatString: #,0
+		lineageTag: 7404c241-6257-4ace-85fa-3ddebe2db797
+
+	measure 'Dynamic Hours Actual, Cumulative' = ```
+			
+			VAR SelectedMeasure = SELECTEDVALUE('Hours Type Selector'[Estimated Hours Fields])
+			RETURN
+			CALCULATE(
+			    IF(
+			        SelectedMeasure = NAMEOF('Measure Tables'[Hours Quoted]),
+			        [Hours Actual, Cumulative], //quoted
+			        [Hours Actual, Est to Date Cumulative] //etc
+			    ),
+			    ALL('Hours Type Selector')
+			)
+			
+			```
+		formatString: #,0
+		lineageTag: 3ca48563-f1a6-46a4-8f5a-c2afe8a30fe3
+
+	measure 'Dynamic Hours Variance Cumulative for Engineering' = ```
+			
+			    CALCULATE(
+			        [Dynamic Hours Variance, Cumulative],
+			        'Function Hierarchy'[Billing Group] = "Engineering"
+			    )
+			```
+		formatString: #,0
+		lineageTag: a377518a-9838-420b-ab2a-753a20e64834
+
+	measure 'Dynamic Hours Variance Cumulative for Shop' = ```
+			
+			    CALCULATE(
+			        [Dynamic Hours Variance, Cumulative],
+			        'Function Hierarchy'[Billing Group] = "Shop"
+			    )
+			```
+		formatString: #,0
+		lineageTag: 59cf284d-5abf-4d1d-b68b-93e51f1e2441
+
+	measure 'Dynamic Hours Actual Cumulative for Engineering' = ```
+			
+			    CALCULATE(
+			        [Dynamic Hours Actual, Cumulative],
+			        'Function Hierarchy'[Billing Group] = "Engineering"
+			    )
+			```
+		formatString: #,0
+		lineageTag: 1f5bd6f8-e134-4ad9-b205-a538049a02eb
+
+	measure 'Dynamic Hours Actual Cumulative for Shop' = ```
+			
+			    CALCULATE(
+			        [Dynamic Hours Actual, Cumulative],
+			        'Function Hierarchy'[Billing Group] = "Shop"
+			    )
+			```
+		formatString: #,0
+		lineageTag: f1f5cfc9-1016-4b40-b339-cb2d6bf68cda
+
+	column 'Hours Type'
+		dataType: string
+		lineageTag: 4533efa4-a7e6-42d9-8499-28f0ea713dfb
+		summarizeBy: none
+		sourceColumn: [Value1]
+		sortByColumn: 'Estimated Hours Order'
+
+		relatedColumnDetails
+			groupByColumn: 'Estimated Hours Fields'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Estimated Hours Fields'
+		isHidden
+		lineageTag: 9b4e9089-68a7-4d89-a828-4b41218eb894
+		summarizeBy: none
+		sourceColumn: [Value2]
+		sortByColumn: 'Estimated Hours Order'
+
+		extendedProperty ParameterMetadata =
+				{
+				  "version": 3,
+				  "kind": 2
+				}
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Estimated Hours Order'
+		isHidden
+		formatString: 0
+		lineageTag: af5e7d22-21af-495a-8642-dbe4cf4043ff
+		summarizeBy: sum
+		sourceColumn: [Value3]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Hours Type Selector' = calculated
+		mode: import
+		source =
+				{
+				    ("Quoted", NAMEOF('Measure Tables'[Hours Quoted]), 0),
+				    ("ETC", NAMEOF('Measure Tables'[Hours Estimated to Complete]), 1)
+				}
+
+	annotation PBI_Id = 1cfb80c9b375485aa6f1f20cee423ff3
+

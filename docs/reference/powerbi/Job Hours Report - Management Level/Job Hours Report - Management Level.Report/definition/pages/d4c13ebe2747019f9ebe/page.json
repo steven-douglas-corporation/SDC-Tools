@@ -1,0 +1,313 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "name": "d4c13ebe2747019f9ebe",
+  "displayName": "Project Portfolio",
+  "displayOption": "ActualSize",
+  "height": 1300,
+  "width": 1600,
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "ad8e852d0a165b5e058a",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Function Hierarchy"
+              }
+            },
+            "Property": "Is Total"
+          }
+        },
+        "type": "Categorical",
+        "filter": {
+          "Version": 2,
+          "From": [
+            {
+              "Name": "f",
+              "Entity": "Function Hierarchy",
+              "Type": 0
+            }
+          ],
+          "Where": [
+            {
+              "Condition": {
+                "In": {
+                  "Expressions": [
+                    {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Source": "f"
+                          }
+                        },
+                        "Property": "Is Total"
+                      }
+                    }
+                  ],
+                  "Values": [
+                    [
+                      {
+                        "Literal": {
+                          "Value": "false"
+                        }
+                      }
+                    ]
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "howCreated": "User"
+      }
+    ]
+  },
+  "pageBinding": {
+    "name": "f19d22b3ba7be99fab8d",
+    "type": "Default",
+    "parameters": []
+  },
+  "objects": {
+    "background": [
+      {
+        "properties": {
+          "image": {
+            "image": {
+              "name": {
+                "expr": {
+                  "Literal": {
+                    "Value": "''"
+                  }
+                }
+              },
+              "url": {
+                "expr": {
+                  "Literal": {
+                    "Value": "''"
+                  }
+                }
+              }
+            }
+          },
+          "transparency": {
+            "expr": {
+              "Literal": {
+                "Value": "100D"
+              }
+            }
+          },
+          "color": {
+            "solid": {
+              "color": {
+                "expr": {
+                  "ThemeDataColor": {
+                    "ColorId": 0,
+                    "Percent": -0.3
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    "outspace": [
+      {
+        "properties": {
+          "color": {
+            "solid": {
+              "color": {
+                "expr": {
+                  "ThemeDataColor": {
+                    "ColorId": 0,
+                    "Percent": -0.3
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    "outspacePane": [
+      {
+        "properties": {
+          "backgroundColor": {
+            "solid": {
+              "color": {
+                "expr": {
+                  "ThemeDataColor": {
+                    "ColorId": 0,
+                    "Percent": 0
+                  }
+                }
+              }
+            }
+          },
+          "titleSize": {
+            "expr": {
+              "Literal": {
+                "Value": "8L"
+              }
+            }
+          },
+          "width": {
+            "expr": {
+              "Literal": {
+                "Value": "233L"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "visualInteractions": [
+    {
+      "source": "64d3bbf6045b88944192",
+      "target": "3f37082f7835e347d381",
+      "type": "DataFilter"
+    },
+    {
+      "source": "7bcee5077513792eec9c",
+      "target": "3f37082f7835e347d381",
+      "type": "HighlightFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "35b0133c473f2446fe18",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "bec2c3eae1a8ae812f09",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "b6af11213e224a0b5ff2",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "49fcfa58a719963fd003",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "b84167f7977be0610100",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "c856a5e1083b337324b4",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "be410cee4295c1dc9bd3",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "64d3bbf6045b88944192",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "7bcee5077513792eec9c",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "3f37082f7835e347d381",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "c7e7c2ebac126b11a93b",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "4a0aa4929893a1028b97",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "43fe523d5e31e440c998",
+      "type": "NoFilter"
+    },
+    {
+      "source": "8fcb45377d858fe7c74c",
+      "target": "28c6b797871cd9020183",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "35b0133c473f2446fe18",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "bec2c3eae1a8ae812f09",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "b6af11213e224a0b5ff2",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "49fcfa58a719963fd003",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "c7e7c2ebac126b11a93b",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "b84167f7977be0610100",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "c856a5e1083b337324b4",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "3f37082f7835e347d381",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "7bcee5077513792eec9c",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "64d3bbf6045b88944192",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "4a0aa4929893a1028b97",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "43fe523d5e31e440c998",
+      "type": "NoFilter"
+    },
+    {
+      "source": "2aa59a45803a3682cf7a",
+      "target": "28c6b797871cd9020183",
+      "type": "NoFilter"
+    }
+  ]
+}
