@@ -6759,3 +6759,42 @@ anyone without a delivery team.
 Set `PAYLOCITY_EMPLOYEES_LOCAL_PATH` in `.env`; run
 `npx tsx -r ./scripts/shim-server-only.cjs scripts/preview-roster-sync.ts` against
 the real database before deploying — the first pass adds everyone in the file.
+
+## 74. Paylocity hours, roster and position families read from the DataWarehouse (2026-10-04)
+
+The Paylocity files no longer stay on the SFTP share. The new warehouse loader
+(`tools/data-warehouse`, PostgreSQL `DataWarehouse` on this server) copies each file,
+loads it, and deletes it from the server; the Power Automate flow that copied them to
+SharePoint is off. So the three readers that used the share now read the warehouse,
+when `DATAWAREHOUSE_URL` is set (read-only login `reports_app`):
+
+* **Hours** (`paylocity-workbook.ts`): each punch source is read from `"Fact"."JobHours"`
+  and put back into a "Report" worksheet at the row numbers it had in the file, with the
+  file's own cell values. Everything after the read — header check, job checks, year
+  gate, pools, `sourceRow` in the Undefined Hours drill — is unchanged. The identity is
+  the original file's name, size, modified time and sha256, so the same-version check
+  compares like with like. `paylocity-sources.ts` gives each source its warehouse
+  `reportKey`; `hours-feed.ts` passes it.
+* **Roster** (`paylocity-roster-sync.ts`): the grid comes from `"Dimension"."Employee"`
+  (current, not soft-deleted) and goes through `parseRosterGrid` as before.
+* **Position families** (`position-families-sync.ts`): Paylocity's report comes from
+  `"Paylocity"."PositionFamily"` through `parsePositionFamiliesGrid`. The overrides
+  file is hand-edited on the share and stays there, so it is still read from
+  `PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH`.
+
+No fallback between the two: with `DATAWAREHOUSE_URL` set, an unreadable warehouse
+fails the step the way an unreadable file did. Unset, the old file paths apply.
+
+**Parity, measured 2026-10-04** against the archived copies of the exact file versions
+the warehouse loaded: resolved punches (23,228 for 2026, 29,035 for 2025), rejected
+punches, pool hours, identity sha256, the roster (159) and position families (102) are
+identical. One expected difference: the warehouse applies the year rule itself
+(`"Paylocity"."JobHoursSource"`), so Job_Hours_2025.xlsx's `rowsExcludedByYear` reads 0
+where the file read 187 (588.20h) — those January 2026 rows never arrive.
+
+New: `src/lib/data-warehouse.ts` (pool + snapshot reads), `src/lib/paylocity-warehouse.ts`,
+`tests/paylocity-warehouse.test.ts`; dependency `pg`.
+
+### Left for the user
+Set `DATAWAREHOUSE_URL` in `.env` (the `reports_app` password is in Windows Credential
+Manager on SERVER-APP1 under `datawarehouse-postgres`).

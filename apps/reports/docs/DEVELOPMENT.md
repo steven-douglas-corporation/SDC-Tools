@@ -22,6 +22,7 @@ Local setup and day-to-day workflows. For production deployment, see
 | `TOTALETO_DB_USER`, `TOTALETO_DB_PASSWORD` | Total ETO (MSSQL) domain credentials |
 | `PBI_TENANT_ID`, `PBI_CLIENT_ID`, `PBI_CLIENT_SECRET` | Power BI / Fabric service principal |
 | `PBI_WORKSPACE_ID`, `PBI_DATASET_ID` | Which Power BI dataset to query (legacy paths only) |
+| `DATAWAREHOUSE_URL` | Read-only Postgres connection (`reports_app`) to the DataWarehouse. When set, Paylocity hours, the roster and Position_Families come from the warehouse (`src/lib/data-warehouse.ts`) and the three file paths below are ignored; the overrides file is still read from disk |
 | `JOB_HOURS_LOCAL_PATH` | Filesystem path to the OneDrive-synced Paylocity workbook |
 | `HOURS_SOURCE` | Override to force `power_bi` instead of the workbook (rare — CLI/debug use) |
 | `JOB_COST_INVENTORY_FOLDER` | Folder scanned for Lisa's monthly `*inventory*.xlsx` workbook (Job Cost Explorer's %Complete/Sales$) — defaults to a hardcoded OneDrive path if unset |

@@ -10,6 +10,7 @@ import {
   type WorkbookReadResult,
 } from "@/lib/paylocity-workbook";
 import { punchSources, type PaylocitySource } from "@/lib/paylocity-sources";
+import { warehouseConfigured } from "@/lib/data-warehouse";
 import { aggregateUndefined, countsAsUndefined, type UndefinedReason } from "@/lib/undefined-hours-rules";
 import { prisma } from "@/lib/prisma";
 import { buildJobLabelIndex } from "@/lib/job-label";
@@ -172,6 +173,8 @@ export async function readHoursFeed(opts?: { onlyMonth?: string }): Promise<Hour
         jobIdByLabel: byLabel,
         onlyMonth: wanted,
         ownsYear: source.ownsYear,
+        // Since 2026-10-04 the files are gone from the share; read the warehouse.
+        warehouseReport: warehouseConfigured() ? source.reportKey : undefined,
       }),
     });
   }
