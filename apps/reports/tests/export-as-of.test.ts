@@ -132,7 +132,18 @@ test("the Projects page only turns the picker on; the grid still reads its own U
 test("the picker is blank by default, clears when the menu closes, and never touches the page URL", () => {
   const src = read("src", "components", "ExportMenu.tsx");
   assert.match(src, /const \[asOfValue, setAsOfValue\] = useState\(""\);/, "blank by default");
-  assert.match(src, /useEffect\(\(\) => \{\s*if \(!open\) setAsOfValue\(""\);\s*\}, \[open\]\);/, "cleared on close");
+  // Cleared at every close site — outside click, Escape, scroll/resize, the button, a finished
+  // download — and NOT from an effect: the repo lints setState-in-effect as an error (CI).
+  assert.doesNotMatch(src, /useEffect\(\(\) => \{\s*if \(!open\) setAsOfValue/, "no setState in an effect");
+  assert.ok((src.match(/setAsOfValue\(""\)/g) ?? []).length >= 6, "cleared at each close site (and by the Clear link)");
+  const closeSites = [
+    /setOpen\(false\);\s*setAsOfValue\(""\);\s*\}\s*function onKey/, // outside click
+    /e\.key === "Escape"\) \{\s*setOpen\(false\);\s*setAsOfValue\(""\);/, // Escape
+    /const close = \(\) => \{\s*setOpen\(false\);\s*setAsOfValue\(""\);/, // scroll / resize
+    /if \(open\) setAsOfValue\(""\);\s*setOpen\(\(v\) => !v\);/, // the button
+    /downloaded\.`, "success"\);\s*setOpen\(false\);\s*setAsOfValue\(""\);/, // after a download
+  ];
+  for (const rx of closeSites) assert.match(src, rx, `a close site no longer clears the date: ${rx}`);
   // Built from the picker only: a stray ?asOf= in the address bar is dropped first.
   assert.match(src, /if \(offerAsOf\) \{\s*qs\.delete\("asOf"\);\s*if \(asOfValue\) qs\.set\("asOf", asOfValue\);\s*\}/);
   // ...and ONLY there: Profitability uses ?asOf= as its own page param, so a menu that does

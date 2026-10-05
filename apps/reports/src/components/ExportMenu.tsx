@@ -54,6 +54,9 @@ export function ExportMenu({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Cleared at every place the menu closes (outside click, Escape, scroll/resize, the button,
+  // a finished download) rather than from an effect watching `open`: the repo lints
+  // setState-in-effect as an error, and each close is already an event we handle.
   const [asOfValue, setAsOfValue] = useState("");
   // Same bounds the server enforces (lib/export/as-of.ts). Checked here too only so a bad
   // date greys the buttons out with a reason, instead of failing after a round trip.
@@ -109,11 +112,6 @@ export function ExportMenu({
   // happened to be nearby (Views, in the report that prompted this fix, §25).
   const pos = useAnchoredPosition(btnRef, menuRef, open, { side: "bottom", align: "end", sideOffset: 4 });
 
-  // Blank again whenever the menu closes — see the `asOf` prop.
-  useEffect(() => {
-    if (!open) setAsOfValue("");
-  }, [open]);
-
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
@@ -121,14 +119,21 @@ export function ExportMenu({
       if (btnRef.current?.contains(target)) return;
       if (menuRef.current?.contains(target)) return;
       setOpen(false);
+      setAsOfValue("");
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        setAsOfValue("");
+      }
     }
     // `capture` so a scroll inside a nested container (which doesn't bubble to
     // window) still closes the menu instead of leaving it anchored to a button
     // that has since moved out from under it.
-    const close = () => setOpen(false);
+    const close = () => {
+      setOpen(false);
+      setAsOfValue("");
+    };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("scroll", close, true);
@@ -201,6 +206,7 @@ export function ExportMenu({
       setTimeout(() => URL.revokeObjectURL(url), 0);
       toast(`${a.download} downloaded.`, "success");
       setOpen(false);
+      setAsOfValue("");
     } catch (err) {
       toast(err instanceof Error ? `Export failed — ${err.message}` : "Export failed.", "error");
     } finally {
@@ -215,7 +221,11 @@ export function ExportMenu({
         type="button"
         className={className}
         disabled={busy !== null}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          // Closing by clicking the button again clears the date too.
+          if (open) setAsOfValue("");
+          setOpen((v) => !v);
+        }}
         title="Download this table as it is currently filtered"
       >
         {/* Reserved slot: "Export" and "Preparing…" are different widths, and this button
