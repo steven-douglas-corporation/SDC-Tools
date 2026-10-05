@@ -120,7 +120,7 @@ test("Unassigned produces no card, but Operations now gets one", () => {
   const opsCards = buildDepartmentCards([row({ department: "Operations" })], []);
   assert.equal(opsCards.length, 1);
   assert.equal(opsCards[0].key, "operations");
-  assert.equal(opsCards[0].title, "Operations");
+  assert.equal(opsCards[0].title, "Procurement", "titled Procurement, so it is not read as Manufacturing Operations");
 });
 
 // ── alwaysShow (2026-09-22) ──────────────────────────────────────────────

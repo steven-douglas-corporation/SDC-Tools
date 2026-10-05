@@ -93,7 +93,10 @@ const NAMED_OTHER: { match: (dept: string) => boolean; key: string; title: strin
   { match: (d) => d === "executive leadership", key: "exec", title: "Executive Leadership" },
   // NOT the same department as "Manufacturing Operations", which is a Shop
   // delivery team resolved by teamFor() above and never reaches this list.
-  { match: (d) => d === "operations", key: "operations", title: "Operations" },
+  // Titled Procurement (2026-10-05, by request): the card is position family
+  // 107, and "Operations" beside "Manufacturing Operations" read as one team.
+  // Its key stays "operations"; the workforce group above it keeps that name.
+  { match: (d) => d === "operations", key: "operations", title: "Procurement" },
 ];
 
 // The same cards, keyed by the team code Employee.team carries (lib/disciplines.ts),
@@ -104,7 +107,7 @@ const BACK_OFFICE_TEAM: Record<string, { key: string; title: string }> = {
   finance: { key: "finance", title: "Finance" },
   sales: { key: "sales", title: "Sales" },
   exec: { key: "exec", title: "Executive Leadership" },
-  ops: { key: "operations", title: "Operations" },
+  ops: { key: "operations", title: "Procurement" },
   hr: { key: "hr", title: "Human Resources" },
 };
 

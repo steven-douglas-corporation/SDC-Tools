@@ -42,8 +42,8 @@ export const FAMILY_TEAM: Readonly<Record<string, string>> = {
   "500": "service", //  Service
 };
 
-/** Display names for team codes: the shared labels, plus HR, which Scheduler has no bucket for. */
-export const TEAM_NAME: Readonly<Record<string, string>> = { ...DISCIPLINE_LABEL, hr: "Human Resources" };
+/** Display names for team codes: the shared labels, plus HR, which Scheduler has no bucket for, and "ops" shown as Procurement (its card's title). */
+export const TEAM_NAME: Readonly<Record<string, string>> = { ...DISCIPLINE_LABEL, hr: "Human Resources", ops: "Procurement" };
 
 const SERVICE_FAMILY = "500";
 

@@ -414,7 +414,7 @@ export function EmployeesGrid({
   // Operations band renders nothing at all. No separate hiding rule.
   const bands = [
     { key: "execution", title: "Execution", blurb: "Project Management, Engineering and Shop" },
-    { key: "operations", title: "Operations", blurb: "Growth, Finance, Executive Leadership and Operations" },
+    { key: "operations", title: "Administrative", blurb: "Growth, Finance, Executive Leadership and Operations" },
   ].map((b) => {
     const sections = shownSections.filter((sec) => (b.key === "execution" ? isExecutionGroup(sec.key) : !isExecutionGroup(sec.key)));
     // Flattened to ONE set per band, not kept per workforce group. That is what
