@@ -8,6 +8,28 @@ phases add Total ETO (the job master) and the app databases.
 What comes next (operations, the full model from Power BI, a measure catalog,
 semantic search): [ROADMAP.md](ROADMAP.md).
 
+Taking apart Power BI, Fabric, Power Automate and the SharePoint copies, and what still
+depends on each: [DECOMMISSIONING.md](DECOMMISSIONING.md).
+
+## Open items (as of 2026-10-04)
+
+Most urgent first.
+
+1. **The daily load is not scheduled, and Postgres is not a service.** Postgres runs as a
+   process started by hand under `jculp`, so a reboot or logoff stops it, and nothing runs the
+   loader. Until both are done, new Paylocity files aren't loaded and the reports app shows
+   data frozen at the last manual run. Commands: "Setup still to do" below.
+2. **Updater fix, PR #82.** Without it, the next dependency change (e.g. a Dependabot merge)
+   breaks the production build again. After merging: `pm2 restart sdc-updater-hub`.
+3. **Firewall rule** for 5432 (below). The domain profile already allows inbound, so this is
+   belt and braces.
+4. **Backups** (below). The database and file archive are now the only copies of the
+   Paylocity data.
+5. **Windows sign-in from other PCs:** tested from the server only. If it fails from a PC, a
+   domain admin registers the Kerberos SPN (see Access).
+6. **Reports app's remaining Power BI and Fabric reads:** see DECOMMISSIONING.md before
+   switching either off.
+
 ```
 sql/      01_schema.sql             tracking tables ("Integration") and raw layer ("RawPaylocity")
           02_paylocity_staging.sql  typed staging views ("Paylocity")
