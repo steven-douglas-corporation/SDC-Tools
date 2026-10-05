@@ -1,5 +1,6 @@
 "use client";
 
+import { partOwesInvoice } from "@/lib/left-to-invoice";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bom";
 import { isUncoveredPart, quantityReadiness } from "@/lib/job-bom-rules";
@@ -1633,7 +1634,7 @@ function PartsListTab({
       // exactly when a windowed Invoiced figure is active — nothing meaningful
       // to filter on in that mode, so a row passes rather than being silently
       // dropped by a filter that cannot answer the question.
-      if (onlyLeftToInvoice && !windowStatus.active && !p.poBreakdown.some((g) => g.leftToInvoice > 0)) return false;
+      if (onlyLeftToInvoice && !windowStatus.active && !partOwesInvoice(p)) return false;
       return true;
     });
   }, [parts, status, effCategory, effManufacturer, effSupplier, from, to, dateType, query, onlyLeftToInvoice, windowStatus.active]);
@@ -1669,10 +1670,8 @@ function PartsListTab({
   // by request) — the whole point of the filter is "show me what's still owed",
   // and that answer lives on the PO sub-rows, not the part row's blended total.
   // Turning it back OFF collapses everything again (2026-09-16, by request) —
-  // the parent row is hidden while the filter is on (see displayRows), so
-  // `expanded` only starts mattering again once it turns off, and starting
-  // that view with every part still expanded from the filter would be a
-  // wall of unfolded rows nobody asked to see.
+  // starting that view with every part still expanded from the filter would
+  // be a wall of unfolded rows nobody asked to see.
   //
   // Adjusted DURING render, not in a useEffect: this repo's lint blocks
   // setState-in-effect (2026-09-13, see ci.yml), and this is the React-docs
@@ -1880,9 +1879,7 @@ function PartsListTab({
             replacing a chevron that used to sit inside the Part No column
             header — no more discoverable than the per-row one the whole-row
             click was added to fix. */}
-        {/* Hidden while "Left to invoice" is on: there is no parent row left
-            to expand/collapse — every qualifying PO already shows, always. */}
-        {view === "list" && !onlyLeftToInvoice && expandableIds.length > 0 && (
+        {view === "list" && expandableIds.length > 0 && (
           <button
             type="button"
             onClick={toggleAll}
@@ -2217,32 +2214,19 @@ function PartsTableView({
   const displayRows = useMemo<DisplayRow[]>(() => {
     const rows: DisplayRow[] = [];
     for (const p of sortedParts) {
-      // ── Trial (2026-09-15): no parent row at all under "Left to invoice" ──
-      //
-      // The parent row's Total $/Invoiced $/Left to Invoice are the part's
-      // BLENDED figures across every PO it was ever bought on — including
-      // ones already fully paid — which is exactly the wrong number to show
-      // beside a filter whose entire point is "what specifically is still
-      // owed." A part with one paid-off PO and one open one showed $366/$114
-      // on its own row while the one child worth looking at read $252/$0 —
-      // two different answers to the same question. Skipping the parent
-      // leaves only the correctly-SCOPED child figures on screen.
-      //
-      // Known gap, left alone for this trial: PartPoSubRowCells still leaves
-      // Mfr/Required Date/Status blank (those were only ever filled in on the
-      // parent) — those columns just go empty for now rather than being
-      // backfilled or recomputed per PO.
-      if (!onlyLeftToInvoice) rows.push({ kind: "part", p });
-      // Not gated on `expanded` when the parent is hidden — there is no
-      // chevron left to toggle it from, so "children of a part with no
-      // visible parent" would otherwise mean nothing renders at all whenever
-      // `expanded` doesn't (yet) contain this id.
-      if (onlyLeftToInvoice || expanded.has(p.id)) {
+      // The parent row stays under "Left to invoice" (2026-10-05). The 2026-09-15 trial
+      // hid it so only per-PO figures showed, but that left the list as bare sub-rows
+      // with Mfr / Required Date / Status empty, and a row with money owed but no POs
+      // to unfold had nothing to show at all — the list read as blank. The parent
+      // carries the identity of the part; only its unfolded children are narrowed to
+      // the POs that still owe (below).
+      rows.push({ kind: "part", p });
+      if (expanded.has(p.id)) {
         // Per order, not per part (2026-09-15): a part shown under "Left to
-        // invoice" is guaranteed to have at least one qualifying PO (see
-        // PartsListTab's `filtered`), but its OTHER, already-settled POs are
-        // not what the filter was asked for — unfolding it must not show them
-        // back beside the one(s) that actually still owe money.
+        // invoice" has at least one qualifying PO (or none at all — see
+        // partOwesInvoice), but its OTHER, already-settled POs are not what the
+        // filter was asked for — unfolding it must not show them back beside
+        // the one(s) that actually still owe money.
         for (const g of p.poBreakdown) {
           if (onlyLeftToInvoice && !(g.leftToInvoice > 0)) continue;
           rows.push({ kind: "po", p, g });
