@@ -246,7 +246,10 @@ test("the Parts Cost Actual export column states its basis", () => {
   // The filename already carries todayStamp(now), so the as-of half is answered. This
   // is the other half: a comparison is either like-for-like or visibly not.
   const src = readFileSync(join(process.cwd(), "src", "lib", "export", "projects-export.ts"), "utf8");
-  assert.match(src, /\{ header: "Parts Cost Actual \(GL-posted\)", type: "currency" \}/);
+  // A template since 2026-10-05: ", through <date>" is appended only when the export is
+  // date-cut, so the live header is still exactly "Parts Cost Actual (GL-posted)".
+  assert.match(src, /\{ header: `Parts Cost Actual \(GL-posted\$\{through\}\)`, type: "currency" \}/);
+  assert.match(src, /const through = asOf \? `, through \$\{asOf\}` : "";/);
   assert.ok(
     !/\{ header: "Parts Cost Actual", type: "currency" \}/.test(src),
     "the unqualified header must be gone — it is the one that was ambiguous",

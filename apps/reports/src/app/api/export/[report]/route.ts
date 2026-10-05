@@ -8,6 +8,7 @@ import { buildCsv } from "@/lib/export/csv";
 import { buildXlsx } from "@/lib/export/xlsx";
 import { exportFileName, todayStamp, type SheetSpec } from "@/lib/export/sheet";
 import { buildProjectsExport } from "@/lib/export/projects-export";
+import { parseAsOf } from "@/lib/export/as-of";
 import { buildEtcExport } from "@/lib/export/etc-export";
 import { buildHoursExport } from "@/lib/export/hours-export";
 import { buildStandardExportSheets } from "@/lib/export/standard-export";
@@ -103,6 +104,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
   const format = searchParams.get("format") === "csv" ? "csv" : "xlsx";
   const now = new Date();
 
+  // "Values as of" — Projects only, and only ever from THIS request: the Projects page
+  // does not carry it in its own URL, so the grid cannot be affected by it. Blank or
+  // absent is the default and means live. Validated here, before any query runs, so a
+  // bad date is a clear 400 and never reaches Total ETO.
+  let asOf: string | null = null;
+  if (report === "projects") {
+    const parsed = parseAsOf(searchParams.get("asOf"), todayStamp(now));
+    if (!parsed.ok) return new Response(parsed.error, { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    asOf = parsed.asOf;
+  }
+
   try {
     const built =
       report === "projects"
@@ -119,6 +131,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
               to: searchParams.get("to") ?? undefined,
             },
             now,
+            asOf,
           )
         : report === "tm-hours"
           ? // One Hours card's drill, including its search box (`q`). Unlike the
@@ -198,7 +211,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
           // several identical "T&M" files. Spaces out, so it is a clean download name.
           exportFileName(["T&M", (built as unknown as { cardLabel: string }).cardLabel.replace(/ /g, "_"), todayStamp(now)], format)
         : report === "projects"
-        ? exportFileName(["Projects", (built as unknown as { filterLabel: string }).filterLabel, todayStamp(now)], format)
+        ? // "AsOf2026-09-30" in the name, so a dated file can never be mistaken for a live one
+          // in a downloads folder. The stamp after it is still the day it was exported.
+          exportFileName(["Projects", (built as unknown as { filterLabel: string }).filterLabel, asOf ? `AsOf${asOf}` : null, todayStamp(now)], format)
         : report === "hours"
           ? exportFileName(["Hours", todayStamp(now)], format)
           : exportFileName(["Monthly_ETC", (built as unknown as { monthLabel: string }).monthLabel.replace(" ", "_"), todayStamp(now)], format);
@@ -228,11 +243,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ report: str
               ? "PartPurchase"
               : "EtcMonth",
       entityId: report === "etc" ? (searchParams.get("month") ?? "") : undefined,
-      summary: `Exported ${reportLabel} as ${format.toUpperCase()} — ${built.rowCount} row(s)` + (includedStandards ? " (including Standards)" : ""),
+      summary:
+        `Exported ${reportLabel} as ${format.toUpperCase()} — ${built.rowCount} row(s)` +
+        (asOf ? ` (values as of ${asOf})` : "") +
+        (includedStandards ? " (including Standards)" : ""),
       metadata: {
         report,
         format,
         rows: built.rowCount,
+        // null = a live export. Also inside `filters` below, but named here so "which
+        // exports were date-cut" is a direct question rather than a string search.
+        asOf,
         appVersion: APP_VERSION,
         // Whether the protected sheets went out. A boolean — never the password, and
         // never anything the caller could have set.

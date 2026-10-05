@@ -284,6 +284,16 @@ These came up while tracing the code. They describe current behavior and are not
    include Steven Douglas Corp. Jobs with a typed historical actual (no Total ETO data) carry
    their stored figure through and say so in the basis column. If Total ETO does not answer,
    the file still downloads with those columns blank.
+5. **The Export menu has an optional "Values as of" date.** Blank (the default) is the live export
+   described above. With a date, the file shows figures through that day: actual hours by punch
+   date, and Parts Cost Actual / SDC Billed / the excl. SDC columns by AP invoice date, all from
+   one live Total ETO read so they agree with each other. Quoted hours, Parts Cost Quoted, Status
+   and dates are always the current values (no history is kept for them), so the Remaining columns
+   compare today's quote with the as-of actual. The date lives only in the menu and the request:
+   it is never in the page URL, and the grid, the stored values and the sync do not change.
+   Earliest date is 2025-01-31 (older hours are stored only as one lifetime total); a future date
+   is refused. If Total ETO does not answer, a dated export fails with a clear message rather than
+   printing today's stored total under a past heading. The file name carries `AsOf<date>`.
 
 ---
 

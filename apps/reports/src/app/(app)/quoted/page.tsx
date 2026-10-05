@@ -669,7 +669,7 @@ export async function ProjectsView({ params }: { params: {
         {/* Downloads exactly this view — the menu forwards the page's own query string
             to /api/export/projects, which builds the WHERE clause with the same code
             this page does (lib/projects-query.ts). See §24. */}
-        <ExportMenu report="projects" className={BUTTON_SECONDARY} />
+        <ExportMenu report="projects" asOf className={BUTTON_SECONDARY} />
         {/* Show Actuals — last, and visually a switch rather than another dropdown,
             because it is the only binary control here (§47.1).
 

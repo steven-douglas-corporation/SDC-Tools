@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { PARTS_COST_SECTION, mapPunchToColumns } from "@/lib/sections";
 import type { HistoricalEraScope } from "@/lib/hours-filters";
 import { snapshotBeforeRange, type HoursBySourceInput } from "@/lib/hours-by-source";
+import { AS_OF_MIN, asOfWindow } from "@/lib/export/as-of";
 
 // THE definition of "actual hours worked to date", for every report that shows
 // one. Both the Projects grid and the Job Hour Details dashboard call this, so
@@ -115,9 +116,24 @@ export type ActualHoursBySection = Map<number, Map<string, number>>;
 // model-derived resolver exists only during import, and SECTION_ALIASES is the
 // documented static fallback.
 
-export async function loadActualHoursBySection(jobPks: number[]): Promise<ActualHoursBySection> {
+// ── `asOf`: hours through a given day, for the Projects export only (2026-10-05) ──
+//
+// Optional and ABSENT for every existing caller — the grid, the dashboard, the API —
+// whose queries below are then exactly what they were. When a day (YYYY-MM-DD) is given:
+//   era 1  the migration snapshot is through 2025-01-31 and counts whole; parseAsOf
+//          refuses any date before that, so it can never be partly counted.
+//   era 2  a frozen ETC month is one number for the whole month, so it counts only when
+//          the month has fully ended by the cutoff (asOfWindow's frozenMonthCap).
+//   era 3  punches count when workDate <= the day. This is the era that moves, and the
+//          one with the day-level precision.
+// Late or retro-coded punches dated on or before the day ARE included, because the punch
+// table is rebuilt from the whole Paylocity export — that is what "actual through Sep 30"
+// means, and why two exports of the same date taken weeks apart can differ slightly.
+export async function loadActualHoursBySection(jobPks: number[], asOf?: string): Promise<ActualHoursBySection> {
   const out: ActualHoursBySection = new Map();
   if (jobPks.length === 0) return out;
+  if (asOf !== undefined && asOf < AS_OF_MIN) throw new Error(`asOf ${asOf} is before ${AS_OF_MIN}; older hours cannot be cut at a day.`);
+  const cut = asOf !== undefined ? asOfWindow(asOf) : null;
 
   const covered = await coveredMonths();
   const [historical, frozen, punches] = await Promise.all([
@@ -127,12 +143,22 @@ export async function loadActualHoursBySection(jobPks: number[]): Promise<Actual
     }),
     prisma.etcEntry.groupBy({
       by: ["jobId", "section"],
-      where: { jobId: { in: jobPks }, section: { not: PARTS_COST_SECTION }, month: { notIn: covered }, AND: [OUTSIDE_SNAPSHOT] },
+      where: {
+        jobId: { in: jobPks },
+        section: { not: PARTS_COST_SECTION },
+        month: { notIn: covered, ...(cut ? { lte: cut.frozenMonthCap } : {}) },
+        AND: [OUTSIDE_SNAPSHOT],
+      },
       _sum: { hoursWorked: true },
     }),
     prisma.jobHoursDetail.groupBy({
       by: ["jobId", "section"],
-      where: { jobId: { in: jobPks }, month: { in: covered }, AND: [OUTSIDE_SNAPSHOT] },
+      where: {
+        jobId: { in: jobPks },
+        month: { in: covered },
+        ...(cut ? { workDate: { lte: cut.punchThrough } } : {}),
+        AND: [OUTSIDE_SNAPSHOT],
+      },
       _sum: { hours: true },
     }),
   ]);

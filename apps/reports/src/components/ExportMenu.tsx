@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import { flushEtcAutosave, isEtcDirty } from "@/lib/etc-dirty-tracker";
 import { useAnchoredPosition } from "@/lib/use-anchored-position";
+import { AS_OF_MIN } from "@/lib/export/as-of";
 
 // ── Export ▾ (§24.1) ─────────────────────────────────────────────────────────
 //
@@ -37,15 +38,39 @@ export function ExportMenu({
   // present, "Export to Excel" asks first whether to append them as extra sheets;
   // when neither is (the common case), it exports straight away, exactly as before.
   historicalEras,
+  // Projects only: offer a "Values as of" date that cuts the FILE (hours by punch date,
+  // Parts Cost by AP invoice date) and nothing else. Local to this menu — it is never
+  // written to the page's URL, so the grid behind it cannot react to it — and blank by
+  // default, which means live. It is cleared every time the menu closes, so a date picked
+  // for one export cannot silently ride along into the next.
+  asOf: offerAsOf = false,
   className,
 }: {
   report: "projects" | "etc" | "hours";
   fixedParams?: Record<string, string>;
   flushBeforeExport?: boolean;
   historicalEras?: { migration: boolean; frozenEtc: boolean };
+  asOf?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [asOfValue, setAsOfValue] = useState("");
+  // Same bounds the server enforces (lib/export/as-of.ts). Checked here too only so a bad
+  // date greys the buttons out with a reason, instead of failing after a round trip.
+  const localToday = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  const asOfProblem =
+    !offerAsOf || asOfValue === ""
+      ? null
+      : !/^\d{4}-\d{2}-\d{2}$/.test(asOfValue)
+        ? "Enter a full date."
+        : asOfValue < AS_OF_MIN
+          ? `Earliest date is ${AS_OF_MIN}: older hours are stored only as one lifetime total.`
+          : asOfValue > localToday
+            ? "A future date is not allowed. Leave it blank for live figures."
+            : null;
   // The "include historical sheets?" dialog, and its two choices. Both start ticked:
   // anyone who reaches the dialog has data in those eras, and the usual reason to
   // want this export is to reconcile against a total that already includes them.
@@ -83,6 +108,11 @@ export function ExportMenu({
   // reads as belonging to Export specifically rather than to whichever control
   // happened to be nearby (Views, in the report that prompted this fix, §25).
   const pos = useAnchoredPosition(btnRef, menuRef, open, { side: "bottom", align: "end", sideOffset: 4 });
+
+  // Blank again whenever the menu closes — see the `asOf` prop.
+  useEffect(() => {
+    if (!open) setAsOfValue("");
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -139,6 +169,11 @@ export function ExportMenu({
       const qs = new URLSearchParams(searchParams.toString());
       for (const [k, v] of Object.entries(fixedParams ?? {})) if (!qs.has(k)) qs.set(k, v);
       for (const [k, v] of Object.entries(extraParams ?? {})) qs.set(k, v);
+      // The date comes ONLY from the picker: dropped from whatever the page's own URL
+      // carried, so a stray ?asOf= in the address bar cannot date-cut an export that the
+      // menu shows as live.
+      qs.delete("asOf");
+      if (offerAsOf && asOfValue) qs.set("asOf", asOfValue);
       qs.set("format", format);
 
       const res = await fetch(`/api/export/${report}?${qs.toString()}`, { cache: "no-store" });
@@ -200,16 +235,48 @@ export function ExportMenu({
               // portaled menu should always win.
               zIndex: 60,
             }}
-            className="motion-menu-panel w-56 rounded-lg border border-sdc-border bg-white p-1 shadow-lg"
+            className={`motion-menu-panel ${offerAsOf ? "w-72" : "w-56"} rounded-lg border border-sdc-border bg-white p-1 shadow-lg`}
           >
             {/* Says what the export contains, because "Export" alone leaves the reader
                 guessing whether it is the filtered view or everything. */}
             <p className="px-2 py-1 text-label leading-snug text-sdc-muted">
               Exports the table as currently filtered, with every column — including the ones off-screen.
             </p>
+            {offerAsOf && (
+              <div className="mx-1 mb-1 rounded-md border border-sdc-border-soft bg-sdc-gray-50 p-2">
+                <label htmlFor="export-as-of" className="block text-label font-semibold text-sdc-navy">
+                  Values as of
+                </label>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <input
+                    id="export-as-of"
+                    type="date"
+                    min={AS_OF_MIN}
+                    max={localToday}
+                    value={asOfValue}
+                    onChange={(e) => setAsOfValue(e.target.value)}
+                    className="min-w-0 flex-1 rounded border border-sdc-border bg-white px-1.5 py-1 text-sm text-sdc-navy"
+                  />
+                  {asOfValue && (
+                    <button type="button" onClick={() => setAsOfValue("")} className="shrink-0 rounded px-1.5 py-1 text-label text-sdc-blue-dark hover:underline">
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {asOfProblem ? (
+                  <p className="mt-1 text-label leading-snug text-sdc-red-text">{asOfProblem}</p>
+                ) : (
+                  <p className="mt-1 text-label leading-snug text-sdc-muted">
+                    {asOfValue
+                      ? "Hours and Parts Cost actuals through this day, calculated live. Quoted figures stay current. The grid does not change."
+                      : "Blank = live, as of right now."}
+                  </p>
+                )}
+              </div>
+            )}
             <button
               type="button"
-              disabled={busy !== null}
+              disabled={busy !== null || asOfProblem !== null}
               onClick={() => {
                 // CSV below is never intercepted: one table can't carry the extra
                 // sheets, and the route ignores the flags for it anyway.
@@ -227,7 +294,7 @@ export function ExportMenu({
             </button>
             <button
               type="button"
-              disabled={busy !== null}
+              disabled={busy !== null || asOfProblem !== null}
               onClick={() => run("csv")}
               className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-sdc-navy hover:bg-sdc-blue-light disabled:opacity-50"
             >
