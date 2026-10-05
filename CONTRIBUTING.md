@@ -30,6 +30,12 @@ commit to master as a deploy, because it is one.
   restarts only the apps whose files changed, so a focused PR is a smaller
   production event.
 
+## Running your own build
+
+Don't test against production. [docs/DEV-ENVIRONMENT.md](docs/DEV-ENVIRONMENT.md)
+sets up a local Docker MySQL, seeded fake data and one login per role for
+SDC Reports in about ten minutes.
+
 ## Before you push
 
 Every app answers the same three commands. Run them in the app you touched:

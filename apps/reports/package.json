@@ -11,6 +11,7 @@
     "free-port": "node scripts/free-port.mjs 4006",
     "deploy": "next build && pm2 stop sdc-reports && node scripts/free-port.mjs 4006 && pm2 start sdc-reports",
     "lint": "eslint",
+    "db:seed-dev": "tsx prisma/seed-dev.ts",
     "test": "tsx -r ./scripts/shim-server-only.cjs --test tests/*.test.ts",
     "dev:verify": "set AUTH_URL=http://localhost:3021&& set NEXT_DIST_DIR=.next-verify&& next dev -p 3021"
   },

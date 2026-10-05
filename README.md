@@ -28,6 +28,8 @@ repo checks), `docs/` (architecture, ports, runbook, decision records).
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the shell, the apps, auth, updates and databases fit together |
 | [docs/APPLICATIONS.md](docs/APPLICATIONS.md) | What each app does, its data sources, its owner |
 | [docs/PORTS.md](docs/PORTS.md) | The port registry, including support ports |
+| [docs/DEV-ENVIRONMENT.md](docs/DEV-ENVIRONMENT.md) | Run your own build locally against a Docker MySQL, vs production |
+| [docs/DEV-TEST-DATA.md](docs/DEV-TEST-DATA.md) | Seeding bigger or edge-case datasets, with a prompt for AI assistants |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | Operating production: deploy path, restarts, health, rollback |
 | [docs/BRANCH-PROTECTION.md](docs/BRANCH-PROTECTION.md) | The GitHub settings that keep unreviewed code off production |
 | [docs/adr/](docs/adr/) | Why the repo is shaped the way it is |

@@ -84,3 +84,6 @@ scripts/_backup_*.json
 # commit it. Regenerate any time — the scripts are read-only.
 /unmatched-job-hours.csv
 /job-cost-margin-impact.csv
+
+# Dev profile template (docs/DEV-ENVIRONMENT.md): placeholders only, no secrets
+!.env.dev.example

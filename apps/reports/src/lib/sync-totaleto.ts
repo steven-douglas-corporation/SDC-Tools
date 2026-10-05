@@ -1,4 +1,5 @@
 import sql from "mssql";
+import { devFakeEtoEnabled, fakePartsLines, fakeJobPartsCost, fakeJobPartsInvoicedInMonth, fakePartsActualByJob, fakePartsInvoicedByJob, fakePartsPurchasedByJob } from "@/lib/dev-fake-eto";
 import { TOTALETO_TIMEOUT, withTotalEto } from "@/lib/totaleto-connection";
 import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES } from "@/lib/job-filters";
@@ -87,6 +88,7 @@ FROM [dbo].[vwCostingExtraCostsDetailed] [EC] WITH(NOLOCK)`;
 // Locked months are protected by syncPartsCost's own isMonthLocked guard, so applying
 // this rule cannot rewrite a submitted month's stored figures.
 export async function getPartsCostPurchasedByJob(monthStart: Date, monthEndExclusive: Date): Promise<Map<string, number>> {
+  if (devFakeEtoEnabled()) return fakePartsPurchasedByJob(monthStart, monthEndExclusive);
   return withTotalEto(async (pool) => {
     const result = await pool
       .request()
@@ -549,6 +551,7 @@ export async function getApLineCountByJob(monthStart: Date, monthEndExclusive: D
 // getPartsCostSpentByJob's already-proven-safe one-query shape for a wide
 // window instead of extending the two-query function into an untested range.
 export async function getPartsInvoicedByJob(monthStart: Date, monthEndExclusive: Date): Promise<Map<string, number>> {
+  if (devFakeEtoEnabled()) return fakePartsInvoicedByJob(monthStart, monthEndExclusive);
   return withTotalEto(async (pool) => {
     const amt = AP_LINE_AMOUNT;
     const result = await pool
@@ -671,6 +674,7 @@ export async function getPartsInvoicedByJob(monthStart: Date, monthEndExclusive:
 // stay absent, which is what protects the 116 pre-TotalETO jobs whose actuals were
 // entered by hand (see syncPartsCostActual).
 export async function getPartsActualByJob(): Promise<Map<string, number>> {
+  if (devFakeEtoEnabled()) return fakePartsActualByJob();
   return withTotalEto(async (pool) => {
     const result = await pool.request().query(
       `SELECT JobId, SUM(Actual) AS Actual FROM (
@@ -1019,6 +1023,7 @@ function meaningfulLines(lines: PartsCostLine[]): PartsCostLine[] {
  * rather than passed through STRING_SPLIT so the plan sees a plain integer IN list.
  */
 export async function getPartsCostForJobs(jobIds: string[]): Promise<Map<string, PartsCostLine[]>> {
+  if (devFakeEtoEnabled()) return new Map(jobIds.map((j) => [String(Number(j)), fakePartsLines(j)] as const));
   const out = new Map<string, PartsCostLine[]>();
   const numeric = [...new Set(jobIds.map((j) => Number(j)).filter((n) => Number.isFinite(n) && n > 0))];
   if (numeric.length === 0) return out;
@@ -1082,6 +1087,7 @@ export async function getPartsCostForJobs(jobIds: string[]): Promise<Map<string,
 // against getPartsCostBookedByJob's per-job figure for 10 real jobs in July 2026 — exact
 // match, to the cent, every time.
 export async function getJobPartsInvoicedInMonth(jobId: string, monthStart: Date, monthEndExclusive: Date): Promise<JobPartsCost> {
+  if (devFakeEtoEnabled()) return fakeJobPartsInvoicedInMonth(jobId, monthStart, monthEndExclusive);
   const numericJob = Number(jobId);
   if (!Number.isFinite(numericJob)) return { purchased: 0, paid: 0, actual: 0, leftToPay: 0, lines: [] };
   return withTotalEto(async (pool) => {
@@ -1176,6 +1182,7 @@ export async function getJobPartsInvoicedInMonth(jobId: string, monthStart: Date
 }
 
 export async function getJobPartsCost(jobId: string): Promise<JobPartsCost> {
+  if (devFakeEtoEnabled()) return fakeJobPartsCost(jobId);
   const numericJob = Number(jobId);
   if (!Number.isFinite(numericJob)) return { purchased: 0, paid: 0, actual: 0, leftToPay: 0, lines: [] };
   return withTotalEto(async (pool) => {

@@ -1,0 +1,40 @@
+# Local development database for SDC Reports — NOT production, NOT shared.
+# Production is MySQL on SERVER-APP1 under PM2; nothing here describes that.
+# Full walkthrough: docs/DEV-ENVIRONMENT.md
+#
+#   docker compose -f docker-compose.dev.yml up -d      # start (data persists)
+#   docker compose -f docker-compose.dev.yml down       # stop, keep data
+#   docker compose -f docker-compose.dev.yml down -v    # stop and DELETE all data
+#
+# The root password below is a throwaway for a database that only listens on
+# 127.0.0.1. Never reuse it anywhere real.
+
+name: sdc-dev
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: sdc_dev_mysql
+    restart: unless-stopped
+    # Reports' Prisma migrations were generated on Windows MySQL, which folds
+    # table names to lowercase (`user` for User). This can only be set when the
+    # data directory is first created, so a Linux default (0) cannot be fixed
+    # later — the volume has to be recreated. That is why it is set here.
+    command: ["--lower-case-table-names=1"]
+    environment:
+      MYSQL_ROOT_PASSWORD: devpassword
+      MYSQL_DATABASE: sdc_reports_dev
+    ports:
+      # 3317 on the host: clear of a local MySQL (3306) and the Scheduler dev stack (3306/3307).
+      # Bound to loopback: this database must not be reachable from the LAN.
+      - "127.0.0.1:3317:3306"
+    volumes:
+      - sdc_dev_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pdevpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  sdc_dev_mysql_data:

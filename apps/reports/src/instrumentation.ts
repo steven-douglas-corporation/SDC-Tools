@@ -7,6 +7,15 @@ export async function register() {
   // Edge, so skip entirely there.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // Local dev (docs/DEV-ENVIRONMENT.md): a developer's database holds seeded data,
+  // not the company sources, so the hourly pull has nothing to read and could
+  // overwrite what was seeded. Production never sets this. Checked before
+  // anything else so a dev build never opens a Total ETO / Power BI connection.
+  if (process.env.SDC_DEV_DISABLE_SYNC === "1") {
+    console.warn("[auto-sync] disabled by SDC_DEV_DISABLE_SYNC=1 (local dev) — no scheduled refresh will run");
+    return;
+  }
+
   const g = globalThis as typeof globalThis & { __sdcAutoSyncStarted?: boolean };
   if (g.__sdcAutoSyncStarted) return; // guard against HMR / repeated registration
   g.__sdcAutoSyncStarted = true;
