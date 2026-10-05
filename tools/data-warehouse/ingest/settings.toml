@@ -1,0 +1,40 @@
+# Settings for paylocity_ingest.py. No secrets here: the SFTP password lives in
+# Windows Credential Manager for the account that runs the job (see README).
+
+[sftp]
+host = "10.0.0.6"                 # i1.sdcautomation.com doesn't resolve inside the network
+port = 22
+username = "paylocity"
+# Checked before the password is sent. If the server is rebuilt, confirm the new
+# key with whoever runs it before changing this.
+host_key = "SHA256:9HyR5DI2b0qNLg3qu953O8tmQ4WCaSsT91NVHAWokmo"
+root = "/"
+# Remove each file from the SFTP server once its local copy is checked and
+# recorded. On since 2026-10-04 (Jon's decision): the reports app's direct reads of
+# \\SERVER-DC1\ClientApps\SFTP break until it reads from the warehouse instead.
+delete_after_download = true
+# Reports that are never deleted from the server, even with the above on:
+# files people maintain by hand there rather than daily Paylocity exports.
+keep_on_server = ["position_families_overrides"]
+
+[warehouse]
+# PostgreSQL on this server. The password comes from Windows Credential Manager
+# (service "datawarehouse-postgres", user below) for the account running the job.
+host = "localhost"
+port = 5432
+dbname = "DataWarehouse"           # case-sensitive; quote it in SQL: "DataWarehouse"
+user = "dw_loader"
+
+[paths]
+# incoming\ and archive\ are created under here.
+root = 'D:\DataWarehouse\paylocity'
+
+[retention]
+# Days an archived file is kept after it was loaded (or found to be a duplicate).
+# Its rows stay in the database either way. 0 = keep forever. 365 since
+# 2026-10-04: with the SFTP and SharePoint copies gone, the archive holds the only
+# original files.
+archive_days = 365
+# Days to keep archived files that were never loaded (the PDFs). Their archive
+# copy is the only copy, so the default is to keep them. 0 = keep forever.
+unloaded_archive_days = 0
