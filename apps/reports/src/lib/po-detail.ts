@@ -215,6 +215,16 @@ export function sectionLabelFor(section: BomNode): string {
 // Flatten + join
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * An AP invoice with no purchase order behind it — an "extra cost" (freight, fee, card
+ * charge) or a plain AP line. "SDC never invoices itself" is a rule about SDC-MADE parts
+ * bought on an internal PO; it does not apply to these. Job 1106's $209,625 "Adjustment to
+ * match Sage" is one: an unflagged AP invoice from "Steven Douglas Corp." that the job
+ * totals already count, but that the SDC rule was zeroing out of the Parts List.
+ */
+export const isNonPoLine = (l: PartsCostLine): boolean =>
+  l.lineId.startsWith("ec:") || (l.lineId.startsWith("apdd:") && l.poNumber == null);
+
 // A BOM leaf part enriched with its parent assembly + the joined PO purchase
 // line (category / purchased / invoiced / PO#) and derived lead/due.
 // The section a non-BOM row belongs to. A real section id is Total ETO's own
@@ -450,7 +460,7 @@ export function groupLinesByPo(
     // tm-parts-source.ts already applies to Part Invoiced Amount) — so this
     // group's invoiced figure is not a real external invoice and nothing is
     // still owed against it, regardless of what the raw lines carry.
-    const sdcGroup = groupSupplier === SDC_CANONICAL;
+    const sdcGroup = groupSupplier === SDC_CANONICAL && !b.lines.every(isNonPoLine);
     out.push({
       lineIds: b.lines.map((l) => l.lineId),
       poNumber: first.poNumber,
@@ -857,8 +867,9 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     const first = lines[0];
     const totalPrice = sumLines(lines, (l) => l.totalPrice);
     const supplier = normalizeVendor(first.supplier);
-    // Same "SDC never invoices itself" rule as the BOM branch above.
-    const sdcSupplier = supplier === SDC_CANONICAL;
+    // Same "SDC never invoices itself" rule as the BOM branch above — for PO-backed lines
+    // only. A non-PO AP invoice from SDC (job 1106's "Adjustment to match Sage") is real.
+    const sdcSupplier = supplier === SDC_CANONICAL && !lines.every(isNonPoLine);
     const invoicedAmount = sdcSupplier
       ? 0
       : activeAttribution
