@@ -92,18 +92,23 @@ test("a placeholder for an unrecognized discipline code falls into the same 'No 
   assert.equal(cards[0].placeholders.length, 1);
 });
 
-test("people within a card sort lead-first, then by sortOrder, then by name", () => {
+test("people within a card: Leadership, then the lead, then grouped by position code, then name", () => {
   const cards = buildDepartmentCards(
     [
-      row({ name: "Zoe", team: "mech", isLead: false, sortOrder: 1 }),
-      row({ name: "Amy", team: "mech", isLead: true, sortOrder: 5 }),
-      row({ name: "Bob", team: "mech", isLead: false, sortOrder: null }),
+      row({ name: "Zoe", team: "mech", positionCode: "ME SR", sortOrder: 1 }),
+      row({ name: "Amy", team: "mech", isLead: true, positionCode: "ME CHIEF" }),
+      row({ name: "Bob", team: "mech", positionCode: null }),
+      row({ name: "Cal", team: "mech", positionCode: "ME01" }),
+      row({ name: "Ann", team: "mech", positionCode: "ME SR" }),
+      row({ name: "Dee", team: "mech", positionCode: "me01" }),
+      row({ name: "Lisa", team: "mech", isLeadership: true }),
     ],
     [],
   );
   assert.deepEqual(
     cards[0].people.map((p) => p.name),
-    ["Amy", "Zoe", "Bob"],
+    // Same code side by side whatever the case; Scheduler's sort_order no longer orders anyone; no code last.
+    ["Lisa", "Amy", "Ann", "Zoe", "Cal", "Dee", "Bob"],
   );
 });
 
@@ -120,7 +125,7 @@ test("Unassigned produces no card, but Operations now gets one", () => {
   const opsCards = buildDepartmentCards([row({ department: "Operations" })], []);
   assert.equal(opsCards.length, 1);
   assert.equal(opsCards[0].key, "operations");
-  assert.equal(opsCards[0].title, "Operations");
+  assert.equal(opsCards[0].title, "Procurement", "titled Procurement, so it is not read as Manufacturing Operations");
 });
 
 // ── alwaysShow (2026-09-22) ──────────────────────────────────────────────

@@ -58,8 +58,11 @@ export function EmployeePersonRow({
   cardTitle,
   onSelect,
   note,
+  hideLeadershipBadge,
 }: {
   p: EmployeeRow;
+  /** The Executive Leadership card, where everyone is Leadership: the badge says nothing there and crowds the names out. */
+  hideLeadershipBadge?: boolean;
   cardTitle: string;
   onSelect?: (row: EmployeeRow) => void;
   /** The Org chart's "placed by reporting line" explanation, if any. */
@@ -96,7 +99,7 @@ export function EmployeePersonRow({
         </div>
         {role !== DASH && <div className="truncate text-xs text-sdc-muted">{role}</div>}
       </div>
-      {p.isLeadership && (
+      {p.isLeadership && !hideLeadershipBadge && (
         <span className="shrink-0 rounded-full bg-sdc-navy px-2 py-0.5 text-label font-semibold uppercase tracking-wide text-white" title="Leadership (position family 100)">
           Leadership
         </span>
@@ -111,6 +114,20 @@ export function EmployeePersonRow({
           Inactive
         </span>
       )}
+    </div>
+  );
+}
+
+/**
+ * The bottom of a card for people not in Paylocity (2026-10-05, by request):
+ * temps and hand-entered rows (isPaylocityId false), set apart from the
+ * Paylocity roster above on a darker ground. Used by both views.
+ */
+export function TempsSection({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-b-[11px] border-t border-sdc-border bg-sdc-gray-100">
+      <p className="px-3.5 pt-2 text-label font-semibold uppercase tracking-wider text-sdc-muted">Temps · not in Paylocity</p>
+      <ul className="p-1.5 pt-0.5">{children}</ul>
     </div>
   );
 }

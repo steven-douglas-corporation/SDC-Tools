@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { codeKey, mergePositionFamilies, type PositionFamilyRow } from "@/lib/position-families-parse";
 import { resolveTeams, pendingTeamChanges, TEAM_NAME, type TeamChange } from "@/lib/team-resolution";
-import { isPaylocityId as inPaylocity } from "@/lib/employee-row";
+import { isPaylocityId as inPaylocity, comparePositionCode } from "@/lib/employee-row";
 
 // ── The Org Chart page's data (2026-10-02) ──────────────────────────────────
 //
@@ -87,7 +87,8 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
 
   const reportsOf = new Map<number, typeof employees>();
   for (const e of employees) if (e.supervisorId != null) (reportsOf.get(e.supervisorId) ?? reportsOf.set(e.supervisorId, []).get(e.supervisorId)!).push(e);
-  for (const list of reportsOf.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+  // Same order as a Cards card: grouped by position code, then name.
+  for (const list of reportsOf.values()) list.sort(comparePositionCode);
 
   const isLeader = (id: number) => res.get(id)?.leader === true;
 
@@ -103,10 +104,12 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
       const sup = e.supervisorId != null ? byId.get(e.supervisorId) : undefined;
       return sup ? `Not in Paylocity · supervisor set here: ${sup.name}` : "Not in Paylocity · no supervisor set yet";
     }
-    if (r.how === "branch" && r.ownTeam && r.ownTeam !== r.proposedTeam) return `Placed by reporting line · own family says ${teamName(r.ownTeam)}`;
-    // No note for someone placed by their branch who has no usable position
-    // code (2026-10-05, by request): the gap is Paylocity's to fix, nothing on
-    // this page can act on it, and Data Quality already lists them.
+    // Nobody is flagged for being placed by their reporting line (2026-10-05,
+    // by request) — not for having no usable position code, and not for a code
+    // whose family differs from the branch they sit in. Both are the rule
+    // working as intended (or a gap on Paylocity's side), and nothing on this
+    // page can act on them. Only people not in Paylocity get a note: their
+    // supervisor is set here.
     return null;
   }
 

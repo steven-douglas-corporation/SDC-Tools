@@ -13,6 +13,24 @@ export const DASH = "—";
  * numeric; TEMP1, P6 and a blank are people entered in this app, whose supervisor
  * no sync owns — so for them alone it is set on the Employees page (2026-10-02).
  */
+/**
+ * People with the same Paylocity position code side by side (2026-10-05, by
+ * request): by code, then name; anyone with no code after everyone who has one.
+ * Shared by the Cards and Org chart views so a card orders its people the same
+ * way in both.
+ */
+export function comparePositionCode(a: { positionCode?: string | null; name: string }, b: { positionCode?: string | null; name: string }): number {
+  const ca = a.positionCode?.trim() || null;
+  const cb = b.positionCode?.trim() || null;
+  if (ca !== cb) {
+    if (ca === null) return 1;
+    if (cb === null) return -1;
+    const byCode = ca.localeCompare(cb, undefined, { numeric: true, sensitivity: "base" });
+    if (byCode !== 0) return byCode;
+  }
+  return a.name.localeCompare(b.name);
+}
+
 export function isPaylocityId(paylocityId: string | null | undefined): boolean {
   return !!paylocityId && /^\d+$/.test(paylocityId.trim());
 }
@@ -27,6 +45,8 @@ export type EmployeeRow = {
   supervisor: string; // supervisor name or DASH
   // The supervisor's Employee.id, for the drawer's picker (people not in Paylocity only).
   supervisorId?: number | null;
+  // Paylocity Position Code (2026-10-05) — people within a card are grouped by it.
+  positionCode?: string | null;
   department: string;
   // The shared team code (pm/mech/controls/build/wire/mfgops/service) —
   // resolveEmployeeGroup()'s first, most authoritative signal.
@@ -34,9 +54,10 @@ export type EmployeeRow = {
   active: boolean;
   billingGroup: string;
   paylocityId: string;
-  // Live from Scheduler's team_members (employee-scheduler-overlay.ts) — real
-  // columns Reports has no equivalent of and does not own. false/null when
-  // there's no Scheduler match at all (not yet reconciled).
+  // The ★ department lead: the top of the person's team by reporting line
+  // (team-resolution.ts departmentLeads, 2026-10-05). specialty/sortOrder below
+  // are still live from Scheduler's team_members (employee-scheduler-overlay.ts) —
+  // false/null when there's no Scheduler match at all (not yet reconciled).
   isLead: boolean;
   // Leadership: their position code is in family 100 (2026-10-02). Badged, and
   // listed first on whichever card they sit on — see lib/team-resolution.ts.

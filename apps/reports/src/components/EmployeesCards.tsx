@@ -6,9 +6,9 @@ import { AddEmployeeButton } from "@/components/AddEmployeeButton";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
 import { DISCIPLINE_LABEL } from "@/lib/disciplines";
 import { buildDepartmentCards } from "@/lib/employee-department-cards";
-import { DASH, type EmployeeRow } from "@/lib/employee-row";
+import { DASH, isPaylocityId, type EmployeeRow } from "@/lib/employee-row";
 import type { HiringPosition } from "@/lib/hiring-positions";
-import { DepartmentCardHeader, EmployeePersonRow } from "@/components/EmployeePersonRow";
+import { DepartmentCardHeader, EmployeePersonRow, TempsSection } from "@/components/EmployeePersonRow";
 import { HiringStatusPill } from "@/components/HiringStatusPill";
 import { hiringStatusStyle } from "@/lib/hiring-position-status";
 import { employeeCapacityHours, hiringCapacityHours } from "@/lib/workforce-capacity";
@@ -212,13 +212,22 @@ export function EmployeesCards({
                 )}
               </button>
             )}
-            <ul className="min-h-[72px] p-1.5">
-              {card.people.map((p) => (
+            <ul className={`p-1.5 ${card.people.some((p) => !isPaylocityId(p.paylocityId)) ? "" : "min-h-[72px]"}`}>
+              {card.people.filter((p) => isPaylocityId(p.paylocityId)).map((p) => (
                 <li key={p.id}>
                   <EmployeePersonRow p={p} cardTitle={card.title} onSelect={onSelectEmployee} />
                 </li>
               ))}
             </ul>
+            {card.people.some((p) => !isPaylocityId(p.paylocityId)) && (
+              <TempsSection>
+                {card.people.filter((p) => !isPaylocityId(p.paylocityId)).map((p) => (
+                  <li key={p.id}>
+                    <EmployeePersonRow p={p} cardTitle={card.title} onSelect={onSelectEmployee} />
+                  </li>
+                ))}
+              </TempsSection>
+            )}
             {/* Hiring — open positions from the Excel workbook, assigned to
                 this exact department (hiring-positions.ts). Deliberately its
                 own section, never merged into the `<ul>` of real people

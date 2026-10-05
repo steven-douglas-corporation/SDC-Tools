@@ -42,8 +42,8 @@ export const FAMILY_TEAM: Readonly<Record<string, string>> = {
   "500": "service", //  Service
 };
 
-/** Display names for team codes: the shared labels, plus HR, which Scheduler has no bucket for. */
-export const TEAM_NAME: Readonly<Record<string, string>> = { ...DISCIPLINE_LABEL, hr: "Human Resources" };
+/** Display names for team codes: the shared labels, plus HR, which Scheduler has no bucket for, and "ops" shown as Procurement (its card's title). */
+export const TEAM_NAME: Readonly<Record<string, string>> = { ...DISCIPLINE_LABEL, hr: "Human Resources", ops: "Procurement" };
 
 const SERVICE_FAMILY = "500";
 
@@ -136,6 +136,31 @@ export function planTeamWrites(people: TeamPerson[], rows: PositionFamilyRow[]):
 export type TeamChange = { id: number; name: string; from: string | null; to: string; reason: string };
 
 /** What applying the proposals would change, for people shown in the app. */
+/**
+ * Who gets the Employees page's ★ department lead (2026-10-05, by request):
+ * the top of each team — its branch head — but only when the team has exactly
+ * ONE branch head and someone reports to them. A team whose people each report
+ * straight to Leadership (Sales under the VP of Growth, AI under the President)
+ * has no single top, so no star; neither does a lone head with nobody under them.
+ * Shown people only. Replaces reading the star from SDC Scheduler's
+ * team_members.is_lead, which still governs what a lead sees in Scheduler.
+ */
+export function departmentLeads(people: (TeamPerson & { active: boolean })[], resolutions: Map<number, TeamResolution>): Set<number> {
+  const hasReport = new Set<number>();
+  for (const p of people) if (p.active && p.supervisorId != null) hasReport.add(p.supervisorId);
+  const headsByTeam = new Map<string, number[]>();
+  for (const p of people) {
+    const r = resolutions.get(p.id);
+    if (!p.active || !r || r.leader || r.branchHeadId !== p.id) continue;
+    const team = r.proposedTeam ?? p.team;
+    if (!team) continue;
+    headsByTeam.set(team, [...(headsByTeam.get(team) ?? []), p.id]);
+  }
+  const leads = new Set<number>();
+  for (const heads of headsByTeam.values()) if (heads.length === 1 && hasReport.has(heads[0])) leads.add(heads[0]);
+  return leads;
+}
+
 export function pendingTeamChanges(
   people: (TeamPerson & { active: boolean })[],
   resolutions: Map<number, TeamResolution>,

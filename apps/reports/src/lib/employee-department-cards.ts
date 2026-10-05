@@ -3,7 +3,7 @@ import { DISCIPLINE_LABEL } from "@/lib/disciplines";
 import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
 import { rollupGroup, workforceGroupForCardKey, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
-import type { EmployeeRow } from "@/lib/employee-row";
+import { comparePositionCode, type EmployeeRow } from "@/lib/employee-row";
 
 // The one place that turns a filtered employee-row list (+ Scheduler
 // placeholders) into the Employees tab's department cards — pulled out of
@@ -95,16 +95,14 @@ export function buildDepartmentCards(rows: EmployeeRow[], placeholders: Schedule
     .sort((a, b) => compareGroupOrder(a.key, b.key))
     .map((c) => ({
       ...c,
-      // Leadership first (2026-10-02), then Scheduler's own card order: lead first, then sort_order,
-      // then name. Someone with no Scheduler match at all (sortOrder null)
-      // sorts after everyone who has one — not yet reconciled, not yet
-      // ordered.
+      // Leadership first (2026-10-02), then the ★ lead, then by position code
+      // so people with the same code sit together (2026-10-05, replacing
+      // Scheduler's sort_order), then name.
       people: [...c.people].sort(
         (a, b) =>
           Number(b.isLeadership ?? false) - Number(a.isLeadership ?? false) ||
           Number(b.isLead) - Number(a.isLead) ||
-          (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity) ||
-          a.name.localeCompare(b.name),
+          comparePositionCode(a, b),
       ),
     }));
 }

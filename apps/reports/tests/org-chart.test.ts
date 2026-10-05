@@ -44,9 +44,10 @@ test("a hidden manager's reports are lifted to the nearest shown manager", () =>
   assert.deepEqual(names(chart.bands[1].cards[0].heads), ["Sean", "Frank"]);
 });
 
-test("notes explain who isn't placed by their own family", () => {
+test("only people not in Paylocity get a note", () => {
   const billy = chart.bands[1].cards[1].heads[0].reports[0];
-  assert.equal(billy.note, "Placed by reporting line · own family says Manufacturing Operations");
+  assert.equal(billy.team, "service", "placed by his branch, under the Service Engineering Manager");
+  assert.equal(billy.note, null, "a family that differs from the branch is not flagged");
   const suhith = chart.bands[0].cards.flatMap((c) => c.heads).find((h) => h.name === "Suhith")!;
   assert.equal(suhith.note, "Not in Paylocity · supervisor set here: Dan");
   assert.equal(suhith.team, "ai", "no code and no team: the app's discipline label, for display");
