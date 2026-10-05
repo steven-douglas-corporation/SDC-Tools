@@ -199,9 +199,12 @@ async function checkAndUpdate() {
     log(`HEAD → ${remoteSha.slice(0, 7)}`);
 
     // 6. Install deps only if package.json changed
+    //    --include=dev (2026-10-04): pm2 runs everything with NODE_ENV=production, and
+    //    under that npm install SKIPS and PRUNES devDependencies. The builds below need
+    //    them (Vite, TypeScript types), so a dependency change used to break the next build.
     if (monorepoFiles.some(f => f === 'package.json' || f === 'package-lock.json')) {
       log('package.json changed — running npm install…');
-      run('npm install');
+      run('npm install --include=dev');
     }
 
     // 7. Rebuild any owned app whose frontend sources changed.
@@ -288,7 +291,10 @@ async function checkAndUpdate() {
         // package files moved, so an ordinary source change stays a build + start.
         if (monorepoFiles.some(f => f === 'apps/reports/package.json' || f === 'apps/reports/package-lock.json')) {
           log('  Reports dependencies changed — npm install…');
-          run('npm install --no-audit --no-fund', inApp);
+          // --include=dev (2026-10-04): under pm2's NODE_ENV=production a plain install
+          // pruned every devDependency (@types/react and the rest), and `next build`'s
+          // type check then failed — Reports was down after PR #81 added `pg`.
+          run('npm install --include=dev --no-audit --no-fund', inApp);
         }
         run('npx prisma migrate deploy', inApp);
         run('npx prisma generate', inApp);
