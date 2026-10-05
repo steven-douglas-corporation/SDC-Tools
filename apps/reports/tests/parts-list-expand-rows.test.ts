@@ -49,14 +49,16 @@ test("display rows interleave each open part with its PO groups, in poBreakdown 
   const start = job.indexOf("const displayRows = useMemo");
   const body = job.slice(start, job.indexOf("}, [sortedParts, expanded, onlyLeftToInvoice]);", start));
   assert.ok(start >= 0 && body.length > 0, "displayRows must exist");
-  // The part row is skipped entirely under "Left to invoice" (2026-09-15
-  // trial) — its Total $/Invoiced $/Left to Invoice are the part's BLENDED
-  // figures across every PO, including already-settled ones, which is the
-  // wrong number beside a filter whose whole point is "what's still owed".
-  assert.match(body, /if \(!onlyLeftToInvoice\) rows\.push\(\{ kind: "part", p \}\);/, "the parent row must be conditional on the filter");
-  // Sub-rows are no longer gated on `expanded` alone — with the parent
-  // hidden there is no chevron left to toggle it from.
-  assert.match(body, /if \(onlyLeftToInvoice \|\| expanded\.has\(p\.id\)\) \{/, "sub-rows must show unconditionally under the filter");
+  // The parent row is ALWAYS drawn, including under "Left to invoice" (2026-10-05).
+  // The 2026-09-15 trial skipped it, which left bare sub-rows with Mfr / Required
+  // Date / Status empty and gave a part with money owed but no POs nothing to show
+  // at all — the list read as blank. Do not reintroduce a filter condition on it.
+  assert.match(body, /rows\.push\(\{ kind: "part", p \}\);/, "the parent row must be drawn");
+  assert.doesNotMatch(body, /if \(!onlyLeftToInvoice\) rows\.push/, "the parent row must not be conditional on the filter");
+  // Sub-rows follow the chevron again; the auto-expand on filter-on (PartsListTab)
+  // is what opens them. The filter only NARROWS which POs show.
+  assert.match(body, /if \(expanded\.has\(p\.id\)\) \{/, "sub-rows must follow the expanded set");
+  assert.match(body, /if \(onlyLeftToInvoice && !\(g\.leftToInvoice > 0\)\) continue;/, "under the filter, settled POs stay hidden");
   assert.match(
     body,
     /for \(const g of p\.poBreakdown\) \{\s*[\s\S]*?rows\.push\(\{ kind: "po", p, g \}\);/,
@@ -104,6 +106,8 @@ test("the chevron appears only where there is something to unfold, and the PO dr
   assert.match(job, /expand=\{\{ open: expanded\.has\(p\.id\), onToggle: \(\) => toggleExpanded\(p\.id\) \}\}/, "the Parts List wires the chevron");
   // Expand-all moved out of the Part No header into a real toolbar button
   // above the table (2026-09-15), and only counts parts that can open.
-  assert.match(job, /view === "list" && !onlyLeftToInvoice && expandableIds\.length > 0 && \(/, "the expand-all button must be list-mode only, and hidden once there's no parent left to expand");
+  // Parents stay under "Left to invoice" now, so the button is not hidden by it.
+  assert.match(job, /view === "list" && expandableIds\.length > 0 && \(/, "the expand-all button must be list-mode only");
+  assert.doesNotMatch(job, /view === "list" && !onlyLeftToInvoice && expandableIds/, "the expand-all button must not be hidden by the filter");
   assert.match(job, /filtered\.filter\(\(p\) => p\.poBreakdown\.length > 0\)\.map\(\(p\) => p\.id\)/, "expandableIds must be computed before sorting, not after");
 });
