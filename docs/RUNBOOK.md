@@ -76,6 +76,10 @@ Each app reads `.env` from its own directory. They are not in git. The
 `.env.example` beside each is the authoritative list of variables. Back them up
 with the server; a fresh clone cannot start an app without them.
 
+Reports reads Paylocity hours, the roster and position families from the PostgreSQL
+DataWarehouse via `DATAWAREHOUSE_URL` (see `tools/data-warehouse/README.md`); the files
+are no longer on the SFTP share.
+
 ## Desktop shell releases
 
 Bumping `"version"` in `apps/shell/package.json` on `master` builds an

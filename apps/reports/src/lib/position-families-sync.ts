@@ -2,7 +2,10 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { readStableFile } from "@/lib/read-stable-file";
+import { warehouseConfigured } from "@/lib/data-warehouse";
+import { readPositionFamilyGridFromWarehouse, WAREHOUSE_FAMILIES_LABEL } from "@/lib/paylocity-warehouse";
 import {
+  parsePositionFamiliesGrid,
   parsePositionFamiliesWorkbook,
   positionFamilyFindings,
   describeFamilies,
@@ -29,7 +32,13 @@ import {
 // Nothing here assigns anyone to a team yet. The table is read by the Data
 // Quality tab today and by the team rule next.
 
+// Since 2026-10-04 Paylocity's Position_Families file is deleted from the share
+// once the warehouse loader has it, so with DATAWAREHOUSE_URL set it is read from
+// the warehouse instead (paylocity-warehouse.ts), through the same grid parser.
+// The overrides file is NOT: it is hand-edited on the share and stays there, so
+// it is still read from PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH.
 export function familiesFilePath(): string | null {
+  if (warehouseConfigured()) return WAREHOUSE_FAMILIES_LABEL;
   return process.env.PAYLOCITY_POSITION_FAMILIES_LOCAL_PATH?.trim() || null;
 }
 
@@ -37,14 +46,17 @@ export function overridesFilePath(): string | null {
   return process.env.PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH?.trim() || null;
 }
 
-const NOT_CONFIGURED = "not configured — set PAYLOCITY_POSITION_FAMILIES_LOCAL_PATH in .env to Paylocity's Position_Families file";
+const NOT_CONFIGURED =
+  "not configured — set DATAWAREHOUSE_URL in .env (or PAYLOCITY_POSITION_FAMILIES_LOCAL_PATH to Paylocity's Position_Families file)";
 
 const fail = (m: string) => new PositionFamilyFileError(m);
 
 async function readFiles(): Promise<PositionFamilyRow[] | { skip: string }> {
   const path = familiesFilePath();
   if (!path) return { skip: NOT_CONFIGURED };
-  const rows = parsePositionFamiliesWorkbook(await readStableFile(path, "Position_Families file", fail), "paylocity");
+  const rows = warehouseConfigured()
+    ? parsePositionFamiliesGrid(await readPositionFamilyGridFromWarehouse(), "paylocity")
+    : parsePositionFamiliesWorkbook(await readStableFile(path, "Position_Families file", fail), "paylocity");
   const overrides = overridesFilePath();
   if (overrides) rows.push(...parsePositionFamiliesWorkbook(await readStableFile(overrides, "Position_Families_Overrides file", fail), "override"));
   return rows;

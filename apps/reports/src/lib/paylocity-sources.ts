@@ -2,6 +2,8 @@ import "server-only";
 
 import path from "path";
 
+import { warehouseConfigured } from "@/lib/data-warehouse";
+
 // ── THE centralized Paylocity source-selection service ─────────────────────
 //
 // Requested 2026-08-21. One place decides which workbook owns a punch, so that no
@@ -78,6 +80,8 @@ export type SourceKind =
 
 type SourceSpec = {
   fileName: string;
+  /** The same file's report in the DataWarehouse ("Fact"."JobHours"."SourceReport"). */
+  reportKey: string;
   kind: SourceKind;
   /** First punch year this file owns. null = open-ended into the past. */
   fromYear: number | null;
@@ -94,6 +98,7 @@ type SourceSpec = {
 const SOURCES: readonly SourceSpec[] = [
   {
     fileName: "Current_Job_Hours.xlsx",
+    reportKey: "current_job_hours",
     kind: "punch",
     fromYear: 2026,
     toYear: null,
@@ -101,6 +106,7 @@ const SOURCES: readonly SourceSpec[] = [
   },
   {
     fileName: "Job_Hours_2025.xlsx",
+    reportKey: "job_hours_2025",
     kind: "punch",
     fromYear: 2025,
     toYear: 2025,
@@ -108,6 +114,7 @@ const SOURCES: readonly SourceSpec[] = [
   },
   {
     fileName: "Hours Through 20250131.xlsx",
+    reportKey: "hours_through_20250131",
     kind: "job-section-crosstab",
     fromYear: null,
     toYear: 2024,
@@ -140,6 +147,9 @@ function ownershipLabel(s: SourceSpec): string {
 }
 
 function resolvePath(s: SourceSpec): string {
+  // Read from the DataWarehouse (data-warehouse.ts): no folder is involved, and
+  // the path is only a label for the audit report and refresh log.
+  if (warehouseConfigured()) return `DataWarehouse "Fact"."JobHours" (${s.reportKey})`;
   const explicitFile = process.env.JOB_HOURS_LOCAL_PATH?.trim();
   // The explicit override names the CURRENT-year file specifically (that is what it
   // always meant), so it applies only to the open-ended-future source. Every other

@@ -3,7 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { readStableFile } from "@/lib/read-stable-file";
 import { logAudit } from "@/lib/audit";
 import { recordChanges, type CellChange } from "@/lib/change-log";
+import { warehouseConfigured } from "@/lib/data-warehouse";
+import { readRosterGridFromWarehouse, WAREHOUSE_ROSTER_LABEL } from "@/lib/paylocity-warehouse";
 import {
+  parseRosterGrid,
   parseRosterWorkbook,
   planRosterSync,
   isEmptyPlan,
@@ -40,9 +43,30 @@ export function rosterFilePath(): string | null {
   return process.env.PAYLOCITY_EMPLOYEES_LOCAL_PATH?.trim() || null;
 }
 
-const NOT_CONFIGURED = "not configured — set PAYLOCITY_EMPLOYEES_LOCAL_PATH in .env to the Paylocity employee roster file";
+const NOT_CONFIGURED =
+  "not configured — set DATAWAREHOUSE_URL in .env (or PAYLOCITY_EMPLOYEES_LOCAL_PATH to the Paylocity employee roster file)";
 
 const readStable = (path: string) => readStableFile(path, "roster file", (m) => new RosterFileError(m));
+
+// ── Where the roster comes from (2026-10-04) ────────────────────────────────
+//
+// Since 2026-10-04 the roster file is deleted from the SFTP share once the
+// warehouse loader has it, so with DATAWAREHOUSE_URL set the roster is read from
+// the warehouse's employee dimension instead (paylocity-warehouse.ts) — the same
+// grid the file produced, through the same parseRosterGrid rules. The label
+// stands in for the file path in the audit log and the "configured" checks.
+function rosterSource(): string | null {
+  return warehouseConfigured() ? WAREHOUSE_ROSTER_LABEL : rosterFilePath();
+}
+
+/** The roster rows: from `path` when one is given, else from the configured source. */
+async function readRosterRows(path?: string): Promise<RosterFileRow[]> {
+  if (path) return parseRosterWorkbook(await readStable(path));
+  if (warehouseConfigured()) return parseRosterGrid(await readRosterGridFromWarehouse());
+  const file = rosterFilePath();
+  if (!file) throw new RosterFileError(`The roster is ${NOT_CONFIGURED}.`);
+  return parseRosterWorkbook(await readStable(file));
+}
 
 async function loadAppEmployees() {
   return prisma.employee.findMany({
@@ -66,7 +90,7 @@ export type RosterQuality = {
  * throws: a bad file is itself the finding.
  */
 export async function getRosterQuality(): Promise<RosterQuality> {
-  const path = rosterFilePath();
+  const path = rosterSource();
   const freshness = await prisma.powerBiFreshness
     .findUnique({ where: { source: "employee_roster" }, select: { refreshedThrough: true, status: true } })
     .catch(() => null);
@@ -77,17 +101,17 @@ export async function getRosterQuality(): Promise<RosterQuality> {
   };
   if (!path) return { ...base, fileError: null, findings: null };
   try {
-    const rows = parseRosterWorkbook(await readStable(path));
+    const rows = await readRosterRows();
     return { ...base, fileError: null, findings: rosterQualityFindings(rows, await loadAppEmployees()) };
   } catch (err) {
     return { ...base, fileError: err instanceof Error ? err.message : String(err), findings: null };
   }
 }
 
-/** Parse the configured file and work out what would change. Writes nothing. */
-export async function previewRosterSync(path = rosterFilePath()): Promise<RosterPlan | { skip: string }> {
-  if (!path) return { skip: NOT_CONFIGURED };
-  const rows = parseRosterWorkbook(await readStable(path));
+/** Read the roster (a file, if `path` is given) and work out what would change. Writes nothing. */
+export async function previewRosterSync(path?: string): Promise<RosterPlan | { skip: string }> {
+  if (!path && !rosterSource()) return { skip: NOT_CONFIGURED };
+  const rows = await readRosterRows(path);
   return planRosterSync(rows, await loadAppEmployees());
 }
 
@@ -97,9 +121,9 @@ export async function previewRosterSync(path = rosterFilePath()): Promise<Roster
  * the step records the failure) on an unreadable or malformed file.
  */
 export async function syncPaylocityRoster(): Promise<string | { skip: string }> {
-  const path = rosterFilePath();
+  const path = rosterSource();
   if (!path) return { skip: NOT_CONFIGURED };
-  const rows = parseRosterWorkbook(await readStable(path));
+  const rows = await readRosterRows();
   const app = await loadAppEmployees();
   const plan = planRosterSync(rows, app);
   // Always a string, never null: null means "skipped" to the runner, which would

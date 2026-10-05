@@ -11,6 +11,7 @@ import {
 import { isTotalControlFunctionId, normalizeFunctionId } from "@/lib/paylocity-canonical";
 import { normalizeSectionId } from "@/lib/paylocity-standard-rules";
 import type { JobHoursRow } from "@/lib/job-hours-source";
+import { warehouseSnapshot } from "@/lib/data-warehouse";
 import { resolveJobLabel, jobNumberFromMachineSuffix } from "@/lib/job-label";
 import { normalizeJobNumber as normalizeJobId } from "@/lib/job-filters";
 // The Undefined Hours definition, from the one module that owns it. Imported for use
@@ -418,39 +419,12 @@ export function normalizeJobNumber(raw: string): string {
 // being an inline getMonth() in whichever reader came first.
 const monthKey = reportMonthForWorkDate;
 
-// ── The read ────────────────────────────────────────────────────────────────
+// ── Where the sheet comes from: a file, or the DataWarehouse ────────────────
 //
-// `resolve` is the model-derived code->column map (buildColumnResolver in
-// job-hours-source.ts). It is READ FROM POWER BI, and that is not a contradiction
-// with moving hours off Power BI: the Function Hierarchy is static metadata about
-// what a punch code means, not the hours themselves. It changes when somebody adds a
-// code, not daily. SECTION_ALIASES remains the fallback when it cannot be fetched,
-// exactly as before — so a Power BI outage costs the newest code mappings, never the
-// hours.
-//
-// `knownJobNumbers` lets a numerically-valid job that the app has never heard of be
-// reported as JOB_NOT_FOUND rather than silently attributed. Optional: omit it and
-// the check is skipped rather than every row being called unknown.
-export async function readPaylocityWorkbook(opts?: {
-  path?: string;
-  resolve?: (rawSection: string) => string | null;
-  knownJobNumbers?: ReadonlySet<string>;
-  // Label -> jobId for the job cells that are a NAME rather than a number
-  // ("2025 SERVICE", "2023_SER"). Built from the Job table by the caller with
-  // lib/job-label.ts's own normalizer, so both sides key identically. Omitted
-  // means "do not attempt name matching" and the old numeric-only behaviour
-  // stands.
-  jobIdByLabel?: ReadonlyMap<string, string>;
-  // Restrict to one month, for the callers that only ever touch one (the ETC page's
-  // Refresh). The whole file is still parsed — it is one 746 KB read, ~1s — but
-  // everything outside the month is discarded before it reaches the caller.
-  onlyMonth?: string;
-  // Which punch YEARS this file is authoritative for. Supplied by
-  // paylocity-sources.ts; omitted means "this file owns everything in it", which is
-  // the historical single-file behaviour every existing caller relies on.
-  ownsYear?: (year: number) => boolean;
-}): Promise<WorkbookReadResult> {
-  const path = opts?.path ?? workbookPath();
+// Both return the "Report" worksheet and the identity of the file it holds;
+// everything after that in readPaylocityWorkbook is the same for both.
+
+async function worksheetFromFile(path: string): Promise<{ identity: WorkbookIdentity; ws: ExcelJS.Worksheet }> {
   if (!path) {
     throw new WorkbookError("not_configured", "JOB_HOURS_LOCAL_PATH is not set and there is no default workbook path.");
   }
@@ -484,6 +458,138 @@ export async function readPaylocityWorkbook(opts?: {
       { path, expected: SHEET_NAME, found: wb.worksheets.map((w) => w.name) },
     );
   }
+  return { identity, ws };
+}
+
+// Since 2026-10-04 the files are deleted from the SFTP share once the warehouse
+// loader has them (see data-warehouse.ts), so each punch source is read from
+// "Fact"."JobHours". The punches are put back into a worksheet at the row numbers
+// they had in the file, with the file's own cell values (Jobs "0114", MachineSec
+// "10", Travel "Not Defined"), so the header check, the job checks, the year gate
+// and sourceRow in the Undefined Hours drill all behave exactly as on the file.
+// The identity is the original file's — name, size, modified time and sha256 as
+// recorded when the loader copied it — so the same-version check compares like
+// with like.
+//
+// One visible difference: the warehouse applies the year rule itself
+// ("Paylocity"."JobHoursSource" mirrors paylocity-sources.ts), so rows a file
+// carries for a year it doesn't own never arrive, and rowsExcludedByYear reads 0
+// for Job_Hours_2025.xlsx where the file read 191.
+export type WarehousePunch = {
+  sheetRow: number;
+  employeeId: string | null;
+  workDate: string; // "2026-03-11"
+  job: string | null;
+  jobName: string | null;
+  section: string | null;
+  fn: string | null;
+  hours: number;
+  travel: string | null;
+};
+
+/** The "Report" sheet, rebuilt from warehouse punches at their original row numbers. */
+export function worksheetFromPunches(punches: WarehousePunch[]): ExcelJS.Worksheet {
+  const ws = new ExcelJS.Workbook().addWorksheet(SHEET_NAME);
+  const header = [...REQUIRED_HEADERS, ...OPTIONAL_HEADERS];
+  header.forEach((h, i) => (ws.getRow(1).getCell(i + 1).value = h));
+  for (const p of punches) {
+    const row = ws.getRow(p.sheetRow);
+    [p.employeeId, p.workDate, p.job, p.jobName, p.section, p.fn, p.hours, p.travel].forEach((v, i) => {
+      if (v != null) row.getCell(i + 1).value = v;
+    });
+  }
+  return ws;
+}
+
+async function worksheetFromWarehouse(reportKey: string): Promise<{ identity: WorkbookIdentity; ws: ExcelJS.Worksheet }> {
+  const { files, punches } = await warehouseSnapshot(async (q) => ({
+    files: await q<{ remotePath: string; remoteSize: string; modifiedUtc: string; sha256: string }>(
+      `SELECT DISTINCT s."RemotePath" AS "remotePath", s."RemoteSize"::text AS "remoteSize",
+              to_char(s."RemoteModifiedUtc", 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "modifiedUtc", s."Sha256" AS "sha256"
+       FROM "Fact"."JobHours" AS h
+       JOIN "Integration"."SourceFile" AS s ON s."FileId" = h."SourceFileId"
+       WHERE h."SourceReport" = $1`,
+      [reportKey],
+    ),
+    punches: await q<WarehousePunch>(
+      `SELECT "SourceSheetRow" AS "sheetRow", "EmployeeId" AS "employeeId", to_char("WorkDate", 'YYYY-MM-DD') AS "workDate",
+              "JobCode" AS "job", "JobName" AS "jobName", "SectionCode" AS "section", "FunctionCode" AS "fn",
+              "Hours"::float8 AS "hours", "TravelCode" AS "travel"
+       FROM "Fact"."JobHours"
+       WHERE "SourceReport" = $1
+       ORDER BY "SourceSheetRow"`,
+      [reportKey],
+    ),
+  }));
+
+  const where = { source: "DataWarehouse", report: reportKey };
+  if (files.length === 0) {
+    throw new WorkbookError(
+      "file_missing",
+      `The DataWarehouse has no hours for ${reportKey}. Check the warehouse loader's last run ("Integration"."Batch").`,
+      where,
+    );
+  }
+  if (files.length > 1) {
+    throw new WorkbookError(
+      "file_unstable",
+      `The DataWarehouse's hours for ${reportKey} come from ${files.length} file versions at once — its last refresh did not finish cleanly. Nothing was imported.`,
+      { ...where, files: files.map((f) => f.remotePath) },
+    );
+  }
+  const file = files[0];
+  const fileName = file.remotePath.split("/").pop() ?? file.remotePath;
+  return {
+    identity: {
+      path: `DataWarehouse "Fact"."JobHours" (${reportKey}, from ${file.remotePath})`,
+      fileName,
+      size: Number(file.remoteSize),
+      modifiedAt: new Date(file.modifiedUtc),
+      sha256: file.sha256,
+    },
+    ws: worksheetFromPunches(punches),
+  };
+}
+
+// ── The read ────────────────────────────────────────────────────────────────
+//
+// `resolve` is the model-derived code->column map (buildColumnResolver in
+// job-hours-source.ts). It is READ FROM POWER BI, and that is not a contradiction
+// with moving hours off Power BI: the Function Hierarchy is static metadata about
+// what a punch code means, not the hours themselves. It changes when somebody adds a
+// code, not daily. SECTION_ALIASES remains the fallback when it cannot be fetched,
+// exactly as before — so a Power BI outage costs the newest code mappings, never the
+// hours.
+//
+// `knownJobNumbers` lets a numerically-valid job that the app has never heard of be
+// reported as JOB_NOT_FOUND rather than silently attributed. Optional: omit it and
+// the check is skipped rather than every row being called unknown.
+export async function readPaylocityWorkbook(opts?: {
+  path?: string;
+  resolve?: (rawSection: string) => string | null;
+  knownJobNumbers?: ReadonlySet<string>;
+  // Label -> jobId for the job cells that are a NAME rather than a number
+  // ("2025 SERVICE", "2023_SER"). Built from the Job table by the caller with
+  // lib/job-label.ts's own normalizer, so both sides key identically. Omitted
+  // means "do not attempt name matching" and the old numeric-only behaviour
+  // stands.
+  jobIdByLabel?: ReadonlyMap<string, string>;
+  // Restrict to one month, for the callers that only ever touch one (the ETC page's
+  // Refresh). The whole file is still parsed — it is one 746 KB read, ~1s — but
+  // everything outside the month is discarded before it reaches the caller.
+  onlyMonth?: string;
+  // Which punch YEARS this file is authoritative for. Supplied by
+  // paylocity-sources.ts; omitted means "this file owns everything in it", which is
+  // the historical single-file behaviour every existing caller relies on.
+  ownsYear?: (year: number) => boolean;
+  // Read this report from the DataWarehouse instead of a file — e.g.
+  // "current_job_hours". Supplied by hours-feed.ts when DATAWAREHOUSE_URL is set.
+  warehouseReport?: string;
+}): Promise<WorkbookReadResult> {
+  const { identity, ws } = opts?.warehouseReport
+    ? await worksheetFromWarehouse(opts.warehouseReport)
+    : await worksheetFromFile(opts?.path ?? workbookPath());
+  const path = identity.path;
 
   // ── Headers, by NAME not position ─────────────────────────────────────────
   // Reading by position is what turns "somebody inserted a column" into silently
