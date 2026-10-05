@@ -234,3 +234,56 @@ SELECT
 FROM "RawPaylocity"."DataRow" AS d
 JOIN "RawPaylocity"."LatestFile" AS l USING ("FileId")
 WHERE d."ReportKey" = 'hiring_report_auto_export';
+
+-- ── Migration snapshot: hours before Paylocity ──────────────────────────────
+
+-- Hours Through 20250131.xlsx: lifetime hours per job and section-function,
+-- through 2025-01-31, from before the Paylocity punch feed. A crosstab, one row
+-- per job and one column per code, so it's unpivoted here into one row per job
+-- and code. Only the "All Job Data" sheet is read: its "Old" sheet is a subset of
+-- it (all 348 values identical, checked 2026-10-04), and reading both would count
+-- 58,341 h twice. The codes ("10-211") are in the sheet's second header row, which
+-- the loader stores as the first data row (SheetRow 2). Zero cells are dropped:
+-- in this crosstab a zero means no hours booked, not a missing value.
+CREATE OR REPLACE VIEW "Paylocity"."JobHoursSnapshot" AS
+WITH snapshot_file AS (
+    SELECT "FileId", "RemoteModifiedUtc"
+    FROM "RawPaylocity"."LatestFile"
+    WHERE "ReportKey" = 'hours_through_20250131'
+),
+code AS (
+    SELECT c.key AS "ColumnName", btrim(c.value #>> '{}') AS "Code"
+    FROM "RawPaylocity"."FileRow" AS r
+    JOIN snapshot_file AS f USING ("FileId")
+    CROSS JOIN LATERAL jsonb_each(r."RowJson") AS c
+    WHERE r."SheetName" = 'All Job Data' AND r."SheetRow" = 2
+),
+cell AS (
+    SELECT r."FileId", r."SheetRow", f."RemoteModifiedUtc",
+           nullif(btrim(r."RowJson" ->> 'Job#'), '')        AS "JobCode",
+           nullif(btrim(r."RowJson" ->> 'Description'), '') AS "JobName",
+           c.key AS "ColumnName", c.value #>> '{}' AS "Value"
+    FROM "RawPaylocity"."FileRow" AS r
+    JOIN snapshot_file AS f USING ("FileId")
+    CROSS JOIN LATERAL jsonb_each(r."RowJson") AS c
+    WHERE r."SheetName" = 'All Job Data' AND r."SheetRow" >= 3 AND r."RowKind" = 'data'
+)
+SELECT
+    cell."JobCode",
+    "Integration"."JobNumber"(cell."JobCode")                    AS "JobNumber",
+    cell."JobName",
+    code."Code"                                                  AS "SectionFunctionCode",
+    split_part(code."Code", '-', 1)                              AS "SectionCode",
+    "Integration"."CodeNumber"(split_part(code."Code", '-', 1))  AS "SectionNumber",
+    split_part(code."Code", '-', 2)                              AS "FunctionCode",
+    "Integration"."CodeNumber"(split_part(code."Code", '-', 2))  AS "FunctionNumber",
+    "Integration"."TryNumeric"(cell."Value")                     AS "Hours",
+    date '2025-01-31'                                            AS "ThroughDate",
+    cell."FileId",
+    cell."SheetRow",
+    cell."RemoteModifiedUtc"                                     AS "SnapshotUtc"
+FROM cell
+JOIN code ON code."ColumnName" = cell."ColumnName"
+WHERE code."Code" ~ '^[0-9]+-[0-9]+$'
+  AND cell."JobCode" IS NOT NULL
+  AND coalesce("Integration"."TryNumeric"(cell."Value"), 0) <> 0;

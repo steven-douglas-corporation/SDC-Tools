@@ -53,7 +53,7 @@ join across databases in a query.
 | Raw | `"RawPaylocity"` | `"FileRow"`: every row of every file as delivered, as JSON keyed by the sheet's own headers. Never interpreted, so a new or changed report never breaks the load |
 | Staging | `"Paylocity"` | One view per report, typed (dates, numbers, true/false) with parsed codes beside the original text. Source-faithful: no business rules beyond picking the authoritative file for each year of hours |
 | Dimensions | `"Dimension"` | `"Date"` (2015–2035) and `"Employee"`: full history, a new version whenever a tracked attribute changes, soft delete when someone leaves the roster. Every dimension has an Unknown row, key -1 |
-| Facts | `"Fact"` | `"JobHours"`: one row per Paylocity punch, keyed to the employee version in effect on the work date, Travel relabelled (Not Defined → Concord, TRAVEL → Travel). Loaded by replacing whole years, since punches have no ID |
+| Facts | `"Fact"` | `"JobHours"`: one row per Paylocity punch, keyed to the employee version in effect on the work date, Travel relabelled (Not Defined → Concord, TRAVEL → Travel), plus the pre-Paylocity migration snapshot unpivoted to one row per job and section-function (Employee Unknown, date 2025-01-31). Punches are loaded by replacing whole years, since they have no ID. **Total with `WHERE NOT "SupersededBySnapshot"`**: January 2025 punches on snapshot jobs are already inside the snapshot. See [HOURS-RULES.md](HOURS-RULES.md) |
 
 **In medallion terms** (the same layering, different vocabulary):
 
