@@ -134,7 +134,11 @@ test("the picker is blank by default, clears when the menu closes, and never tou
   assert.match(src, /const \[asOfValue, setAsOfValue\] = useState\(""\);/, "blank by default");
   assert.match(src, /useEffect\(\(\) => \{\s*if \(!open\) setAsOfValue\(""\);\s*\}, \[open\]\);/, "cleared on close");
   // Built from the picker only: a stray ?asOf= in the address bar is dropped first.
-  assert.match(src, /qs\.delete\("asOf"\);\s*if \(offerAsOf && asOfValue\) qs\.set\("asOf", asOfValue\);/);
+  assert.match(src, /if \(offerAsOf\) \{\s*qs\.delete\("asOf"\);\s*if \(asOfValue\) qs\.set\("asOf", asOfValue\);\s*\}/);
+  // ...and ONLY there: Profitability uses ?asOf= as its own page param, so a menu that does
+  // not offer the picker must leave the query string exactly as the page gave it.
+  assert.equal((src.match(/qs\.delete\("asOf"\)/g) ?? []).length, 1);
+  assert.ok(src.indexOf('qs.delete("asOf")') > src.indexOf("if (offerAsOf) {"), "the delete lives inside the offerAsOf branch");
   // Never navigates or writes the URL.
   assert.doesNotMatch(src, /router\.(push|replace)|history\.(push|replace)State|window\.location\s*=/);
   // A bad date greys out BOTH formats.

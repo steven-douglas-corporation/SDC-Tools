@@ -171,9 +171,13 @@ export function ExportMenu({
       for (const [k, v] of Object.entries(extraParams ?? {})) qs.set(k, v);
       // The date comes ONLY from the picker: dropped from whatever the page's own URL
       // carried, so a stray ?asOf= in the address bar cannot date-cut an export that the
-      // menu shows as live.
-      qs.delete("asOf");
-      if (offerAsOf && asOfValue) qs.set("asOf", asOfValue);
+      // menu shows as live. Only where the picker is offered (Projects): "asOf" is also a
+      // real page parameter elsewhere (Profitability's month-end selector), and a menu that
+      // does not offer a date has no business touching it.
+      if (offerAsOf) {
+        qs.delete("asOf");
+        if (asOfValue) qs.set("asOf", asOfValue);
+      }
       qs.set("format", format);
 
       const res = await fetch(`/api/export/${report}?${qs.toString()}`, { cache: "no-store" });
