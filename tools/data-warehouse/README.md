@@ -5,6 +5,32 @@ server (SERVER-DC1, 10.0.0.6) into the `DataWarehouse` PostgreSQL database on
 SERVER-APP1, once a day, and modelled into Kimball dimensions and facts. Later
 phases add Total ETO (the job master) and the app databases.
 
+What comes next (operations, the full model from Power BI, a measure catalog,
+semantic search): [ROADMAP.md](ROADMAP.md).
+
+Taking apart Power BI, Fabric, Power Automate and the SharePoint copies, and what still
+depends on each: [DECOMMISSIONING.md](DECOMMISSIONING.md).
+
+## Open items (as of 2026-10-04)
+
+Most urgent first.
+
+1. **Done 2026-10-04:** Postgres runs as the `DataWarehousePostgres` Windows service
+   (`NetworkService`, automatic start, logs in `pgdata\log`), and the load is scheduled daily
+   at 06:30 (Task Scheduler `\DataWarehouse\Paylocity ingest`, runs as `jculp`, test run
+   succeeded as batch 7). The task stores Jon's Windows password: if he changes it, re-register
+   the task. Moving it to a dedicated service account is the lasting fix.
+2. **Updater fix, PR #82.** Without it, the next dependency change (e.g. a Dependabot merge)
+   breaks the production build again. After merging: `pm2 restart sdc-updater-hub`.
+3. **Firewall rule** for 5432 (below). The domain profile already allows inbound, so this is
+   belt and braces.
+4. **Backups** (below). The database and file archive are now the only copies of the
+   Paylocity data.
+5. **Windows sign-in from other PCs:** tested from the server only. If it fails from a PC, a
+   domain admin registers the Kerberos SPN (see Access).
+6. **Reports app's remaining Power BI and Fabric reads:** see DECOMMISSIONING.md before
+   switching either off.
+
 ```
 sql/      01_schema.sql             tracking tables ("Integration") and raw layer ("RawPaylocity")
           02_paylocity_staging.sql  typed staging views ("Paylocity")
@@ -28,6 +54,17 @@ join across databases in a query.
 | Staging | `"Paylocity"` | One view per report, typed (dates, numbers, true/false) with parsed codes beside the original text. Source-faithful: no business rules beyond picking the authoritative file for each year of hours |
 | Dimensions | `"Dimension"` | `"Date"` (2015–2035) and `"Employee"`: full history, a new version whenever a tracked attribute changes, soft delete when someone leaves the roster. Every dimension has an Unknown row, key -1 |
 | Facts | `"Fact"` | `"JobHours"`: one row per Paylocity punch, keyed to the employee version in effect on the work date, Travel relabelled (Not Defined → Concord, TRAVEL → Travel). Loaded by replacing whole years, since punches have no ID |
+
+**In medallion terms** (the same layering, different vocabulary):
+
+| Medallion | Here | Why it's this |
+|---|---|---|
+| Bronze | `"RawPaylocity"` + the file archive | As delivered, append-only, every version kept |
+| Silver | `"Paylocity"` staging views | Typed, cleaned, source rules applied. Views, not tables: the data is small, so nothing needs storing, but the layer still exists so parsing and source fixes live in one place |
+| Gold | `"Dimension"` + `"Fact"` | The Kimball dimensional model people and tools query |
+| (outside the layers) | `"Integration"` | Load tracking, settings and refresh functions |
+
+The schemas keep their descriptive names rather than Bronze/Silver/Gold; this table is the translation.
 
 The loader refreshes dimensions and facts at the end of every run by calling
 `"Integration"."RefreshWarehouse"()`, all or nothing. To refresh by hand:
@@ -72,8 +109,52 @@ in SQL too (`"DataWarehouse"`), but not in connection strings.
 | Logs | `D:\DataWarehouse\logs` |
 | Passwords | Windows Credential Manager of the account running the job: `datawarehouse-postgres` (logins `postgres`, `dw_loader`) and `datawarehouse-paylocity-sftp` (login `paylocity`) |
 
-**Network access:** anyone on the office network (`10.0.0.0/24`) can connect to
-`10.0.0.7:5432` with a login and password (`pg_hba.conf`, last two lines). The built-in
+## Access
+
+**People sign in with their Windows account** (no Postgres password) from the office
+network (`10.0.0.0/24`), connecting to `10.0.0.7:5432`, database `DataWarehouse`, with
+their Windows account name as the login (e.g. `dbelliveau`). Who has access is
+`sql/06_people.sql`; to add someone, add a line there and re-run it as a superuser.
+
+| Login | Who | Rights | Signs in with |
+|---|---|---|---|
+| `jculp` | Jon Culp | Superuser | Windows from the network; password on the server itself |
+| `mvest`, `sbemberkar`, `dbelliveau` | Moses Vest, Shashank Bemberkar, Dan Belliveau | Superuser | Windows |
+| `dw_loader` | The loader | Owns the database and its objects | Password |
+| `reports_app` | The reports app | Read-only | Password |
+| `postgres` | Built-in admin | Superuser | Password, on the server only |
+
+### Connecting from your PC
+
+Postgres has no instance names (nothing like SQL Server's `SERVER\INSTANCE`). A server is
+a **host and port**, and you pick a **database** on it:
+
+| Setting | Value |
+|---|---|
+| Host | `SERVER-APP1.stevendouglas.local` (or `10.0.0.7`) |
+| Port | `5432` |
+| Database | `DataWarehouse` (capital D and W) |
+| Username | your Windows account name, e.g. `mvest`, without `STEVENDOUGLAS\` |
+| Password | leave blank: Windows sign-in |
+
+- **pgAdmin 4:** Register → Server → Connection tab with the values above, password blank.
+- **DBeaver:** New connection → PostgreSQL, the values above, password blank, then on the
+  **Driver properties** tab set `gsslib` to `sspi`.
+- **psql:** `psql "host=SERVER-APP1.stevendouglas.local port=5432 dbname=DataWarehouse user=mvest"`
+- **Python (psycopg):** `psycopg.connect(host="SERVER-APP1.stevendouglas.local", dbname="DataWarehouse", user="mvest")`
+
+Remember the naming rule: PascalCase names need double quotes, e.g. `SELECT * FROM "Fact"."JobHours" LIMIT 10;`.
+
+How Windows sign-in is wired (server config files in `D:\DataWarehouse\pgdata`, not in git):
+- `pg_hba.conf`: `host all +windows_users 10.0.0.0/24 sspi map=windows`, ahead of the
+  password rule, so members of `windows_users` use Windows sign-in from the network.
+- `pg_ident.conf`: `windows /^(.*)@STEVENDOUGLAS$ \1` turns `jdoe@STEVENDOUGLAS` into login `jdoe`.
+- Clients: pgAdmin and `psql` use it automatically. DBeaver needs the connection's driver
+  property `gsslib` set to `sspi`. If sign-in fails from a PC (it works from the server), the
+  likely fix is a one-time Kerberos registration by a domain admin:
+  `setspn -S POSTGRES/SERVER-APP1.stevendouglas.local SERVER-APP1` (once Postgres runs as a service).
+
+**Network access in general:** password logins work from `10.0.0.0/24` too. The built-in
 `postgres` admin is refused from the network and only works on the server itself.
 To make sure Windows Firewall lets the connections in, run in an admin PowerShell:
 
@@ -81,10 +162,8 @@ To make sure Windows Firewall lets the connections in, run in an admin PowerShel
 New-NetFirewallRule -DisplayName "PostgreSQL DataWarehouse (5432)" -Direction Inbound -Protocol TCP -LocalPort 5432 -RemoteAddress 10.0.0.0/24 -Action Allow -Profile Domain,Private
 ```
 
-Logins: `postgres` is the built-in admin; `jculp` is a personal admin login for
-day-to-day querying; `dw_loader` owns `DataWarehouse` and is what the loader
-connects as. Get a password with `python -m keyring get datawarehouse-postgres <login>`,
-run as the Windows account that stored it.
+Passwords for the password logins: `python -m keyring get datawarehouse-postgres <login>`,
+run as the Windows account that stored them.
 
 ## What a run does
 
