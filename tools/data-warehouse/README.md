@@ -15,10 +15,11 @@ depends on each: [DECOMMISSIONING.md](DECOMMISSIONING.md).
 
 Most urgent first.
 
-1. **The daily load is not scheduled, and Postgres is not a service.** Postgres runs as a
-   process started by hand under `jculp`, so a reboot or logoff stops it, and nothing runs the
-   loader. Until both are done, new Paylocity files aren't loaded and the reports app shows
-   data frozen at the last manual run. Commands: "Setup still to do" below.
+1. **Done 2026-10-04:** Postgres runs as the `DataWarehousePostgres` Windows service
+   (`NetworkService`, automatic start, logs in `pgdata\log`), and the load is scheduled daily
+   at 06:30 (Task Scheduler `\DataWarehouse\Paylocity ingest`, runs as `jculp`, test run
+   succeeded as batch 7). The task stores Jon's Windows password: if he changes it, re-register
+   the task. Moving it to a dedicated service account is the lasting fix.
 2. **Updater fix, PR #82.** Without it, the next dependency change (e.g. a Dependabot merge)
    breaks the production build again. After merging: `pm2 restart sdc-updater-hub`.
 3. **Firewall rule** for 5432 (below). The domain profile already allows inbound, so this is
