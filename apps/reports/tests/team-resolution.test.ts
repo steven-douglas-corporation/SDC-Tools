@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveTeams, pendingTeamChanges, planTeamWrites, pickFamily, type TeamPerson } from "../src/lib/team-resolution";
+import { resolveTeams, pendingTeamChanges, planTeamWrites, pickFamily, departmentLeads, type TeamPerson } from "../src/lib/team-resolution";
 import type { PositionFamilyRow } from "../src/lib/position-families-parse";
 
 // The reporting-line team rule (2026-10-02). See the header of
@@ -94,4 +94,23 @@ test("planTeamWrites: hidden people too, never Leadership, never a blank", () =>
   assert.ok(!writes.some((w) => w.id === 2 || w.id === 3), "Leadership is never written");
   assert.ok(!writes.some((w) => w.id === 60), "no proposal, no write");
   assert.deepEqual(planTeamWrites(people.map((x) => ({ ...x, team: writes.find((w) => w.id === x.id)?.to ?? x.team })), ROWS), [], "a second pass writes nothing");
+});
+
+test("departmentLeads: the top of each team, only when it is the one top and leads someone", () => {
+  const rows = [...ROWS, fam("SAE", "105"), fam("BDM", "105")];
+  const people = [
+    ...PEOPLE,
+    p(80, "Ashley Cohen", "PRES", 1, "growth"), // Leadership, so Sales below reports straight to it
+    p(81, "David Culbertson", "SAE", 80),
+    p(82, "Jason Hitchcock", "BDM", 80),
+    p(90, "Shashank Bemberkar", "AII", 1),
+    { ...p(91, "Hidden Builder", "ME SR", 30, "mech"), active: false },
+  ];
+  const leads = departmentLeads(people, resolveTeams(people, rows));
+  const names = (ids: Set<number>) => people.filter((x) => ids.has(x.id)).map((x) => x.name).sort();
+  assert.deepEqual(names(leads), ["Michael Czenszak", "Monica Saggio", "Patrick Laffey"]);
+  // Sales: two people each report straight to Leadership — no single top.
+  // AI: Moses and Shashank both report to the President — no star either.
+  // Finance: Sandra heads it alone but nobody reports to her.
+  assert.ok(!leads.has(81) && !leads.has(82) && !leads.has(50) && !leads.has(90) && !leads.has(40));
 });

@@ -12,7 +12,7 @@ import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";
 import { getHiringPositions, redactHiddenPositions } from "@/lib/hiring-positions";
 import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
-import { resolveTeams } from "@/lib/team-resolution";
+import { resolveTeams, departmentLeads } from "@/lib/team-resolution";
 import { buildOrgChart } from "@/lib/org-chart";
 import type { PositionFamilyRow } from "@/lib/position-families-parse";
 
@@ -51,6 +51,7 @@ export async function EmployeesView() {
   const families = familyRows.map((r) => ({ ...r, source: r.source as PositionFamilyRow["source"] }));
   const peopleForRule = employees.map((e) => ({ ...e, team: teamById.get(e.id) ?? null }));
   const teamRule = resolveTeams(peopleForRule, families);
+  const leads = departmentLeads(peopleForRule, teamRule);
   const orgChart = buildOrgChart(peopleForRule, families);
 
   // id → name across the WHOLE roster, so a supervisor who has since been
@@ -71,7 +72,9 @@ export async function EmployeesView() {
       active: e.active,
       billingGroup: e.billingGroup ?? "",
       paylocityId: e.paylocityId ?? "",
-      isLead: overlay?.isLead ?? false,
+      // The ★ is the top of each team by reporting line (lib/team-resolution.ts
+      // departmentLeads), no longer Scheduler's is_lead checkbox.
+      isLead: leads.has(e.id),
       isLeadership: teamRule.get(e.id)?.leader ?? false,
       specialty: overlay?.specialty ?? null,
       sortOrder: overlay?.sortOrder ?? null,

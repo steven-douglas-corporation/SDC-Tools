@@ -34,9 +34,10 @@ export type EmployeeRow = {
   active: boolean;
   billingGroup: string;
   paylocityId: string;
-  // Live from Scheduler's team_members (employee-scheduler-overlay.ts) — real
-  // columns Reports has no equivalent of and does not own. false/null when
-  // there's no Scheduler match at all (not yet reconciled).
+  // The ★ department lead: the top of the person's team by reporting line
+  // (team-resolution.ts departmentLeads, 2026-10-05). specialty/sortOrder below
+  // are still live from Scheduler's team_members (employee-scheduler-overlay.ts) —
+  // false/null when there's no Scheduler match at all (not yet reconciled).
   isLead: boolean;
   // Leadership: their position code is in family 100 (2026-10-02). Badged, and
   // listed first on whichever card they sit on — see lib/team-resolution.ts.
