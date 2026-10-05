@@ -22,7 +22,7 @@ const TREE_LI =
 
 type Ctx = { people: Map<number, EmployeeRow>; onSelect?: (row: EmployeeRow) => void; leadershipCard?: boolean };
 
-// Temps (not in Paylocity) leave the tree for the darker section at the bottom
+// Contractors (not in Paylocity) leave the tree for the darker section at the bottom
 // of their card, as on Cards (2026-10-05). Anyone reporting to a temp moves up
 // to the temp's place, so nobody disappears with them.
 function splitTemps(nodes: OrgNode[], ctx: Ctx): { tree: OrgNode[]; temps: OrgNode[] } {
