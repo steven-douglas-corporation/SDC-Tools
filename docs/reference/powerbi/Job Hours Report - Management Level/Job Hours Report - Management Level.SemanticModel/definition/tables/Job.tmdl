@@ -1,0 +1,309 @@
+table Job
+	lineageTag: f89d410a-95c3-40e0-a200-a22ccf092131
+
+	column Job
+		dataType: string
+		lineageTag: b37e17da-c439-4b51-acbe-0a4fd998bb13
+		summarizeBy: none
+		sourceColumn: Job
+		sortByColumn: 'Job Order'
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Overrun' = IF([Is Overrun] = TRUE(),TRUE(),FALSE())
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: e57c46ca-86dd-4c93-b342-e91ec0b5e224
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Shop Overrun' = IF([Is Shop Overrun] = TRUE(),TRUE(),FALSE())
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: d2e05521-d0e7-4b57-a7b5-a148bb635590
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Engineering Overrun' = IF([Is Engineering Overrun] = TRUE(),TRUE(),FALSE())
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 902e7022-a345-433f-af50-e87f564868ee
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Overrun Description' =
+			
+			switch(
+			    true(),
+			    and([Is Engineering Overrun] = TRUE(), [Is Shop Overrun] = TRUE()), "Engineering and Shop",
+			    [Is Engineering Overrun] = TRUE(), "Engineering",
+			    [Is Shop Overrun] = TRUE(), "Shop",
+			    "No Overrun"
+			)
+		lineageTag: b3086a12-1a8a-488f-b84a-8aba6fe9c24c
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Id'
+		dataType: string
+		lineageTag: f872595f-42d8-481e-938e-b600ab676c21
+		summarizeBy: none
+		sourceColumn: Job Id
+		sortByColumn: 'Job Order'
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Name'
+		dataType: string
+		lineageTag: d9428ed5-51b0-4589-83b3-095ffad27a51
+		summarizeBy: none
+		sourceColumn: Job Name
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Customer'
+		dataType: string
+		lineageTag: dc85b4e0-fe14-46e8-b25d-eedd903a5f4e
+		summarizeBy: none
+		sourceColumn: Job Customer
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Type'
+		dataType: string
+		lineageTag: 16f158fe-bb44-4b96-b879-cef1bffa2d54
+		summarizeBy: none
+		sourceColumn: Job Type
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Estimated Job'
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 5ca154c9-df5b-47af-86b5-57eaa156073d
+		summarizeBy: none
+		sourceColumn: Is Estimated Job
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Status'
+		dataType: string
+		lineageTag: dbd3495e-37a1-4aec-8f40-d3ecf0050bee
+		summarizeBy: none
+		sourceColumn: Job Status
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Data Source'
+		dataType: string
+		lineageTag: 4760c9f1-753b-4b6a-aafd-7bb3b4e2a9ef
+		summarizeBy: none
+		sourceColumn: Data Source
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Active Job'
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: f5d4f529-3617-437e-a254-d46d86922671
+		summarizeBy: none
+		sourceColumn: Is Active Job
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Has Hours Since Estimate' = ```
+			
+			IF(
+			    'Job'[Job Status] = "Active" || 
+			    CALCULATE([Hours Actual, Est to Date]) > 0,
+			    TRUE(),
+			    FALSE()
+			)
+			```
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 2bacb365-e7ff-44c0-a0fd-63b01c3d5c03
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Order'
+		dataType: double
+		lineageTag: 96342d48-94ed-420a-8f41-1f3fc1847c02
+		summarizeBy: sum
+		sourceColumn: Job Order
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Complete Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 6fe567bd-279e-4011-becf-335edd863b85
+		summarizeBy: none
+		sourceColumn: Complete Date
+
+		variation Variation
+			isDefault
+			relationship: c2dc278b-304a-42d9-924d-3ddf9a666a60
+			defaultHierarchy: LocalDateTable_56cce41d-a462-4bf5-814e-95e2e2f36607.'Date Hierarchy'
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Include in Type Calc'
+		dataType: string
+		lineageTag: 46fd2d8a-c90b-4b46-b298-54107aba47ab
+		summarizeBy: none
+		sourceColumn: Include in Type Calc
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Start Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: cc77a628-3e8a-400b-8c7a-903bf6e52935
+		summarizeBy: none
+		sourceColumn: Start Date
+
+		variation Variation
+			isDefault
+			relationship: 1e5c180b-545f-44e4-ba70-75a031fbcd30
+			defaultHierarchy: LocalDateTable_e3118963-dce4-4441-9001-91ec20334a73.'Date Hierarchy'
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Effective Close Date' =
+			
+			// Active jobs: BLANK (always treated as open)
+			// Complete jobs with a recorded close date: use that date
+			// Complete jobs with no close date: use max valid hours date as a proxy
+			IF(
+			    'Job'[Job Status] <> "Complete",
+			    BLANK(),
+			    IF(
+			        NOT(ISBLANK('Job'[Complete Date])),
+			        'Job'[Complete Date],
+			        CALCULATE(
+			            MAX('Hours Actual'[Date]),
+			            NOT(LEFT('Hours Actual'[Section-Function Code], 2) IN {"98"}),
+			            NOT('Hours Actual'[Job Id] IN {"4000","1083","7000","10000"})
+			        )
+			    )
+			)
+		dataType: dateTime
+		isHidden
+		formatString: Short Date
+		lineageTag: a1b2c3d4-e5f6-7890-abcd-ef0987654321
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Is Complete Date Missing' = 'Job'[Job Status] = "Complete" && ISBLANK('Job'[Complete Date])
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: b2c3d4e5-f6a7-8901-bcde-f01234567890
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Complete Date Calculated' = 'Job'[Job Status] = "Complete" && ISBLANK('Job'[Complete Date]) && NOT(ISBLANK('Job'[Effective Close Date]))
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: c3d4e5f6-a7b8-9012-cdef-012345678901
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Job = m
+		mode: import
+		queryGroup: Dimensions
+		source = ```
+				let
+				    Source = #"Hours Estimated Import",
+				    #"Removed Top Rows" = Table.Skip(Source,7),
+				    #"Promoted Headers" = Table.PromoteHeaders(#"Removed Top Rows", [PromoteAllScalars=true]),
+				    #"Removed Other Columns" = Table.SelectColumns(#"Promoted Headers",{"Job#", "Status","Start Date", "Complete Date", "Description", "Customer", "Type","Include in Type Calc"}),
+				    #"Filtered Rows1" = Table.SelectRows(#"Removed Other Columns", each ([#"Job#"] <> null)),
+				    #"Renamed Columns" = Table.RenameColumns(#"Filtered Rows1",{{"Job#", "Job Id"}, {"Description", "Job Name"}, {"Customer", "Job Customer"}, {"Type", "Job Type"}, {"Status", "Job Status"}}),
+				    #"Added Custom1" = Table.AddColumn(#"Renamed Columns", "Is Estimated Job", each true),
+				    #"Added Custom2" = Table.AddColumn(#"Added Custom1", "Data Source", each "Estimated Hours"),
+				    #"Appended Query" = Table.Combine({#"Added Custom2", #"Job from Hours Actual"}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Appended Query",{{"Job Id", type text}}),
+				    
+				    // Trim whitespace from Job Id column
+				    #"Trimmed Job Id" = Table.TransformColumns(#"Changed Type", {{"Job Id", Text.Trim, type text}}),
+				    
+				    // Normalize the Job Id case (convert to uppercase)
+				    #"Normalized Job Id Case" = Table.TransformColumns(#"Trimmed Job Id", {{"Job Id", Text.Upper, type text}}),
+				
+				    // Add leading zero to 3-digit numeric Job Ids
+				    #"Padded Job Id" = Table.TransformColumns(#"Normalized Job Id Case", {{"Job Id", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}}),
+				
+				    // Replace null Job Name with Job Id after all transformations but before creating the Job column
+				    #"Replaced Null Job Name" = Table.ReplaceValue(
+				        #"Padded Job Id",
+				        null,
+				        each [Job Id],
+				        Replacer.ReplaceValue,
+				        {"Job Name"}
+				    ),
+				    
+				    #"Added Job" = Table.AddColumn(#"Replaced Null Job Name", "Job", each if [Job Id] = "NOT DEFINED" then [Job Id]
+				        else if (Text.Contains(Text.Lower([Job Id]),"service") or Text.Contains(Text.Lower([Job Id]),"spare"))
+				        then [Job Id]
+				        else if (Text.Contains(Text.Lower([Job Name]),"service") or Text.Contains(Text.Lower([Job Name]),"spare"))
+				        then [Job Name]
+				        else Text.From([Job Id])&"-"&[Job Name]),
+				    
+				    // Use the normalized Job Id for removing duplicates
+				    #"Removed Duplicates" = Table.Distinct(#"Added Job", {"Job Id"}),
+				    #"Replaced Job Customer" = 
+				        Table.ReplaceValue(
+				        #"Removed Duplicates",
+				        null,
+				        each if [Job Id] = "4000" then "Non Billable" 
+				            else "Not Defined",
+				        Replacer.ReplaceValue,
+				        {"Job Customer"}
+				        ),
+				    #"Replaced Job Type" = 
+				        Table.ReplaceValue(
+				        #"Replaced Job Customer",
+				        null,
+				        each if [Job Id] = "4000" then "Non Billable" 
+				            else "Not Defined",
+				        Replacer.ReplaceValue,
+				        {"Job Type"}
+				        ),
+				    #"Added Is Active Job" = Table.AddColumn(#"Replaced Job Type", "Is Active Job", each if [Job Status] = "Active" then true
+				    else false),
+				    #"Changed Type1" = Table.TransformColumnTypes(#"Added Is Active Job",{{"Is Active Job", type logical}}),
+				    #"Replaced Value" = Table.ReplaceValue(#"Changed Type1",null,"Complete",Replacer.ReplaceValue,{"Job Status"}),
+				    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value",null,false,Replacer.ReplaceValue,{"Is Estimated Job"}),
+				    #"Changed Type2" = Table.TransformColumnTypes(#"Replaced Value1",{{"Is Estimated Job", type logical}}),
+				    #"Replaced Value2" = Table.ReplaceValue(#"Changed Type2",null,"Actual Hours",Replacer.ReplaceValue,{"Data Source"}),
+				    
+				    #"Added Job Order" = Table.AddIndexColumn(#"Replaced Value2", "Job Order", 1, 1)
+				in
+				    #"Added Job Order"
+				```
+
+	annotation PBI_ResultType = Table
+
+	annotation PBI_NavigationStepName = Navigation
+

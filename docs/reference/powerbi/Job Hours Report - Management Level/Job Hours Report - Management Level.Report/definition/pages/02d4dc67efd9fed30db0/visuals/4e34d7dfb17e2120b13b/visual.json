@@ -1,0 +1,153 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "4e34d7dfb17e2120b13b",
+  "position": {
+    "x": 9.76566757493188,
+    "y": 128.34877384196184,
+    "z": 2000,
+    "height": 272.74114441416896,
+    "width": 1270.234332425068,
+    "tabOrder": 2000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Is Total"
+                }
+              },
+              "queryRef": "Function Hierarchy.Is Total",
+              "nativeQueryRef": "Is Total"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Function Name"
+                }
+              },
+              "queryRef": "Function Hierarchy.Function Name",
+              "nativeQueryRef": "Function Name"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Section Function Name"
+                }
+              },
+              "queryRef": "Function Hierarchy.Section Function Name",
+              "nativeQueryRef": "Section Function Name"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Section Function Order"
+                }
+              },
+              "queryRef": "Function Hierarchy.Section Function Order",
+              "nativeQueryRef": "Section Function Order"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Section Function Name Dynamic"
+                }
+              },
+              "queryRef": "Function Hierarchy.Section Function Name Dynamic",
+              "nativeQueryRef": "Section Function Name Dynamic1"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Section Function Name Dynamic Order"
+                }
+              },
+              "queryRef": "Sum(Function Hierarchy.Section Function Name Dynamic Order)",
+              "nativeQueryRef": "Section Function Name Dynamic Order1"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Hours Actual"
+                }
+              },
+              "queryRef": "Measure Tables.Hours Actual",
+              "nativeQueryRef": "Hours Actual"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Hours Quoted"
+                }
+              },
+              "queryRef": "Measure Tables.Hours Quoted",
+              "nativeQueryRef": "Hours Quoted"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "Function Hierarchy"
+                  }
+                },
+                "Property": "Section Function Order"
+              }
+            },
+            "direction": "Ascending"
+          }
+        ]
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

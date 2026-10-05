@@ -1,0 +1,48 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "name": "d5a9132576d259e9244f",
+  "displayName": "Engineering Hours Detail",
+  "displayOption": "FitToPage",
+  "height": 720,
+  "width": 1280,
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "c6a04962c73afef73fce",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Engineering Hours"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "Drillthrough"
+      }
+    ]
+  },
+  "pageBinding": {
+    "name": "554007a47fb76428e25b",
+    "type": "Drillthrough",
+    "parameters": [
+      {
+        "name": "5e96fd8c01e4b63f4b01",
+        "boundFilter": "c6a04962c73afef73fce",
+        "fieldExpr": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Engineering Hours"
+          }
+        }
+      }
+    ]
+  },
+  "visibility": "HiddenInViewMode"
+}

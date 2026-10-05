@@ -1,0 +1,50 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "name": "d16b827f7dcdb0825e10",
+  "displayName": "SDC MFR PARTS Detail",
+  "displayOption": "FitToPage",
+  "height": 720,
+  "width": 1280,
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "dbbfc3614bd4cb450339",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "SDC Manufactured Parts Sales Price"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "Drillthrough"
+      }
+    ]
+  },
+  "pageBinding": {
+    "name": "e706c86de8cea0d63e58",
+    "type": "Drillthrough",
+    "parameters": [
+      {
+        "name": "1ff0af129c8d8d300090",
+        "boundFilter": "dbbfc3614bd4cb450339",
+        "asAggregation": false,
+        "qnaSingleSelectRequired": false,
+        "fieldExpr": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "SDC Manufactured Parts Sales Price"
+          }
+        }
+      }
+    ]
+  },
+  "visibility": "HiddenInViewMode"
+}

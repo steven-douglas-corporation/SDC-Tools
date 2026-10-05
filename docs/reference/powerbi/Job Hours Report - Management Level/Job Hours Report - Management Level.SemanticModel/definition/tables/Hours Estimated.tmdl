@@ -1,0 +1,91 @@
+table 'Hours Estimated'
+	isHidden
+	lineageTag: 3c3de025-dd23-44ad-a415-bebbba6ccc03
+
+	column 'Job Id'
+		dataType: string
+		isHidden
+		lineageTag: f1aa51f5-7410-4ec8-b3b2-7528d9ff63b4
+		summarizeBy: none
+		sourceColumn: Job Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section-Function Code'
+		dataType: string
+		isHidden
+		lineageTag: fe849fd1-2d1f-4c31-9728-4aa8e527bb1f
+		summarizeBy: none
+		sourceColumn: Section-Function Code
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Hours Quoted'
+		dataType: double
+		lineageTag: 2ac04185-43ae-456d-b5fc-d4fc36c0c1a9
+		summarizeBy: sum
+		sourceColumn: Hours Quoted
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Hours Estimated to Complete'
+		dataType: double
+		lineageTag: 84f03bae-72c0-43ed-ad66-eb7548e2da34
+		summarizeBy: sum
+		sourceColumn: Hours Estimated to Complete
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Hours ME Estimated to Complete'
+		dataType: double
+		lineageTag: aab862c7-a5a9-41f0-9d87-01d5b846ab1b
+		summarizeBy: sum
+		sourceColumn: Hours ME Estimated to Complete
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Job Section Function Code'
+		dataType: string
+		lineageTag: 6bdb3a07-c457-411b-86d2-2ad5deb4f421
+		summarizeBy: none
+		sourceColumn: Job Section Function Code
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Hours Estimated' = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				    Source = Table.Combine({#"Hours Quoted", #"Hours Estimated to Complete", #"Hours ME Estimated to Complete"}),
+				    #"Removed Columns" = Table.RemoveColumns(Source,{"Hours Quoted", "Hours Estimated to Complete", "Hours ME"}),
+				    #"Removed Duplicates" = Table.Distinct(#"Removed Columns"),
+				    #"Merged Queries" = Table.NestedJoin(#"Removed Duplicates", {"Job Id", "Function Hierarchy Id"}, #"Hours Quoted", {"Job Id", "Function Hierarchy Id"}, "Hours Quoted", JoinKind.LeftOuter),
+				    #"Expanded Hours Quoted" = Table.ExpandTableColumn(#"Merged Queries", "Hours Quoted", {"Hours Quoted"}, {"Hours Quoted"}),
+				    #"Merged Queries2" = Table.NestedJoin(#"Expanded Hours Quoted", {"Job Id", "Function Hierarchy Id"}, #"Hours Estimated to Complete", {"Job Id", "Function Hierarchy Id"}, "Hours Estimated to Complete", JoinKind.FullOuter),
+				    #"Expanded Hours Estimated to Complete" = Table.ExpandTableColumn(#"Merged Queries2", "Hours Estimated to Complete", {"Hours Estimated to Complete"}, {"Hours Estimated to Complete"}),
+				    #"Merged Queries3" = Table.NestedJoin(#"Expanded Hours Estimated to Complete", {"Job Id", "Function Hierarchy Id"}, #"Hours ME Estimated to Complete", {"Job Id", "Function Hierarchy Id"}, "Hours ME Import", JoinKind.LeftOuter),
+				    #"Expanded Hours ME Import" = Table.ExpandTableColumn(#"Merged Queries3", "Hours ME Import", {"Hours ME"}, {"Hours ME Estimated to Complete"}),
+				    #"Replaced Value" = Table.ReplaceValue(#"Expanded Hours ME Import",null,0,Replacer.ReplaceValue,{"Hours Quoted", "Hours Estimated to Complete", "Hours ME Estimated to Complete"}),
+				    #"Renamed Columns" = Table.RenameColumns(#"Replaced Value",{{"Function Hierarchy Id", "Section-Function Code"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns",{{"Job Id", type text}}),
+				    #"Added Custom" = Table.AddColumn(#"Changed Type", "Job Section Function Code", each [Job Id]&"|"&[#"Section-Function Code"])
+				in
+				    #"Added Custom"
+
+	changedProperty = IsHidden
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

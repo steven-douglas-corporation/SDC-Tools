@@ -1,0 +1,1237 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/bookmark/2.1.0/schema.json",
+  "displayName": "Project Portfolio",
+  "name": "b4e993589192949b0de4",
+  "options": {
+    "targetVisualNames": []
+  },
+  "explorationState": {
+    "version": "1.3",
+    "activeSection": "d4c13ebe2747019f9ebe",
+    "sections": {
+      "d4c13ebe2747019f9ebe": {
+        "filters": {
+          "byExpr": [
+            {
+              "name": "ad8e852d0a165b5e058a",
+              "type": "Categorical",
+              "filter": {
+                "Version": 2,
+                "From": [
+                  {
+                    "Name": "f",
+                    "Entity": "Function Hierarchy",
+                    "Type": 0
+                  }
+                ],
+                "Where": [
+                  {
+                    "Condition": {
+                      "In": {
+                        "Expressions": [
+                          {
+                            "Column": {
+                              "Expression": {
+                                "SourceRef": {
+                                  "Source": "f"
+                                }
+                              },
+                              "Property": "Is Total"
+                            }
+                          }
+                        ],
+                        "Values": [
+                          [
+                            {
+                              "Literal": {
+                                "Value": "false"
+                              }
+                            }
+                          ]
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Function Hierarchy"
+                    }
+                  },
+                  "Property": "Is Total"
+                }
+              },
+              "howCreated": 1
+            }
+          ]
+        },
+        "visualContainers": {
+          "3f37082f7835e347d381": {
+            "filters": {
+              "byExpr": [
+                {
+                  "name": "21f213a54012836505e0",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Billing Group"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "83e4368f29105bd65965",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Billing Group"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "6c0b537891464e4709d5",
+                  "type": "Advanced",
+                  "expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Hours Actual"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "ae1684a3a0e5259064bb",
+                  "type": "Advanced",
+                  "expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Hours Quoted"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "7bfdf7030bd7de068447",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Job"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "44c1ad5c20e3c19215d1",
+                  "type": "Categorical",
+                  "filter": {
+                    "Version": 2,
+                    "From": [
+                      {
+                        "Name": "j",
+                        "Entity": "Job",
+                        "Type": 0
+                      }
+                    ],
+                    "Where": [
+                      {
+                        "Condition": {
+                          "In": {
+                            "Expressions": [
+                              {
+                                "Column": {
+                                  "Expression": {
+                                    "SourceRef": {
+                                      "Source": "j"
+                                    }
+                                  },
+                                  "Property": "Is Active Job"
+                                }
+                              }
+                            ],
+                            "Values": [
+                              [
+                                {
+                                  "Literal": {
+                                    "Value": "true"
+                                  }
+                                }
+                              ]
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Is Active Job"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "ec995c002e11a0a5a967",
+                  "type": "Categorical",
+                  "filter": {
+                    "Version": 2,
+                    "From": [
+                      {
+                        "Name": "f",
+                        "Entity": "Function Hierarchy",
+                        "Type": 0
+                      }
+                    ],
+                    "Where": [
+                      {
+                        "Condition": {
+                          "Not": {
+                            "Expression": {
+                              "In": {
+                                "Expressions": [
+                                  {
+                                    "Column": {
+                                      "Expression": {
+                                        "SourceRef": {
+                                          "Source": "f"
+                                        }
+                                      },
+                                      "Property": "Section"
+                                    }
+                                  }
+                                ],
+                                "Values": [
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'70-Warranty'"
+                                      }
+                                    }
+                                  ],
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'80-Service'"
+                                      }
+                                    }
+                                  ],
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'90-Spare Parts'"
+                                      }
+                                    }
+                                  ],
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'98-Invalid'"
+                                      }
+                                    }
+                                  ]
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Section"
+                    }
+                  },
+                  "howCreated": 1
+                }
+              ]
+            },
+            "singleVisual": {
+              "visualType": "hundredPercentStackedBarChart",
+              "objects": {},
+              "orderBy": [
+                {
+                  "Direction": 2,
+                  "Expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Engineering Utilization %"
+                    }
+                  }
+                }
+              ],
+              "activeProjections": {
+                "Category": [
+                  {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Job"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "28c6b797871cd9020183": {
+            "filters": {
+              "byExpr": [
+                {
+                  "name": "70a26b80b723034ab31a",
+                  "type": "Categorical",
+                  "filter": {
+                    "Version": 2,
+                    "From": [
+                      {
+                        "Name": "f",
+                        "Entity": "Function Hierarchy",
+                        "Type": 0
+                      }
+                    ],
+                    "Where": [
+                      {
+                        "Condition": {
+                          "Not": {
+                            "Expression": {
+                              "In": {
+                                "Expressions": [
+                                  {
+                                    "Column": {
+                                      "Expression": {
+                                        "SourceRef": {
+                                          "Source": "f"
+                                        }
+                                      },
+                                      "Property": "Section"
+                                    }
+                                  }
+                                ],
+                                "Values": [
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'70-Warranty'"
+                                      }
+                                    }
+                                  ],
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'80-Service'"
+                                      }
+                                    }
+                                  ],
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'90-Spare Parts'"
+                                      }
+                                    }
+                                  ],
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'98-Invalid'"
+                                      }
+                                    }
+                                  ]
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Section"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "f59d05eba0750be904e5",
+                  "type": "Categorical",
+                  "filter": {
+                    "Version": 2,
+                    "From": [
+                      {
+                        "Name": "j",
+                        "Entity": "Job",
+                        "Type": 0
+                      }
+                    ],
+                    "Where": [
+                      {
+                        "Condition": {
+                          "In": {
+                            "Expressions": [
+                              {
+                                "Column": {
+                                  "Expression": {
+                                    "SourceRef": {
+                                      "Source": "j"
+                                    }
+                                  },
+                                  "Property": "Is Active Job"
+                                }
+                              }
+                            ],
+                            "Values": [
+                              [
+                                {
+                                  "Literal": {
+                                    "Value": "true"
+                                  }
+                                }
+                              ]
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Is Active Job"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "ab8e0dc15d0d10602383",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Billing Group"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "9b65faab9d14056844c0",
+                  "type": "Advanced",
+                  "expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Hours ETC Variance, Cumulative"
+                    }
+                  },
+                  "howCreated": 0
+                }
+              ]
+            },
+            "singleVisual": {
+              "visualType": "clusteredColumnChart",
+              "objects": {},
+              "orderBy": [
+                {
+                  "Direction": 2,
+                  "Expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Hours Quoted"
+                    }
+                  }
+                }
+              ],
+              "activeProjections": {
+                "Category": [
+                  {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Billing Group"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "4a0aa4929893a1028b97": {
+            "filters": {
+              "byExpr": [
+                {
+                  "name": "ac2ad18107bc9cc70560",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Billing Group"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "f83c883302ce41c06136",
+                  "type": "Advanced",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Date"
+                        }
+                      },
+                      "Property": "Date"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "81f0f903973217398aff",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Function Department Name"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "4d5410150129b0717756",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Function Name"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "44e46e96080527036810",
+                  "type": "Advanced",
+                  "expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Hours ETC Variance"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "23fddef3c2cc148c8276",
+                  "type": "Categorical",
+                  "filter": {
+                    "Version": 2,
+                    "From": [
+                      {
+                        "Name": "j",
+                        "Entity": "Job",
+                        "Type": 0
+                      }
+                    ],
+                    "Where": [
+                      {
+                        "Condition": {
+                          "In": {
+                            "Expressions": [
+                              {
+                                "Column": {
+                                  "Expression": {
+                                    "SourceRef": {
+                                      "Source": "j"
+                                    }
+                                  },
+                                  "Property": "Is Active Job"
+                                }
+                              }
+                            ],
+                            "Values": [
+                              [
+                                {
+                                  "Literal": {
+                                    "Value": "true"
+                                  }
+                                }
+                              ]
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Is Active Job"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "daf961f8b53d073c95b0",
+                  "type": "Categorical",
+                  "filter": {
+                    "Version": 2,
+                    "From": [
+                      {
+                        "Name": "f",
+                        "Entity": "Function Hierarchy",
+                        "Type": 0
+                      }
+                    ],
+                    "Where": [
+                      {
+                        "Condition": {
+                          "Not": {
+                            "Expression": {
+                              "In": {
+                                "Expressions": [
+                                  {
+                                    "Column": {
+                                      "Expression": {
+                                        "SourceRef": {
+                                          "Source": "f"
+                                        }
+                                      },
+                                      "Property": "Section"
+                                    }
+                                  }
+                                ],
+                                "Values": [
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'80-Service'"
+                                      }
+                                    }
+                                  ],
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'90-Spare Parts'"
+                                      }
+                                    }
+                                  ],
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'98-Invalid'"
+                                      }
+                                    }
+                                  ],
+                                  [
+                                    {
+                                      "Literal": {
+                                        "Value": "'70-Warranty'"
+                                      }
+                                    }
+                                  ]
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Section"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "3a00c45427163097b679",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Section Name"
+                    }
+                  },
+                  "howCreated": 0
+                }
+              ]
+            },
+            "singleVisual": {
+              "visualType": "clusteredColumnChart",
+              "objects": {},
+              "orderBy": [
+                {
+                  "Direction": 1,
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Section"
+                    }
+                  }
+                },
+                {
+                  "Direction": 1,
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Section Function Group"
+                    }
+                  }
+                }
+              ],
+              "activeProjections": {
+                "Category": [
+                  {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Function Department Name"
+                    }
+                  },
+                  {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Function Name"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "35b0133c473f2446fe18": {
+            "filters": {
+              "byExpr": [
+                {
+                  "name": "74a30deab72709a390cb",
+                  "type": "Advanced",
+                  "expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Jobs"
+                    }
+                  },
+                  "howCreated": 0
+                }
+              ]
+            },
+            "singleVisual": {
+              "visualType": "card",
+              "objects": {},
+              "orderBy": [
+                {
+                  "Direction": 2,
+                  "Expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Jobs"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "be410cee4295c1dc9bd3": {
+            "singleVisual": {
+              "visualType": "shape",
+              "objects": {}
+            }
+          },
+          "bec2c3eae1a8ae812f09": {
+            "singleVisual": {
+              "visualType": "image",
+              "objects": {}
+            }
+          },
+          "b6af11213e224a0b5ff2": {
+            "filters": {
+              "byExpr": [
+                {
+                  "name": "ab083b85167ca4b78000",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Function Hierarchy"
+                        }
+                      },
+                      "Property": "Billing Group"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "5ca0c9056c8e75a45f07",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Is Overrun"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "6538bb02d300a080ba85",
+                  "type": "Advanced",
+                  "expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Hours Quoted Remaining"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "a606c58af1f526be3227",
+                  "type": "Advanced",
+                  "expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Hours Refreshed Thru"
+                    }
+                  },
+                  "howCreated": 0
+                }
+              ]
+            },
+            "singleVisual": {
+              "visualType": "card",
+              "objects": {},
+              "orderBy": [
+                {
+                  "Direction": 1,
+                  "Expression": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measure Tables"
+                        }
+                      },
+                      "Property": "Hours Refreshed Thru"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "64d3bbf6045b88944192": {
+            "filters": {
+              "byExpr": [
+                {
+                  "name": "72159021cdc4c94d0b8d",
+                  "type": "Categorical",
+                  "filter": {
+                    "Version": 2,
+                    "From": [
+                      {
+                        "Name": "j",
+                        "Entity": "Job",
+                        "Type": 0
+                      }
+                    ],
+                    "Where": [
+                      {
+                        "Condition": {
+                          "In": {
+                            "Expressions": [
+                              {
+                                "Column": {
+                                  "Expression": {
+                                    "SourceRef": {
+                                      "Source": "j"
+                                    }
+                                  },
+                                  "Property": "Is Active Job"
+                                }
+                              }
+                            ],
+                            "Values": [
+                              [
+                                {
+                                  "Literal": {
+                                    "Value": "true"
+                                  }
+                                }
+                              ]
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Is Active Job"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "16eb77faa7ce67e80729",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Job Customer"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "7df2d944da0b805db347",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Job Type"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "c8718a3d19357c1fe9fe",
+                  "type": "Advanced",
+                  "expression": {
+                    "Aggregation": {
+                      "Expression": {
+                        "Column": {
+                          "Expression": {
+                            "SourceRef": {
+                              "Entity": "Job"
+                            }
+                          },
+                          "Property": "Job Id"
+                        }
+                      },
+                      "Function": 5
+                    }
+                  },
+                  "howCreated": 0
+                }
+              ]
+            },
+            "singleVisual": {
+              "visualType": "pivotTable",
+              "objects": {},
+              "activeProjections": {
+                "Rows": [
+                  {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Job Customer"
+                    }
+                  }
+                ],
+                "Columns": [
+                  {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Job Type"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "7bcee5077513792eec9c": {
+            "filters": {
+              "byExpr": [
+                {
+                  "name": "e31fb741e5a0ab0c5c01",
+                  "type": "Categorical",
+                  "filter": {
+                    "Version": 2,
+                    "From": [
+                      {
+                        "Name": "j",
+                        "Entity": "Job",
+                        "Type": 0
+                      }
+                    ],
+                    "Where": [
+                      {
+                        "Condition": {
+                          "In": {
+                            "Expressions": [
+                              {
+                                "Column": {
+                                  "Expression": {
+                                    "SourceRef": {
+                                      "Source": "j"
+                                    }
+                                  },
+                                  "Property": "Is Active Job"
+                                }
+                              }
+                            ],
+                            "Values": [
+                              [
+                                {
+                                  "Literal": {
+                                    "Value": "true"
+                                  }
+                                }
+                              ]
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Is Active Job"
+                    }
+                  },
+                  "howCreated": 1
+                },
+                {
+                  "name": "be4f52edc837204f8e18",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Job Type"
+                    }
+                  },
+                  "howCreated": 0
+                },
+                {
+                  "name": "3db2618f20251379fc9f",
+                  "type": "Advanced",
+                  "expression": {
+                    "Aggregation": {
+                      "Expression": {
+                        "Column": {
+                          "Expression": {
+                            "SourceRef": {
+                              "Entity": "Job"
+                            }
+                          },
+                          "Property": "Job Id"
+                        }
+                      },
+                      "Function": 5
+                    }
+                  },
+                  "howCreated": 0
+                }
+              ]
+            },
+            "singleVisual": {
+              "visualType": "columnChart",
+              "objects": {},
+              "orderBy": [
+                {
+                  "Direction": 2,
+                  "Expression": {
+                    "Aggregation": {
+                      "Expression": {
+                        "Column": {
+                          "Expression": {
+                            "SourceRef": {
+                              "Entity": "Job"
+                            }
+                          },
+                          "Property": "Job Id"
+                        }
+                      },
+                      "Function": 5
+                    }
+                  }
+                }
+              ],
+              "activeProjections": {
+                "Category": [
+                  {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Job"
+                        }
+                      },
+                      "Property": "Job Type"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "objects": {
+      "merge": {
+        "outspacePane": [
+          {
+            "properties": {
+              "expanded": {
+                "expr": {
+                  "Literal": {
+                    "Value": "true"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "fc93e8a64c7b66170277",
+  "position": {
+    "x": 0,
+    "y": 406,
+    "z": 4000,
+    "height": 287,
+    "width": 1118,
+    "tabOrder": 4000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Part Cost Purchased"
+                }
+              },
+              "queryRef": "Measure Tables.Part Cost Purchased",
+              "nativeQueryRef": "Part Cost Purchased"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Part Invoiced Amount"
+                }
+              },
+              "queryRef": "Measure Tables.Part Invoiced Amount",
+              "nativeQueryRef": "Part Invoiced Amount"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Job Parts Cost, Excl SDC Supplier"
+                }
+              },
+              "queryRef": "Measure Tables.Job Parts Cost, Excl SDC Mfg",
+              "nativeQueryRef": "Job Parts Cost, Excl SDC Mfg"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

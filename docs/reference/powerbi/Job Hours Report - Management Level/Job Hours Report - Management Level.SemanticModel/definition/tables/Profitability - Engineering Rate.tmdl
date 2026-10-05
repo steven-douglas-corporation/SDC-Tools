@@ -1,0 +1,27 @@
+table 'Profitability - Engineering Rate'
+	lineageTag: 4a3cb9b9-d571-4000-aceb-1f9f6ad4731f
+
+	measure 'Profitability - Engineering Rate Value' = SELECTEDVALUE('Profitability - Engineering Rate'[Profitability - Engineering Rate])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: ce8219b5-91ac-41b7-9b7d-070c1d428f4c
+
+	column 'Profitability - Engineering Rate'
+		dataType: double
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 5db2e3eb-deeb-45ad-9d39-eac975b6630c
+		summarizeBy: none
+		sourceColumn: [Value]
+
+		extendedProperty ParameterMetadata =
+				{
+				  "version": 0
+				}
+
+		annotation SummarizationSetBy = User
+
+	partition 'Profitability - Engineering Rate' = calculated
+		mode: import
+		source = GENERATESERIES(0, 200, 1)
+
+	annotation PBI_Id = 8e689a18e3024e4896999e99085855ec
+

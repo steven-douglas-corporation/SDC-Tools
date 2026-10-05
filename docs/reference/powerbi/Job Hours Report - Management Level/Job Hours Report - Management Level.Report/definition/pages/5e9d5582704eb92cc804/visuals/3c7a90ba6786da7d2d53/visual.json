@@ -1,0 +1,454 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
+  "name": "3c7a90ba6786da7d2d53",
+  "position": {
+    "x": 0,
+    "y": 95.02493074792244,
+    "z": 9000,
+    "height": 468.74238227146816,
+    "width": 1024,
+    "tabOrder": 9000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Employee"
+                    }
+                  },
+                  "Property": "Employee Department"
+                }
+              },
+              "queryRef": "Employee.Employee Department",
+              "nativeQueryRef": "Employee Department"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Employee"
+                    }
+                  },
+                  "Property": "Employee Id"
+                }
+              },
+              "queryRef": "Employee.Employee Id",
+              "nativeQueryRef": "Employee Id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Employee"
+                    }
+                  },
+                  "Property": "Employee Name"
+                }
+              },
+              "queryRef": "Employee.Employee Name",
+              "nativeQueryRef": "Employee Name"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Date"
+                    }
+                  },
+                  "Property": "Date"
+                }
+              },
+              "queryRef": "Date.Date",
+              "nativeQueryRef": "Date"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Job"
+                    }
+                  },
+                  "Property": "Job Id"
+                }
+              },
+              "queryRef": "Job.Job Id",
+              "nativeQueryRef": "Job Id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Job"
+                    }
+                  },
+                  "Property": "Job Name"
+                }
+              },
+              "queryRef": "Job.Job Name",
+              "nativeQueryRef": "Job Name"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Job"
+                    }
+                  },
+                  "Property": "Job Status"
+                }
+              },
+              "queryRef": "Job.Job Status",
+              "nativeQueryRef": "Job Status"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Job"
+                    }
+                  },
+                  "Property": "Complete Date"
+                }
+              },
+              "queryRef": "Job.Complete Date",
+              "nativeQueryRef": "Complete Date"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Hours Actual"
+                    }
+                  },
+                  "Property": "Section-Function Code"
+                }
+              },
+              "queryRef": "Hours Actual.Section-Function Code",
+              "nativeQueryRef": "Section-Function Code1"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measure Tables"
+                    }
+                  },
+                  "Property": "Hours Actual"
+                }
+              },
+              "queryRef": "Measure Tables.Hours Actual",
+              "nativeQueryRef": "Hours Actual"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Hours Actual"
+                    }
+                  },
+                  "Property": "Is Punch Valid Reason"
+                }
+              },
+              "queryRef": "Hours Actual.Punch Is Valid",
+              "nativeQueryRef": "Is Punch Valid Reason"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "Employee"
+                  }
+                },
+                "Property": "Employee Department"
+              }
+            },
+            "direction": "Ascending"
+          },
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "Date"
+                  }
+                },
+                "Property": "Date"
+              }
+            },
+            "direction": "Ascending"
+          }
+        ]
+      }
+    },
+    "objects": {
+      "values": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "columnHeaders": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "columnWidth": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "79.6119547387811D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Hours Actual.Section-Function Code"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "72.28376910455381D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Measure Tables.Hours Actual"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "93.17571983902948D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Job.Job Id"
+          }
+        }
+      ],
+      "columnFormatting": [
+        {
+          "properties": {
+            "labelPrecision": {
+              "expr": {
+                "Literal": {
+                  "Value": "2L"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Measure Tables.Hours Actual"
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "84435d96720747b6d034",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Employee"
+              }
+            },
+            "Property": "Employee Department"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "1b01614f9e660c253265",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Employee"
+              }
+            },
+            "Property": "Employee Id"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "cbd7e52009724facb7b6",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Employee"
+              }
+            },
+            "Property": "Employee Name"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "0ba040b4b6c75b41c189",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Date"
+              }
+            },
+            "Property": "Date"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "81fa9a22884985809062",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Job"
+              }
+            },
+            "Property": "Job Id"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "8f556bbaf11e791789d8",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Job"
+              }
+            },
+            "Property": "Job Name"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "8e2cc694dc534d06e5f5",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Job"
+              }
+            },
+            "Property": "Job Status"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "4fd8d3a8a3262687be74",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Job"
+              }
+            },
+            "Property": "Complete Date"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "0ed9eba19d70c1e3807e",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Hours Actual"
+              }
+            },
+            "Property": "Section-Function Code"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "2673ec38a01f1d39f2a3",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "Hours Actual"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "2cb0862d887ba97fad0b",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Hours Actual"
+              }
+            },
+            "Property": "Is Punch Valid Reason"
+          }
+        },
+        "type": "Categorical"
+      }
+    ]
+  }
+}

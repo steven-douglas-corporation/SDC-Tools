@@ -1,0 +1,189 @@
+table Employee
+	lineageTag: 98c51c73-1df7-4c0c-a947-53e5e0f41f2c
+
+	column 'Employee Id'
+		dataType: string
+		lineageTag: ca0f5308-6a60-49b9-bedd-7f80da74cc2f
+		summarizeBy: none
+		sourceColumn: Employee Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'First Name'
+		dataType: string
+		lineageTag: 1c43bbdb-ae10-4d3c-9742-8e71db64798a
+		summarizeBy: none
+		sourceColumn: First Name
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Last Name'
+		dataType: string
+		lineageTag: df7907e1-96b0-4b8e-8cf2-c419159c4950
+		summarizeBy: none
+		sourceColumn: Last Name
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Active'
+		dataType: string
+		lineageTag: 5d139d8f-7d5d-4e79-9dc9-82c7989d40e3
+		summarizeBy: none
+		sourceColumn: Is Active
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Title'
+		dataType: string
+		lineageTag: 8c3afa54-21e7-4bad-9955-88352c1a2166
+		summarizeBy: none
+		sourceColumn: Job Title
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Supervisor''s Employee ID'
+		dataType: string
+		lineageTag: 88c929fb-5a8b-4c52-9f4c-d3d63fe744e3
+		summarizeBy: none
+		sourceColumn: Supervisor's Employee ID
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Supervisor''s Last Name'
+		dataType: string
+		lineageTag: b05b6bb5-fb89-4504-bebb-420690b3ad6a
+		summarizeBy: none
+		sourceColumn: Supervisor's Last Name
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Work Email'
+		dataType: string
+		lineageTag: 285e00fa-1abf-4d92-ada0-1e818e0206e6
+		summarizeBy: none
+		sourceColumn: Work Email
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Employee Name'
+		dataType: string
+		lineageTag: ec49d64a-c0be-4175-879d-0e740db47eaa
+		summarizeBy: none
+		sourceColumn: Employee Name
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Employee Department'
+		dataType: string
+		lineageTag: 1fa101d7-8182-49fa-af45-dd66ffdca408
+		summarizeBy: none
+		sourceColumn: Employee Department
+		sortByColumn: 'Employee Department Order'
+
+		changedProperty = SortByColumn
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Employee Billing Group'
+		dataType: string
+		lineageTag: 8f984b82-68f6-4d9a-9ba5-f827c4e138f8
+		summarizeBy: none
+		sourceColumn: Employee Billing Group
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Employee Department Order'
+		dataType: int64
+		formatString: 0
+		lineageTag: 45ab5490-7bd2-41cc-b571-b2cd85e6a762
+		summarizeBy: none
+		sourceColumn: Employee Department Order
+
+		changedProperty = DataType
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = User
+
+	column 'Is Include Employee Department' =
+			
+			SWITCH(
+			    TRUE(),
+			    Employee[Employee Department] IN { "Management", "Purchasing", "SDC Support", "Sales" }, FALSE(),
+			    TRUE()
+			)
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 3c0e5203-45c3-4845-ae55-37354f077abc
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Employee = m
+		mode: import
+		queryGroup: Dimensions
+		source = ```
+				let
+				    Source = SharePoint.Files("https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/", [ApiVersion = 15]),
+				    #"Filtered Rows" = Table.SelectRows(Source, each ([Name] = "Project Planner Data Control.xlsx")),
+				    #"Project Planner Data Control xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/" = #"Filtered Rows"{[Name="Project Planner Data Control.xlsx",#"Folder Path"="https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/"]}[Content],
+				    #"Imported Excel Workbook" = Excel.Workbook(#"Project Planner Data Control xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/"),
+				    Employees_Sheet = #"Imported Excel Workbook"{[Item="Employees",Kind="Sheet"]}[Data],
+				    #"Promoted Headers" = Table.PromoteHeaders(Employees_Sheet, [PromoteAllScalars=true]),
+				    #"Filtered Rows1" = Table.SelectRows(#"Promoted Headers", each ([Employee Id] <> null)),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Filtered Rows1",{{"Employee Id", type text}, {"First Name", type text}, {"Last Name", type text}, {"Is Active", type text}, {"Job Title", type text}, {"Work Email", type text}, {"Supervisor's Employee ID", type text}, {"Supervisor's Last Name", type text}}),
+				    #"Added Custom" = Table.AddColumn(#"Changed Type", "Name", each [Last Name]&", "&[First Name]),
+				    #"Renamed Columns" = Table.RenameColumns(#"Added Custom",{{"Billing Group", "Employee Billing Group"}}),
+				    #"Added Department Order" = Table.AddColumn(#"Renamed Columns", "Department Order", each 
+				      if [Department] = "Mechanical Engineering" then 1
+				      else if [Department] = "Controls Engineering" then 2
+				      else if [Department] = "Machine Building" then 3
+				      else if [Department] = "Machine Wiring" then 4
+				        else 
+				         5 + List.PositionOf(
+				            List.Sort(
+				                List.Distinct(Table.Column(#"Renamed Columns", "Department")),
+				                Order.Ascending
+				            ),
+				            [Department]
+				        )
+				      ),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Added Department Order",{{"Department", "Employee Department"}, {"Department Order", "Employee Department Order"}, {"Name", "Employee Name"}}),
+				    #"Appended Query" = Table.Combine({#"Renamed Columns1", #"Employee from Hours Actual"}),
+				    #"Removed Duplicates" = Table.Distinct(#"Appended Query", {"Employee Id"}),
+				    #"Zero Employee Row" = #table({"Employee Id"}, {{"0"}}),
+				    #"Combined with Zero" = Table.Combine({#"Zero Employee Row", #"Removed Duplicates"}),
+				    #"Replaced Value" = Table.ReplaceValue(#"Combined with Zero",null,99,Replacer.ReplaceValue,{"Employee Department Order"}),
+				    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value",null,"(undefined)",Replacer.ReplaceValue,{"First Name", "Last Name", "Is Active", "Job Title", "Work Email", "Supervisor's Employee ID", "Supervisor's Last Name", "Employee Department", "Employee Billing Group", "Employee Name"}),
+				    #"Sorted Rows" = Table.Sort(#"Replaced Value1",{{"Employee Id", Order.Ascending}})
+				in
+				    #"Sorted Rows"
+				```
+
+	changedProperty = IsHidden
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

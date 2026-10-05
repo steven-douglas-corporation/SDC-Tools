@@ -1,0 +1,83 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/bookmark/2.1.0/schema.json",
+  "displayName": "Job Detail Default",
+  "name": "73fb3d52914b971a9284",
+  "options": {
+    "targetVisualNames": []
+  },
+  "explorationState": {
+    "version": "1.3",
+    "activeSection": "fad075d5e40a4533ce45",
+    "sections": {
+      "fad075d5e40a4533ce45": {
+        "filters": {
+          "byExpr": [
+            {
+              "name": "8e34a7ae640a31cc9eb4",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Job"
+                    }
+                  },
+                  "Property": "Job Name"
+                }
+              },
+              "howCreated": 1
+            },
+            {
+              "name": "6c092e234788e5eed1ce",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Job"
+                    }
+                  },
+                  "Property": "Job Id"
+                }
+              },
+              "howCreated": 5
+            },
+            {
+              "name": "81a1920e2aa00aa34e5c",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Job"
+                    }
+                  },
+                  "Property": "Job Name"
+                }
+              },
+              "howCreated": 5
+            }
+          ]
+        },
+        "visualContainers": {}
+      }
+    },
+    "objects": {
+      "merge": {
+        "outspacePane": [
+          {
+            "properties": {
+              "expanded": {
+                "expr": {
+                  "Literal": {
+                    "Value": "false"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

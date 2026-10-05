@@ -1,0 +1,89 @@
+table Meta
+	isHidden
+	lineageTag: 81153420-e4b4-4614-88b2-97ef680a0b75
+
+	column 'Hours Refreshed Thru'
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 4d9857ef-1468-4f91-849a-c476a209e7b2
+		summarizeBy: none
+		sourceColumn: Hours Refreshed Thru
+
+		variation Variation
+			isDefault
+			relationship: 506723a8-dd87-48a3-8d07-9a7938028126
+			defaultHierarchy: LocalDateTable_d5b1b1d3-4bff-48bd-8887-fcf0d6e5cda8.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Model Refresh Date Time'
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: a980f05b-9230-4c6d-9d40-f5141c0ad431
+		summarizeBy: none
+		sourceColumn: Model Refresh Date Time
+
+		variation Variation
+			isDefault
+			relationship: 19607184-1cb1-4b73-8d9e-f91337965b88
+			defaultHierarchy: LocalDateTable_dfd96a9a-ac2b-4b8c-829c-9a71f9f81d3d.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Meta = m
+		mode: import
+		source = ```
+				let
+				    // Work directly with the DateTimeZone
+				    UtcTimeZone = DateTimeZone.UtcNow(),
+				    
+				    // Use DateTimeZone.SwitchZone to convert to EST
+				    CurrentMonth = Date.Month(DateTime.From(UtcTimeZone)),
+				    IsDST = CurrentMonth >= 3 and CurrentMonth <= 10,
+				    ESTOffset = if IsDST then -4 else -5, // EDT vs EST offset from UTC
+				    
+				    // Switch the timezone to EST
+				    ESTTimeZone = DateTimeZone.SwitchZone(UtcTimeZone, ESTOffset, 0),
+				    ModelRefreshDate = DateTime.Date(ESTTimeZone),
+				    
+				    // Set threshold parameter
+				    SignificantHoursThreshold = 20,
+				    
+				    // Reference Hours Actual table
+				    HoursActual = #"Hours Actual",
+				    
+				    // Group by date and calculate total hours
+				    GroupByDate = Table.Group(HoursActual, {"Date"}, {
+				        {"TotalHours", each List.Sum([Hours Actual]), type number}
+				    }),
+				    
+				    // Filter to dates with significant hours
+				    FilteredDates = Table.SelectRows(GroupByDate, each 
+				        [TotalHours] > SignificantHoursThreshold and 
+				        [Date] <= ModelRefreshDate
+				    ),
+				    
+				    MaxDate = if Table.IsEmpty(FilteredDates) then null else List.Max(FilteredDates[Date]),
+				    
+				    Result = #table(
+				        type table [
+				            Hours Refreshed Thru = date,
+				            Model Refresh Date Time = datetimezone
+				        ], 
+				        {{MaxDate, ESTTimeZone}}
+				    ),
+				    #"Changed Type" = Table.TransformColumnTypes(Result,{
+				        {"Model Refresh Date Time", type datetimezone}
+				    })
+				in
+				    #"Changed Type"
+				```
+
+	changedProperty = IsHidden
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

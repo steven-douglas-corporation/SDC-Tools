@@ -1,0 +1,62 @@
+table Controls
+	isHidden
+	lineageTag: 3338effa-57bb-40fb-a3ca-7a8cc0456ec3
+
+	column 'Engineering Employees'
+		dataType: double
+		isHidden
+		lineageTag: 1f98cba4-990a-4deb-82a7-56b323c79e89
+		summarizeBy: none
+		sourceColumn: Engineering Employees
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Shop Employees'
+		dataType: double
+		isHidden
+		lineageTag: 4e6a6424-be0e-4f41-ab76-d27817e1a7f3
+		summarizeBy: sum
+		sourceColumn: Shop Employees
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Work Hours per Day'
+		dataType: double
+		isHidden
+		lineageTag: 3da0d5c3-15d5-418e-b7d9-6b4187fdbd86
+		summarizeBy: sum
+		sourceColumn: Work Hours per Day
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	partition Controls = m
+		mode: import
+		source =
+				let
+				    Source = SharePoint.Files("https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/", [ApiVersion = 15]),
+				    #"Filtered Rows" = Table.SelectRows(Source, each ([Name] = "Project Planner Data Control.xlsx")),
+				    #"Project Planner Data Control xlsx" = #"Filtered Rows"{[Name="Project Planner Data Control.xlsx",#"Folder Path"="https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/"]}[Content],
+				    #"Imported Excel Workbook" = Excel.Workbook(#"Project Planner Data Control xlsx"),
+				    Controls_Table = #"Imported Excel Workbook"{[Item="Controls",Kind="Table"]}[Data],
+				    #"Removed Columns" = Table.RemoveColumns(Controls_Table,{"Estimated to Complete Date"})
+				in
+				    #"Removed Columns"
+
+	changedProperty = IsHidden
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

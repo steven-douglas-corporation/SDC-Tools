@@ -1,0 +1,219 @@
+relationship 5296e5c9-4771-42b0-9fb5-ed344669c117
+	joinOnDateBehavior: datePartOnly
+	fromColumn: Date.Date
+	toColumn: LocalDateTable_039f8286-f633-4191-b80c-96f312fccd90.Date
+
+relationship e5027222-d10e-638a-7960-71b7a5aff504
+	fromColumn: 'Hours Actual'.'Employee Id'
+	toColumn: Employee.'Employee Id'
+
+relationship c559d62d-744c-8f93-563e-17cd9527b130
+	fromColumn: 'Hours Actual'.'Date Id'
+	toColumn: Date.'Date Id'
+
+relationship 40036416-fe67-a76d-055c-024c008fcebb
+	fromColumn: 'Hours Actual'.'Job Id'
+	toColumn: Job.'Job Id'
+
+relationship AutoDetected_e96c6185-1eda-4870-9ca9-6aad9d1d5e93
+	fromColumn: 'Hours Estimated'.'Job Id'
+	toColumn: Job.'Job Id'
+
+relationship a79fc763-3190-5a17-3702-ab2380f86259
+	toCardinality: many
+	fromColumn: 'Hours Actual'.'Section-Function Code'
+	toColumn: 'Function Hierarchy'.'Section-Function Code'
+
+relationship 62b1aba2-6082-b6ea-c73f-ec7b9bc1960f
+	toCardinality: many
+	fromColumn: 'Hours Estimated'.'Section-Function Code'
+	toColumn: 'Function Hierarchy'.'Section-Function Code'
+
+relationship 7af32153-09be-4f1d-a95b-74e562cfc728
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Hours Actual'.Date
+	toColumn: LocalDateTable_96618d0e-56f3-4797-8541-d5cdcafc8f33.Date
+
+relationship 506723a8-dd87-48a3-8d07-9a7938028126
+	joinOnDateBehavior: datePartOnly
+	fromColumn: Meta.'Hours Refreshed Thru'
+	toColumn: LocalDateTable_d5b1b1d3-4bff-48bd-8887-fcf0d6e5cda8.Date
+
+relationship dc69d271-4c7f-2d60-5bf6-48acadc799b1
+	fromColumn: 'Hours Estimated'.'Job Section Function Code'
+	toColumn: 'ME Estimate to Complete Function'.'Job Section Function Code'
+
+relationship 916e2ca3-eeb0-8019-4989-e7ca8dde96fd
+	fromColumn: 'Hours Actual'.'Job Section Function Code'
+	toColumn: 'ME Estimate to Complete Function'.'Job Section Function Code'
+
+relationship fcde15f8-0656-4fb2-8895-f2cf817c5166
+	joinOnDateBehavior: datePartOnly
+	fromColumn: Date.'Week Start Date'
+	toColumn: LocalDateTable_5c792a5b-246a-4641-9869-c1e1c885e3b6.Date
+
+relationship b3edf415-5cf6-4047-91f4-e74dc007c50a
+	joinOnDateBehavior: datePartOnly
+	fromColumn: Date.'Week End Date'
+	toColumn: LocalDateTable_10ce33fe-dc94-4d3c-b9ae-6d31269de0e3.Date
+
+relationship 94c66339-81bc-4a01-8e59-2f3fa277a812
+	joinOnDateBehavior: datePartOnly
+	fromColumn: Date.'Calendar Week Start Date'
+	toColumn: LocalDateTable_ff90c369-3971-466a-85ea-ee17e91c05a9.Date
+
+relationship 79916289-3655-441e-cc01-1096399801d0
+	fromColumn: 'Job Employee Hours'.Date
+	toColumn: Date.Date
+
+relationship c24dd931-4b87-0c64-3f51-aa75c3d54fb7
+	fromColumn: 'Job Employee Hours'.'Job Id'
+	toColumn: Job.'Job Id'
+
+relationship 68190168-2bb7-f8d2-7fa9-3b1a5fdd9d60
+	fromColumn: 'Job Employee Hours'.'Employee Id'
+	toColumn: Employee.'Employee Id'
+
+relationship 19607184-1cb1-4b73-8d9e-f91337965b88
+	joinOnDateBehavior: datePartOnly
+	fromColumn: Meta.'Model Refresh Date Time'
+	toColumn: LocalDateTable_dfd96a9a-ac2b-4b8c-829c-9a71f9f81d3d.Date
+
+relationship c2dc278b-304a-42d9-924d-3ddf9a666a60
+	joinOnDateBehavior: datePartOnly
+	fromColumn: Job.'Complete Date'
+	toColumn: LocalDateTable_56cce41d-a462-4bf5-814e-95e2e2f36607.Date
+
+relationship AutoDetected_3c9d195e-25c6-4e01-b441-b094c5ff3a81
+	fromColumn: 'Cost Estimated'.'Job Id'
+	toColumn: Job.'Job Id'
+
+relationship 97e1d861-3338-48e0-bbd2-9f75c10d758c
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Travel Expenses'.'Date Submitted'
+	toColumn: LocalDateTable_ffdd1d33-eec6-4ad0-922f-7399ae01b670.Date
+
+relationship 7a81c839-ff82-4fcb-8e7a-cb21a245cac2
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Travel Expenses'.'Date Approved'
+	toColumn: LocalDateTable_caeff34a-fbcd-4a20-b456-48ce493aa7b8.Date
+
+relationship AutoDetected_273afac3-98d5-42b3-9581-b1ecd164d057
+	fromColumn: 'Travel Expenses'.'Employee Id'
+	toColumn: Employee.'Employee Id'
+
+relationship ce705fa4-6814-c868-b61c-993b874b2274
+	fromColumn: 'Travel Expenses'.'Job Id'
+	toColumn: Job.'Job Id'
+
+relationship 5ea31611-884a-b095-e002-9b62ae1650f8
+	toCardinality: many
+	fromColumn: 'Travel Expenses'.'Section-Funtion Code'
+	toColumn: 'Function Hierarchy'.'Section-Function Code'
+
+relationship 2392cd63-39d6-4535-becf-ba125265faab
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Travel Expenses'.'Date Paid'
+	toColumn: LocalDateTable_8ba6bdb8-aa6d-4ee6-9898-2772419648b0.Date
+
+relationship 996c27af-a00b-d9a1-c83c-54af807bb4cc
+	fromColumn: 'Travel Expenses'.'Transaction Date'
+	toColumn: Date.Date
+
+relationship AutoDetected_1e42769f-8b77-4b10-a58b-39550a2e8537
+	fromColumn: 'Part Purchase'.'Job ID'
+	toColumn: Job.'Job Id'
+
+relationship f96252c5-4b07-4df5-c021-7491bad85f11
+	fromColumn: Assembly.ProjectID
+	toColumn: Job.'Job Id'
+
+relationship b0e00e19-8a5d-ee0d-b9f5-1197b4d0ffb3
+	crossFilteringBehavior: bothDirections
+	fromCardinality: one
+	fromColumn: 'Job Sales'.'Job Id'
+	toColumn: Job.'Job Id'
+
+relationship f07cef31-cd50-4ed0-bf6d-fc9d36694999
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Estimated to Complete Period'.'ETC Begin Date'
+	toColumn: LocalDateTable_f5180c95-3677-4208-b9b2-62968839e7a1.Date
+
+relationship 69ba6e17-31c0-4235-a1ed-d4dabfc63327
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Estimated to Complete Period'.'ETC End Date'
+	toColumn: LocalDateTable_6163780c-83f0-4598-8cbf-29ecec9a9a8a.Date
+
+relationship d6d14087-ad96-471b-9e1d-995d85ed5c94
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Estimated to Complete Period'.'ET Created Date Time'
+	toColumn: LocalDateTable_0dc1c831-1adb-4ed5-bceb-7c3458ba7b7b.Date
+
+relationship 2edbf31e-7c9a-d104-5e06-5bcbe30fcf70
+	toCardinality: many
+	fromColumn: 'Hours Estimated to Complete History'.'Function Hierarchy Id'
+	toColumn: 'Function Hierarchy'.'Section-Function Code'
+
+relationship d27d355b-32c2-fdf0-fb73-ef774439322c
+	fromColumn: 'Hours Estimated to Complete History'.'Job Id'
+	toColumn: Job.'Job Id'
+
+relationship a7fd2e4d-ab50-cce5-0b32-350b97cdca1f
+	fromColumn: 'Hours Estimated to Complete History'.'ETC Period Key'
+	toColumn: 'Estimated to Complete Period'.'ETC Period Key'
+
+relationship 26b81c81-dcb9-f553-8735-3499c4e8a8ff
+	toCardinality: many
+	fromColumn: 'Hours Estimated to Complete History'.'ETC Period Key'
+	toColumn: Date.'Year Month Id'
+
+relationship 09765d6d-063d-7267-06be-a2219d44fd55
+	fromColumn: 'Standard Fees'.'ETC Period Key'
+	toColumn: 'Estimated to Complete Period'.'ETC Period Key'
+
+relationship 1e5c180b-545f-44e4-ba70-75a031fbcd30
+	joinOnDateBehavior: datePartOnly
+	fromColumn: Job.'Start Date'
+	toColumn: LocalDateTable_e3118963-dce4-4441-9001-91ec20334a73.Date
+
+relationship 811ea838-b3f9-4929-85a2-56158dac41a2
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Costs Estimated to Complete History'.'Created Date Time'
+	toColumn: LocalDateTable_d1ebf2af-1c93-46a7-8f0c-1c8cc261d054.Date
+
+relationship 6972d934-6fbb-4434-8c80-3f8f04da2cc5
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Hours Estimated to Complete History'.'Created Date Time'
+	toColumn: LocalDateTable_d303ed07-1b3d-4a3e-aa2e-b72687b07a77.Date
+
+relationship AutoDetected_ed828a86-227c-4c85-b20e-25f5f95887fc
+	fromColumn: 'Costs Estimated to Complete History'.'Job Id'
+	toColumn: Job.'Job Id'
+
+relationship AutoDetected_33dff550-0f93-4d5e-ab63-1fc58245f0f0
+	fromColumn: 'Costs Estimated to Complete History'.'ETC Period Key'
+	toColumn: 'Estimated to Complete Period'.'ETC Period Key'
+
+relationship b9052789-34a1-2782-3e71-7381f7ffc731
+	toCardinality: many
+	fromColumn: 'Costs Estimated to Complete History'.'ETC Period Key'
+	toColumn: Date.'Year Month Id'
+
+relationship 5d10272b-0b02-439b-9408-0c8532f38fde
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Standard Fees'.CreatedDateTime
+	toColumn: LocalDateTable_c215dfd9-3568-40f8-b37c-153f7f4b1e61.Date
+
+relationship AutoDetected_001f3ffe-98e9-42a3-9eeb-f5c65bc91ab8
+	fromColumn: 'Sage Part Cost'.'Job Id'
+	toColumn: Job.'Job Id'
+
+relationship d1a5d148-beb8-4796-995a-74ea8572dd75
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Part Purchase'.'Purchase Date'
+	toColumn: LocalDateTable_027b555c-cecb-47bf-b074-d8311438c29f.Date
+
+relationship 24932964-e159-db90-ed1b-78566478ceca
+	fromColumn: 'Part Purchase'.'Invoiced Date'
+	toColumn: Date.Date
+

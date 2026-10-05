@@ -1,0 +1,213 @@
+table 'Part Purchase'
+	lineageTag: f8ad6d18-d6ba-4003-832e-0187bfb2b3c8
+
+	column 'Section ID'
+		dataType: string
+		lineageTag: 13216a51-a1e8-437d-97ac-432ccdd7b545
+		summarizeBy: none
+		sourceColumn: Section ID
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column Category
+		dataType: string
+		lineageTag: e3f4ff95-9c4b-4655-b057-934a73f0cd72
+		summarizeBy: none
+		sourceColumn: Category
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Part Number'
+		dataType: string
+		lineageTag: 88e1908c-acde-4a74-8a20-d5acf70c843f
+		summarizeBy: none
+		sourceColumn: Part Number
+
+		annotation SummarizationSetBy = Automatic
+
+	column Description
+		dataType: string
+		lineageTag: b95c1f16-f36e-4d5e-8310-81f8f55f09dc
+		summarizeBy: none
+		sourceColumn: Description
+
+		annotation SummarizationSetBy = Automatic
+
+	column Manufacturer
+		dataType: string
+		lineageTag: 5c54f699-a7c6-4ff8-bc18-3cd3a7b089da
+		summarizeBy: none
+		sourceColumn: Manufacturer
+
+		annotation SummarizationSetBy = Automatic
+
+	column Supplier
+		dataType: string
+		lineageTag: 91db46af-d72e-4840-9108-2d1a90db65a3
+		summarizeBy: none
+		sourceColumn: Supplier
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'PO Number'
+		dataType: string
+		lineageTag: 99185b12-6c19-4f28-b372-364725486d90
+		summarizeBy: none
+		sourceColumn: PO Number
+
+		annotation SummarizationSetBy = Automatic
+
+	column Quantity
+		dataType: double
+		isHidden
+		lineageTag: be47578b-89de-4a4f-bb49-e61076f7cb23
+		summarizeBy: sum
+		sourceColumn: Quantity
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Purchase Price'
+		dataType: double
+		isHidden
+		lineageTag: d7d862b2-4b04-4f52-8aad-0066d30a787a
+		summarizeBy: sum
+		sourceColumn: Purchase Price
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Total Price'
+		dataType: double
+		lineageTag: 5ab0dcc2-a83c-4ee6-9191-1c40ad667f10
+		summarizeBy: sum
+		sourceColumn: Total Price
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Invoiced Amount'
+		dataType: double
+		lineageTag: c6866e33-2bad-4426-8f5c-897bb4f168bb
+		summarizeBy: sum
+		sourceColumn: Invoiced Amount
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Job ID'
+		dataType: string
+		isHidden
+		lineageTag: 6f3393cb-8d5c-4db3-a7de-d3f7a3d401ec
+		summarizeBy: none
+		sourceColumn: Job ID
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Section Name'
+		dataType: string
+		lineageTag: f9b11b08-a248-4600-a6ac-3ec1206587d0
+		summarizeBy: none
+		sourceColumn: Section Name
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Purchase Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 8f00a86e-9996-4b70-9a83-44ed65a2ed36
+		summarizeBy: none
+		sourceColumn: Purchase Date
+
+		variation Variation
+			isDefault
+			relationship: d1a5d148-beb8-4796-995a-74ea8572dd75
+			defaultHierarchy: LocalDateTable_027b555c-cecb-47bf-b074-d8311438c29f.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column Search = 'Part Purchase'[Category] & 'Part Purchase'[Description] & 'Part Purchase'[Manufacturer] & 'Part Purchase'[Part Number] & 'Part Purchase'[PO Number] & 'Part Purchase'[Supplier]
+		lineageTag: edfe15ed-493e-425b-9ff7-28f883f9d3d8
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Invoiced Quantity'
+		dataType: double
+		lineageTag: e2aa6cad-c748-4ea7-95b5-b130172bab6b
+		summarizeBy: sum
+		sourceColumn: Invoiced Quantity
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Invoiced Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: c3a2b54e-ee8c-4d2d-b9ee-3d4436f86a10
+		summarizeBy: none
+		sourceColumn: Invoiced Date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Cost Type'
+		dataType: string
+		lineageTag: 0835dca1-b6cc-4e91-965e-12abbe9d7b07
+		summarizeBy: none
+		sourceColumn: Cost Type
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Part Purchase' = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				    Source = Sql.Database("10.0.0.7:1433", "SDC", [Query="-- Part Costs#(lf)SELECT #(lf)     [P].[ProjectID] as [Job ID]#(lf)    , POD.[SpecID] as [Section ID]#(lf)    ,tlkpItemMaster_Categories.CategoryDescription as [Category]#(lf)    ,tblEngItemMaster.ItemCompanyID as [Part Number]#(lf)    ,tblEngItemMaster.ItemDescription as [Description]#(lf)    ,tblEngItemMaster.manufacturer as Manufacturer#(lf)    , SUPP.cname as [Supplier]#(lf)    ,CAST(POH.[PurchaseOrderID] AS NVARCHAR(50)) as [PO Number]  -- CHANGED: Convert to string#(lf)    ,POD.[PurchaseQty] as [Quantity]#(lf)    , POD.[PurchasePrice] as [Purchase Price]#(lf)    ,CASE WHEN POD.PurchaseQty >=0 THEN #(lf)        CASE WHEN InvoicedQty > (CASE WHEN RLS.SumOfQtyReceived >= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END) #(lf)             THEN 0 #(lf)             ELSE ((CASE WHEN RLS.SumOfQtyReceived >= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END) - ISNULL(InvoicedQty,0)) #(lf)        END * POD.PurchasePrice * POH.PurchaseCurrRate #(lf)    ELSE#(lf)        CASE WHEN InvoicedQty < (CASE WHEN RLS.SumOfQtyReceived >= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END) #(lf)             THEN 0 #(lf)             ELSE ((CASE WHEN RLS.SumOfQtyReceived <= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END) - ISNULL(InvoicedQty,0)) #(lf)        END * POD.PurchasePrice * POH.PurchaseCurrRate#(lf)    END + ISNULL(INVOICED.TotalInvoicedAmount, 0) AS [Total Price]#(lf)    ,INVOICED.TotalInvoicedAmount as [Invoiced Amount]#(lf)    ,INVOICED.[InvoicedQty] as [Invoiced Quantity]#(lf)    ,INVOICED.[APDocDate] as [Invoiced Date]#(lf)    ,[S].[SDescription] as [Section Name]#(lf)    ,convert(date,POH.PurchaseDate) as [Purchase Date]#(lf)    ,'Part Cost' as [Cost Type]#(lf)FROM tblPurchaseOrderHeader POH with(nolock)#(lf)    INNER JOIN tblPurchaseOrderDetails POD with(nolock) ON POH.PurchaseOrderID = POD.PurchaseOrderID #(lf)    LEFT JOIN tblSpec S with(nolock) ON S.SpecID = POD.SpecID AND S.ProjectID = POD.ProjectID#(lf)    LEFT JOIN tblProjects P with(nolock) ON S.ProjectID = P.ProjectID#(lf)    LEFT JOIN (#(tab)SELECT APDD.PurchaseDetailID, BatchEntryTypeID, max(APDocDate) as APDocDate, SUM(APDocQty) AS InvoicedQty, #(lf)                    SUM(APDocQty * APDocUnitPrice * (1 - APDocItemPctDisc) * APDocCurrRate) AS TotalInvoicedAmount #(lf)                    FROM tblAPDocumentDetails APDD with(nolock)#(lf)                        INNER JOIN tblAPBatchDocument APBD with(nolock) ON APBD.APDocID = APDD.APDocID#(lf)                    WHERE BatchEntryTypeID NOT IN (2, 3) AND APDD.PurchaseDetailID IS NOT NULL#(lf)                    GROUP BY APDD.PurchaseDetailID, BatchEntryTypeID#(lf)                ) INVOICED ON POD.PurchaseDetailID = INVOICED.PurchaseDetailID#(lf)    LEFT JOIN vwReceiverLogSummed RLS with(nolock) ON RLS.PurchaseDetailID = POD.PurchaseDetailID#(lf)    left join tblEngItemMaster ON POD.ItemID = tblEngItemMaster.ItemID #(lf)    INNER JOIN tlkpItemMaster_Categories #(lf)    ON tblEngItemMaster.ItemCategory = tlkpItemMaster_Categories.ItemCategory #(lf)    INNER JOIN tlkpUOMDescriptions ON tblEngItemMaster.ItemUOM = tlkpUOMDescriptions.ItemUOM #(lf)    #(lf)    INNER JOIN udfCompanyRetrieveDisplayNames(DEFAULT) CUST ON P.CompanyID = CUST.CompanyID #(lf)    INNER JOIN udfCompanyRetrieveDisplayNames(DEFAULT) SUPP ON #(lf)                  POH.PurchaseSupplierID = SUPP.CompanyID #(lf)    LEFT OUTER JOIN #(lf)                      (SELECT     PurchaseDetailID, SUM(QtyReceived) AS TotalReceived#(lf)                        FROM          tblReceiverLog#(lf)                        GROUP BY PurchaseDetailID) RECEIVED ON POD.PurchaseDetailID = RECEIVED.PurchaseDetailID#(lf)--WHERE [P].[ProjectID] = 1123#(lf)#(lf)UNION ALL#(lf)#(lf)-- Extra Costs#(lf)SELECT #(lf)     [EC].[ProjectID] as [Job ID]#(lf)    ,[EC].[SpecID] as [Section ID]#(lf)    ,'Extra Cost - ' + [EC].[BatchEntryTypeDesc] as [Category]#(lf)    ,[EC].[PurchaseSupplierItem] as [Part Number]#(lf)    ,[EC].[APDocItemDesc] as [Description]#(lf)    ,NULL as [Manufacturer]#(lf)    ,[EC].[Vendor] as [Supplier]#(lf)    ,[EC].[APDocNumber] as [Reference Number]#(lf)    ,[EC].[APDocQty] as [Quantity]#(lf)    ,[EC].[APDocUnitPrice] as [Unit Price]#(lf)    ,[EC].[decExtraCostingValue] as [Total Price]#(lf)    ,[EC].[decExtraCostingValue] as [Invoiced Amount]#(lf)    ,[EC].[APDocQty] as [Invoiced Quantity]#(lf)    ,[EC].[APDocDate] as [Invoiced Date]#(lf)    ,[EC].[SDescription] as [Section Name]#(lf)    ,CONVERT(date, [EC].[APDocDate]) as [Transaction Date]#(lf)    ,'Extra Cost' as [Cost Type]#(lf)FROM [dbo].[vwCostingExtraCostsDetailed] [EC] WITH(NOLOCK)#(lf)--WHERE [EC].[ProjectID] = 1123"]),
+				    #"Changed Type" = Table.TransformColumnTypes(Source,{{"Job ID", type text}, {"Section ID", type text}, {"Purchase Date", type date}}),
+				    // Add leading zero to 3-digit numeric Job IDs
+				    #"Padded Job Id" = Table.TransformColumns(#"Changed Type", {{"Job ID", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}}),
+				    // Union in Cost Actual Historical from data control file (Column89 = CK)
+				    // Skip 8 rows: 6 pre-header + header row + "Job#" label row — avoids depending on the header cell text
+				    HistoricalSelected = Table.SelectColumns(#"Hours Estimated Import", {"Column1", "Column89"}),
+				    HistoricalSkipped = Table.Skip(HistoricalSelected, 8),
+				    HistoricalRenamed = Table.RenameColumns(HistoricalSkipped, {{"Column1", "Job ID"}, {"Column89", "Total Price"}}),
+				    HistoricalFiltered = Table.SelectRows(HistoricalRenamed, each ([Job ID] <> null) and ([Job ID] <> "")),
+				    HistoricalTyped = Table.TransformColumnTypes(HistoricalFiltered, {{"Job ID", type text}, {"Total Price", type number}}),
+				    HistoricalErrors = Table.ReplaceErrorValues(HistoricalTyped, {{"Total Price", null}}),
+				    HistoricalNonNull = Table.SelectRows(HistoricalErrors, each [Total Price] <> null),
+				    HistoricalPadded = Table.TransformColumns(HistoricalNonNull, {{"Job ID", each if _ = null then _ else if Text.Length(_) = 3 and (try Number.FromText(_) otherwise null) <> null then "0" & _ else _, type text}}),
+				    HistoricalWithType = Table.AddColumn(HistoricalPadded, "Cost Type", each "Historical Cost", type text),
+				    #"Combined" = Table.Combine({#"Padded Job Id", HistoricalWithType})
+				in
+				    #"Combined"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

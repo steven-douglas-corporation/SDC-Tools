@@ -1,0 +1,145 @@
+table 'Standard Fees'
+	lineageTag: 77f13ebf-d7d1-4a4f-bb18-c3ff55c8ec40
+
+	column Department
+		dataType: string
+		lineageTag: b1c74673-364c-4543-8a95-e8e6c8e0abc7
+		summarizeBy: none
+		sourceColumn: Department
+
+		annotation SummarizationSetBy = Automatic
+
+	column Rate
+		dataType: double
+		lineageTag: 34557da6-1e74-45a9-a08a-b45cd32672f0
+		summarizeBy: sum
+		sourceColumn: Rate
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column DateKey
+		dataType: int64
+		formatString: 0
+		lineageTag: 4b4780ee-9e3c-43d9-89d9-da301e34f433
+		summarizeBy: count
+		sourceColumn: DateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'ETC Period Key'
+		dataType: int64
+		formatString: 0
+		lineageTag: c136c0eb-7e19-4dcd-8cac-4a9a4d1ef491
+		summarizeBy: none
+		sourceColumn: ETC Period Key
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Billing Group'
+		dataType: string
+		lineageTag: 12ec9466-d7fb-4f3a-ab55-67d25323a0d9
+		summarizeBy: none
+		sourceColumn: Billing Group
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Previous Month Pulled Hours'
+		dataType: double
+		lineageTag: 4ddb252e-4285-4d4f-abb9-8209672c1d7f
+		summarizeBy: sum
+		sourceColumn: Previous Month Pulled Hours
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'New Hours Added this Month'
+		dataType: double
+		lineageTag: 5d9ee4d9-844d-48a5-9abd-261f45d57a36
+		summarizeBy: sum
+		sourceColumn: New Hours Added this Month
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Hours Available'
+		dataType: double
+		lineageTag: bd725033-706f-4b1f-aac9-b5637797ec76
+		summarizeBy: sum
+		sourceColumn: Hours Available
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Hours Worked this Month'
+		dataType: double
+		lineageTag: 858f20e3-814d-4309-8b77-791362cf648d
+		summarizeBy: sum
+		sourceColumn: Hours Worked this Month
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Hours being pulled this month'
+		dataType: double
+		lineageTag: 8e247df1-5242-478e-b1f7-f80d200cffd5
+		summarizeBy: sum
+		sourceColumn: Hours being pulled this month
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'New ETC Hours'
+		dataType: double
+		lineageTag: e597e727-a4f9-4d42-b552-381a9de75083
+		summarizeBy: sum
+		sourceColumn: New ETC Hours
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Standard Fee'
+		dataType: double
+		lineageTag: 7574fc6e-f909-4272-a5b1-0a469bf5ae48
+		summarizeBy: sum
+		sourceColumn: Standard Fee
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column CreatedDateTime
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 4739f7a1-165d-49c2-a966-59c1d36f645f
+		summarizeBy: none
+		sourceColumn: CreatedDateTime
+
+		variation Variation
+			isDefault
+			relationship: 5d10272b-0b02-439b-9408-0c8532f38fde
+			defaultHierarchy: LocalDateTable_c215dfd9-3568-40f8-b37c-153f7f4b1e61.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Standard Fees' = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				     Source = Sql.Database("ixt2ry3uwdpureqiskgh3zw4yy-hhghvviya5guhil4cjq5swsnda.database.fabric.microsoft.com,1433", "SDC-DataWarehouse-16d09d69-e06b-4e00-94b9-be7ccf8f2b1f", [Query="select#(lf)*#(lf)from [dbo].[StandardFees] as [sf]#(lf);"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source,{{"ETCPeriodKey", "ETC Period Key"}, {"PreviousMonthPulledHours", "Previous Month Pulled Hours"}, {"NewHoursAddedThisMonth", "New Hours Added this Month"}, {"HoursAvailable", "Hours Available"}, {"HoursWorkedThisMonth", "Hours Worked this Month"}, {"PulledHours", "Hours being pulled this month"}, {"NewETCHours", "New ETC Hours"}, {"StandardFee", "Standard Fee"}, {"BillingGroup", "Billing Group"}})
+				in
+				    #"Renamed Columns"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

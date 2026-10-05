@@ -1,0 +1,81 @@
+table 'Sage Part Cost'
+	isHidden
+	lineageTag: 1abb520e-d478-45e0-bb0d-7388c65d02ea
+
+	column 'Job Id'
+		dataType: string
+		isHidden
+		lineageTag: 265461fd-cc12-46e8-a750-92759d867e34
+		summarizeBy: none
+		sourceColumn: Job Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Debit Amount'
+		dataType: double
+		isHidden
+		lineageTag: 5389fc89-61f0-421a-9fba-47ef7c585ba2
+		summarizeBy: sum
+		sourceColumn: Debit Amount
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Credit Amount'
+		dataType: double
+		isHidden
+		lineageTag: ba8add7e-b8cf-46d6-ba6e-ecef65024860
+		summarizeBy: sum
+		sourceColumn: Credit Amount
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Net DR/CR'
+		dataType: double
+		isHidden
+		lineageTag: 0403cba9-a822-4284-8f78-d5c806baff2f
+		summarizeBy: sum
+		sourceColumn: Net DR/CR
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	partition 'Sage Part Cost' = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				    Source = SharePoint.Files("https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/", [ApiVersion = 15]),
+				    #"Filtered Rows" = Table.SelectRows(Source, each ([Name] = "Job Ledger Report For PBI.xlsx")),
+				    #"Job Ledger Report For PBI xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Finance/" = #"Filtered Rows"{[Name="Job Ledger Report For PBI.xlsx",#"Folder Path"="https://stevendouglascorp.sharepoint.com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Finance/"]}[Content],
+				    #"Imported Excel Workbook" = Excel.Workbook(#"Job Ledger Report For PBI xlsx_https://stevendouglascorp sharepoint com/sites/SDC-PowerBIIntegration/Shared Documents/Project Planner V2/Job Hours Report/Job Finance/"),
+				    #"2025 Current Month Summary_Sheet" = #"Imported Excel Workbook"{[Item="2025 Current Month Summary",Kind="Sheet"]}[Data],
+				    #"Removed Top Rows" = Table.Skip(#"2025 Current Month Summary_Sheet",4),
+				    #"Promoted Headers" = Table.PromoteHeaders(#"Removed Top Rows", [PromoteAllScalars=true]),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Row Labels", type any}, {"Sum of Debit Amt", type number}, {"Sum of Credit Amt", type number}, {"Sum of Net DR/CR", type number}, {"Column5", type any}, {"Column6", type any}, {"Column7", type any}}),
+				    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Row Labels", "Job Id"}, {"Sum of Debit Amt", "Debit Amount"}, {"Sum of Credit Amt", "Credit Amount"}, {"Sum of Net DR/CR", "Net DR/CR"}}),
+				    #"Removed Other Columns" = Table.SelectColumns(#"Renamed Columns",{"Job Id", "Debit Amount", "Credit Amount", "Net DR/CR"}),
+				    #"Filtered Rows1" = Table.SelectRows(#"Removed Other Columns", each ([Job Id] <> "Grand Total")),
+				    // Add leading zero to 3-digit numeric Job Ids
+				    #"Padded Job Id" = Table.TransformColumns(#"Filtered Rows1", {{"Job Id", each if _ = null then _ else let s = Text.From(_) in if Text.Length(s) = 3 and (try Number.FromText(s) otherwise null) <> null then "0" & s else s, type text}})
+				in
+				    #"Padded Job Id"
+
+	changedProperty = IsHidden
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

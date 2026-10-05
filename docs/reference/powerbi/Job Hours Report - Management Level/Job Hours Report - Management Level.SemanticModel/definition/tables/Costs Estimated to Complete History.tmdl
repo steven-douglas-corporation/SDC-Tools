@@ -1,0 +1,97 @@
+table 'Costs Estimated to Complete History'
+	isHidden
+	lineageTag: 2d2528c3-bcb6-4add-9f78-301197f036bc
+
+	column 'ETC Period Key'
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 0594013f-3776-4bfa-9ac7-4d365e3fc971
+		summarizeBy: none
+		sourceColumn: ETC Period Key
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Id'
+		dataType: string
+		isHidden
+		lineageTag: a125cf8c-c4d6-4851-9ed0-d2f9dd26314d
+		summarizeBy: none
+		sourceColumn: Job Id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Costs Estimated to Complete'
+		dataType: double
+		isHidden
+		lineageTag: b4f36837-aa83-4d1a-bd8a-8700b2b47b2c
+		summarizeBy: sum
+		sourceColumn: Costs Estimated to Complete
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column User
+		dataType: string
+		isHidden
+		lineageTag: 948104dc-7cab-4f09-9050-a179123fb9b6
+		summarizeBy: none
+		sourceColumn: User
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Created Date Time'
+		dataType: dateTime
+		isHidden
+		formatString: General Date
+		lineageTag: 4117a85b-e641-4a4b-b532-c618205e314f
+		summarizeBy: none
+		sourceColumn: Created Date Time
+
+		variation Variation
+			isDefault
+			relationship: 811ea838-b3f9-4929-85a2-56158dac41a2
+			defaultHierarchy: LocalDateTable_d1ebf2af-1c93-46a7-8f0c-1c8cc261d054.'Date Hierarchy'
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Active'
+		dataType: boolean
+		isHidden
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 6d9b71e7-3f0c-4256-8895-d56aa79c75b4
+		summarizeBy: none
+		sourceColumn: Is Active
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Costs Estimated to Complete History' = m
+		mode: import
+		queryGroup: Facts
+		source =
+				let
+				    Source = #"Hours Estimated to Complete Import",
+				    #"Removed Columns" = Table.RemoveColumns(Source,{"10-211", "10-312", "10-313", "10-515", "10-516", "10-517", "10-518", "10-411", "10-412", "40-211", "40-411", "50-211", "50-411"}),
+				    #"Renamed Columns" = Table.RenameColumns(#"Removed Columns",{{"JobID", "Job Id"}, {"EstimateToClosePeriodKey", "ETC Period Key"}, {"PartCost", "Costs Estimated to Complete"}, {"CreatedDateTime", "Created Date Time"}, {"IsActive", "Is Active"}})
+				in
+				    #"Renamed Columns"
+
+	changedProperty = IsHidden
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

@@ -1,0 +1,70 @@
+table 'Job Employee Hours'
+	lineageTag: 58aecbc3-1a28-4a63-acf4-78e296f3a5da
+
+	column 'Employee Name'
+		lineageTag: 79b74f1b-dcd0-44c7-b079-c676fbe0d29e
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: Employee[Employee Name]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Employee Hours'
+		lineageTag: 001e36b5-af59-4b68-8be9-b6f833d2bf10
+		summarizeBy: none
+		sourceColumn: [Job Display]
+
+		annotation SummarizationSetBy = Automatic
+
+	column Date
+		formatString: General Date
+		lineageTag: a88877f4-1014-4d44-a0a6-ebe77c87af72
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: Date[Date]
+
+		annotation SummarizationSetBy = Automatic
+
+	column Job
+		lineageTag: 2adc4016-67e2-4edc-86de-f4053cb00388
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: Job[Job]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Job Id'
+		lineageTag: 96e27fd8-40cd-43a9-8ef8-a3034dc81a8b
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: Job[Job Id]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Employee Id'
+		lineageTag: 62ed307b-7f04-4f21-8781-fbb2b83b3c3f
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: Employee[Employee Id]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Job Employee Hours' = calculated
+		mode: import
+		source = ```
+				
+				ADDCOLUMNS(
+				    SUMMARIZE(
+				        FILTER('Hours Actual', 'Hours Actual'[Sub-Section Id] = "80"),
+				        Job[Job Id],
+				        Job[Job], 
+				        Employee[Employee Id], 
+				        Employee[Employee Name], 
+				        'Date'[Date]
+				    ),
+				    "Job Display", trim(LEFT(Job[Job], 11)) & " - " & Employee[Employee Name] & " - " & FORMAT([Hours Actual], "0") & " Hrs"
+				)
+				```
+
+	annotation PBI_Id = fe75fea5bc3c42dd9d95228b5013a655
+
