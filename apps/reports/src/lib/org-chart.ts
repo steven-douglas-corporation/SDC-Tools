@@ -103,10 +103,12 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
       const sup = e.supervisorId != null ? byId.get(e.supervisorId) : undefined;
       return sup ? `Not in Paylocity · supervisor set here: ${sup.name}` : "Not in Paylocity · no supervisor set yet";
     }
-    if (r.how === "branch" && r.ownTeam && r.ownTeam !== r.proposedTeam) return `Placed by reporting line · own family says ${teamName(r.ownTeam)}`;
-    // No note for someone placed by their branch who has no usable position
-    // code (2026-10-05, by request): the gap is Paylocity's to fix, nothing on
-    // this page can act on it, and Data Quality already lists them.
+    // Nobody is flagged for being placed by their reporting line (2026-10-05,
+    // by request) — not for having no usable position code, and not for a code
+    // whose family differs from the branch they sit in. Both are the rule
+    // working as intended (or a gap on Paylocity's side), and nothing on this
+    // page can act on them. Only people not in Paylocity get a note: their
+    // supervisor is set here.
     return null;
   }
 
