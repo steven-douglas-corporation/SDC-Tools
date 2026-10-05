@@ -8,7 +8,9 @@ CREATE SCHEMA IF NOT EXISTS "Fact";
 
 -- ── Job hours ───────────────────────────────────────────────────────────────
 -- Grain: one Paylocity punch row (employee, work date, job, section, function,
--- travel) as delivered. Punches have no ID in Paylocity, so loads replace whole
+-- travel) as delivered, plus the migration snapshot unpivoted to one row per job
+-- and section-function (lifetime hours through 2025-01-31; Employee = Unknown,
+-- WorkDate = 2025-01-31; see LoadJobHours). Vertical: one hours value per row. Punches have no ID in Paylocity, so loads replace whole
 -- years rather than upserting rows: a punch edited or deleted in Paylocity is
 -- simply different in the next file, and replacing the year picks that up.
 
@@ -40,6 +42,13 @@ CREATE INDEX IF NOT EXISTS "IX_JobHours_EmployeeKey" ON "Fact"."JobHours" ("Empl
 CREATE INDEX IF NOT EXISTS "IX_JobHours_JobNumber"   ON "Fact"."JobHours" ("JobNumber");
 CREATE INDEX IF NOT EXISTS "IX_JobHours_WorkYear"    ON "Fact"."JobHours" ("WorkYear");
 
+-- Punches already counted inside the migration snapshot: January 2025 punches on
+-- jobs the snapshot covers (see LoadJobHours). Kept, not deleted, exactly as the
+-- reports app does (actual-hours.ts, supersededBySnapshot / OUTSIDE_SNAPSHOT).
+-- Totals: sum("Hours") WHERE NOT "SupersededBySnapshot".
+ALTER TABLE "Fact"."JobHours" ADD COLUMN IF NOT EXISTS "SupersededBySnapshot" boolean NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS "IX_JobHours_SourceReport" ON "Fact"."JobHours" ("SourceReport");
+
 -- Replace every year present in staging with what staging holds now.
 -- Each punch gets the employee version in effect on its work date; punches
 -- dated before the employee history starts get the employee's earliest
@@ -47,15 +56,21 @@ CREATE INDEX IF NOT EXISTS "IX_JobHours_WorkYear"    ON "Fact"."JobHours" ("Work
 CREATE OR REPLACE FUNCTION "Fact"."LoadJobHours"() RETURNS jsonb
 LANGUAGE plpgsql AS $$
 DECLARE
-    n_deleted  int;
-    n_inserted int;
-    years      int[];
+    snapshot_through constant date := date '2025-01-31';   -- the reports app's SNAPSHOT_THROUGH_MONTH '2025-01'
+    n_deleted   int;
+    n_inserted  int;
+    n_snapshot  int;
+    n_flagged   int;
+    years       int[];
 BEGIN
+    -- Punches: replace every year present in staging, for the punch sources only.
     SELECT array_agg(DISTINCT extract(year FROM "WorkDate")::int ORDER BY extract(year FROM "WorkDate")::int)
     INTO years
     FROM "Paylocity"."JobHours" WHERE "WorkDate" IS NOT NULL;
 
-    DELETE FROM "Fact"."JobHours" WHERE "WorkYear" = ANY (years);
+    DELETE FROM "Fact"."JobHours"
+    WHERE "WorkYear" = ANY (years)
+      AND "SourceReport" IN (SELECT "ReportKey" FROM "Paylocity"."JobHoursSource");
     GET DIAGNOSTICS n_deleted = ROW_COUNT;
 
     INSERT INTO "Fact"."JobHours"
@@ -89,7 +104,40 @@ BEGIN
     WHERE h."WorkDate" IS NOT NULL AND h."Hours" IS NOT NULL;
     GET DIAGNOSTICS n_inserted = ROW_COUNT;
 
-    RETURN jsonb_build_object('years_replaced', years, 'rows_removed', n_deleted, 'rows_loaded', n_inserted);
+    -- Migration snapshot (Hours Through 20250131.xlsx), already unpivoted by the staging
+    -- view "Paylocity"."JobHoursSnapshot": lifetime hours per job and section-function
+    -- through 2025-01-31, from before the punch feed. The source has no employee and no
+    -- date, so Employee = Unknown (-1) and WorkDate = 2025-01-31 (Jon, 2026-10-04; Power BI
+    -- did the same: Employee 0, Date 20250131). Replaced whole on every refresh.
+    DELETE FROM "Fact"."JobHours" WHERE "SourceReport" = 'hours_through_20250131';
+    INSERT INTO "Fact"."JobHours"
+        ("DateKey", "EmployeeKey", "EmployeeId", "WorkDate", "WorkYear", "JobCode", "JobNumber", "JobName",
+         "SectionCode", "SectionNumber", "FunctionCode", "FunctionNumber", "Hours",
+         "SourceReport", "SourceFileId", "SourceSheetRow")
+    SELECT to_char(s."ThroughDate", 'YYYYMMDD')::int, -1, NULL, s."ThroughDate", extract(year FROM s."ThroughDate")::int,
+           s."JobCode", s."JobNumber", s."JobName",
+           s."SectionCode", s."SectionNumber", s."FunctionCode", s."FunctionNumber", s."Hours",
+           'hours_through_20250131', s."FileId", s."SheetRow"
+    FROM "Paylocity"."JobHoursSnapshot" AS s;
+    GET DIAGNOSTICS n_snapshot = ROW_COUNT;
+
+    -- No double counting, the reports app's rule (actual-hours.ts, 2026-09-28): the
+    -- snapshot already contains January 2025, and the punch feed starts 2025-01-06. So a
+    -- punch dated on or before the snapshot's month counts only when its job has NO
+    -- non-zero snapshot row. Per job, not per section: a 0 in the crosstab means no hours
+    -- were booked there. Jobs the snapshot doesn't cover keep their January punches,
+    -- since they're the only record of that work (Power BI's flat 2025-02-01 cut-over
+    -- dropped them). Rows are flagged, not deleted.
+    UPDATE "Fact"."JobHours" AS f
+    SET "SupersededBySnapshot" = coalesce(f."SourceReport" <> 'hours_through_20250131'
+                                  AND f."WorkDate" <= snapshot_through
+                                  AND f."JobNumber" IN (SELECT "JobNumber" FROM "Paylocity"."JobHoursSnapshot"
+                                                        WHERE "JobNumber" IS NOT NULL), false)  -- no job number: not superseded
+    WHERE f."WorkYear" <= extract(year FROM snapshot_through)::int;
+    SELECT count(*) INTO n_flagged FROM "Fact"."JobHours" WHERE "SupersededBySnapshot";
+
+    RETURN jsonb_build_object('years_replaced', years, 'rows_removed', n_deleted, 'rows_loaded', n_inserted,
+                              'snapshot_rows', n_snapshot, 'punches_superseded_by_snapshot', n_flagged);
 END;
 $$;
 
