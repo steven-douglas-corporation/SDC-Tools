@@ -724,16 +724,35 @@ export async function getPartsActualByJob(): Promise<Map<string, number>> {
 // attempts: 1 and a short request timeout, unlike the sync's 180s with retries: this runs
 // inside an export click, where a person is waiting, and the caller degrades to blank
 // columns rather than failing the whole file.
-export async function getPartsActualSdcSplitByJob(): Promise<Map<string, PartsActualSdcSplit>> {
+//
+// ── `asOf` (2026-10-05): the same figures, through a given day ───────────────
+//
+// null = every GL-posted line, exactly as before. A 'YYYY-MM-DD' day keeps only lines
+// whose AP DOCUMENT DATE (APBD.APDocDate — what Money Spent Month windows on) falls on or
+// before that day. The cut is inside the SUM, not in the WHERE, so a job whose only AP
+// lines are dated after the cutoff still comes back — as $0 — and the caller can tell
+// "Total ETO job, nothing yet by that date" from "no Total ETO data at all" (a manually
+// typed historical actual), which a WHERE would have made indistinguishable.
+//
+// The day is a bound parameter, never part of the SQL text, and CONVERT(date, @asOf, 23)
+// reads it as ISO yyyy-mm-dd with no server-language or time-zone dependence. "< the next
+// day's midnight" keeps every timestamp on the cutoff day.
+export async function getPartsActualSdcSplitByJob(asOf: string | null = null): Promise<Map<string, PartsActualSdcSplit>> {
+  if (asOf !== null && !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error(`asOf must be YYYY-MM-DD (got "${asOf}").`);
   return withTotalEto(async (pool) => {
-    const result = await pool.request().query(
-      `SELECT APDD.ProjectID AS JobId, SFC.CName AS Vendor, SUM(${AP_LINE_AMOUNT}) AS Amount
-         FROM tblAPDocumentDetails APDD WITH(NOLOCK)
-              INNER JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
-              ${sageFirstJoin("SFC")}
-        WHERE APDD.ProjectID IS NOT NULL AND ${glPostedAp("SFC")}
-        GROUP BY APDD.ProjectID, SFC.CName`,
-    );
+    const result = await pool
+      .request()
+      .input("asOf", sql.VarChar(10), asOf)
+      .query(
+        `SELECT APDD.ProjectID AS JobId, SFC.CName AS Vendor,
+                SUM(CASE WHEN @asOf IS NULL OR APBD.APDocDate < DATEADD(day, 1, CONVERT(date, @asOf, 23))
+                         THEN ${AP_LINE_AMOUNT} ELSE 0 END) AS Amount
+           FROM tblAPDocumentDetails APDD WITH(NOLOCK)
+                INNER JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
+                ${sageFirstJoin("SFC")}
+          WHERE APDD.ProjectID IS NOT NULL AND ${glPostedAp("SFC")}
+          GROUP BY APDD.ProjectID, SFC.CName`,
+      );
     return splitActualBySdc(
       result.recordset.map((r: Record<string, unknown>) => ({
         jobId: String(Number(r.JobId)),

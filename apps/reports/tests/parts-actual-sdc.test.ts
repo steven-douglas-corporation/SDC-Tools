@@ -88,7 +88,7 @@ test("the SDC split query shares the GL-posted predicate and the AP amount with 
   const src = stripComments(read("src", "lib", "sync-totaleto.ts"));
   const fn = src.slice(src.indexOf("export async function getPartsActualSdcSplitByJob"));
   const body = fn.slice(0, fn.indexOf("feed: \"parts_actual.sdc_split_by_job\""));
-  assert.match(body, /SUM\(\$\{AP_LINE_AMOUNT\}\)/, "the one canonical AP line amount");
+  assert.match(body, /THEN \$\{AP_LINE_AMOUNT\} ELSE 0 END\) AS Amount/, "the one canonical AP line amount, summed (inside the optional date cut)");
   assert.match(body, /\$\{glPostedAp\("SFC"\)\}/, "the shared GL-posted predicate, not a copy");
   assert.match(body, /GROUP BY APDD\.ProjectID, SFC\.CName/, "grouped by vendor so the SDC share can be decided in TypeScript");
   assert.match(body, /splitActualBySdc\(/, "the SDC decision is the pure, tested function (isSdcVendor), not a SQL pattern");
@@ -115,11 +115,12 @@ test("the Projects grid and the sync do not call the SDC split", () => {
 test("the export adds the four excl. SDC columns after Parts Cost Remaining, and the section columns shift with them", () => {
   const src = read("src", "lib", "export", "projects-export.ts");
   const order = [
-    'header: "Parts Cost Actual (GL-posted)"',
-    'header: "Parts Cost Remaining"',
-    'header: "SDC Billed (GL-posted, lifetime)"',
-    'header: "Parts Cost Actual (GL-posted, excl. SDC)"',
-    'header: "Parts Cost Remaining (excl. SDC)"',
+    // Template literals since 2026-10-05: each gains ", through <date>" only when a date is set.
+    "header: `Parts Cost Actual (GL-posted${through})`",
+    'header: `Parts Cost Remaining${asOf ?',
+    "header: `SDC Billed (GL-posted, ${asOf ?",
+    "header: `Parts Cost Actual (GL-posted, excl. SDC${through})`",
+    "header: `Parts Cost Remaining (excl. SDC${through})`",
     'header: "Excl. SDC basis"',
     "...sectionColumns",
   ].map((s) => src.indexOf(s));
@@ -130,12 +131,13 @@ test("the export adds the four excl. SDC columns after Parts Cost Remaining, and
   assert.match(src, /let i = 18;/);
   assert.match(src, /addTotal\(14, sdcBilled\);[\s\S]*addTotal\(15, costActualExcl\);[\s\S]*addTotal\(16, costRemainingExcl\);/);
   // The unqualified existing headers must survive, byte for byte.
-  assert.match(src, /\{ header: "Parts Cost Actual \(GL-posted\)", type: "currency" \}/);
+  assert.match(src, /\{ header: `Parts Cost Actual \(GL-posted\$\{through\}\)`, type: "currency" \}/);
 });
 
 test("the export degrades to blank columns when Total ETO does not answer, rather than failing", () => {
   const src = read("src", "lib", "export", "projects-export.ts");
-  assert.match(src, /let sdcSplit: Map<string, PartsActualSdcSplit> \| null = null;\s*try \{\s*sdcSplit = await getPartsActualSdcSplitByJob\(\);\s*\} catch/);
+  // A LIVE export degrades; one with a date throws instead (tests/export-as-of.test.ts).
+  assert.match(src, /let sdcSplit: Map<string, PartsActualSdcSplit> \| null = null;\s*try \{\s*sdcSplit = await getPartsActualSdcSplitByJob\(asOf\);\s*\} catch/);
   assert.match(src, /Unavailable - Total ETO did not respond/);
   assert.match(src, /if \(sdcSplit !== null\) costRemainingExcl =/, "no remaining figure is invented when the SDC read failed");
 });
