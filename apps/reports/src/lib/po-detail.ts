@@ -12,7 +12,7 @@
 
 import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bom";
 import type { PartsCostLine } from "@/lib/sync-totaleto";
-import { normPn, type WindowAttribution } from "@/lib/parts-cost-window-attribution";
+import { normPn, leftoverKey, type WindowAttribution } from "@/lib/parts-cost-window-attribution";
 import { alternateKeys, classifyUnmatched, type MatchReason } from "@/lib/parts-match-reason";
 import { normalizeVendor, SDC_CANONICAL } from "@/lib/vendor-normalize";
 import { isUncoveredPart } from "@/lib/job-bom-rules";
@@ -839,10 +839,17 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
   const leftovers = new Map<string, PartsCostLine[]>();
   for (const l of partsLines ?? []) {
     if (usedLines.has(l)) continue;
-    const key = normPn(l.partNumber) || `\u0000blank:${normPn(l.description) || "(none)"}`;
+    const key = leftoverKey(l.partNumber, l.description);
     const arr = leftovers.get(key);
     if (arr) arr.push(l);
     else leftovers.set(key, [l]);
+  }
+  // Windowed Invoiced view: money invoiced in the window against something with no
+  // purchase line to group under (a non-PO card charge, say) still gets its row, built
+  // from the window's own lines — otherwise it vanishes and the table total falls short
+  // of the month's spend. SDC-supplied rows stay $0 below ("SDC never invoices itself").
+  if (activeAttribution) {
+    for (const [key, w] of activeAttribution.nonBomByKey) if (!leftovers.has(key)) leftovers.set(key, w.lines);
   }
 
   let syntheticId = -1;
@@ -855,7 +862,7 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     const invoicedAmount = sdcSupplier
       ? 0
       : activeAttribution
-        ? (activeAttribution.byPartNumber.get(normPn(first.partNumber)) ?? 0)
+        ? (activeAttribution.nonBomByKey.get(leftoverKey(first.partNumber, first.description))?.amount ?? 0)
         : sumLines(lines, (l) => l.actualAmount);
     const reason = classifyUnmatched(first.partNumber, first.description, totalPrice, null);
     const nonBomBreakdown = groupLinesByPo(lines, [], 1, poLineDates);

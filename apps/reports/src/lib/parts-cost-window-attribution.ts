@@ -53,6 +53,16 @@ export function collectBomPartNumbers(roots: readonly BomNode[]): Set<string> {
   return set;
 }
 
+/**
+ * The key a purchase line is grouped under when no BOM part claims it — part number,
+ * else its description. THE one definition: flattenBomParts groups its non-BOM rows
+ * with it, and attributeInvoicedWindow buckets the window's non-BOM money with it, so
+ * a window line always finds the row that represents it.
+ */
+export function leftoverKey(partNumber: string | null | undefined, description: string | null | undefined): string {
+  return normPn(partNumber) || `\u0000blank:${normPn(description) || "(none)"}`;
+}
+
 export type WindowAttribution = {
   /** normalized part number -> summed invoiced amount within the window. */
   byPartNumber: Map<string, number>;
@@ -64,6 +74,14 @@ export type WindowAttribution = {
    *  falling short of the reference. */
   unattachedAmount: number;
   unattachedCount: number;
+  /**
+   * The same money as `unattached*`, bucketed by leftoverKey — so the Parts List's
+   * "Not on the BOM" rows can show what was invoiced against THEM in the window.
+   * Without it a windowed view priced every non-BOM row at $0 and dropped it, and the
+   * table total fell short of the job's Money Spent Month by exactly the freight,
+   * fees, card charges and off-BOM parts (job 1160, Sept 2026: $38,488 vs $41,637).
+   */
+  nonBomByKey: Map<string, { amount: number; lines: PartsCostLine[] }>;
 };
 
 /**
@@ -100,12 +118,21 @@ export function attributeInvoicedWindow(lines: PartsCostLine[], bomPartNumbers: 
   const byPartNumber = new Map<string, number>();
   let unattachedAmount = 0;
   let unattachedCount = 0;
+  const nonBomByKey = new Map<string, { amount: number; lines: PartsCostLine[] }>();
 
   for (const line of lines) {
     const key = normPn(line.partNumber);
     if (!key || !bomPartNumbers.has(key)) {
       unattachedAmount += line.invoicedAmount;
       unattachedCount++;
+      const lk = leftoverKey(line.partNumber, line.description);
+      const bucket = nonBomByKey.get(lk);
+      if (bucket) {
+        bucket.amount += line.invoicedAmount;
+        bucket.lines.push(line);
+      } else {
+        nonBomByKey.set(lk, { amount: line.invoicedAmount, lines: [line] });
+      }
       continue;
     }
     byPartNumber.set(key, (byPartNumber.get(key) ?? 0) + line.invoicedAmount);
@@ -119,5 +146,5 @@ export function attributeInvoicedWindow(lines: PartsCostLine[], bomPartNumbers: 
     if (amount === 0) byPartNumber.delete(key);
   }
 
-  return { byPartNumber, unattachedAmount, unattachedCount };
+  return { byPartNumber, unattachedAmount, unattachedCount, nonBomByKey };
 }
