@@ -1,9 +1,9 @@
 import { EmptyState } from "@/components/ui/EmptyState";
 import { card } from "@/components/ui/classnames";
 import { resolveEmployeeGroup } from "@/lib/employee-card-theme";
-import type { EmployeeRow } from "@/lib/employee-row";
 import type { OrgChart as OrgChartData, OrgNode } from "@/lib/org-chart";
-import { DepartmentCardHeader, EmployeePersonRow } from "@/components/EmployeePersonRow";
+import { DepartmentCardHeader, EmployeePersonRow, TempsSection } from "@/components/EmployeePersonRow";
+import { isPaylocityId, comparePositionCode, type EmployeeRow } from "@/lib/employee-row";
 
 // The Employees page's Org chart view (2026-10-02): the same department cards
 // as the Cards view — same header, same "N active" line, same person rows
@@ -20,7 +20,46 @@ const TREE_UL = "ml-4 pl-3";
 const TREE_LI =
   "relative before:absolute before:-left-3 before:top-0 before:h-4 before:w-2.5 before:rounded-bl-[5px] before:border-b-[1.5px] before:border-l-[1.5px] before:border-sdc-gray-400 before:content-[''] not-last:after:absolute not-last:after:-left-3 not-last:after:top-4 not-last:after:bottom-0 not-last:after:border-l-[1.5px] not-last:after:border-sdc-gray-400 not-last:after:content-['']";
 
-type Ctx = { people: Map<number, EmployeeRow>; onSelect?: (row: EmployeeRow) => void };
+type Ctx = { people: Map<number, EmployeeRow>; onSelect?: (row: EmployeeRow) => void; leadershipCard?: boolean };
+
+// Temps (not in Paylocity) leave the tree for the darker section at the bottom
+// of their card, as on Cards (2026-10-05). Anyone reporting to a temp moves up
+// to the temp's place, so nobody disappears with them.
+function splitTemps(nodes: OrgNode[], ctx: Ctx): { tree: OrgNode[]; temps: OrgNode[] } {
+  const temps: OrgNode[] = [];
+  const walk = (list: OrgNode[]): OrgNode[] =>
+    list.flatMap((n) => {
+      const reports = walk(n.reports);
+      if (!isPaylocityId(ctx.people.get(n.id)?.paylocityId)) {
+        temps.push(n);
+        return reports;
+      }
+      return [{ ...n, reports }];
+    });
+  const tree = walk(nodes);
+  return { tree, temps: temps.sort((a, b) => comparePositionCode(ctx.people.get(a.id) ?? a, ctx.people.get(b.id) ?? b)) };
+}
+
+function CardBody({ nodes, cardTitle, ctx }: { nodes: OrgNode[]; cardTitle: string; ctx: Ctx }) {
+  const { tree, temps } = splitTemps(nodes, ctx);
+  return (
+    <>
+      {(tree.length > 0 || temps.length === 0) && <Tree nodes={tree} cardTitle={cardTitle} ctx={ctx} />}
+      {temps.length > 0 && (
+        <TempsSection>
+          {temps.map((n) => {
+            const row = ctx.people.get(n.id);
+            return row ? (
+              <li key={n.id}>
+                <EmployeePersonRow p={row} cardTitle={cardTitle} onSelect={ctx.onSelect} note={n.note} />
+              </li>
+            ) : null;
+          })}
+        </TempsSection>
+      )}
+    </>
+  );
+}
 
 function Tree({ nodes, cardTitle, ctx, nested }: { nodes: OrgNode[]; cardTitle: string; ctx: Ctx; nested?: boolean }) {
   return (
@@ -30,7 +69,7 @@ function Tree({ nodes, cardTitle, ctx, nested }: { nodes: OrgNode[]; cardTitle: 
         if (!row) return null;
         return (
           <li key={n.id} className={nested ? TREE_LI : ""}>
-            <EmployeePersonRow p={row} cardTitle={cardTitle} onSelect={ctx.onSelect} note={n.note} />
+            <EmployeePersonRow p={row} cardTitle={cardTitle} onSelect={ctx.onSelect} note={n.note} hideLeadershipBadge={ctx.leadershipCard} />
             {n.reports.length > 0 && <Tree nodes={n.reports} cardTitle={cardTitle} ctx={ctx} nested />}
           </li>
         );
@@ -96,7 +135,7 @@ export function OrgChart({
     <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
       <Group title="Leadership" active={chart.leaderCount} cardCount={1}>
         <TeamCard team="exec" count={chart.leaderCount}>
-          {(title) => <Tree nodes={chart.leaders} cardTitle={title} ctx={ctx} />}
+          {(title) => <Tree nodes={chart.leaders} cardTitle={title} ctx={{ ...ctx, leadershipCard: true }} />}
         </TeamCard>
       </Group>
 
@@ -104,7 +143,7 @@ export function OrgChart({
         <Group key={b.leader.id} title={`Reporting to ${b.leader.name}`} active={b.people} cardCount={b.cards.length}>
           {b.cards.map((c) => (
             <TeamCard key={c.team ?? "none"} team={c.team} count={c.people}>
-              {(title) => <Tree nodes={c.heads} cardTitle={title} ctx={ctx} />}
+              {(title) => <CardBody nodes={c.heads} cardTitle={title} ctx={ctx} />}
             </TeamCard>
           ))}
         </Group>

@@ -67,6 +67,7 @@ export async function EmployeesView() {
       positionTitle: e.positionTitle?.trim() || DASH,
       supervisor: e.supervisorId != null ? (nameById.get(e.supervisorId) ?? DASH) : DASH,
       supervisorId: e.supervisorId,
+      positionCode: e.positionCode,
       department: e.department ?? "",
       team: teamById.get(e.id) ?? null,
       active: e.active,

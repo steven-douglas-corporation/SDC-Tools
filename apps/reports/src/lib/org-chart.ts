@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { codeKey, mergePositionFamilies, type PositionFamilyRow } from "@/lib/position-families-parse";
 import { resolveTeams, pendingTeamChanges, TEAM_NAME, type TeamChange } from "@/lib/team-resolution";
-import { isPaylocityId as inPaylocity } from "@/lib/employee-row";
+import { isPaylocityId as inPaylocity, comparePositionCode } from "@/lib/employee-row";
 
 // ── The Org Chart page's data (2026-10-02) ──────────────────────────────────
 //
@@ -87,7 +87,8 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
 
   const reportsOf = new Map<number, typeof employees>();
   for (const e of employees) if (e.supervisorId != null) (reportsOf.get(e.supervisorId) ?? reportsOf.set(e.supervisorId, []).get(e.supervisorId)!).push(e);
-  for (const list of reportsOf.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+  // Same order as a Cards card: grouped by position code, then name.
+  for (const list of reportsOf.values()) list.sort(comparePositionCode);
 
   const isLeader = (id: number) => res.get(id)?.leader === true;
 
