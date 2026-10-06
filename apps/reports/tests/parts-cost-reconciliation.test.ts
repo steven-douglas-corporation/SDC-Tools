@@ -35,7 +35,9 @@ test("a BOM row's cost is every PO line the part has, not just the newest", () =
   // dates) — those describe a purchase, not the part. It must not be what the money
   // columns are computed from.
   assert.match(PO_DETAIL, /const totalPrice = pnLines \? splitSum\(\(l\) => l\.totalPrice\)/);
-  assert.match(PO_DETAIL, /\? splitSum\(\(l\) => l\.actualAmount\)/);
+  // Invoiced is summed per LINE with the shared SDC rule applied to each line (2026-10-06),
+  // not zeroed for the whole row by its one displayed supplier.
+  assert.match(PO_DETAIL, /\? splitSum\(\(l\) => \(isSdcBillingLine\(l\) \? 0 : l\.actualAmount\)\)/);
   assert.ok(!/const totalPrice = line\?\.totalPrice/.test(PO_DETAIL), "newest-line-only cost must not return");
   assert.ok(!/invoicedAmount = activeAttribution \? \(windowedInvoiced \?\? 0\) : \(line\?\.invoicedAmount \?\? 0\)/.test(PO_DETAIL));
 });

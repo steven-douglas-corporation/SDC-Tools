@@ -28,6 +28,9 @@ import {
   authoritativeVendorRollup,
   makePoGroup,
   flattenBomParts,
+  scopePartToGroups,
+  scopePartToWindow,
+  dayInRange,
   poCellState,
   partsOnPo,
   NO_PO_KEY,
@@ -1539,7 +1542,50 @@ function PartsListTab({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return parts.filter((p) => {
+    // ── The date range scopes each row to the POs inside it (2026-10-06) ────────────
+    //
+    // A grouped row stands for every PO a part was ever bought on, and its date is the
+    // NEWEST PO's. Judging the row on that alone hid a whole row from a range that ended
+    // before its newest PO; keeping it whole dragged its out-of-range POs into Total $,
+    // Invoiced $, Left to Invoice, the footer and the expanded PO lines (job 1150, to
+    // 9/30: a 10/2 expense invoice and a 10/5 PO under a September filter). So the range
+    // keeps a row when ANY of its POs is in range, and the row is then re-summed from just
+    // those POs (scopePartToGroups). The whole-job reconciliation reads `parts`, unscoped.
+    //
+    //   Invoiced + range, window resolved: inclusion is "did this part have real invoice
+    //     activity in the window" (attributeInvoicedWindow already summed across every PO
+    //     line the part has ever had; zero excludes, mirroring getJobPartsInvoicedInMonth).
+    //     The row shows the window's own invoice events and Total $ as of the end date
+    //     (scopePartToWindow).
+    //   Every other mode (Purchase, Exp Date, Delivered, Invoiced before the window
+    //     resolves): per PO group on that mode's own date. Req Date has no per-group
+    //     value, so it stays on the row's own date.
+    const dated = (p: FlatPart): FlatPart | null => {
+      if (!from && !to) return p;
+      if (windowStatus.active) return p.invoicedAmount === 0 ? null : scopePartToWindow(p, to);
+      const inRange = (v: string | null | undefined) => dayInRange(v, from, to);
+      // The row's own date for the active mode — one plain field per mode, no window state.
+      const d =
+        dateType === "purchase" ? p.purchasedDate :
+        dateType === "invoice" ? p.invoicedDate :
+        dateType === "req" ? p.requiredDate :
+        // The Delivered Date column's own field — actual arrival, never a promised
+        // date. A row with nothing received has no delivered date and drops out of the
+        // range, the same way a row with no purchase date drops out of a Purchase range.
+        dateType === "delivered" ? p.receivedDate :
+        p.expectedDate; // "exp"
+      if (dateType === "req") return inRange(d) ? p : null;
+      const pick = (g: PartPoGroup) =>
+        dateType === "purchase" ? g.purchaseDate :
+        dateType === "invoice" ? g.invoicedDate :
+        dateType === "delivered" ? g.deliveredDate :
+        g.expectedDate; // "exp"
+      // A row with no PO groups (a BOM part nothing has been bought against) is judged on
+      // its own date, exactly as before.
+      if (p.poBreakdown.length === 0) return inRange(d) ? p : null;
+      return scopePartToGroups(p, (g) => inRange(pick(g)));
+    };
+    return parts.map(dated).filter((p): p is FlatPart => p !== null).filter((p) => {
       // ── Status does not apply to a non-BOM charge (2026-09-02) ───────────
       //
       // Every status here is a BOM-delivery state: received, due soon, late,
@@ -1569,56 +1615,6 @@ function PartsListTab({
       // option always matches every aliased line behind it.
       if (effManufacturer !== FILTER_ALL && normalizeVendor(p.manufacturer) !== effManufacturer) return false;
       if (effSupplier !== FILTER_ALL && normalizeVendor(p.supplier) !== effSupplier) return false;
-      if (from || to) {
-        if (windowStatus.active) {
-          // Invoiced mode, window resolved: inclusion is "did this part have
-          // any real invoice activity in the window" — attributeInvoicedWindow
-          // already summed across every PO line the part has ever had, not
-          // just the newest one this row is otherwise built from. A part with
-          // zero in-window invoiced amount is excluded, mirroring
-          // getJobPartsInvoicedInMonth's own zero-invoice rule. This is the
-          // fix's other half: a part invoiced in this window via an OLDER PO
-          // line (not the newest) now correctly appears, instead of being
-          // invisible because that older line's lifetime-latest invoice fell
-          // in a different month.
-          if (p.invoicedAmount === 0) return false;
-        } else {
-          // Purchase mode (always), Req Date/Exp Date (always — no windowed
-          // attribution exists for either, only Invoiced gets one), or
-          // Invoiced mode before the window has resolved (loading/failed) —
-          // unchanged from before this fix.
-          const d =
-            dateType === "purchase" ? p.purchasedDate :
-            dateType === "invoice" ? p.invoicedDate :
-            dateType === "req" ? p.requiredDate :
-            // The Delivered Date column's own field — actual arrival, never a
-            // promised date. A row with nothing received has no delivered date
-            // and drops out of the range, the same way a row with no purchase
-            // date drops out of a Purchase range: "delivered in August" is a
-            // question about parts that were delivered.
-            dateType === "delivered" ? p.receivedDate :
-            p.expectedDate; // "exp"
-          const inRange = (v: string | null | undefined) => {
-            if (!v) return false;
-            const day = v.slice(0, 10);
-            return !(from && day < from) && !(to && day > to);
-          };
-          // A grouped row (e.g. one "Expense reimbursement" row holding seven
-          // invoices) shows only its NEWEST line's date, so judging the row on that
-          // alone hid the whole row — and every in-range line in it — as soon as one
-          // line fell after the range (job 1150: a 10/2 invoice hid the 9/18 one
-          // from a "to 9/30" Purchase filter). Match if the row OR any of its PO
-          // groups has a date in range. Req Date has no per-group value, so it
-          // keeps the row-level test.
-          const groupDate = (g: (typeof p.poBreakdown)[number]) =>
-            dateType === "purchase" ? g.purchaseDate :
-            dateType === "invoice" ? g.invoicedDate :
-            dateType === "delivered" ? g.deliveredDate :
-            dateType === "exp" ? g.expectedDate :
-            null;
-          if (!inRange(d) && !p.poBreakdown.some((g) => inRange(groupDate(g)))) return false;
-        }
-      }
       if (q) {
         const hay = `${p.pn} ${p.desc} ${p.manufacturer} ${p.supplier ?? ""} ${p.parentPN} ${p.parentDesc} ${p.poNumber ?? ""} ${p.category ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
