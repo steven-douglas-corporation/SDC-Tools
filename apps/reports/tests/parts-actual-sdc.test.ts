@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { splitActualBySdc } from "../src/lib/parts-actual-sdc";
+import { splitActualBySdc, isSdcBilling, isSdcBillingLine, isNonPoLine } from "../src/lib/parts-actual-sdc";
 
 // ── The Projects export's "excl. SDC" Parts Cost columns (2026-10-02) ────────────────
 //
@@ -155,4 +155,17 @@ test("an SDC-vendor AP invoice with no PO stays in the normal-expense column (jo
     { jobId: "1106", vendor: "Steven Douglas Corp.", amount: 300, hasPo: true },
   ]);
   assert.deepEqual(m.get("1106"), { actual: 210925, sdc: 300 });
+});
+
+test("one definition: SDC billing is an SDC vendor on a PO; a no-PO line is never SDC billing", () => {
+  assert.equal(isSdcBilling("Steven Douglas Corp.", true), true);
+  assert.equal(isSdcBilling("Steven Douglas Corp.", false), false);
+  assert.equal(isSdcBilling("Steven Douglas Corp."), true, "hasPo omitted = PO-backed");
+  assert.equal(isSdcBilling("McMASTER-CARR SUPPLY CO.", true), false);
+  const base = { purchaseDate: null, invoicedDate: null, manufacturer: null, category: null, partNumber: null, description: null, quantity: 1, unitPrice: 0, totalPrice: 0, invoicedAmount: 0, actualAmount: 0 };
+  const adj = { ...base, lineId: "ec:6652::209625", supplier: "Steven Douglas Corp. [Concord] (Approved)", poNumber: "1106 correction" };
+  const made = { ...base, lineId: "pod:77", supplier: "Steven Douglas Corp.", poNumber: "106331" };
+  assert.equal(isNonPoLine(adj), true);
+  assert.equal(isSdcBillingLine(adj), false);
+  assert.equal(isSdcBillingLine(made), true);
 });

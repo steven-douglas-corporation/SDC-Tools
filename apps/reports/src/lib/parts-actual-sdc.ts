@@ -1,4 +1,25 @@
 import { isSdcVendor } from "@/lib/vendor-normalize";
+import type { PartsCostLine } from "@/lib/sync-totaleto";
+
+// ── THE definition of "SDC billed" (2026-10-06) ─────────────────────────────
+//
+// SDC billing means Steven Douglas Corp. supplying a part on a purchase order. A plain AP
+// invoice with no PO is not that, even when its vendor is SDC: job 1106's $209,625
+// "Adjustment to match Sage" was entered by hand under the SDC vendor to make ETO agree
+// with the ledger, and it is a normal expense. Every SDC exclusion in the app (Projects
+// export, Money Spent Month, ETC Left to Invoice, T&M, the Parts List) goes through this
+// one rule so they cannot disagree about it. Only two such lines exist today: 1106
+// $209,625 and 1112 $2,103.
+
+/** An AP invoice with no purchase order behind it (an extra cost, or a plain AP line). */
+export const isNonPoLine = (l: PartsCostLine): boolean =>
+  l.lineId.startsWith("ec:") || (l.lineId.startsWith("apdd:") && l.poNumber == null);
+
+/** hasPo omitted = PO-backed, so a caller that cannot tell keeps the old vendor-only answer. */
+export const isSdcBilling = (vendor: string | null | undefined, hasPo: boolean = true): boolean =>
+  hasPo && isSdcVendor(vendor);
+
+export const isSdcBillingLine = (l: PartsCostLine): boolean => isSdcBilling(l.supplier, !isNonPoLine(l));
 
 // ── Lifetime Parts Actual, split into "SDC billed" and everything else ──────
 //
@@ -47,7 +68,7 @@ export function splitActualBySdc(rows: readonly ApVendorTotal[]): Map<string, Pa
     if (!Number.isFinite(r.amount)) continue;
     const cur = out.get(r.jobId) ?? { actual: 0, sdc: 0 };
     cur.actual += r.amount;
-    if (r.hasPo !== false && isSdcVendor(r.vendor)) cur.sdc += r.amount;
+    if (isSdcBilling(r.vendor, r.hasPo !== false)) cur.sdc += r.amount;
     out.set(r.jobId, cur);
   }
   return out;

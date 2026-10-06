@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveTmJobPks } from "@/lib/tm-hours";
 import { getPartsCostForJobs, type PartsCostLine } from "@/lib/sync-totaleto";
 import { withTimeoutOrNull } from "@/lib/with-timeout";
-import { isSdcVendor } from "@/lib/vendor-normalize";
+import { isSdcBillingLine } from "@/lib/parts-actual-sdc";
 import type { TmFilters, TmPartsDrillKey, TmPartsMetrics, TmPartsDrillRow } from "@/lib/tm-report";
 
 // T&M's three dollar cards, read from Total ETO (2026-09-02).
@@ -131,7 +131,9 @@ function inRange(line: PartsCostLine, basis: "invoicedDate" | "purchaseDate", st
 // isSdcVendor already refuses "SDC Credit Card (Approved)" and "…Expense
 // Reports…" (real outside spend / handled by its own card), so it will not
 // over-match those.
-const isSdcManufacturedLine = (l: PartsCostLine): boolean => isSdcVendor(l.supplier);
+// A non-PO AP invoice under the SDC vendor (job 1106's $209,625 manual Sage adjustment) is
+// a normal expense, not SDC billing — see parts-actual-sdc.ts.
+const isSdcManufacturedLine = (l: PartsCostLine): boolean => isSdcBillingLine(l);
 
 // measure: Total Price where SEARCH("expense reports", [Supplier]) > 0 — despite
 // the name, a text-matched subset of purchase lines whose AP vendor contains

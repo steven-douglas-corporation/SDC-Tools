@@ -2,7 +2,7 @@ import "server-only";
 import { getPartsCostForJobs } from "@/lib/sync-totaleto";
 import { withTimeoutOrNull, UPSTREAM_BUDGET_MS } from "@/lib/with-timeout";
 import { explainLeftToInvoice, monthEndCutoff } from "@/lib/left-to-invoice";
-import { isSdcVendor } from "@/lib/vendor-normalize";
+import { isSdcBillingLine } from "@/lib/parts-actual-sdc";
 
 // ── Seeding the Parts Cost breakout ──────────────────────────────────────────
 //
@@ -137,7 +137,7 @@ export async function readPartsEtcBreakout(
     // only zeroes its Invoiced $ / Left to Invoice — it does not want the row
     // gone. This column has no such row to preserve, so the line is simply
     // left out of the sum.
-    const lines = (linesByJob.get(j.jobNumber) ?? []).filter((l) => !isSdcVendor(l.supplier));
+    const lines = (linesByJob.get(j.jobNumber) ?? []).filter((l) => !isSdcBillingLine(l));
     // THE shared definition (lib/left-to-invoice.ts) — the same function the Parts
     // List's column, the Parts Cost card and the projection all call, with this
     // month's cutoff applied. Deliberately not re-expressed here: this file having
