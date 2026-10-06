@@ -198,6 +198,42 @@ export async function setEmployeeTeamOverride(id: number, team: string | null): 
   revalidatePath("/employees");
 }
 
+// Follow supervisor (2026-10-06): off places one person by their own position family
+// instead of the reporting line. Either way the rule runs at once, so the stored team
+// (which the Cards view reads) and the chart agree without waiting for the hourly pass.
+export async function setEmployeeFollowSupervisor(id: number, follow: boolean): Promise<void> {
+  await assertActionPermission("employees:edit");
+  const employee = await prisma.employee.findUnique({ where: { id }, select: { id: true, name: true, followSupervisor: true } });
+  if (!employee) throw new Error("That person no longer exists.");
+  if (employee.followSupervisor === follow) return;
+
+  await prisma.employee.update({ where: { id }, data: { followSupervisor: follow } });
+  await applyTeamRule();
+
+  const label = (f: boolean) => (f ? "Follows supervisor" : "Own position family");
+  await logAudit({
+    action: "employee.setFollowSupervisor",
+    entityType: "Employee",
+    entityId: id,
+    summary: `${employee.name} ${follow ? "follows their supervisor again" : "is placed by their own position family"}`,
+    metadata: { before: employee.followSupervisor, after: follow },
+  });
+  await recordChanges(
+    [{
+      tab: "Employees",
+      rowRef: employee.name,
+      columnName: "Team placement",
+      previousValue: label(employee.followSupervisor),
+      newValue: label(follow),
+      changeType: classifyChange(label(employee.followSupervisor), label(follow)),
+      entityType: "Employee",
+      entityId: id,
+    }],
+    { action: "employee.setFollowSupervisor" },
+  );
+  revalidatePath("/employees");
+}
+
 // The editable employee fields, as a human reads them. Also the allow-list for what
 // gets announced — a field absent here is not reported.
 const EMPLOYEE_FIELD_LABELS = {

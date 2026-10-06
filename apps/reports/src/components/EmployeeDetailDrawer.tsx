@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { BuildReadinessDrawer } from "@/components/build-readiness/BuildReadinessDrawer";
 import { DASH, isPaylocityId, type EmployeeRow } from "@/lib/employee-row";
 import { workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
-import { setEmployeeActive, setEmployeeSupervisor, setEmployeeTeamOverride } from "@/lib/employee-actions";
+import { setEmployeeActive, setEmployeeSupervisor, setEmployeeFollowSupervisor, setEmployeeTeamOverride } from "@/lib/employee-actions";
 import { TEAM_CODES, TEAM_NAME } from "@/lib/team-names";
 
 // Level 3 of the Employees tab (2026-08-19, by request) — net new; there was
@@ -86,6 +86,43 @@ function TeamPicker({ employeeId, current, shown }: { employeeId: number; curren
         </select>
         <span className="text-label text-sdc-muted">
           {pending ? "Saving…" : value === null ? "Follows the reporting line" : "Set by hand — choose Automatic to follow the reporting line again"}
+        </span>
+        {error && <span className="text-label text-red-700">{error}</span>}
+      </span>
+    </div>
+  );
+}
+
+// "Follow supervisor" (2026-10-06): on by default. Off places this one person by their
+// own position family, for someone whose supervisor is in a different department.
+function FollowSupervisorToggle({ employeeId, current }: { employeeId: number; current: boolean }) {
+  const [value, setValue] = useState(current);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function change(next: boolean) {
+    const before = value;
+    setValue(next);
+    setError(null);
+    startTransition(async () => {
+      try {
+        await setEmployeeFollowSupervisor(employeeId, next);
+      } catch (err) {
+        setValue(before);
+        setError(err instanceof Error ? err.message : "Could not save.");
+      }
+    });
+  }
+
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-sdc-border-soft px-4 py-2.5">
+      <label htmlFor={`follow-${employeeId}`} className="text-xs font-semibold uppercase tracking-wide text-sdc-muted">
+        Follow supervisor
+      </label>
+      <span className="flex min-w-0 flex-col items-end gap-0.5">
+        <input id={`follow-${employeeId}`} type="checkbox" checked={value} disabled={pending} onChange={(e) => change(e.target.checked)} className="size-4 accent-sdc-blue disabled:opacity-50" />
+        <span className="text-label text-sdc-muted">
+          {pending ? "Saving…" : value ? "Team follows who they report to" : "Placed by their own position family"}
         </span>
         {error && <span className="text-label text-red-700">{error}</span>}
       </span>
@@ -201,9 +238,10 @@ export function EmployeeDetailDrawer({
           <Field
             label="Team"
             value={(employee.team && TEAM_NAME[employee.team]) || DASH}
-            note={employee.teamOverride ? "Set by hand" : "Follows the reporting line"}
+            note={employee.teamOverride ? "Set by hand" : employee.followSupervisor === false ? "Placed by own position family" : "Follows the reporting line"}
           />
         )}
+        {canEdit && !employee.isLeadership && <FollowSupervisorToggle employeeId={employee.id} current={employee.followSupervisor !== false} />}
         <Field label="Workforce Group" value={workforceGroupTitle(workforceGroup)} />
         <Field label="Department" value={departmentTitle} />
         <Field label="Title" value={employee.positionTitle} note={employee.paylocityId ? FROM_PAYLOCITY : undefined} />

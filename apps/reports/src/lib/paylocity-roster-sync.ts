@@ -276,7 +276,7 @@ export async function applyTeamRule(): Promise<string> {
   });
   // Without families the rule has nothing to go on, and must not clear anyone.
   if (!familyRows.length) return "teams left alone (position families not imported yet)";
-  const people = await prisma.employee.findMany({ select: { id: true, name: true, positionCode: true, supervisorId: true, team: true, teamOverride: true } });
+  const people = await prisma.employee.findMany({ select: { id: true, name: true, positionCode: true, supervisorId: true, team: true, teamOverride: true, followSupervisor: true } });
   const writes = planTeamWrites(people, familyRows.map((r) => ({ ...r, source: r.source as PositionFamilyRow["source"] })));
   if (!writes.length) return "teams unchanged";
 

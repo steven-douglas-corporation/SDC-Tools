@@ -165,3 +165,40 @@ test("pending changes say when a team was set by hand", () => {
   const change = pendingTeamChanges(people, resolveTeams(people, ROWS)).find((c) => c.id === 12);
   assert.deepEqual([change?.from, change?.to, change?.reason], ["service", "growth", "team set by hand"]);
 });
+
+// ── Follow supervisor off (2026-10-06) ──────────────────────────────────────
+
+const noFollow = (id: number): (TeamPerson & { active: boolean })[] => PEOPLE.map((x) => (x.id === id ? { ...x, followSupervisor: false } : x));
+
+test("follow supervisor off places the person by their own family, not their supervisor", () => {
+  const on = resolveTeams(PEOPLE, ROWS).get(11)!; // Billy, SVCTECH (404), under Monica (Service)
+  assert.deepEqual([on.proposedTeam, on.how, on.overridden], ["service", "branch", false]);
+  const off = resolveTeams(noFollow(11), ROWS).get(11)!;
+  assert.deepEqual([off.proposedTeam, off.how, off.overridden], ["mfgops", "family", true]);
+});
+
+test("follow supervisor off changes nobody else, and is ignored without a family team", () => {
+  const before = resolveTeams(PEOPLE, ROWS);
+  const after = resolveTeams(noFollow(11), ROWS);
+  for (const [id, r] of before) if (id !== 11) assert.equal(after.get(id)!.proposedTeam, r.proposedTeam, `person ${id} unmoved`);
+  // Someone whose own code has no family team keeps following the line.
+  const noFam = resolveTeams(PEOPLE.map((x) => (x.id === 11 ? { ...x, positionCode: null, followSupervisor: false } : x)), ROWS).get(11)!;
+  assert.deepEqual([noFam.proposedTeam, noFam.overridden], ["service", false]);
+});
+
+test("follow supervisor off is a no-op when their family already agrees, and a team set by hand still wins", () => {
+  const agree = resolveTeams(PEOPLE.map((x) => (x.id === 12 ? { ...x, followSupervisor: false } : x)), ROWS).get(12)!; // Ivan: SCE -> 500 -> service, under Monica
+  assert.deepEqual([agree.proposedTeam, agree.overridden], ["service", false]);
+  const hand = resolveTeams(noFollow(11).map((x) => (x.id === 11 ? { ...x, teamOverride: "build" } : x)), ROWS).get(11)!;
+  assert.deepEqual([hand.proposedTeam, hand.how], ["build", "override"]);
+});
+
+test("follow supervisor off is written, never the ★ lead, and explained in pending changes", () => {
+  // Stored on Service (where his supervisor put him) until the flag is turned off.
+  const stored = noFollow(11).map((x) => (x.id === 11 ? { ...x, team: "service" } : x));
+  const writes = planTeamWrites(stored, ROWS).filter((w) => w.id === 11);
+  assert.deepEqual(writes.map((w) => [w.from, w.to]), [["service", "mfgops"]]);
+  const res = resolveTeams(stored, ROWS);
+  assert.ok(!departmentLeads(stored, res).has(11));
+  assert.match(pendingTeamChanges(stored, res).find((c) => c.id === 11)?.reason ?? "", /follow supervisor is off/);
+});

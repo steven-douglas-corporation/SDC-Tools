@@ -53,6 +53,8 @@ export type EmployeeRow = {
   team: string | null;
   // A team set by hand (Employee.teamOverride, 2026-10-06); null = automatic.
   teamOverride?: string | null;
+  // false = placed by the person's own position family, not their supervisor (Employee.followSupervisor).
+  followSupervisor?: boolean;
   // Placed on this card by hand — the override differs from what the reporting
   // line gives (team-resolution.ts: overridden). Such people sit in their own
   // section at the bottom of the card.

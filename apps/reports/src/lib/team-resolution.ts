@@ -25,6 +25,11 @@ import { codeKey, mergePositionFamilies, LEADERSHIP_FAMILY, type PositionFamilyR
 //      manager in a different department than the one they belong to. Nobody
 //      else moves with them, they are never the ★ lead of the card they were
 //      put on, and clearing it returns them to the rule.
+//   6. Follow supervisor OFF (Employee.followSupervisor, 2026-10-06): for the
+//      occasional person whose supervisor is in a different department than
+//      their own position family. Rule 2 is skipped for that person, who takes
+//      the team of their OWN family instead (nobody under them moves). With no
+//      family team to go on the flag is ignored. A team set by hand still wins.
 //
 // Nothing here writes. The hourly roster sync (paylocity-roster-sync.ts)
 // applies planTeamWrites() on every pass, after supervisors are up to date, so
@@ -69,6 +74,8 @@ export type TeamPerson = {
   team: string | null;
   /** A team set by hand (Employee.teamOverride); it wins over the rule. null/absent = automatic. */
   teamOverride?: string | null;
+  /** false = place by the person's own position family, not the reporting line. Absent/true = follow the supervisor. */
+  followSupervisor?: boolean;
 };
 
 export type TeamResolution = {
@@ -82,7 +89,7 @@ export type TeamResolution = {
   /** The team the rule gives them; null = leave the stored team alone. */
   proposedTeam: string | null;
   /** Where the proposal came from. */
-  how: "leader" | "branch" | "own" | "none" | "override";
+  how: "leader" | "branch" | "own" | "family" | "none" | "override";
   /** A team set by hand that differs from what the rule would give — the person is somewhere the reporting line would not put them. */
   overridden: boolean;
   /** What the rule alone gives (ignoring any override); null = nothing to go on. */
@@ -120,15 +127,20 @@ export function resolveTeams(people: TeamPerson[], rows: PositionFamilyRow[]): M
     }
     const headFamily = decidingFamily(head);
     const headTeam = headFamily ? (FAMILY_TEAM[headFamily] ?? null) : null;
-    const ruleTeam = headTeam ?? ownTeam;
-    const overridden = hand !== null && hand !== ruleTeam;
+    // Follow supervisor off: the person's own family decides (when it has a team).
+    const byFamily = p.followSupervisor === false && ownTeam !== null;
+    const lineTeam = headTeam ?? ownTeam;
+    const ruleTeam = byFamily ? ownTeam : lineTeam;
+    const byHand = hand !== null && hand !== ruleTeam;
+    // Placed away from the reporting line, by a hand-set team or by turning follow supervisor off.
+    const overridden = byHand || (byFamily && ownTeam !== lineTeam);
     out.set(p.id, {
       leader: false,
       family,
       ownTeam,
       branchHeadId: head.id,
-      proposedTeam: overridden ? hand : ruleTeam,
-      how: overridden ? "override" : headTeam ? "branch" : ownTeam ? "own" : "none",
+      proposedTeam: byHand ? hand : ruleTeam,
+      how: byHand ? "override" : byFamily ? "family" : headTeam ? "branch" : ownTeam ? "own" : "none",
       overridden,
       ruleTeam,
     });
@@ -195,6 +207,8 @@ export function pendingTeamChanges(
     const reason =
       r.how === "override"
         ? "team set by hand"
+        : r.how === "family"
+        ? "own position family (follow supervisor is off)"
         : r.how === "own"
         ? "own position family (branch head has none)"
         : head && head.id !== p.id

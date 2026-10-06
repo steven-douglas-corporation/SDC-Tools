@@ -61,8 +61,8 @@ test("a card lists the roster, then team set by hand, then contractors", () => {
   const html = renderToStaticMarkup(createElement(OrgChart, { chart: c, people: ppl }));
   const at = (s: string) => html.indexOf(s);
   assert.ok(at("Rick") > -1 && at("Hank") > -1 && at("Temp") > -1, "all three appear");
-  assert.ok(at("Rick") < at("Team set by hand"), "roster first");
-  assert.ok(at("Team set by hand") < at("Hank"), "hand-placed under its heading");
+  assert.ok(at("Rick") < at("Placed by hand"), "roster first");
+  assert.ok(at("Placed by hand") < at("Hank"), "hand-placed under its heading");
   assert.ok(at("Hank") < at("Contractors · not in Paylocity"), "hand-placed above contractors");
   assert.ok(at("Contractors · not in Paylocity") < at("Temp"), "contractors last");
 });

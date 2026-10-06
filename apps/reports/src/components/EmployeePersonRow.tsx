@@ -132,7 +132,7 @@ export function EmployeePersonRow({
 export function HandPlacedSection({ children, last }: { children: React.ReactNode; last?: boolean }) {
   return (
     <div className={`border-t border-sdc-border bg-sdc-blue-light/60 ${last ? "rounded-b-[11px]" : ""}`}>
-      <p className="px-3.5 pt-2 text-label font-semibold uppercase tracking-wider text-sdc-blue-dark">Team set by hand</p>
+      <p className="px-3.5 pt-2 text-label font-semibold uppercase tracking-wider text-sdc-blue-dark">Placed by hand</p>
       <ul className="p-1.5 pt-0.5">{children}</ul>
     </div>
   );

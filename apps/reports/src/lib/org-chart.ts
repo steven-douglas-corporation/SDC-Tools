@@ -59,7 +59,7 @@ const TEAM_BY_LABEL = new Map(Object.entries(TEAM_NAME).map(([code, label]) => [
 export async function getOrgChart(): Promise<OrgChart> {
   const [employees, familyRows] = await Promise.all([
     prisma.employee.findMany({
-      select: { id: true, name: true, paylocityId: true, positionTitle: true, positionCode: true, supervisorId: true, active: true, team: true, teamOverride: true, discipline: true },
+      select: { id: true, name: true, paylocityId: true, positionTitle: true, positionCode: true, supervisorId: true, active: true, team: true, teamOverride: true, followSupervisor: true, discipline: true },
     }),
     prisma.positionFamily.findMany({
       select: { positionCode: true, familyCode: true, familyName: true, title: true, headcount: true, source: true },
@@ -79,6 +79,8 @@ export type OrgEmployee = {
   team: string | null;
   /** A team set by hand (Employee.teamOverride): wins over the rule. */
   teamOverride?: string | null;
+  /** false = placed by the person's own position family, not their supervisor. */
+  followSupervisor?: boolean;
   /** The app's team label ("AI", "Mechanical Engineers") — a display fallback only. */
   discipline?: string | null;
 };
@@ -112,7 +114,8 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
     // it puts the person on a card their manager is not on.
     if (r.overridden) {
       const sup = e.supervisorId != null ? byId.get(e.supervisorId) : undefined;
-      return sup ? `Team set by hand · reports to ${sup.name}` : "Team set by hand";
+      const how = r.how === "family" ? "Placed by own position family" : "Team set by hand";
+      return sup ? `${how} · reports to ${sup.name}` : how;
     }
     // Nobody is flagged for being placed by their reporting line (2026-10-05,
     // by request) — not for having no usable position code, and not for a code

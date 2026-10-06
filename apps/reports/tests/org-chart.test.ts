@@ -86,3 +86,11 @@ test("an override that matches the rule changes nothing", () => {
   assert.deepEqual(patBand(same).cards.map((c) => [c.team, names(c.heads)]), patBand(chart).cards.map((c) => [c.team, names(c.heads)]));
   assert.equal(cardOf(same, "service")!.heads[0].reports[0].note, null);
 });
+
+test("follow supervisor off puts the person on their own family's card, with a note saying why", () => {
+  const moved = buildOrgChart(PEOPLE.map((p) => (p.id === 11 ? { ...p, followSupervisor: false } : p)), ROWS); // Billy (404), under Monica (Service)
+  const billy = cardOf(moved, "mfgops")!.heads.find((h) => h.name === "Billy")!;
+  assert.equal(billy.note, "Placed by own position family · reports to Monica");
+  assert.equal(billy.byHand, true, "in the Placed by hand section");
+  assert.deepEqual(names(cardOf(moved, "service")!.heads), ["Monica"]);
+});

@@ -154,6 +154,11 @@ model Employee {
   // them. A separate column from `team` so the rule's own answer is never lost
   // and "Automatic" is one click. Set from the person panel, employees:edit.
   teamOverride  String?
+  // Whether the team follows the supervisor (the default) or the person's own position
+  // family (2026-10-06). Turned off for the occasional person whose supervisor is in a
+  // different department than their position family; unlike teamOverride it still
+  // follows the family->team mapping if that changes. Set from the person panel.
+  followSupervisor Boolean  @default(true)
   active        Boolean    @default(true)
   // Reporting line, sourced from the Paylocity employee export (Supervisor [Id]),
   // matched by Emp Id == paylocityId — a stable key, so no name matching. A
