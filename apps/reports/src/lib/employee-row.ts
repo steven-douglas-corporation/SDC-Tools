@@ -51,6 +51,8 @@ export type EmployeeRow = {
   // The shared team code (pm/mech/controls/build/wire/mfgops/service) —
   // resolveEmployeeGroup()'s first, most authoritative signal.
   team: string | null;
+  // A team set by hand (Employee.teamOverride, 2026-10-06); null = automatic.
+  teamOverride?: string | null;
   active: boolean;
   billingGroup: string;
   paylocityId: string;

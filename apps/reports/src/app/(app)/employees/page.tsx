@@ -70,6 +70,7 @@ export async function EmployeesView() {
       positionCode: e.positionCode,
       department: e.department ?? "",
       team: teamById.get(e.id) ?? null,
+      teamOverride: e.teamOverride,
       active: e.active,
       billingGroup: e.billingGroup ?? "",
       paylocityId: e.paylocityId ?? "",

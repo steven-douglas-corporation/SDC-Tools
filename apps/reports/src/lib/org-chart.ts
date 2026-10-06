@@ -1,7 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { codeKey, mergePositionFamilies, type PositionFamilyRow } from "@/lib/position-families-parse";
-import { resolveTeams, pendingTeamChanges, TEAM_NAME, type TeamChange } from "@/lib/team-resolution";
+import { resolveTeams, pendingTeamChanges, type TeamChange } from "@/lib/team-resolution";
+import { TEAM_NAME, TEAM_CODES } from "@/lib/team-names";
 import { isPaylocityId as inPaylocity, comparePositionCode } from "@/lib/employee-row";
 
 // ── The Org Chart page's data (2026-10-02) ──────────────────────────────────
@@ -48,8 +49,7 @@ const teamName = (t: string | null) => (t ? (TEAM_NAME[t] ?? t) : "No team");
 
 // Cards in the order work moves through the teams, as on the Employees page,
 // then the back office; "No team" last.
-const CARD_ORDER = ["pm", "mech", "controls", "ai", "build", "wire", "service", "mfgops", "ops", "hr", "finance", "growth", "sales", "exec"];
-const cardRank = (t: string | null) => (t === null ? CARD_ORDER.length + 1 : CARD_ORDER.indexOf(t) < 0 ? CARD_ORDER.length : CARD_ORDER.indexOf(t));
+const cardRank = (t: string | null) => (t === null ? TEAM_CODES.length + 1 : TEAM_CODES.indexOf(t) < 0 ? TEAM_CODES.length : TEAM_CODES.indexOf(t));
 
 // Team label → code, for the display fallback below.
 const TEAM_BY_LABEL = new Map(Object.entries(TEAM_NAME).map(([code, label]) => [label.toLowerCase(), code]));
@@ -57,7 +57,7 @@ const TEAM_BY_LABEL = new Map(Object.entries(TEAM_NAME).map(([code, label]) => [
 export async function getOrgChart(): Promise<OrgChart> {
   const [employees, familyRows] = await Promise.all([
     prisma.employee.findMany({
-      select: { id: true, name: true, paylocityId: true, positionTitle: true, positionCode: true, supervisorId: true, active: true, team: true, discipline: true },
+      select: { id: true, name: true, paylocityId: true, positionTitle: true, positionCode: true, supervisorId: true, active: true, team: true, teamOverride: true, discipline: true },
     }),
     prisma.positionFamily.findMany({
       select: { positionCode: true, familyCode: true, familyName: true, title: true, headcount: true, source: true },
@@ -75,6 +75,8 @@ export type OrgEmployee = {
   supervisorId: number | null;
   active: boolean;
   team: string | null;
+  /** A team set by hand (Employee.teamOverride): wins over the rule. */
+  teamOverride?: string | null;
   /** The app's team label ("AI", "Mechanical Engineers") — a display fallback only. */
   discipline?: string | null;
 };
@@ -104,6 +106,12 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
       const sup = e.supervisorId != null ? byId.get(e.supervisorId) : undefined;
       return sup ? `Not in Paylocity · supervisor set here: ${sup.name}` : "Not in Paylocity · no supervisor set yet";
     }
+    // A team set by hand is the one placement worth a note: it is deliberate, and
+    // it puts the person on a card their manager is not on.
+    if (r.overridden) {
+      const sup = e.supervisorId != null ? byId.get(e.supervisorId) : undefined;
+      return sup ? `Team set by hand · reports to ${sup.name}` : "Team set by hand";
+    }
     // Nobody is flagged for being placed by their reporting line (2026-10-05,
     // by request) — not for having no usable position code, and not for a code
     // whose family differs from the branch they sit in. Both are the rule
@@ -120,21 +128,23 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
     return (reportsOf.get(id) ?? []).flatMap((r) => (r.active ? [r] : shownReports(r.id, seen)));
   }
 
-  function node(e: (typeof employees)[number], onlyLeaders: boolean, seen = new Set<number>()): OrgNode {
+  const orgNode = (e: (typeof employees)[number], reports: OrgNode[]): OrgNode => ({
+    id: e.id,
+    name: e.name,
+    title: e.positionTitle?.trim() || null,
+    positionCode: e.positionCode,
+    team: displayTeam(e),
+    note: noteFor(e),
+    override: !!e.positionCode && families.get(codeKey(e.positionCode))?.source === "override",
+    isHead: reports.length > 0,
+    reports,
+  });
+
+  // Leadership: its own tree, each leader under the leader they report to.
+  function leaderNode(e: (typeof employees)[number], seen = new Set<number>()): OrgNode {
     seen.add(e.id);
-    const kids = shownReports(e.id).filter((k) => isLeader(k.id) === onlyLeaders && !seen.has(k.id));
-    const r = res.get(e.id);
-    return {
-      id: e.id,
-      name: e.name,
-      title: e.positionTitle?.trim() || null,
-      positionCode: e.positionCode,
-      team: displayTeam(e),
-      note: noteFor(e),
-      override: !!e.positionCode && families.get(codeKey(e.positionCode))?.source === "override",
-      isHead: kids.length > 0,
-      reports: kids.map((k) => node(k, onlyLeaders, seen)),
-    };
+    const kids = shownReports(e.id).filter((k) => isLeader(k.id) && !seen.has(k.id));
+    return orgNode(e, kids.map((k) => leaderNode(k, seen)));
   }
   const count = (n: OrgNode): number => 1 + n.reports.reduce((s, k) => s + count(k), 0);
 
@@ -145,7 +155,7 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
   const leaderRoots = leaders
     .filter((l) => l.supervisorId == null || !leaderIds.has(l.supervisorId))
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((l) => node(l, true));
+    .map((l) => leaderNode(l));
 
   // Bands in the leadership tree's own order (top down), then any other leader.
   const ordered: typeof leaders = [];
@@ -154,11 +164,52 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
 
   const bands: OrgBand[] = [];
   for (const L of ordered) {
-    const heads = shownReports(L.id).filter((h) => !isLeader(h.id)).map((h) => node(h, false));
-    if (!heads.length) continue;
+    // Everyone shown in this leader's branch (not Leadership), a hidden manager's
+    // reports lifted to the nearest shown one.
+    const members: typeof employees = [];
+    const collect = (id: number, seen = new Set<number>()) => {
+      for (const k of shownReports(id)) {
+        if (isLeader(k.id) || seen.has(k.id)) continue;
+        seen.add(k.id);
+        members.push(k);
+        collect(k.id, seen);
+      }
+    };
+    collect(L.id);
+    if (!members.length) continue;
+
+    // One card per team. Inside a card each person hangs off the nearest manager
+    // ABOVE them who is on the same card, else they head their own line. For a
+    // normal branch that is the supervisor, as ever; for someone whose team was set
+    // by hand it puts them on the card they were given — under a manager there if
+    // they have one, on their own if not — and leaves their reports where they were.
+    const memberIds = new Set(members.map((m) => m.id));
+    const teamOf = new Map(members.map((m) => [m.id, displayTeam(m)]));
+    const parentInCard = (m: (typeof employees)[number]): number | null => {
+      const team = teamOf.get(m.id);
+      const seen = new Set<number>([m.id]);
+      for (let cur = m.supervisorId; cur != null && !seen.has(cur); ) {
+        seen.add(cur);
+        const up = byId.get(cur);
+        if (!up) return null;
+        if (memberIds.has(up.id) && teamOf.get(up.id) === team) return up.id;
+        cur = up.supervisorId;
+      }
+      return null;
+    };
+    const kidsOf = new Map<number | null, typeof employees>();
+    for (const m of members) {
+      const p = parentInCard(m);
+      (kidsOf.get(p) ?? kidsOf.set(p, []).get(p)!).push(m);
+    }
+    const build = (m: (typeof employees)[number]): OrgNode =>
+      orgNode(m, (kidsOf.get(m.id) ?? []).sort(comparePositionCode).map(build));
     const byTeam = new Map<string | null, OrgNode[]>();
-    for (const h of heads) (byTeam.get(h.team) ?? byTeam.set(h.team, []).get(h.team)!).push(h);
-    const cards = [...byTeam].map(([team, hs]) => ({ team, name: teamName(team), people: hs.reduce((s, h) => s + count(h), 0), heads: hs }));
+    for (const m of (kidsOf.get(null) ?? []).sort(comparePositionCode)) {
+      const t = teamOf.get(m.id) ?? null;
+      (byTeam.get(t) ?? byTeam.set(t, []).get(t)!).push(build(m));
+    }
+    const cards = [...byTeam].map(([team, hs]) => ({ team, name: teamName(team), people: hs.reduce((n, h) => n + count(h), 0), heads: hs }));
     cards.sort((a, b) => cardRank(a.team) - cardRank(b.team) || a.name.localeCompare(b.name));
     bands.push({ leader: { id: L.id, name: L.name, title: L.positionTitle?.trim() || null }, people: cards.reduce((s, c) => s + c.people, 0), cards });
   }
