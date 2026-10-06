@@ -15,7 +15,7 @@ import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { normPn, leftoverKey, type WindowAttribution } from "@/lib/parts-cost-window-attribution";
 import { alternateKeys, classifyUnmatched, type MatchReason } from "@/lib/parts-match-reason";
 import { normalizeVendor, SDC_CANONICAL } from "@/lib/vendor-normalize";
-import { isNonPoLine } from "@/lib/parts-actual-sdc";
+import { isNonPoLine, isSdcBillingLine } from "@/lib/parts-actual-sdc";
 import { isUncoveredPart } from "@/lib/job-bom-rules";
 import { lineLeftToInvoice } from "@/lib/left-to-invoice";
 
@@ -319,6 +319,12 @@ export type FlatPart = BomPart & {
    */
   poBreakdown: PartPoGroup[];
   /**
+   * Invoiced + range only: the invoice events inside the window behind this row's windowed
+   * Invoiced $, grouped by PO. `poBreakdown` stays the part's whole history (the whole-job
+   * reconciliation reads it); the table swaps this in for what it shows and sums.
+   */
+  windowPoBreakdown?: PartPoGroup[];
+  /**
    * How many UNITS were actually bought, summed over every PO — not `qty`.
    *
    * `qty` is the BOM requirement (`eps.ItemQty`) and stays that way: readiness,
@@ -451,10 +457,10 @@ export function groupLinesByPo(
       }, null);
     const groupSupplier = normalizeVendor(first.supplier);
     // SDC never invoices itself for a PO it is the supplier on (same rule
-    // tm-parts-source.ts already applies to Part Invoiced Amount) — so this
-    // group's invoiced figure is not a real external invoice and nothing is
-    // still owed against it, regardless of what the raw lines carry.
-    const sdcGroup = groupSupplier === SDC_CANONICAL && !b.lines.every(isNonPoLine);
+    // tm-parts-source.ts already applies to Part Invoiced Amount) — an SDC line is not a
+    // real external invoice and nothing is still owed against it. Judged per LINE through
+    // the one shared rule (parts-actual-sdc.ts), never on the group's or the row's name.
+    const sdcLine = (l: PartsCostLine) => isSdcBillingLine(l);
     out.push({
       lineIds: b.lines.map((l) => l.lineId),
       poNumber: first.poNumber,
@@ -467,8 +473,8 @@ export function groupLinesByPo(
       // it actually is.
       unitPrice: qty !== 0 ? totalPrice / qty : null,
       totalPrice,
-      invoicedAmount: sdcGroup ? 0 : w((l) => l.actualAmount),
-      leftToInvoice: sdcGroup ? 0 : w((l) => lineLeftToInvoice(l)),
+      invoicedAmount: w((l) => (sdcLine(l) ? 0 : l.actualAmount)),
+      leftToInvoice: w((l) => (sdcLine(l) ? 0 : lineLeftToInvoice(l))),
       purchaseDate: newest((l) => l.purchaseDate),
       invoicedDate: newest((l) => l.invoicedDate),
       expectedDate: newestOf((d) => d.expectedDate),
@@ -730,13 +736,17 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     //
     // The windowed figure is already summed across every line by
     // attributeInvoicedWindow, so it only needs the same share division.
-    const invoicedAmount = sdcSupplier
-      ? 0
-      : activeAttribution
-        ? (windowedInvoiced ?? 0) / shareOf(p.pn)
-        : pnLines
-          ? splitSum((l) => l.actualAmount)
-          : 0;
+    // SDC is excluded per LINE (the window's SDC lines are already left out of
+    // `windowedInvoiced` by attributeInvoicedWindow), not by this row's one displayed
+    // supplier: a part bought from both SDC and an outside supplier keeps the outside
+    // invoice. Job 1150's 1150-F-008 showed SDC's $1,500 as invoiced because the newest PO
+    // was Pemco's; and the reverse case zeroed an outside supplier's money when the newest
+    // PO happened to be SDC's.
+    const invoicedAmount = activeAttribution
+      ? (windowedInvoiced ?? 0) / shareOf(p.pn)
+      : pnLines
+        ? splitSum((l) => (isSdcBillingLine(l) ? 0 : l.actualAmount))
+        : 0;
     const pctInvoiced = activeAttribution
       ? null
       : totalPrice > 0
@@ -745,6 +755,11 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
           ? 100
           : 0;
     const poBreakdown = groupLinesByPo(exactLines, altLines, shareOf(p.pn), poLineDates);
+    // Invoiced + range: the invoice events behind this row's windowed Invoiced $, shown as
+    // its expanded PO lines instead of the part's whole history (see scopePartToWindow).
+    const windowPoBreakdown = activeAttribution
+      ? groupLinesByPo(activeAttribution.linesByPartNumber.get(normPn(p.pn)) ?? [], [], shareOf(p.pn), poLineDates)
+      : undefined;
     const purchasedQty = poBreakdown.reduce((sum, g) => sum + g.qty, 0);
     const flat: FlatPart = {
       ...p,
@@ -790,7 +805,7 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       // Bought FROM Steven Douglas Corp (2026-09-17, by request) joins that same
       // zeroed set for the same reason: SDC does not invoice itself, so nothing
       // is ever "left to invoice" on a line it supplied.
-      leftToSpend: activeAttribution ? null : p.source === "process" || p.source === "stock" || sdcSupplier ? 0 : pnLines ? splitSum((l) => lineLeftToInvoice(l)) : totalPrice - invoicedAmount,
+      leftToSpend: activeAttribution ? null : p.source === "process" || p.source === "stock" ? 0 : pnLines ? splitSum((l) => (isSdcBillingLine(l) ? 0 : lineLeftToInvoice(l))) : sdcSupplier ? 0 : totalPrice - invoicedAmount,
       matchReason,
       nonBom: false,
       // A BOM part bought three times is three lines under one row, same as below.
@@ -799,6 +814,7 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       // to `totalPrice` / `invoicedAmount` above rather than being a second,
       // independently-derived set of numbers that could drift from them.
       poBreakdown,
+      windowPoBreakdown,
       purchasedQty,
       // Derived from the SAME two fields the row displays, not recomputed from
       // the lines — so "unit x purchased qty = total" is an identity here rather
@@ -861,14 +877,13 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     const first = lines[0];
     const totalPrice = sumLines(lines, (l) => l.totalPrice);
     const supplier = normalizeVendor(first.supplier);
-    // Same "SDC never invoices itself" rule as the BOM branch above — for PO-backed lines
-    // only. A non-PO AP invoice from SDC (job 1106's "Adjustment to match Sage") is real.
-    const sdcSupplier = supplier === SDC_CANONICAL && !lines.every(isNonPoLine);
-    const invoicedAmount = sdcSupplier
-      ? 0
-      : activeAttribution
-        ? (activeAttribution.nonBomByKey.get(leftoverKey(first.partNumber, first.description))?.amount ?? 0)
-        : sumLines(lines, (l) => l.actualAmount);
+    // Same per-LINE "SDC never invoices itself" rule as the BOM branch above (PO-backed SDC
+    // lines only — a non-PO AP invoice from SDC, job 1106's "Adjustment to match Sage", is
+    // real). In a window the SDC lines are already out of nonBomByKey.
+    const nonBomWindow = activeAttribution?.nonBomByKey.get(leftoverKey(first.partNumber, first.description));
+    const invoicedAmount = activeAttribution
+      ? (nonBomWindow?.amount ?? 0)
+      : sumLines(lines, (l) => (isSdcBillingLine(l) ? 0 : l.actualAmount));
     const reason = classifyUnmatched(first.partNumber, first.description, totalPrice, null);
     const nonBomBreakdown = groupLinesByPo(lines, [], 1, poLineDates);
     const nonBomPurchasedQty = nonBomBreakdown.reduce((sum, g) => sum + g.qty, 0);
@@ -946,7 +961,7 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       // Same shared kernel as the BOM branch above. These rows own their lines
       // outright (no share split), so it is a plain sum — except an SDC-supplied
       // line, which is never left to invoice for the same reason as the BOM branch.
-      leftToSpend: activeAttribution ? null : sdcSupplier ? 0 : lines.reduce((s2, l) => s2 + lineLeftToInvoice(l), 0),
+      leftToSpend: activeAttribution ? null : lines.reduce((s2, l) => s2 + (isSdcBillingLine(l) ? 0 : lineLeftToInvoice(l)), 0),
       matchReason: reason,
       nonBom: true,
       lineCount: lines.length,
@@ -956,6 +971,7 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       // six monthly card invoices under one row, which the table used to present
       // as a single $9,840 purchase dated Jul 30.
       poBreakdown: nonBomBreakdown,
+      windowPoBreakdown: activeAttribution ? groupLinesByPo(nonBomWindow?.lines ?? [], [], 1, poLineDates) : undefined,
       purchasedQty: nonBomPurchasedQty,
       effectiveUnitPrice: nonBomPurchasedQty !== 0 ? totalPrice / nonBomPurchasedQty : null,
     });
@@ -1112,4 +1128,97 @@ export function authoritativeVendorRollup(vendors: Vendor[] | undefined, supplie
   }
   if (itemCount === 0) return undefined;
   return { received, itemCount, pct: Math.round((received / itemCount) * 100) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A date range scopes a grouped row to the POs inside it (2026-10-06)
+//
+// A row stands for every PO a part was ever bought on. Judged on its newest PO alone, a
+// range that ended before that PO hid the whole row; kept whole, it dragged the part's
+// out-of-range POs into the columns and the footer. Job 1150, Purchase to 9/30: the
+// "Expense reimbursement" row carried a 10/2 invoice and VMI a 10/5 PO, so Total $ read
+// $2,444 high and Invoiced $ $2,213 high, and both rows listed October POs under a
+// September filter.
+//
+// The money fields of a row are, by construction, the sum of its poBreakdown groups
+// (tests/parts-po-breakout.test.ts pins that), so scoping a row is re-summing the groups
+// that are in range — no second calculation. The whole-job reconciliation reads the
+// UNSCOPED rows, so it still balances.
+
+const dayOf = (v: string | null | undefined): string | null => (v ? v.slice(0, 10) : null);
+
+export function dayInRange(v: string | null | undefined, from: string, to: string): boolean {
+  const day = dayOf(v);
+  if (!day) return false;
+  return !(from && day < from) && !(to && day > to);
+}
+
+const newestDay = (groups: PartPoGroup[], pick: (g: PartPoGroup) => string | null): string | null =>
+  groups.reduce<string | null>((best, g) => {
+    const v = pick(g);
+    return v && (!best || v > best) ? v : best;
+  }, null);
+
+/** Re-sums a row from the given PO groups. `groups` is already ordered newest purchase first. */
+function rebuildFromGroups(p: FlatPart, groups: PartPoGroup[], poBreakdown: PartPoGroup[]): FlatPart {
+  const totalPrice = groups.reduce((s, g) => s + g.totalPrice, 0);
+  const purchasedQty = groups.reduce((s, g) => s + g.qty, 0);
+  const head = poBreakdown[0];
+  return {
+    ...p,
+    totalPrice,
+    purchasedQty,
+    effectiveUnitPrice: purchasedQty !== 0 ? totalPrice / purchasedQty : null,
+    lineCount: poBreakdown.reduce((s, g) => s + g.lineCount, 0),
+    poBreakdown,
+    purchasedDate: newestDay(poBreakdown, (g) => g.purchaseDate) ?? p.purchasedDate,
+    invoicedDate: newestDay(poBreakdown, (g) => g.invoicedDate) ?? p.invoicedDate,
+    poNumber: head ? head.poNumber : p.poNumber,
+    supplier: head?.supplier ?? p.supplier,
+    ...(p.nonBom ? { qty: purchasedQty, poQty: purchasedQty } : {}),
+  };
+}
+
+/**
+ * Purchase / Exp Date / Delivered / Invoiced-before-the-window-resolves: the row keeps only
+ * the PO groups `keep` accepts, and its money, dates and PO list follow. Null when none are
+ * in range. A row with no PO groups (a BOM estimate) is returned as is — the caller judges
+ * it on its own date.
+ */
+export function scopePartToGroups(p: FlatPart, keep: (g: PartPoGroup) => boolean): FlatPart | null {
+  if (p.poBreakdown.length === 0) return p;
+  const kept = p.poBreakdown.filter(keep);
+  if (kept.length === 0) return null;
+  if (kept.length === p.poBreakdown.length) return p;
+  const totalPrice = kept.reduce((s, g) => s + g.totalPrice, 0);
+  const invoicedAmount = kept.reduce((s, g) => s + g.invoicedAmount, 0);
+  const inHouse = p.source === "process" || p.source === "stock";
+  const next = rebuildFromGroups(p, kept, kept);
+  return {
+    ...next,
+    invoicedAmount,
+    pctInvoiced: p.pctInvoiced === null ? null : totalPrice > 0 ? Math.round((invoicedAmount / totalPrice) * 100) : invoicedAmount > 0 ? 100 : 0,
+    leftToSpend: p.leftToSpend === null || inHouse ? p.leftToSpend : kept.reduce((s, g) => s + g.leftToInvoice, 0),
+  };
+}
+
+/**
+ * Invoiced + a range (window resolved). The row's Invoiced $ is already the window's; this
+ * swaps its expanded PO lines for the window's own invoice events (so they add up to it) and
+ * limits Total $ to what had been purchased by the end date — a PO placed after `to` is not
+ * part of "through 9/30".
+ */
+export function scopePartToWindow(p: FlatPart, to: string): FlatPart {
+  const win = p.windowPoBreakdown;
+  if (!win) return p;
+  const committed = p.poBreakdown.filter((g) => !to || !g.purchaseDate || dayOf(g.purchaseDate)! <= to);
+  const next = rebuildFromGroups(p, committed.length > 0 || p.poBreakdown.length === 0 ? committed : [], win);
+  return {
+    ...next,
+    // No PO history at all (a BOM estimate): nothing to re-sum, keep the row's own Total $.
+    totalPrice: p.poBreakdown.length === 0 ? p.totalPrice : next.totalPrice,
+    purchasedQty: p.poBreakdown.length === 0 ? p.purchasedQty : next.purchasedQty,
+    effectiveUnitPrice: p.poBreakdown.length === 0 ? p.effectiveUnitPrice : next.effectiveUnitPrice,
+    invoicedAmount: p.invoicedAmount,
+  };
 }

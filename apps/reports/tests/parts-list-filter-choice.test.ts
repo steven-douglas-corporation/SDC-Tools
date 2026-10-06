@@ -132,7 +132,9 @@ test("a blank date, a blank search and an untouched scope restrict nothing", () 
   // Dates: the whole range block is behind `from || to`, so two empty inputs never
   // reach a comparison — and never reach the `if (!d) return false` inside it, which
   // WOULD drop every part with no purchase date.
-  assert.match(JOB_PROCUREMENT, /if \(from \|\| to\) \{/);
+  // (2026-10-06: the range is applied per row by `dated`, and its first line is the same
+  // guard — neither date set returns the row untouched.)
+  assert.match(JOB_PROCUREMENT, /if \(!from && !to\) return p;/);
   // Search: the haystack test is behind a trimmed, non-empty query.
   assert.match(JOB_PROCUREMENT, /const q = query\.trim\(\)\.toLowerCase\(\);/);
   assert.match(JOB_PROCUREMENT, /if \(q\) \{[\s\S]{0,400}?hay\.includes\(q\)/);

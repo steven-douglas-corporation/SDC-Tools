@@ -1,5 +1,6 @@
 import type { PartsCostLine } from "@/lib/sync-totaleto";
 import type { BomNode } from "@/lib/job-bom-rules";
+import { isSdcBillingLine } from "@/lib/parts-actual-sdc";
 
 // ── Window-scoped invoiced attribution for the Parts List tab ──────────────
 //
@@ -66,6 +67,9 @@ export function leftoverKey(partNumber: string | null | undefined, description: 
 export type WindowAttribution = {
   /** normalized part number -> summed invoiced amount within the window. */
   byPartNumber: Map<string, number>;
+  /** The invoice events behind byPartNumber, per part number — what the row's expanded
+   *  PO lines show, so they list exactly the invoices the row's Invoiced $ adds up. */
+  linesByPartNumber: Map<string, PartsCostLine[]>;
   /** Invoiced money in the window that doesn't resolve to any part number —
    *  non-PO AP lines (freight/tariffs/reimbursements, which have no
    *  PurchaseDetailID at all) and PO lines whose part isn't in the
@@ -116,11 +120,17 @@ export type WindowAttribution = {
  */
 export function attributeInvoicedWindow(lines: PartsCostLine[], bomPartNumbers: ReadonlySet<string>): WindowAttribution {
   const byPartNumber = new Map<string, number>();
+  const linesByPartNumber = new Map<string, PartsCostLine[]>();
   let unattachedAmount = 0;
   let unattachedCount = 0;
   const nonBomByKey = new Map<string, { amount: number; lines: PartsCostLine[] }>();
 
   for (const line of lines) {
+    // SDC billing is judged on THE INVOICE LINE, not on a row's one displayed supplier: a
+    // part bought from both SDC and an outside supplier (job 1150's 1150-F-008) has to keep
+    // the outside invoice and drop the SDC one. Dropped from every bucket, the unattached
+    // total included — it is excluded on purpose, not "unmatched".
+    if (isSdcBillingLine(line)) continue;
     const key = normPn(line.partNumber);
     if (!key || !bomPartNumbers.has(key)) {
       unattachedAmount += line.invoicedAmount;
@@ -136,6 +146,9 @@ export function attributeInvoicedWindow(lines: PartsCostLine[], bomPartNumbers: 
       continue;
     }
     byPartNumber.set(key, (byPartNumber.get(key) ?? 0) + line.invoicedAmount);
+    const bucketLines = linesByPartNumber.get(key);
+    if (bucketLines) bucketLines.push(line);
+    else linesByPartNumber.set(key, [line]);
   }
 
   // A part number's events could still net to exactly zero within the window
@@ -143,8 +156,11 @@ export function attributeInvoicedWindow(lines: PartsCostLine[], bomPartNumbers: 
   // drop it from the map entirely, same zero-invoice rule as above, rather
   // than leave a spurious 0 entry a caller would have to re-filter.
   for (const [key, amount] of byPartNumber) {
-    if (amount === 0) byPartNumber.delete(key);
+    if (amount === 0) {
+      byPartNumber.delete(key);
+      linesByPartNumber.delete(key);
+    }
   }
 
-  return { byPartNumber, unattachedAmount, unattachedCount, nonBomByKey };
+  return { byPartNumber, linesByPartNumber, unattachedAmount, unattachedCount, nonBomByKey };
 }
