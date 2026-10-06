@@ -270,13 +270,13 @@ async function applyRosterPlan(path: string, rows: RosterFileRow[], plan: Roster
 
 // The team rule (lib/team-resolution.ts), applied. Reads the people as they are
 // AFTER the roster plan landed, so today's supervisors and position codes decide.
-async function applyTeamRule(): Promise<string> {
+export async function applyTeamRule(): Promise<string> {
   const familyRows = await prisma.positionFamily.findMany({
     select: { positionCode: true, familyCode: true, familyName: true, title: true, headcount: true, source: true },
   });
   // Without families the rule has nothing to go on, and must not clear anyone.
   if (!familyRows.length) return "teams left alone (position families not imported yet)";
-  const people = await prisma.employee.findMany({ select: { id: true, name: true, positionCode: true, supervisorId: true, team: true } });
+  const people = await prisma.employee.findMany({ select: { id: true, name: true, positionCode: true, supervisorId: true, team: true, teamOverride: true } });
   const writes = planTeamWrites(people, familyRows.map((r) => ({ ...r, source: r.source as PositionFamilyRow["source"] })));
   if (!writes.length) return "teams unchanged";
 

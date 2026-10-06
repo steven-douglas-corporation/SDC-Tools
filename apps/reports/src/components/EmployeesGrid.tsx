@@ -547,7 +547,7 @@ export function EmployeesGrid({
             onSelectCapacity={setCapacityDrill}
           />
           {orgChart.pending.length > 0 && <PendingTeamChanges pending={orgChart.pending} />}
-          <OrgChart chart={orgChart} people={rowsById} onSelectPerson={selectEmployee} />
+          <OrgChart chart={orgChart} people={rowsById} onSelectPerson={selectEmployee} year={year} onSelectCapacity={setCapacityDrill} />
         </div>
       ) : (
         <>

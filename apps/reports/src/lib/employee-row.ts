@@ -51,6 +51,12 @@ export type EmployeeRow = {
   // The shared team code (pm/mech/controls/build/wire/mfgops/service) —
   // resolveEmployeeGroup()'s first, most authoritative signal.
   team: string | null;
+  // A team set by hand (Employee.teamOverride, 2026-10-06); null = automatic.
+  teamOverride?: string | null;
+  // Placed on this card by hand — the override differs from what the reporting
+  // line gives (team-resolution.ts: overridden). Such people sit in their own
+  // section at the bottom of the card.
+  placedByHand?: boolean;
   active: boolean;
   billingGroup: string;
   paylocityId: string;

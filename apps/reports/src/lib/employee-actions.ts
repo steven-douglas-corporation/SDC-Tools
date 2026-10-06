@@ -10,6 +10,8 @@ import { assertActionPermission } from "@/lib/require-permission";
 import { DISCIPLINE_LABEL } from "@/lib/disciplines";
 import { pushTeamMemberToScheduler } from "@/lib/scheduler-push";
 import { isPaylocityId } from "@/lib/employee-row";
+import { TEAM_NAME, isTeamCode } from "@/lib/team-names";
+import { applyTeamRule } from "@/lib/paylocity-roster-sync";
 
 // Employees are NEVER hard-deleted — departed people keep their historical
 // hours (Dan's requirement). Deactivate/reactivate only.
@@ -152,6 +154,46 @@ export async function setEmployeeSupervisor(id: number, supervisorId: number | n
       entityId: id,
     }],
     { action: "employee.setSupervisor" },
+  );
+  revalidatePath("/employees");
+}
+
+// A team set by hand (2026-10-06) — the occasional person whose reporting line puts
+// them on a card they don't belong on. `team: null` returns them to the rule. Setting
+// it writes the team now; clearing lets the rule write it, so the Cards view (which
+// reads the stored team) and the chart agree straight away, not at the next hourly pass.
+export async function setEmployeeTeamOverride(id: number, team: string | null): Promise<void> {
+  await assertActionPermission("employees:edit");
+  if (team !== null && !isTeamCode(team)) throw new Error("That is not a team.");
+  const employee = await prisma.employee.findUnique({ where: { id }, select: { id: true, name: true, teamOverride: true } });
+  if (!employee) throw new Error("That person no longer exists.");
+  if ((employee.teamOverride ?? null) === team) return;
+
+  await prisma.employee.update({ where: { id }, data: { teamOverride: team, ...(team ? { team } : {}) } });
+  if (team === null) await applyTeamRule();
+
+  const label = (t: string | null) => (t ? (TEAM_NAME[t] ?? t) : "Automatic");
+  const previous = label(employee.teamOverride);
+  const next = label(team);
+  await logAudit({
+    action: "employee.setTeamOverride",
+    entityType: "Employee",
+    entityId: id,
+    summary: `Team of ${employee.name} set to ${next}${team ? " by hand" : " (follows the reporting line)"}`,
+    metadata: { before: employee.teamOverride, after: team },
+  });
+  await recordChanges(
+    [{
+      tab: "Employees",
+      rowRef: employee.name,
+      columnName: "Team (set by hand)",
+      previousValue: previous,
+      newValue: next,
+      changeType: classifyChange(previous, next),
+      entityType: "Employee",
+      entityId: id,
+    }],
+    { action: "employee.setTeamOverride" },
   );
   revalidatePath("/employees");
 }

@@ -2,8 +2,12 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { card } from "@/components/ui/classnames";
 import { resolveEmployeeGroup } from "@/lib/employee-card-theme";
 import type { OrgChart as OrgChartData, OrgNode } from "@/lib/org-chart";
-import { DepartmentCardHeader, EmployeePersonRow, TempsSection } from "@/components/EmployeePersonRow";
+import { DepartmentCardHeader, EmployeePersonRow, HandPlacedSection, TempsSection } from "@/components/EmployeePersonRow";
 import { isPaylocityId, comparePositionCode, type EmployeeRow } from "@/lib/employee-row";
+import { employeeCapacityHours } from "@/lib/workforce-capacity";
+import { hasYearPolicy } from "@/lib/workforce-capacity-policy";
+import { hours as fmtHours } from "@/components/ui/format";
+import type { CapacityDrillTarget } from "@/components/WorkforceSummaryCards";
 
 // The Employees page's Org chart view (2026-10-02): the same department cards
 // as the Cards view — same header, same "N active" line, same person rows
@@ -20,12 +24,31 @@ const TREE_UL = "ml-4 pl-3";
 const TREE_LI =
   "relative before:absolute before:-left-3 before:top-0 before:h-4 before:w-2.5 before:rounded-bl-[5px] before:border-b-[1.5px] before:border-l-[1.5px] before:border-sdc-gray-400 before:content-[''] not-last:after:absolute not-last:after:-left-3 not-last:after:top-4 not-last:after:bottom-0 not-last:after:border-l-[1.5px] not-last:after:border-sdc-gray-400 not-last:after:content-['']";
 
-type Ctx = { people: Map<number, EmployeeRow>; onSelect?: (row: EmployeeRow) => void; leadershipCard?: boolean };
+type Ctx = {
+  people: Map<number, EmployeeRow>;
+  onSelect?: (row: EmployeeRow) => void;
+  leadershipCard?: boolean;
+  /** For the per-card capacity hours (workforce-capacity-policy); absent = no hours line. */
+  year?: number;
+  onSelectCapacity?: (target: CapacityDrillTarget) => void;
+};
 
-// Contractors (not in Paylocity) leave the tree for the darker section at the bottom
-// of their card, as on Cards (2026-10-05). Anyone reporting to a temp moves up
-// to the temp's place, so nobody disappears with them.
-function splitTemps(nodes: OrgNode[], ctx: Ctx): { tree: OrgNode[]; temps: OrgNode[] } {
+// Every shown person in a card's tree, for its capacity drill. Same people the
+// card's "N active" counts: the chart only ever contains shown people.
+function rowsIn(nodes: OrgNode[], people: Map<number, EmployeeRow>): EmployeeRow[] {
+  return nodes.flatMap((n) => {
+    const row = people.get(n.id);
+    return [...(row && row.active ? [row] : []), ...rowsIn(n.reports, people)];
+  });
+}
+
+// A card has up to three parts, top to bottom, as on Cards: the Paylocity roster
+// as a tree, then people whose team was set by hand, then contractors (not in
+// Paylocity). The last two leave the tree for their own section; anyone who
+// reported to someone who left moves up to their place, so nobody disappears
+// with them. A contractor stays a contractor even if their team was set by hand.
+function splitSections(nodes: OrgNode[], ctx: Ctx): { tree: OrgNode[]; hand: OrgNode[]; temps: OrgNode[] } {
+  const hand: OrgNode[] = [];
   const temps: OrgNode[] = [];
   const walk = (list: OrgNode[]): OrgNode[] =>
     list.flatMap((n) => {
@@ -34,29 +57,33 @@ function splitTemps(nodes: OrgNode[], ctx: Ctx): { tree: OrgNode[]; temps: OrgNo
         temps.push(n);
         return reports;
       }
+      if (n.byHand) {
+        hand.push(n);
+        return reports;
+      }
       return [{ ...n, reports }];
     });
   const tree = walk(nodes);
-  return { tree, temps: temps.sort((a, b) => comparePositionCode(ctx.people.get(a.id) ?? a, ctx.people.get(b.id) ?? b)) };
+  const byCode = (a: OrgNode, b: OrgNode) => comparePositionCode(ctx.people.get(a.id) ?? a, ctx.people.get(b.id) ?? b);
+  return { tree, hand: hand.sort(byCode), temps: temps.sort(byCode) };
 }
 
 function CardBody({ nodes, cardTitle, ctx }: { nodes: OrgNode[]; cardTitle: string; ctx: Ctx }) {
-  const { tree, temps } = splitTemps(nodes, ctx);
+  const { tree, hand, temps } = splitSections(nodes, ctx);
+  const rows = (list: OrgNode[]) =>
+    list.map((n) => {
+      const row = ctx.people.get(n.id);
+      return row ? (
+        <li key={n.id}>
+          <EmployeePersonRow p={row} cardTitle={cardTitle} onSelect={ctx.onSelect} note={n.note} />
+        </li>
+      ) : null;
+    });
   return (
     <>
-      {(tree.length > 0 || temps.length === 0) && <Tree nodes={tree} cardTitle={cardTitle} ctx={ctx} />}
-      {temps.length > 0 && (
-        <TempsSection>
-          {temps.map((n) => {
-            const row = ctx.people.get(n.id);
-            return row ? (
-              <li key={n.id}>
-                <EmployeePersonRow p={row} cardTitle={cardTitle} onSelect={ctx.onSelect} note={n.note} />
-              </li>
-            ) : null;
-          })}
-        </TempsSection>
-      )}
+      {(tree.length > 0 || (hand.length === 0 && temps.length === 0)) && <Tree nodes={tree} cardTitle={cardTitle} ctx={ctx} />}
+      {hand.length > 0 && <HandPlacedSection last={temps.length === 0}>{rows(hand)}</HandPlacedSection>}
+      {temps.length > 0 && <TempsSection>{rows(temps)}</TempsSection>}
     </>
   );
 }
@@ -78,11 +105,27 @@ function Tree({ nodes, cardTitle, ctx, nested }: { nodes: OrgNode[]; cardTitle: 
   );
 }
 
-// The Cards view's card, minus what only Cards has (capacity hours, hiring).
+// The Cards view's card, minus hiring (switched off — lib/hiring-feature.ts).
 // Not overflow-hidden like Cards': a hover note on the first row would be clipped.
-function TeamCard({ team, count, children }: { team: string | null; count: number; children: (title: string) => React.ReactNode }) {
+function TeamCard({
+  team,
+  count,
+  nodes,
+  ctx,
+  children,
+}: {
+  team: string | null;
+  count: number;
+  /** The card's tree, for its capacity drill. */
+  nodes: OrgNode[];
+  ctx: Ctx;
+  children: (title: string) => React.ReactNode;
+}) {
   const group = team ? resolveEmployeeGroup({ team }) : null;
   const title = group?.title ?? "No team";
+  // The same "current hrs/yr" line a Cards card carries: active people × the
+  // year's hours per person, and a click opens the breakdown by employee.
+  const hasCapacityPolicy = ctx.year != null && hasYearPolicy(ctx.year);
   return (
     <section className="flex flex-col rounded-xl border border-sdc-border bg-white shadow-sm">
       <DepartmentCardHeader title={title} colors={group?.colors ?? { bg: "#e2e8f0", text: "#1e293b" }} isAi={group?.key === "ai"} className="rounded-t-[11px]" />
@@ -90,6 +133,17 @@ function TeamCard({ team, count, children }: { team: string | null; count: numbe
         <span className="font-bold tabular-nums text-sdc-navy">{count}</span>
         <span>active</span>
       </div>
+      {hasCapacityPolicy && ctx.onSelectCapacity && (
+        <button
+          type="button"
+          onClick={() => ctx.onSelectCapacity!({ title: `${title} — Capacity`, employees: rowsIn(nodes, ctx.people), hiringPositions: [] })}
+          title="See how this capacity total was built, by employee and open position"
+          className="flex items-baseline gap-1.5 border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-1.5 text-left text-xs text-sdc-muted hover:bg-sdc-blue-light/30"
+        >
+          <span className="font-bold tabular-nums text-sdc-navy">{fmtHours(employeeCapacityHours(count, ctx.year!))}</span>
+          <span>current hrs/yr</span>
+        </button>
+      )}
       {children(title)}
     </section>
   );
@@ -116,10 +170,15 @@ export function OrgChart({
   chart,
   people,
   onSelectPerson,
+  year,
+  onSelectCapacity,
 }: {
   chart: OrgChartData;
   people: Map<number, EmployeeRow>;
   onSelectPerson?: (row: EmployeeRow) => void;
+  /** With onSelectCapacity: each card shows its current hrs/yr and opens the breakdown. */
+  year?: number;
+  onSelectCapacity?: (target: CapacityDrillTarget) => void;
 }) {
   if (!chart.ready) {
     return (
@@ -129,12 +188,12 @@ export function OrgChart({
       />
     );
   }
-  const ctx: Ctx = { people, onSelect: onSelectPerson };
+  const ctx: Ctx = { people, onSelect: onSelectPerson, year, onSelectCapacity };
   return (
     // Groups share a line when they fit, the same flow the Cards view uses.
     <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
       <Group title="Leadership" active={chart.leaderCount} cardCount={1}>
-        <TeamCard team="exec" count={chart.leaderCount}>
+        <TeamCard team="exec" count={chart.leaderCount} nodes={chart.leaders} ctx={ctx}>
           {(title) => <Tree nodes={chart.leaders} cardTitle={title} ctx={{ ...ctx, leadershipCard: true }} />}
         </TeamCard>
       </Group>
@@ -142,7 +201,7 @@ export function OrgChart({
       {chart.bands.map((b) => (
         <Group key={b.leader.id} title={`Reporting to ${b.leader.name}`} active={b.people} cardCount={b.cards.length}>
           {b.cards.map((c) => (
-            <TeamCard key={c.team ?? "none"} team={c.team} count={c.people}>
+            <TeamCard key={c.team ?? "none"} team={c.team} count={c.people} nodes={c.heads} ctx={ctx}>
               {(title) => <CardBody nodes={c.heads} cardTitle={title} ctx={ctx} />}
             </TeamCard>
           ))}

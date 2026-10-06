@@ -146,6 +146,14 @@ model Employee {
   // manually here as an override. Null only for people not yet linked to a
   // Scheduler row and not one of the 7 teams (back-office departments).
   team          String?
+  // A team set BY HAND (2026-10-06), for the person whose reporting line puts
+  // them on a card that isn't where they belong. Null = automatic: the team
+  // follows the reporting line (lib/team-resolution.ts). When set it wins over
+  // the rule everywhere — the hourly sync writes it into `team`, and the
+  // Employees page places the person on that card — and nobody else moves with
+  // them. A separate column from `team` so the rule's own answer is never lost
+  // and "Automatic" is one click. Set from the person panel, employees:edit.
+  teamOverride  String?
   active        Boolean    @default(true)
   // Reporting line, sourced from the Paylocity employee export (Supervisor [Id]),
   // matched by Emp Id == paylocityId — a stable key, so no name matching. A

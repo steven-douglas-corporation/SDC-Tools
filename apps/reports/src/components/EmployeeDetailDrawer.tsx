@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import { BuildReadinessDrawer } from "@/components/build-readiness/BuildReadinessDrawer";
 import { DASH, isPaylocityId, type EmployeeRow } from "@/lib/employee-row";
 import { workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
-import { setEmployeeActive, setEmployeeSupervisor } from "@/lib/employee-actions";
+import { setEmployeeActive, setEmployeeSupervisor, setEmployeeTeamOverride } from "@/lib/employee-actions";
+import { TEAM_CODES, TEAM_NAME } from "@/lib/team-names";
 
 // Level 3 of the Employees tab (2026-08-19, by request) — net new; there was
 // no per-employee detail view before this. Reuses the same generic drawer
@@ -39,6 +40,59 @@ const FROM_PAYLOCITY = "From Paylocity — change it there";
 
 // For someone not in Paylocity (2026-10-02) no sync owns the supervisor, and the
 // Org Chart places people by who they report to, so it is picked here instead.
+// The team a person sits on (2026-10-06). It follows the reporting line, so for
+// nearly everyone this just says so; for the occasional person whose manager is
+// in a different department it is set by hand here, and "Automatic" hands it
+// back to the rule. Takes effect at once: the card moves with the next refresh
+// of this page, not the next hourly sync.
+function TeamPicker({ employeeId, current, shown }: { employeeId: number; current: string | null; shown: string | null }) {
+  const [value, setValue] = useState<string | null>(current);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function change(next: string | null) {
+    const before = value;
+    setValue(next);
+    setError(null);
+    startTransition(async () => {
+      try {
+        await setEmployeeTeamOverride(employeeId, next);
+      } catch (err) {
+        setValue(before);
+        setError(err instanceof Error ? err.message : "Could not save.");
+      }
+    });
+  }
+
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-sdc-border-soft px-4 py-2.5">
+      <label htmlFor={`team-${employeeId}`} className="text-xs font-semibold uppercase tracking-wide text-sdc-muted">
+        Team
+      </label>
+      <span className="flex min-w-0 flex-col items-end gap-0.5">
+        <select
+          id={`team-${employeeId}`}
+          value={value ?? ""}
+          disabled={pending}
+          onChange={(e) => change(e.target.value || null)}
+          className="max-w-[14rem] rounded-md border border-sdc-border bg-white px-2 py-1 text-sm text-sdc-navy disabled:opacity-50"
+        >
+          <option value="">Automatic{value === null && shown ? ` — ${TEAM_NAME[shown] ?? shown}` : ""}</option>
+          {TEAM_CODES.map((code) => (
+            <option key={code} value={code}>
+              {TEAM_NAME[code] ?? code}
+            </option>
+          ))}
+        </select>
+        <span className="text-label text-sdc-muted">
+          {pending ? "Saving…" : value === null ? "Follows the reporting line" : "Set by hand — choose Automatic to follow the reporting line again"}
+        </span>
+        {error && <span className="text-label text-red-700">{error}</span>}
+      </span>
+    </div>
+  );
+}
+
 function SupervisorPicker({
   employeeId,
   current,
@@ -141,6 +195,15 @@ export function EmployeeDetailDrawer({
       onClose={onClose}
     >
       <div className="flex flex-col">
+        {canEdit ? (
+          <TeamPicker employeeId={employee.id} current={employee.teamOverride ?? null} shown={employee.team} />
+        ) : (
+          <Field
+            label="Team"
+            value={(employee.team && TEAM_NAME[employee.team]) || DASH}
+            note={employee.teamOverride ? "Set by hand" : "Follows the reporting line"}
+          />
+        )}
         <Field label="Workforce Group" value={workforceGroupTitle(workforceGroup)} />
         <Field label="Department" value={departmentTitle} />
         <Field label="Title" value={employee.positionTitle} note={employee.paylocityId ? FROM_PAYLOCITY : undefined} />

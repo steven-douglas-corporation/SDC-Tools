@@ -114,3 +114,54 @@ test("departmentLeads: the top of each team, only when it is the one top and lea
   // Finance: Sandra heads it alone but nobody reports to her.
   assert.ok(!leads.has(81) && !leads.has(82) && !leads.has(50) && !leads.has(90) && !leads.has(40));
 });
+
+// ── A team set by hand (2026-10-06) ─────────────────────────────────────────
+// The 1% person: reports to a manager in one department, belongs in another.
+
+const withOverride = (id: number, teamOverride: string | null, people = PEOPLE) =>
+  people.map((x) => (x.id === id ? { ...x, teamOverride } : x));
+
+test("a team set by hand wins over the reporting line, for that person only", () => {
+  const people = withOverride(11, "mfgops"); // Billy reports into Service
+  const res = resolveTeams(people, ROWS);
+  const billy = res.get(11)!;
+  assert.deepEqual([billy.proposedTeam, billy.how, billy.overridden, billy.ruleTeam], ["mfgops", "override", true, "service"]);
+  assert.equal(res.get(12)?.proposedTeam, "service", "his peer does not move with him");
+  assert.equal(res.get(10)?.proposedTeam, "service", "neither does his manager");
+});
+
+test("an override that equals the rule is not an override; a stale value is ignored", () => {
+  const same = resolveTeams(withOverride(11, "service"), ROWS).get(11)!;
+  assert.deepEqual([same.overridden, same.how], [false, "branch"]);
+  const stale = resolveTeams(withOverride(11, "no-such-team"), ROWS).get(11)!;
+  assert.deepEqual([stale.proposedTeam, stale.overridden], ["service", false]);
+});
+
+test("planTeamWrites writes an override, once, and clearing it hands the person back to the rule", () => {
+  const set = withOverride(11, "mfgops");
+  const first = planTeamWrites(set, ROWS);
+  // Billy is stored on mfgops already in PEOPLE, so the override changes nothing to write.
+  assert.ok(!first.some((w) => w.id === 11), "already there: nothing to write");
+  const elsewhere = set.map((x) => (x.id === 11 ? { ...x, team: "service" } : x));
+  assert.deepEqual(planTeamWrites(elsewhere, ROWS).find((w) => w.id === 11), { id: 11, name: "Billy Cantrell", from: "service", to: "mfgops" });
+  const cleared = elsewhere.map((x) => (x.id === 11 ? { ...x, teamOverride: null, team: "mfgops" } : x));
+  assert.deepEqual(planTeamWrites(cleared, ROWS).find((w) => w.id === 11), { id: 11, name: "Billy Cantrell", from: "mfgops", to: "service" });
+});
+
+test("Leadership is written only when its team was set by hand", () => {
+  assert.ok(!planTeamWrites(PEOPLE, ROWS).some((w) => w.id === 3), "the CFO keeps what she has");
+  const moved = withOverride(3, "growth");
+  assert.deepEqual(planTeamWrites(moved, ROWS).find((w) => w.id === 3), { id: 3, name: "Lisa Andreani", from: "finance", to: "growth" });
+});
+
+test("someone placed by hand is never the ★ lead of the card they were put on", () => {
+  assert.ok(departmentLeads(PEOPLE, resolveTeams(PEOPLE, ROWS)).has(10), "Monica leads Service");
+  const moved = withOverride(10, "pm");
+  assert.ok(!departmentLeads(moved, resolveTeams(moved, ROWS)).has(10), "moved to PM by hand: no longer the head of anything");
+});
+
+test("pending changes say when a team was set by hand", () => {
+  const people = withOverride(12, "growth"); // Ivan, stored on service
+  const change = pendingTeamChanges(people, resolveTeams(people, ROWS)).find((c) => c.id === 12);
+  assert.deepEqual([change?.from, change?.to, change?.reason], ["service", "growth", "team set by hand"]);
+});

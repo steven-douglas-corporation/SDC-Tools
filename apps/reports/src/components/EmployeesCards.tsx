@@ -8,7 +8,7 @@ import { DISCIPLINE_LABEL } from "@/lib/disciplines";
 import { buildDepartmentCards } from "@/lib/employee-department-cards";
 import { DASH, isPaylocityId, type EmployeeRow } from "@/lib/employee-row";
 import type { HiringPosition } from "@/lib/hiring-positions";
-import { DepartmentCardHeader, EmployeePersonRow, TempsSection } from "@/components/EmployeePersonRow";
+import { DepartmentCardHeader, EmployeePersonRow, HandPlacedSection, TempsSection } from "@/components/EmployeePersonRow";
 import { HiringStatusPill } from "@/components/HiringStatusPill";
 import { hiringStatusStyle } from "@/lib/hiring-position-status";
 import { employeeCapacityHours, hiringCapacityHours } from "@/lib/workforce-capacity";
@@ -145,6 +145,12 @@ export function EmployeesCards({
       {cards.map((card) => {
         const activeCount = card.people.filter((p) => p.active).length;
         const inactiveCount = card.people.length - activeCount;
+        // Three parts to a card, top to bottom: the Paylocity roster, people whose
+        // team was set by hand, then contractors (not in Paylocity — which wins
+        // over by-hand, since they are never in Paylocity's reporting line anyway).
+        const contractors = card.people.filter((p) => !isPaylocityId(p.paylocityId));
+        const placedByHand = card.people.filter((p) => isPaylocityId(p.paylocityId) && p.placedByHand);
+        const roster = card.people.filter((p) => isPaylocityId(p.paylocityId) && !p.placedByHand);
         const cardHiring = hiringByDepartment.get(card.key) ?? [];
         // Openings, not rows (2026-08-24) — a Quantity 2 requisition adds 2 to
         // this department's planned headcount. Computed once here and reused
@@ -212,16 +218,25 @@ export function EmployeesCards({
                 )}
               </button>
             )}
-            <ul className={`p-1.5 ${card.people.some((p) => !isPaylocityId(p.paylocityId)) ? "" : "min-h-[72px]"}`}>
-              {card.people.filter((p) => isPaylocityId(p.paylocityId)).map((p) => (
+            <ul className={`p-1.5 ${contractors.length + placedByHand.length > 0 ? "" : "min-h-[72px]"}`}>
+              {roster.map((p) => (
                 <li key={p.id}>
                   <EmployeePersonRow p={p} cardTitle={card.title} onSelect={onSelectEmployee} />
                 </li>
               ))}
             </ul>
-            {card.people.some((p) => !isPaylocityId(p.paylocityId)) && (
+            {placedByHand.length > 0 && (
+              <HandPlacedSection last={contractors.length === 0}>
+                {placedByHand.map((p) => (
+                  <li key={p.id}>
+                    <EmployeePersonRow p={p} cardTitle={card.title} onSelect={onSelectEmployee} />
+                  </li>
+                ))}
+              </HandPlacedSection>
+            )}
+            {contractors.length > 0 && (
               <TempsSection>
-                {card.people.filter((p) => !isPaylocityId(p.paylocityId)).map((p) => (
+                {contractors.map((p) => (
                   <li key={p.id}>
                     <EmployeePersonRow p={p} cardTitle={card.title} onSelect={onSelectEmployee} />
                   </li>

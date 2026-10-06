@@ -60,3 +60,29 @@ test("people with no Leadership above them are listed apart", () => {
 test("pending changes list only what the rule would write", () => {
   assert.deepEqual(chart.pending.map((c) => [c.name, c.to]).sort(), [["Billy", "service"], ["Frank", "build"], ["Monica", "service"], ["Moses", "ai"], ["Sean", "build"]]);
 });
+
+// ── A team set by hand (2026-10-06) ─────────────────────────────────────────
+
+const patBand = (c: ReturnType<typeof buildOrgChart>) => c.bands.find((b) => b.leader.name === "Pat")!;
+const cardOf = (c: ReturnType<typeof buildOrgChart>, team: string) => patBand(c).cards.find((x) => x.team === team);
+
+test("a person placed by hand sits on the card they were given, in their own leader's group", () => {
+  const moved = buildOrgChart(PEOPLE.map((p) => (p.id === 11 ? { ...p, teamOverride: "build" } : p)), ROWS); // Billy, under Monica
+  assert.deepEqual(names(cardOf(moved, "build")!.heads), ["Sean", "Frank", "Billy"], "a root of the Builders card, after Sean's line");
+  assert.deepEqual(names(cardOf(moved, "service")!.heads), ["Monica"], "gone from where his manager is");
+  const billy = cardOf(moved, "build")!.heads.find((h) => h.name === "Billy")!;
+  assert.equal(billy.note, "Team set by hand · reports to Monica");
+  assert.equal(patBand(moved).people, 4, "the group still counts everyone once");
+});
+
+test("moving a manager by hand does not take their reports with them", () => {
+  const moved = buildOrgChart(PEOPLE.map((p) => (p.id === 10 ? { ...p, teamOverride: "pm" } : p)), ROWS); // Monica
+  assert.deepEqual(names(cardOf(moved, "pm")!.heads), ["Monica"]);
+  assert.deepEqual(names(cardOf(moved, "service")!.heads), ["Billy"], "Billy stays on Service, now a line of his own");
+});
+
+test("an override that matches the rule changes nothing", () => {
+  const same = buildOrgChart(PEOPLE.map((p) => (p.id === 11 ? { ...p, teamOverride: "service" } : p)), ROWS);
+  assert.deepEqual(patBand(same).cards.map((c) => [c.team, names(c.heads)]), patBand(chart).cards.map((c) => [c.team, names(c.heads)]));
+  assert.equal(cardOf(same, "service")!.heads[0].reports[0].note, null);
+});
