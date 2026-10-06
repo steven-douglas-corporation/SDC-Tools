@@ -23,6 +23,13 @@ export type ApVendorTotal = {
   vendor: string | null;
   /** Net GL-posted amount for this job + vendor, credits already netted off. */
   amount: number;
+  /**
+   * Whether these AP lines sit on a purchase order. Omitted/true = PO-backed. false = a
+   * plain AP invoice with no PO, which is never "SDC billing us for a part it made", even
+   * when the vendor is Steven Douglas Corp. — job 1106's $209,625 "Adjustment to match
+   * Sage" is one, and it has to stay in the normal-expense column to match the ledger.
+   */
+  hasPo?: boolean;
 };
 
 export type PartsActualSdcSplit = {
@@ -40,7 +47,7 @@ export function splitActualBySdc(rows: readonly ApVendorTotal[]): Map<string, Pa
     if (!Number.isFinite(r.amount)) continue;
     const cur = out.get(r.jobId) ?? { actual: 0, sdc: 0 };
     cur.actual += r.amount;
-    if (isSdcVendor(r.vendor)) cur.sdc += r.amount;
+    if (r.hasPo !== false && isSdcVendor(r.vendor)) cur.sdc += r.amount;
     out.set(r.jobId, cur);
   }
   return out;

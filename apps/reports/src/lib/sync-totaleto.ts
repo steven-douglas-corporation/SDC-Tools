@@ -749,19 +749,21 @@ export async function getPartsActualSdcSplitByJob(asOf: string | null = null): P
       .input("asOf", sql.VarChar(10), asOf)
       .query(
         `SELECT APDD.ProjectID AS JobId, SFC.CName AS Vendor,
+                CASE WHEN APDD.PurchaseDetailID IS NULL THEN 0 ELSE 1 END AS HasPo,
                 SUM(CASE WHEN @asOf IS NULL OR APBD.APDocDate < DATEADD(day, 1, CONVERT(date, @asOf, 23))
                          THEN ${AP_LINE_AMOUNT} ELSE 0 END) AS Amount
            FROM tblAPDocumentDetails APDD WITH(NOLOCK)
                 INNER JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
                 ${sageFirstJoin("SFC")}
           WHERE APDD.ProjectID IS NOT NULL AND ${glPostedAp("SFC")}
-          GROUP BY APDD.ProjectID, SFC.CName`,
+          GROUP BY APDD.ProjectID, SFC.CName, CASE WHEN APDD.PurchaseDetailID IS NULL THEN 0 ELSE 1 END`,
       );
     return splitActualBySdc(
       result.recordset.map((r: Record<string, unknown>) => ({
         jobId: String(Number(r.JobId)),
         vendor: r.Vendor == null ? null : String(r.Vendor),
         amount: Number(r.Amount),
+        hasPo: Number(r.HasPo) === 1,
       })),
     );
   }, { requestTimeout: 40_000, attempts: 1, feed: "parts_actual.sdc_split_by_job" });

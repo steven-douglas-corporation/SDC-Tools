@@ -147,3 +147,12 @@ test("a manual historical figure is carried through and labelled, never altered"
   assert.match(src, /costActualExcl = costActual;/);
   assert.match(src, /Manual historical figure - SDC not separable/);
 });
+
+test("an SDC-vendor AP invoice with no PO stays in the normal-expense column (job 1106 $209,625)", () => {
+  const m = splitActualBySdc([
+    line("1106", "Pemco Incorporated", 1000),
+    { jobId: "1106", vendor: "Steven Douglas Corp.", amount: 209625, hasPo: false },
+    { jobId: "1106", vendor: "Steven Douglas Corp.", amount: 300, hasPo: true },
+  ]);
+  assert.deepEqual(m.get("1106"), { actual: 210925, sdc: 300 });
+});
