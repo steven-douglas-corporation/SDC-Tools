@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES } from "@/lib/job-filters";
 import { applyRefundSign, sqlRefundSigned } from "@/lib/parts-refund";
 import { isSdcVendor } from "@/lib/vendor-normalize";
-import { splitActualBySdc, type PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
+import { splitActualBySdc, isSdcBilling, type PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
 
 // The exact query Power BI's 'Part Purchase' table runs against this same
 // SQL server (extracted verbatim from the semantic model's TMDL). Verified
@@ -452,6 +452,7 @@ export async function getPartsCostBookedByJob(
       .input("end", sql.DateTime, monthEndExclusive)
       .query(
         `SELECT APDD.ProjectID AS JobId, SFC.CName AS Vendor,
+                CASE WHEN APDD.PurchaseDetailID IS NULL THEN 0 ELSE 1 END AS HasPo,
                 SUM(CASE WHEN ${amt} > 0 THEN ${amt} ELSE 0 END) AS DebitAmt,
                 SUM(CASE WHEN ${amt} < 0 THEN -(${amt}) ELSE 0 END) AS CreditAmt,
                 SUM(${amt}) AS NetAmt
@@ -461,13 +462,13 @@ export async function getPartsCostBookedByJob(
           WHERE APBD.APDocDate >= @start AND APBD.APDocDate < @end
             AND APDD.ProjectID IS NOT NULL
             AND ${glPostedAp("SFC")}
-          GROUP BY APDD.ProjectID, SFC.CName`,
+          GROUP BY APDD.ProjectID, SFC.CName, CASE WHEN APDD.PurchaseDetailID IS NULL THEN 0 ELSE 1 END`,
       );
     const net = new Map<string, number>();
     const debit = new Map<string, number>();
     const credit = new Map<string, number>();
     for (const r of result.recordset) {
-      if (isSdcVendor(r.Vendor as string | null)) continue;
+      if (isSdcBilling(r.Vendor as string | null, Number(r.HasPo) === 1)) continue;
       const job = String(Number(r.JobId));
       const n = Number(r.NetAmt);
       // A null/NaN sum is a data problem, not a zero — skipping keeps it out of the month
@@ -749,19 +750,21 @@ export async function getPartsActualSdcSplitByJob(asOf: string | null = null): P
       .input("asOf", sql.VarChar(10), asOf)
       .query(
         `SELECT APDD.ProjectID AS JobId, SFC.CName AS Vendor,
+                CASE WHEN APDD.PurchaseDetailID IS NULL THEN 0 ELSE 1 END AS HasPo,
                 SUM(CASE WHEN @asOf IS NULL OR APBD.APDocDate < DATEADD(day, 1, CONVERT(date, @asOf, 23))
                          THEN ${AP_LINE_AMOUNT} ELSE 0 END) AS Amount
            FROM tblAPDocumentDetails APDD WITH(NOLOCK)
                 INNER JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
                 ${sageFirstJoin("SFC")}
           WHERE APDD.ProjectID IS NOT NULL AND ${glPostedAp("SFC")}
-          GROUP BY APDD.ProjectID, SFC.CName`,
+          GROUP BY APDD.ProjectID, SFC.CName, CASE WHEN APDD.PurchaseDetailID IS NULL THEN 0 ELSE 1 END`,
       );
     return splitActualBySdc(
       result.recordset.map((r: Record<string, unknown>) => ({
         jobId: String(Number(r.JobId)),
         vendor: r.Vendor == null ? null : String(r.Vendor),
         amount: Number(r.Amount),
+        hasPo: Number(r.HasPo) === 1,
       })),
     );
   }, { requestTimeout: 40_000, attempts: 1, feed: "parts_actual.sdc_split_by_job" });

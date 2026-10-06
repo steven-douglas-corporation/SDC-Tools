@@ -15,6 +15,7 @@ import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { normPn, leftoverKey, type WindowAttribution } from "@/lib/parts-cost-window-attribution";
 import { alternateKeys, classifyUnmatched, type MatchReason } from "@/lib/parts-match-reason";
 import { normalizeVendor, SDC_CANONICAL } from "@/lib/vendor-normalize";
+import { isNonPoLine } from "@/lib/parts-actual-sdc";
 import { isUncoveredPart } from "@/lib/job-bom-rules";
 import { lineLeftToInvoice } from "@/lib/left-to-invoice";
 
@@ -215,15 +216,8 @@ export function sectionLabelFor(section: BomNode): string {
 // Flatten + join
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * An AP invoice with no purchase order behind it — an "extra cost" (freight, fee, card
- * charge) or a plain AP line. "SDC never invoices itself" is a rule about SDC-MADE parts
- * bought on an internal PO; it does not apply to these. Job 1106's $209,625 "Adjustment to
- * match Sage" is one: an unflagged AP invoice from "Steven Douglas Corp." that the job
- * totals already count, but that the SDC rule was zeroing out of the Parts List.
- */
-export const isNonPoLine = (l: PartsCostLine): boolean =>
-  l.lineId.startsWith("ec:") || (l.lineId.startsWith("apdd:") && l.poNumber == null);
+// isNonPoLine now lives with the one SDC-billing definition (parts-actual-sdc.ts).
+export { isNonPoLine };
 
 // A BOM leaf part enriched with its parent assembly + the joined PO purchase
 // line (category / purchased / invoiced / PO#) and derived lead/due.

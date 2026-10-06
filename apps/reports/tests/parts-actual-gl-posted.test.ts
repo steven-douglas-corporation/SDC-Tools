@@ -503,22 +503,22 @@ test("a Sage-first vendor is matched EXACTLY, never by pattern", () => {
   assert.ok(!/LIKE/i.test(predicate), "never a LIKE — it would catch unrelated vendors");
 });
 
-test("getPartsCostBookedByJob excludes Steven Douglas Corp. as a supplier, via the one shared isSdcVendor rule", () => {
+test("getPartsCostBookedByJob excludes Steven Douglas Corp. PO billing, via the one shared isSdcBilling rule", () => {
   // SDC never invoices itself (2026-09-30): verified live against Total ETO for August
   // 2026, $65,043 of that month's $997,136 Money Spent Month was billed under "Steven
   // Douglas Corp." across 955 AP lines on every active job, none of it flagged — a real
   // and recurring share, not an edge case.
-  assert.match(totalEtoCode, /import \{ isSdcVendor \} from "@\/lib\/vendor-normalize";/);
+  assert.match(totalEtoCode, /isSdcBilling,/);
   // Grouped by vendor too, not just by job — the exclusion is decided in TypeScript
   // against isSdcVendor, not re-derived as a second SQL pattern that could drift from it.
   assert.match(
     TOTALETO,
-    /SFC\.CName AS Vendor,[\s\S]{0,600}?GROUP BY APDD\.ProjectID, SFC\.CName`,/,
+    /SFC\.CName AS Vendor,[\s\S]{0,800}?GROUP BY APDD\.ProjectID, SFC\.CName, CASE WHEN APDD\.PurchaseDetailID IS NULL THEN 0 ELSE 1 END`,/,
     "getPartsCostBookedByJob's query must carry the vendor name and group by it",
   );
   const fn = totalEtoCode.slice(totalEtoCode.indexOf("export async function getPartsCostBookedByJob"));
   const body = fn.slice(0, fn.indexOf("}, { requestTimeout: 180_000"));
-  assert.match(body, /if \(isSdcVendor\(r\.Vendor as string \| null\)\) continue;/, "an SDC vendor row must be skipped before it reaches net/debit/credit");
+  assert.match(body, /if \(isSdcBilling\(r\.Vendor as string \| null, Number\(r\.HasPo\) === 1\)\) continue;/, "an SDC vendor row must be skipped before it reaches net/debit/credit");
   // SDC Credit Card and Steven Douglas Corp. Expense Reports must NOT be caught by this —
   // isSdcVendor itself already refuses them (they are a payment method and an expense
   // channel, not SDC as a supplier), so this test only needs to confirm the real
