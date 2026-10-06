@@ -63,6 +63,6 @@ test("a card lists the roster, then team set by hand, then contractors", () => {
   assert.ok(at("Rick") > -1 && at("Hank") > -1 && at("Temp") > -1, "all three appear");
   assert.ok(at("Rick") < at("Team set by hand"), "roster first");
   assert.ok(at("Team set by hand") < at("Hank"), "hand-placed under its heading");
-  assert.ok(at("Hank") < at("Contractors · not in Paylocity"), "hand-placed above contractors");
-  assert.ok(at("Contractors · not in Paylocity") < at("Temp"), "contractors last");
+  assert.ok(at("Hank") < at("Contractors"), "hand-placed above contractors");
+  assert.ok(at("Contractors") < at("Temp"), "contractors last");
 });
