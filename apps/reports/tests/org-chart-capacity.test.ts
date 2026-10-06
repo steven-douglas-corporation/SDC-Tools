@@ -44,3 +44,25 @@ test("no hours line without a drill handler, or for a year with no capacity poli
   assert.ok(!render({ year: 2026 }).includes("current hrs/yr"), "nothing to open, so nothing offered");
   assert.ok(!render({ year: 1999, onSelectCapacity: () => {} }).includes("current hrs/yr"), "no policy for that year");
 });
+
+// A card reads top to bottom: the Paylocity roster, then people whose team was set
+// by hand (their own colour), then contractors (2026-10-06, by request).
+test("a card lists the roster, then team set by hand, then contractors", () => {
+  const rows = [...ROWS, fam("CTRL CHIEF", "301"), fam("CTRL SR", "301")];
+  const all: OrgEmployee[] = [
+    ...PEOPLE,
+    person(5, "Cora", "CTRL CHIEF", 1),
+    person(6, "Rick", "CTRL SR", 5),
+    { ...person(7, "Hank", "ME SR", 2), teamOverride: "controls" },
+    { ...person(8, "Temp", "", 5), paylocityId: "TEMP1", team: "controls" },
+  ];
+  const c = buildOrgChart(all, rows);
+  const ppl = new Map(all.map((p) => [p.id, row(p)]));
+  const html = renderToStaticMarkup(createElement(OrgChart, { chart: c, people: ppl }));
+  const at = (s: string) => html.indexOf(s);
+  assert.ok(at("Rick") > -1 && at("Hank") > -1 && at("Temp") > -1, "all three appear");
+  assert.ok(at("Rick") < at("Team set by hand"), "roster first");
+  assert.ok(at("Team set by hand") < at("Hank"), "hand-placed under its heading");
+  assert.ok(at("Hank") < at("Contractors · not in Paylocity"), "hand-placed above contractors");
+  assert.ok(at("Contractors · not in Paylocity") < at("Temp"), "contractors last");
+});

@@ -123,6 +123,21 @@ export function EmployeePersonRow({
  * temps and hand-entered rows (isPaylocityId false), set apart from the
  * Paylocity roster above on a darker ground. Used by both views.
  */
+/**
+ * The part of a card for people whose team was set by hand (2026-10-06, by
+ * request): below the Paylocity roster and above the contractors, on a third
+ * ground (a soft blue) so it reads apart from both. `last` rounds the bottom
+ * corners when no contractors section follows.
+ */
+export function HandPlacedSection({ children, last }: { children: React.ReactNode; last?: boolean }) {
+  return (
+    <div className={`border-t border-sdc-border bg-sdc-blue-light/60 ${last ? "rounded-b-[11px]" : ""}`}>
+      <p className="px-3.5 pt-2 text-label font-semibold uppercase tracking-wider text-sdc-blue-dark">Team set by hand</p>
+      <ul className="p-1.5 pt-0.5">{children}</ul>
+    </div>
+  );
+}
+
 export function TempsSection({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-b-[11px] border-t border-sdc-border bg-sdc-gray-100">

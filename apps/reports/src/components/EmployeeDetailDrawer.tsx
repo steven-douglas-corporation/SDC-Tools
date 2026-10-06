@@ -195,8 +195,6 @@ export function EmployeeDetailDrawer({
       onClose={onClose}
     >
       <div className="flex flex-col">
-        <Field label="Workforce Group" value={workforceGroupTitle(workforceGroup)} />
-        <Field label="Department" value={departmentTitle} />
         {canEdit ? (
           <TeamPicker employeeId={employee.id} current={employee.teamOverride ?? null} shown={employee.team} />
         ) : (
@@ -206,6 +204,8 @@ export function EmployeeDetailDrawer({
             note={employee.teamOverride ? "Set by hand" : "Follows the reporting line"}
           />
         )}
+        <Field label="Workforce Group" value={workforceGroupTitle(workforceGroup)} />
+        <Field label="Department" value={departmentTitle} />
         <Field label="Title" value={employee.positionTitle} note={employee.paylocityId ? FROM_PAYLOCITY : undefined} />
         <Field label="Discipline" value={employee.discipline} />
         {canEdit && !isPaylocityId(employee.paylocityId) ? (

@@ -26,6 +26,8 @@ export type OrgNode = {
   note: string | null;
   /** The position code's family comes from the overrides file. */
   override: boolean;
+  /** Team set by hand and different from the reporting line: shown in its own section on the card. */
+  byHand: boolean;
   /** Has someone reporting to them. */
   isHead: boolean;
   reports: OrgNode[];
@@ -136,6 +138,7 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
     team: displayTeam(e),
     note: noteFor(e),
     override: !!e.positionCode && families.get(codeKey(e.positionCode))?.source === "override",
+    byHand: res.get(e.id)?.overridden === true,
     isHead: reports.length > 0,
     reports,
   });

@@ -2,7 +2,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { card } from "@/components/ui/classnames";
 import { resolveEmployeeGroup } from "@/lib/employee-card-theme";
 import type { OrgChart as OrgChartData, OrgNode } from "@/lib/org-chart";
-import { DepartmentCardHeader, EmployeePersonRow, TempsSection } from "@/components/EmployeePersonRow";
+import { DepartmentCardHeader, EmployeePersonRow, HandPlacedSection, TempsSection } from "@/components/EmployeePersonRow";
 import { isPaylocityId, comparePositionCode, type EmployeeRow } from "@/lib/employee-row";
 import { employeeCapacityHours } from "@/lib/workforce-capacity";
 import { hasYearPolicy } from "@/lib/workforce-capacity-policy";
@@ -42,10 +42,13 @@ function rowsIn(nodes: OrgNode[], people: Map<number, EmployeeRow>): EmployeeRow
   });
 }
 
-// Contractors (not in Paylocity) leave the tree for the darker section at the bottom
-// of their card, as on Cards (2026-10-05). Anyone reporting to a temp moves up
-// to the temp's place, so nobody disappears with them.
-function splitTemps(nodes: OrgNode[], ctx: Ctx): { tree: OrgNode[]; temps: OrgNode[] } {
+// A card has up to three parts, top to bottom, as on Cards: the Paylocity roster
+// as a tree, then people whose team was set by hand, then contractors (not in
+// Paylocity). The last two leave the tree for their own section; anyone who
+// reported to someone who left moves up to their place, so nobody disappears
+// with them. A contractor stays a contractor even if their team was set by hand.
+function splitSections(nodes: OrgNode[], ctx: Ctx): { tree: OrgNode[]; hand: OrgNode[]; temps: OrgNode[] } {
+  const hand: OrgNode[] = [];
   const temps: OrgNode[] = [];
   const walk = (list: OrgNode[]): OrgNode[] =>
     list.flatMap((n) => {
@@ -54,29 +57,33 @@ function splitTemps(nodes: OrgNode[], ctx: Ctx): { tree: OrgNode[]; temps: OrgNo
         temps.push(n);
         return reports;
       }
+      if (n.byHand) {
+        hand.push(n);
+        return reports;
+      }
       return [{ ...n, reports }];
     });
   const tree = walk(nodes);
-  return { tree, temps: temps.sort((a, b) => comparePositionCode(ctx.people.get(a.id) ?? a, ctx.people.get(b.id) ?? b)) };
+  const byCode = (a: OrgNode, b: OrgNode) => comparePositionCode(ctx.people.get(a.id) ?? a, ctx.people.get(b.id) ?? b);
+  return { tree, hand: hand.sort(byCode), temps: temps.sort(byCode) };
 }
 
 function CardBody({ nodes, cardTitle, ctx }: { nodes: OrgNode[]; cardTitle: string; ctx: Ctx }) {
-  const { tree, temps } = splitTemps(nodes, ctx);
+  const { tree, hand, temps } = splitSections(nodes, ctx);
+  const rows = (list: OrgNode[]) =>
+    list.map((n) => {
+      const row = ctx.people.get(n.id);
+      return row ? (
+        <li key={n.id}>
+          <EmployeePersonRow p={row} cardTitle={cardTitle} onSelect={ctx.onSelect} note={n.note} />
+        </li>
+      ) : null;
+    });
   return (
     <>
-      {(tree.length > 0 || temps.length === 0) && <Tree nodes={tree} cardTitle={cardTitle} ctx={ctx} />}
-      {temps.length > 0 && (
-        <TempsSection>
-          {temps.map((n) => {
-            const row = ctx.people.get(n.id);
-            return row ? (
-              <li key={n.id}>
-                <EmployeePersonRow p={row} cardTitle={cardTitle} onSelect={ctx.onSelect} note={n.note} />
-              </li>
-            ) : null;
-          })}
-        </TempsSection>
-      )}
+      {(tree.length > 0 || (hand.length === 0 && temps.length === 0)) && <Tree nodes={tree} cardTitle={cardTitle} ctx={ctx} />}
+      {hand.length > 0 && <HandPlacedSection last={temps.length === 0}>{rows(hand)}</HandPlacedSection>}
+      {temps.length > 0 && <TempsSection>{rows(temps)}</TempsSection>}
     </>
   );
 }
