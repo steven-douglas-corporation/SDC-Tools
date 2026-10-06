@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, globalShortcut, Notification, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, globalShortcut, Notification, shell, screen } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 const processManager = require('./processManager');
@@ -125,6 +125,38 @@ function _loadSettings() {
 }
 function _saveSettings(data) {
   try { fs.writeFileSync(_settingsFile(), JSON.stringify(data, null, 2)); } catch (_) {}
+}
+
+// ── Keep windows on a connected display ───────────────────────────────────────
+// A window left on a monitor that was unplugged is unreachable. "Reachable"
+// means enough of the title bar area overlaps some display's work area to grab.
+const _MIN_VISIBLE = 100;
+function _isReachable(b) {
+  return screen.getAllDisplays().some(d => {
+    const w = d.workArea;
+    const overlapX = Math.min(b.x + b.width, w.x + w.width) - Math.max(b.x, w.x);
+    const overlapY = Math.min(b.y + 40, w.y + w.height) - Math.max(b.y, w.y);
+    return overlapX >= _MIN_VISIBLE && overlapY > 0;
+  });
+}
+
+// Move a live window onto the primary display if it is no longer reachable.
+function _rescueWindow(win) {
+  if (!win || win.isDestroyed() || win.isMaximized() || win.isFullScreen()) return;
+  const b = win.getBounds();
+  if (_isReachable(b)) return;
+  const w = screen.getPrimaryDisplay().workArea;
+  const width  = Math.min(b.width,  w.width);
+  const height = Math.min(b.height, w.height);
+  win.setBounds({
+    x: w.x + Math.round((w.width  - width)  / 2),
+    y: w.y + Math.round((w.height - height) / 2),
+    width, height,
+  });
+}
+
+function _rescueAllWindows() {
+  BrowserWindow.getAllWindows().forEach(_rescueWindow);
 }
 
 // ── Window lifecycle tracing ────────────────────────────────────────────────
@@ -381,9 +413,13 @@ async function openAppWindow(appId, deepPath) {
   const bounds   = {
     width:  saved.width  || defaults.width,
     height: saved.height || defaults.height,
-    ...(saved.x != null ? { x: saved.x } : {}),
-    ...(saved.y != null ? { y: saved.y } : {}),
   };
+  // Only reuse the saved position if it still lands on a connected display;
+  // otherwise leave x/y unset so Electron centers the window on the primary one.
+  if (saved.x != null && saved.y != null && _isReachable({ ...bounds, x: saved.x, y: saved.y })) {
+    bounds.x = saved.x;
+    bounds.y = saved.y;
+  }
 
   const icon = _getAppIcon(appId);
 
@@ -637,6 +673,10 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   createMainWindow();
   createTray();
+
+  // Pull stranded windows back when a monitor is unplugged or the layout changes.
+  screen.on('display-removed', _rescueAllWindows);
+  screen.on('display-metrics-changed', _rescueAllWindows);
 
   processManager.on('status-change', status => {
     if (mainWindow && !mainWindow.isDestroyed()) {
