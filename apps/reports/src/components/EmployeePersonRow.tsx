@@ -131,8 +131,8 @@ export function EmployeePersonRow({
  */
 export function HandPlacedSection({ children, last }: { children: React.ReactNode; last?: boolean }) {
   return (
-    <div className={`border-t border-sdc-border bg-sdc-blue-light/60 ${last ? "rounded-b-[11px]" : ""}`}>
-      <p className="px-3.5 pt-2 text-label font-semibold uppercase tracking-wider text-sdc-blue-dark">Team set by hand</p>
+    <div className={`border-t border-sdc-border bg-sdc-blue-light/25 ${last ? "rounded-b-[11px]" : ""}`}>
+      <p className="px-3.5 pt-2 text-label font-semibold uppercase tracking-wider text-sdc-muted">Team set by hand</p>
       <ul className="p-1.5 pt-0.5">{children}</ul>
     </div>
   );
@@ -141,7 +141,7 @@ export function HandPlacedSection({ children, last }: { children: React.ReactNod
 export function TempsSection({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-b-[11px] border-t border-sdc-border bg-sdc-gray-100">
-      <p className="px-3.5 pt-2 text-label font-semibold uppercase tracking-wider text-sdc-muted">Contractors · not in Paylocity</p>
+      <p className="px-3.5 pt-2 text-label font-semibold uppercase tracking-wider text-sdc-muted">Contractors</p>
       <ul className="p-1.5 pt-0.5">{children}</ul>
     </div>
   );
