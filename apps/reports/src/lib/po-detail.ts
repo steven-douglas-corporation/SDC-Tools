@@ -1147,9 +1147,14 @@ export function authoritativeVendorRollup(vendors: Vendor[] | undefined, supplie
 
 const dayOf = (v: string | null | undefined): string | null => (v ? v.slice(0, 10) : null);
 
+// A missing date can sit inside an open-ended range but not a closed one (2026-10-07).
+// "To 10/7" with no start means everything up to then, and a row with no date at all
+// (a BOM part nothing has been bought against) is not after 10/7, so it stays; it
+// vanished on any bound before, even for a row that owed $7,650. With both bounds set
+// the user asked for a window, and a row with no date cannot be placed in it.
 export function dayInRange(v: string | null | undefined, from: string, to: string): boolean {
   const day = dayOf(v);
-  if (!day) return false;
+  if (!day) return !(from && to);
   return !(from && day < from) && !(to && day > to);
 }
 

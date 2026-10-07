@@ -121,10 +121,12 @@ test("scopePartToWindow leaves a row without a window breakdown alone", () => {
   assert.equal(scopePartToWindow(row, "2026-09-30"), row);
 });
 
-test("dayInRange: inclusive on both ends, open when a bound is empty, false for a missing date", () => {
+test("dayInRange: inclusive on both ends, open when a bound is empty, a missing date passes only an open-ended range", () => {
   assert.equal(dayInRange("2026-09-30T00:00:00.000Z", "", "2026-09-30"), true);
   assert.equal(dayInRange("2026-10-01", "", "2026-09-30"), false);
   assert.equal(dayInRange("2026-09-01", "2026-09-01", ""), true);
   assert.equal(dayInRange("2026-08-31", "2026-09-01", ""), false);
-  assert.equal(dayInRange(null, "", "2026-09-30"), false);
+  assert.equal(dayInRange(null, "", "2026-09-30"), true);
+  assert.equal(dayInRange(null, "2026-09-01", ""), true);
+  assert.equal(dayInRange(undefined, "2026-09-01", "2026-09-30"), false);
 });
