@@ -433,10 +433,9 @@ test("the grid carries the drift caveat out of the data layer", () => {
   assert.ok(!/const monthEndLabel = \(\(\) =>/.test(page), "the untestable inline copy must be gone");
   assert.match(page, /suggestionLatePostings/, "the drift must reach the tooltip");
   assert.match(page, /not yet invoiced as of \$\{cutoffLabel\}/, "and the tooltip must name the cutoff");
-  // The cell is editable again, so the tooltip has to say the figure is a DEFAULT rather
-  // than claim it cannot be changed.
-  assert.match(page, /This is the default and you can type over it/);
-  assert.ok(!/Computed, not typed/.test(page), "the read-only wording must be gone");
+  // Not editable (2026-10-06): the tooltip says so.
+  assert.match(page, /This cell cannot be edited/);
+  assert.ok(!/you can type over it/.test(page), "the editable wording must be gone");
 });
 
 test("the submission derives Parts Cost New ETC from the two halves — and freezes nothing into them", () => {
