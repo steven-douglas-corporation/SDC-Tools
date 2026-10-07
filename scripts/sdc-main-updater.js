@@ -290,13 +290,29 @@ async function checkAndUpdate() {
       // it is imported rather than copied so the two cannot drift. Dynamic import
       // because deploy-lib.mjs is an ES module and this file is CommonJS.
       let mode = 'full';
+      // Are the deploy scripts on disk? They are not when this very change has been
+      // reverted: this process loaded its code before the revert, and step 4 has just
+      // deleted deploy.mjs / deploy-lib.mjs from the tree. Calling a script that is gone
+      // would fail after the app was already stopped and leave Reports down, so without
+      // them the OLD inline steps run instead (stop -> install -> migrate -> generate ->
+      // `npm run build` into .next -> start), which is exactly what the reverted tree's own
+      // start.mjs and package.json expect.
+      const hasDeployScripts =
+        fs.existsSync(path.join(reportsDir, 'scripts', 'deploy.mjs')) &&
+        fs.existsSync(path.join(reportsDir, 'scripts', 'deploy-lib.mjs'));
+      if (!hasDeployScripts) {
+        log('  Reports deploy scripts are not in the tree (this change was reverted?) — using the original stop-first steps.');
+      }
       try {
+        if (!hasDeployScripts) throw new Error('deploy scripts not present');
         const { pathToFileURL } = require('url');
         const lib = await import(pathToFileURL(path.join(reportsDir, 'scripts', 'deploy-lib.mjs')).href);
         mode = lib.reportsDeployMode(monorepoFiles);
       } catch (modeErr) {
         // Unknown means the slow, safe path — never the fast one.
-        log(`  Could not read the Reports deploy mode (${modeErr.message}) — using the full stop-first deploy.`);
+        if (hasDeployScripts) {
+          log(`  Could not read the Reports deploy mode (${modeErr.message}) — using the full stop-first deploy.`);
+        }
       }
 
       if (mode === 'fast') {
@@ -345,7 +361,7 @@ async function checkAndUpdate() {
           // prompting and never invents one from schema drift.
           run('npx prisma migrate deploy', inApp);
           run('npx prisma generate', inApp);
-          run('node scripts/deploy.mjs build', inApp);
+          run(hasDeployScripts ? 'node scripts/deploy.mjs build' : 'npm run build', inApp);
           built = true;
         } catch (reportsErr) {
           // Loud, and NOT fatal: the app must still come back up rather than being left
@@ -356,7 +372,11 @@ async function checkAndUpdate() {
         }
         try {
           // `activate` switches to the finished build and rolls back if it does not come up.
-          run(built ? 'node scripts/deploy.mjs activate' : 'node scripts/deploy.mjs restart', inApp);
+          if (hasDeployScripts) {
+            run(built ? 'node scripts/deploy.mjs activate' : 'node scripts/deploy.mjs restart', inApp);
+          } else {
+            run('pm2 start sdc-reports');
+          }
         } catch (startErr) {
           log(`  Reports start FAILED: ${startErr.message} — MANUAL START REQUIRED.`);
         }

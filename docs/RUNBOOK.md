@@ -95,7 +95,13 @@ Revert the commit on `master` and push. The updater deploys the revert within
 five minutes. To go back **immediately** on Reports, the previous build is still
 on disk: stop Reports, put the other folder's name (`.next-a` / `.next-b`) in
 `apps/reports/.active-dist`, run `node scripts/free-port.mjs 4006`, start Reports.
-(Only the build before the current one is kept.) For Reports, a bad Prisma migration needs `npx prisma migrate
+(Only the build before the current one is kept.)
+
+Reverting the change that introduced the two-folder deploy is safe too: when
+`apps/reports/scripts/deploy.mjs` is no longer in the tree, the updater (even
+one that loaded its code before the revert) falls back to the original
+stop-first steps, building into `.next`. Never force-push or reset `master`: the
+updater only moves forward, and a rewritten history makes it skip every update. For Reports, a bad Prisma migration needs `npx prisma migrate
 resolve --rolled-back <name>` before the revert deploys; the schema is the one
 thing a revert does not undo on its own.
 
