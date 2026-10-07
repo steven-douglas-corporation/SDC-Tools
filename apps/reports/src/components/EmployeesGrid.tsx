@@ -531,7 +531,7 @@ export function EmployeesGrid({
 
       {hiringError && (
         <p className="mb-3 rounded border border-sdc-yellow bg-sdc-yellow-bg px-2 py-1 text-note text-sdc-yellow-text">
-          Couldn&apos;t read the hiring positions workbook: {hiringError}
+          Couldn&apos;t read the hiring positions: {hiringError}
         </p>
       )}
 
@@ -547,7 +547,16 @@ export function EmployeesGrid({
             onSelectCapacity={setCapacityDrill}
           />
           {orgChart.pending.length > 0 && <PendingTeamChanges pending={orgChart.pending} />}
-          <OrgChart chart={orgChart} people={rowsById} onSelectPerson={selectEmployee} year={year} onSelectCapacity={setCapacityDrill} />
+          <OrgChart
+            chart={orgChart}
+            people={rowsById}
+            onSelectPerson={selectEmployee}
+            year={year}
+            onSelectCapacity={setCapacityDrill}
+            hiringPositions={HIRING_POSITIONS_ENABLED ? openHiring : undefined}
+            onSelectHiringPosition={selectHiringPosition}
+            canAssignHiring={canAssignHiring}
+          />
         </div>
       ) : (
         <>

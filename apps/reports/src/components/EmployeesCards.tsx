@@ -9,13 +9,12 @@ import { buildDepartmentCards } from "@/lib/employee-department-cards";
 import { DASH, isPaylocityId, type EmployeeRow } from "@/lib/employee-row";
 import type { HiringPosition } from "@/lib/hiring-positions";
 import { DepartmentCardHeader, EmployeePersonRow, HandPlacedSection, TempsSection } from "@/components/EmployeePersonRow";
-import { HiringStatusPill } from "@/components/HiringStatusPill";
-import { hiringStatusStyle } from "@/lib/hiring-position-status";
+import { OpenPositionsDropdown } from "@/components/OpenPositionsDropdown";
 import { employeeCapacityHours, hiringCapacityHours } from "@/lib/workforce-capacity";
 import { hasYearPolicy } from "@/lib/workforce-capacity-policy";
 import { hours as fmtHours } from "@/components/ui/format";
 import type { CapacityDrillTarget } from "@/components/WorkforceSummaryCards";
-import { countOpenings, openingsSuffix } from "@/lib/hiring-openings";
+import { countOpenings } from "@/lib/hiring-openings";
 
 export { DASH };
 export type { EmployeeRow };
@@ -156,6 +155,10 @@ export function EmployeesCards({
         // this department's planned headcount. Computed once here and reused
         // below so the badge and the planned figure can never disagree.
         const cardHiringOpenings = countOpenings(cardHiring);
+        // What the dropdown lists: filtered by isVisible for a non-editor here
+        // only, never on cardHiring itself, so the counts and capacity hours
+        // above keep counting every open position regardless of visibility.
+        const listedHiring = cardHiring.filter((p) => p.isVisible || canAssignHiring);
         const plannedCount = activeCount + cardHiringOpenings;
         const hasCapacityPolicy = year != null && hasYearPolicy(year);
         const cardCurrentHours = hasCapacityPolicy ? employeeCapacityHours(activeCount, year) : 0;
@@ -243,55 +246,13 @@ export function EmployeesCards({
                 ))}
               </TempsSection>
             )}
-            {/* Hiring — open positions from the Excel workbook, assigned to
-                this exact department (hiring-positions.ts). Deliberately its
-                own section, never merged into the `<ul>` of real people
-                above — the task's own "do not mix open positions into the
-                actual employee list as if they are employees". */}
-            {/* Filtered by isVisible for a non-editor here only — never on
-                cardHiring itself, so cardHiring.length/hiringCapacityHours
-                above (and what onSelectCapacity hands off) keep counting
-                every open position regardless of visibility. */}
-            {cardHiring.filter((p) => p.isVisible || canAssignHiring).length > 0 && (
-              <>
-                <div className="border-t border-dashed border-sdc-border px-3 pt-1.5 text-label font-bold uppercase tracking-wider text-sdc-green-text">
-                  Hiring
-                </div>
-                <ul className="px-1.5 pb-1">
-                  {cardHiring
-                    .filter((p) => p.isVisible || canAssignHiring)
-                    .map((p) => {
-                      // Same three indicators as HiringPositionsList's rows,
-                      // from the same central lookup -- the left accent was
-                      // hardcoded green here before, which read as "Open"
-                      // whatever the real status was.
-                      const style = hiringStatusStyle(p.status);
-                      return (
-                        <li key={p.sourceId}>
-                          <button
-                            type="button"
-                            onClick={onSelectHiringPosition ? () => onSelectHiringPosition(p) : undefined}
-                            disabled={!onSelectHiringPosition}
-                            className={`flex w-full items-center gap-1.5 rounded-md border-l-2 px-2 py-1.5 text-left text-sm text-sdc-navy hover:brightness-95 disabled:cursor-default ${style.accent} ${style.tint}`}
-                            title={p.title}
-                          >
-                            <span className="min-w-0 flex-1 truncate">
-                              {p.title}
-                              {openingsSuffix(p.quantity)}
-                            </span>
-                            <HiringStatusPill status={p.status} />
-                            {!p.isVisible && (
-                              <span className="shrink-0 rounded bg-sdc-yellow-bg px-1.5 py-0.5 text-micro font-bold uppercase tracking-wide text-sdc-yellow-text">
-                                Hidden
-                              </span>
-                            )}
-                          </button>
-                        </li>
-                      );
-                    })}
-                </ul>
-              </>
-            )}
+            {/* Open positions — from Paylocity Recruiting (via the DataWarehouse),
+                assigned to this exact department (hiring-positions.ts). Its own
+                dropdown under the people and contractors, never merged into
+                the `<ul>` of real people above — the task's own "do not mix
+                open positions into the actual employee list as if they are
+                employees". */}
+            <OpenPositionsDropdown positions={listedHiring} onSelect={onSelectHiringPosition} />
             {/* Placeholders — Scheduler's own unfilled-seat stand-ins, shown
                 read-only exactly where Scheduler shows them: a labeled
                 stripe below the real members, dashed/italic so they read as
