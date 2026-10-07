@@ -437,6 +437,9 @@ export async function saveAllNewEtcDrafts(
     let touched = false;
 
     for (const half of halves) {
+      // Left to Invoice is NOT editable (2026-10-06). A hand-posted or
+      // stale-tab value is ignored outright, so no client can set it.
+      if (half.key === "invoice") continue;
       // Same four answers as a New ETC field, and they mean the same things here —
       // absent is "no opinion", empty is a deliberate blank, 0 is a figure.
       const intent = parseNewEtcField(formData.get(half.field));

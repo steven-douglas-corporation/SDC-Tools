@@ -134,15 +134,14 @@ test("Left to Invoice is editable, with the computed figure as its DEFAULT", () 
   assert.match(withoutComments(ETC_PAGE), /<PartsBreakoutCell[\s\S]{0,200}?which="invoice"/);
   assert.match(withoutComments(ETC_PAGE), /<PartsBreakoutCell[\s\S]{0,200}?which="purchase"/);
 
-  // Both halves post a field, so both can be saved. Matched against the page with
+  // Left to Invoice is read-only (2026-10-06); Left to Purchase still posts a field. Matched against the page with
   // comments stripped: the props carry long explanatory blocks between them, and a
   // character window over the raw source measures prose rather than structure.
   const page = withoutComments(ETC_PAGE);
-  assert.match(page, /which="invoice"[\s\S]{0,300}?name=\{`partsLeftToInvoice__/);
+  assert.match(page, /which="invoice"[\s\S]{0,600}?readOnly/);
   assert.match(page, /which="purchase"[\s\S]{0,300}?name=\{`partsLeftToPurchase__/);
-  // And neither is read-only any more — the prop is gone from the component entirely.
-  const cell = readFileSync(join(process.cwd(), "src", "components", "PartsBreakoutCell.tsx"), "utf8");
-  assert.ok(!/readOnly/.test(cell), "the read-only mode must be gone, not left as dead code");
+  // Only the invoice cell is read-only; the purchase cell is not.
+  assert.ok(!/which="purchase"[\s\S]{0,400}?readOnly/.test(page.split('which="purchase"')[1].slice(0, 400) ? 'which="purchase"' + page.split('which="purchase"')[1].slice(0, 400) : ""));
 
   // The value is the override when there is one, else the computed default.
   assert.match(ETC_PAGE, /const resolvedInvoice = resolveLeftToInvoice\(\{[\s\S]{0,400}?\}\);/);

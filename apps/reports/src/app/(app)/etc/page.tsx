@@ -328,7 +328,8 @@ function subColHeaderBg(col: string): string {
 // because the hours sections' New ETC column is unchanged, and this is one header row
 // shared by every section (the Parts Cost header is rendered from partsCostCols
 // below, which is where the exception is applied).
-const EDITABLE_COL_LABELS = new Set(["New ETC", "Left to Invoice", "Left to Purchase"]);
+// Left to Invoice is calculated live and no one can edit it (2026-10-06), so it has no pencil.
+const EDITABLE_COL_LABELS = new Set(["New ETC", "Left to Purchase"]);
 function colHeaderLabel(col: string) {
   if (!EDITABLE_COL_LABELS.has(col)) return col;
   return (
@@ -2182,7 +2183,11 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                               // for why that is derived from stored-vs-default rather than
                               // stored as a flag (it makes "put it back" reversible with no
                               // second write).
+                              // READ-ONLY (2026-10-06, by request): nobody can edit it. How the
+                              // value is resolved (computed default, or an existing stored
+                              // override) is unchanged — see resolveLeftToInvoice.
                               overridden={resolvedInvoice.overridden}
+                              readOnly
                               name={`partsLeftToInvoice__${partsCostEntry.id}`}
                               initialValue={leftToInvoiceValue == null ? "" : String(leftToInvoiceValue)}
                               jobId={job.id}
@@ -2194,10 +2199,10 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                                 // typing over it is allowed, and — once they have — what
                                 // the number they replaced was.
                                 leftToInvoiceValue == null
-                                  ? `Total ETO could not be reached for this job, so there is no default here. Type what is on order and not yet invoiced — New ETC stays blank until both this and Left to Purchase have a value.`
+                                  ? `Total ETO could not be reached for this job, so there is no figure here. This cell cannot be edited — New ETC stays blank until it and Left to Purchase both have a value.`
                                   : resolvedInvoice.overridden
-                                  ? `Manually adjusted. Total ETO’s figure as of ${cutoffLabel} is ${currencyExact(resolvedInvoice.defaultValue ?? 0)}; this cell has been set to ${currencyExact(leftToInvoiceValue)} instead. Clear it or type the original figure back to remove the highlight.`
-                                  : `${currencyExact(leftToInvoiceValue)} on purchase orders and not yet invoiced as of ${cutoffLabel} — the same figure this job’s Parts List shows filtered through that date. This is the default and you can type over it; an adjusted cell is highlighted.` +
+                                  ? `Manually adjusted earlier. Total ETO’s figure as of ${cutoffLabel} is ${currencyExact(resolvedInvoice.defaultValue ?? 0)}; this cell holds ${currencyExact(leftToInvoiceValue)}. This cell can no longer be edited.`
+                                  : `${currencyExact(leftToInvoiceValue)} on purchase orders and not yet invoiced as of ${cutoffLabel} — the same figure this job’s Parts List shows filtered through that date. This cell cannot be edited.` +
                                     (suggestionLatePostings > 0
                                       ? ` ${currencyExact(suggestionLatePostings)} has posted after ${cutoffLabel} against orders placed on or before it, and is already deducted — so this figure keeps falling as later invoices post. The Parts List moves with it.`
                                       : "") +

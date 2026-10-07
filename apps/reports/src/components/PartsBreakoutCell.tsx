@@ -56,10 +56,13 @@ export function PartsBreakoutCell({
   jobId,
   which,
   overridden = false,
+  readOnly = false,
   jobName,
   seedHint,
   bg,
 }: {
+  /** Computed, uneditable: renders plain text and posts nothing (Left to Invoice). */
+  readOnly?: boolean;
   /** `partsLeftToInvoice__<entryId>` or `partsLeftToPurchase__<entryId>`. */
   name: string;
   /**
@@ -115,15 +118,18 @@ export function PartsBreakoutCell({
   // month switch self-cleaning. Without this the autosave debounce never sees these
   // cells and a typed value would only persist via the Save button.
   useEffect(() => {
+    // A read-only cell is never edited, so it has no baseline to guard.
+    if (readOnly) return;
     registerEtcField(name, initialValue);
     return () => forgetEtcField(name);
     // initialValue is the mount-time baseline by design — see EtcSectionCells.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name]);
+  }, [name, readOnly]);
 
   useEffect(() => {
+    if (readOnly) return;
     if (value === serverValue) adoptEtcFieldBaseline(name, serverValue);
-  }, [name, serverValue, value]);
+  }, [name, serverValue, value, readOnly]);
 
   // Publish for the live New ETC sum. New ETC is a read-only cell rendered by the
   // page, so it cannot see this state — the same reason the Parts Cost row's Diff is
@@ -138,6 +144,27 @@ export function PartsBreakoutCell({
   // Formatted when idle, raw while typing — a caret must never sit inside a "$" or a
   // thousands separator.
   const display = focused ? value : value.trim() === "" ? "" : usd(Number(value));
+
+  // A computed figure nobody can edit (Left to Invoice, 2026-10-06): plain text, no
+  // input, no posted field. It still publishes to the live New ETC sum above, and it
+  // reads the server's value directly so it can never show anything typed.
+  if (readOnly) {
+    return (
+      <td
+        className={`motion-cell relative border-l border-sdc-border ${bg} ${PARTS_COL_W} px-1 py-1 text-center align-middle`}
+        style={overridden ? manualOverrideStyle() : undefined}
+        data-parts-override={overridden ? "1" : undefined}
+      >
+        <span
+          className="block w-full text-center text-label font-bold text-sdc-gray-700"
+          title={initialValue.trim() === "" && seedHint ? seedHint : `${label} — ${jobName}. ${seedHint ?? ""}`.trim()}
+          aria-label={`${label}, ${jobName} (calculated, read-only)`}
+        >
+          {initialValue.trim() === "" ? "" : usd(Number(initialValue))}
+        </span>
+      </td>
+    );
+  }
 
   return (
     <td
