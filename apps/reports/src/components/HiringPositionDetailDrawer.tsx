@@ -316,7 +316,7 @@ export function HiringPositionDetailDrawer({
           <Field label="Position ID" value={position.sourceId} />
           {position.source === "workbook" && !position.isManuallyAssigned && position.workforceGroup && (
             <p className="px-4 py-2.5 text-note text-sdc-muted">
-              Placed here automatically from the position&apos;s title/function — not yet manually confirmed.
+              Placed here automatically from its hiring manager&apos;s team — not yet manually confirmed.
             </p>
           )}
         </div>

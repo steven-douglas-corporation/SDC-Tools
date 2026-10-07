@@ -13,6 +13,8 @@ import { hasPermission } from "@/lib/permissions";
 import { getHiringPositions, redactHiddenPositions } from "@/lib/hiring-positions";
 import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
 import { resolveTeams, departmentLeads } from "@/lib/team-resolution";
+import { resolveEmployeeGroup, NO_DEPARTMENT } from "@/lib/employee-card-theme";
+import { isPaylocityId } from "@/lib/employee-row";
 import { buildOrgChart } from "@/lib/org-chart";
 import type { PositionFamilyRow } from "@/lib/position-families-parse";
 
@@ -37,12 +39,10 @@ export async function EmployeesView() {
   // SAME source (see employee-scheduler-overlay.ts) — both fail soft to
   // "nothing extra shown" if the Scheduler DB isn't reachable, so a roster
   // load never depends on Scheduler being up.
-  const [teamById, overlayByName, placeholders, hiring, familyRows] = await Promise.all([
+  const [teamById, overlayByName, placeholders, familyRows] = await Promise.all([
     fetchEmployeeTeams(),
     fetchSchedulerOverlay(),
     fetchSchedulerPlaceholders(),
-    // Decommissioned for now (lib/hiring-feature.ts): no workbook read, no positions.
-    HIRING_POSITIONS_ENABLED ? getHiringPositions() : Promise.resolve({ positions: [], error: null }),
     // Position families (2026-10-02): who is Leadership, and the Org chart view.
     prisma.positionFamily.findMany({
       select: { positionCode: true, familyCode: true, familyName: true, title: true, headcount: true, source: true },
@@ -83,6 +83,18 @@ export async function EmployeesView() {
       sortOrder: overlay?.sortOrder ?? null,
     };
   });
+
+  // Hiring positions (DataWarehouse), read after the roster because an
+  // unassigned position defaults to the card its hiring manager sits on: the
+  // export names managers by Paylocity id, and this maps each id to its card.
+  // Left off (and no read made) while the feature flag is off.
+  const cardKeyByPaylocityId = new Map<string, string>();
+  for (const r of rows) {
+    if (!isPaylocityId(r.paylocityId)) continue;
+    const key = resolveEmployeeGroup(r)?.key;
+    if (key && key !== NO_DEPARTMENT) cardKeyByPaylocityId.set(r.paylocityId.trim(), key);
+  }
+  const hiring = HIRING_POSITIONS_ENABLED ? await getHiringPositions({ cardKeyByPaylocityId }) : { positions: [], error: null };
 
   const canAddEmployees = hasPermission(session.user.role, "employees:edit");
   const canAssignHiring = hasPermission(session.user.role, "employees:hiring:assign");

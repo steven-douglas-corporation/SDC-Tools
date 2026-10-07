@@ -105,6 +105,7 @@ export function CreateHiringPositionDrawer({
         source: "manual",
         workforceGroup,
         department: selectedDepartment,
+        hiringManagerIds: [],
         isManuallyAssigned: true,
         expectedStartDate: startDate,
         isVisible: true,
