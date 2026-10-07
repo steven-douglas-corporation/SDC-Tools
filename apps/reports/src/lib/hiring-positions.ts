@@ -1,16 +1,18 @@
 import "server-only";
-import { readHiringWorkbook, isOpenPosition, type HiringPositionSourceRow } from "@/lib/hiring-workbook";
-import { classifyHiringPosition } from "@/lib/hiring-position-classify";
+import { isOpenPosition, type HiringPositionSourceRow } from "@/lib/hiring-workbook-parse";
+import { readHiringPositionsFromWarehouse } from "@/lib/hiring-warehouse";
+import { departmentFromHiringManagers } from "@/lib/hiring-warehouse-parse";
 import { getHiringAssignments, getCreatedHiringPositions, type HiringAssignmentRow, type CreatedHiringPositionRow } from "@/lib/hiring-positions-store";
 import { isOpenHiringStatus } from "@/lib/hiring-position-status";
-import type { WorkforceGroupKey } from "@/lib/employee-workforce-groups";
+import { workforceGroupForCardKey, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 
-// The one place the Excel source, the manual-assignment table, the
-// best-effort classifier, and app-created positions all come together into
-// what the Employees tab actually renders (2026-08-19). Nothing downstream of
-// this file should ever read hiring-workbook.ts, hiring-position-classify.ts,
-// or hiring-positions-store.ts directly — reconciliation (a manual
-// assignment always wins over the classifier's guess; a workbook position
+// The one place the DataWarehouse's open positions, the manual-assignment
+// table, the hiring-manager default, and app-created positions all come together
+// into what the Employees tab actually renders (2026-08-19; the source moved from
+// the Job.xlsx workbook to the warehouse 2026-10-07). Nothing downstream of this
+// file should ever read hiring-warehouse.ts or hiring-positions-store.ts
+// directly — reconciliation (a manual
+// assignment always wins over the hiring-manager default; a workbook position
 // gone from the file simply stops appearing; nothing here ever writes an
 // Employee row) all happens exactly once, here.
 //
@@ -48,11 +50,13 @@ export type HiringPosition = {
    * it here too would double it into Planned.
    */
   remainingQuantity: number;
-  /** "workbook" = read from Job.xlsx (Paylocity); "manual" = created inside SDC Reports (HiringPositionCreated). */
+  /** "workbook" = from Paylocity's Recruiting export (via the DataWarehouse; the name predates it); "manual" = created inside SDC Reports (HiringPositionCreated). */
   source: "workbook" | "manual";
   workforceGroup: WorkforceGroupKey | null;
   /** A DepartmentCard key (an employee-teams.ts schedulerCode) — the SAME key EmployeesCards' own cards use, so a hiring count slots into the identical card as its real employees. */
   department: string | null;
+  /** Paylocity employee ids of the hiring managers (empty for a manual position): what the Org chart places a position by. */
+  hiringManagerIds: string[];
   /** True if a person has explicitly assigned/moved this position — false means workforceGroup/department (if any) are only the classifier's best-effort guess. Always true for a manually-created position (it was assigned outright at creation). */
   isManuallyAssigned: boolean;
   /** Prorates this position's Hiring Capacity hours (workforce-capacity.ts) — null means "unknown," which counts as full-year, not zero. */
@@ -71,7 +75,7 @@ export type HiringPosition = {
 
 export type HiringPositionsResult = {
   positions: HiringPosition[];
-  /** Set only when the workbook itself couldn't be read/parsed — the page shows this instead of a card, the same fail-soft pattern tm/page.tsx uses for its own two independent sources. Manually-created positions still show even when this is set — they don't depend on the workbook being readable. */
+  /** Set only when the warehouse couldn't be read — the page shows this instead of a card, the same fail-soft pattern tm/page.tsx uses for its own two independent sources. Manually-created positions still show even when this is set — they don't depend on the workbook being readable. */
   error: string | null;
 };
 
@@ -88,8 +92,24 @@ function readOpenings(quantity: number | null | undefined, filledCount: number |
   return { quantity: q, filledCount: filled, remainingQuantity: Math.max(0, q - filled) };
 }
 
-function toWorkbookPosition(row: HiringPositionSourceRow, manual: HiringAssignmentRow | undefined): HiringPosition {
-  const auto = classifyHiringPosition(row);
+/**
+ * A Paylocity position's default department, used only until someone assigns it:
+ * the card its hiring manager sits on. Nothing else is guessed. The export has
+ * no department of its own (nearly always blank) and no function code, and a
+ * title-keyword guess put positions on the wrong card often enough that an
+ * unplaced position now waits in Unassigned to be moved by hand.
+ */
+function defaultPlacement(department: string | null) {
+  return department ? { workforceGroup: workforceGroupForCardKey(department), department } : { workforceGroup: null, department: null };
+}
+
+function toWorkbookPosition(
+  row: HiringPositionSourceRow,
+  manual: HiringAssignmentRow | undefined,
+  autoDepartment: string | null,
+  hiringManagerIds: string[],
+): HiringPosition {
+  const auto = defaultPlacement(autoDepartment);
   const workforceGroup = manual ? (manual.workforceGroup as WorkforceGroupKey | null) : auto.workforceGroup;
   const department = manual ? manual.department : auto.department;
   const openings = readOpenings(manual?.quantity, manual?.filledCount);
@@ -103,6 +123,7 @@ function toWorkbookPosition(row: HiringPositionSourceRow, manual: HiringAssignme
     source: "workbook",
     workforceGroup,
     department,
+    hiringManagerIds,
     isManuallyAssigned: !!manual,
     expectedStartDate: manual?.expectedStartDate ?? null,
     isVisible: manual?.isVisible ?? true,
@@ -128,6 +149,7 @@ function toManualPosition(row: CreatedHiringPositionRow): HiringPosition {
     source: "manual",
     workforceGroup: row.workforceGroup as WorkforceGroupKey,
     department: row.department,
+    hiringManagerIds: [],
     isManuallyAssigned: true,
     expectedStartDate: row.expectedStartDate,
     isVisible: row.isVisible,
@@ -142,7 +164,16 @@ function toManualPosition(row: CreatedHiringPositionRow): HiringPosition {
   };
 }
 
-export async function getHiringPositions(): Promise<HiringPositionsResult> {
+export type HiringPositionsOptions = {
+  /**
+   * Paylocity employee id → the Employees-tab card key that person sits on.
+   * What lets an unassigned position default to its hiring manager's department.
+   * Omitted, every position without a saved assignment stays Unassigned.
+   */
+  cardKeyByPaylocityId?: ReadonlyMap<string, string>;
+};
+
+export async function getHiringPositions(options: HiringPositionsOptions = {}): Promise<HiringPositionsResult> {
   // ── Every one of the three sources fails soft, independently (2026-08-24) ──
   //
   // The workbook read below was already guarded; these two DB reads were not,
@@ -185,16 +216,20 @@ export async function getHiringPositions(): Promise<HiringPositionsResult> {
 
   const manualPositions = manualRows.map(toManualPosition);
 
-  let sourceRows: HiringPositionSourceRow[];
+  let sourceRows: Awaited<ReturnType<typeof readHiringPositionsFromWarehouse>>;
   try {
-    sourceRows = await readHiringWorkbook();
+    sourceRows = await readHiringPositionsFromWarehouse();
   } catch (err) {
-    notes.push(err instanceof Error ? err.message : "Couldn't read the hiring positions workbook.");
+    console.error("[hiring-positions] couldn't read open positions from the warehouse:", err);
+    notes.push(err instanceof Error ? err.message : "Couldn't read the open positions from the DataWarehouse.");
     return { positions: manualPositions, error: notes.join(" ") };
   }
 
   const byId = new Map(assignments.map((a) => [a.positionSourceId, a]));
-  const workbookPositions = sourceRows.map((row) => toWorkbookPosition(row, byId.get(row.sourceId)));
+  const cardKeys = options.cardKeyByPaylocityId ?? new Map<string, string>();
+  const workbookPositions = sourceRows.map(({ row, managerIds }) =>
+    toWorkbookPosition(row, byId.get(row.sourceId), departmentFromHiringManagers(managerIds, cardKeys), managerIds),
+  );
 
   return { positions: [...workbookPositions, ...manualPositions], error: notes.length > 0 ? notes.join(" ") : null };
 }

@@ -13,7 +13,13 @@
 // closed status the export starts including later — or a manually-created
 // position's own status below — is still classified correctly without a
 // code change.
-const CLOSED_STATUS_KEYWORDS = ["filled", "closed", "cancelled", "canceled", "withdrawn", "expired", "on hold"];
+//
+// "paused" (2026-10-07): the warehouse export carries a Job Sub Status of
+// "Paused" on a requisition that is still Published but not being recruited
+// right now (the other sub status seen, "Refreshed", is just a re-post and stays
+// open). A paused requisition is not a seat the department is hiring for, so it
+// is left out of the department cards' Hiring list and of the hiring totals.
+const CLOSED_STATUS_KEYWORDS = ["filled", "closed", "cancelled", "canceled", "withdrawn", "expired", "on hold", "paused"];
 
 /**
  * Whether a position (from EITHER source) should count as currently open —

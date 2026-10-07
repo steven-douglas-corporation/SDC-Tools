@@ -4,10 +4,14 @@ import { resolveEmployeeGroup } from "@/lib/employee-card-theme";
 import type { OrgChart as OrgChartData, OrgNode } from "@/lib/org-chart";
 import { DepartmentCardHeader, EmployeePersonRow, HandPlacedSection, TempsSection } from "@/components/EmployeePersonRow";
 import { isPaylocityId, comparePositionCode, type EmployeeRow } from "@/lib/employee-row";
-import { employeeCapacityHours } from "@/lib/workforce-capacity";
+import { employeeCapacityHours, hiringCapacityHours } from "@/lib/workforce-capacity";
 import { hasYearPolicy } from "@/lib/workforce-capacity-policy";
 import { hours as fmtHours } from "@/components/ui/format";
 import type { CapacityDrillTarget } from "@/components/WorkforceSummaryCards";
+import { OpenPositionsDropdown } from "@/components/OpenPositionsDropdown";
+import type { HiringPosition } from "@/lib/hiring-positions";
+import { countOpenings } from "@/lib/hiring-openings";
+import { cardId, LEADERS_CARD, placeHiringOnChart } from "@/lib/org-chart-hiring";
 
 // The Employees page's Org chart view (2026-10-02): the same department cards
 // as the Cards view — same header, same "N active" line, same person rows
@@ -31,6 +35,11 @@ type Ctx = {
   /** For the per-card capacity hours (workforce-capacity-policy); absent = no hours line. */
   year?: number;
   onSelectCapacity?: (target: CapacityDrillTarget) => void;
+  /** Open positions placed on each card (lib/org-chart-hiring.ts), by card id. */
+  hiringByCard: Map<string, HiringPosition[]>;
+  onSelectHiring?: (position: HiringPosition) => void;
+  /** A viewer who can assign hiring also sees positions hidden from everyone else. */
+  canAssignHiring?: boolean;
 };
 
 // Every shown person in a card's tree, for its capacity drill. Same people the
@@ -105,15 +114,23 @@ function Tree({ nodes, cardTitle, ctx, nested }: { nodes: OrgNode[]; cardTitle: 
   );
 }
 
-// The Cards view's card, minus hiring (switched off — lib/hiring-feature.ts).
+function visibleTo(positions: HiringPosition[], ctx: Ctx): HiringPosition[] {
+  return positions.filter((p) => p.isVisible || ctx.canAssignHiring);
+}
+
+// The Cards view's card, with its open positions as a dropdown at the foot
+// (the positions placed on THIS card by lib/org-chart-hiring.ts).
 // Not overflow-hidden like Cards': a hover note on the first row would be clipped.
 function TeamCard({
+  id,
   team,
   count,
   nodes,
   ctx,
   children,
 }: {
+  /** cardId() — which positions are placed here. */
+  id: string;
   team: string | null;
   count: number;
   /** The card's tree, for its capacity drill. */
@@ -126,25 +143,52 @@ function TeamCard({
   // The same "current hrs/yr" line a Cards card carries: active people × the
   // year's hours per person, and a click opens the breakdown by employee.
   const hasCapacityPolicy = ctx.year != null && hasYearPolicy(ctx.year);
+  // Counts and hours take every open position placed here; the dropdown lists
+  // only what the viewer may see — the same split the Cards view makes.
+  const cardHiring = ctx.hiringByCard.get(id) ?? [];
+  const hiringOpenings = countOpenings(cardHiring);
+  const hiringHours = hasCapacityPolicy ? hiringCapacityHours(cardHiring, ctx.year!) : 0;
+  const currentHours = hasCapacityPolicy ? employeeCapacityHours(count, ctx.year!) : 0;
   return (
     <section className="flex flex-col rounded-xl border border-sdc-border bg-white shadow-sm">
       <DepartmentCardHeader title={title} colors={group?.colors ?? { bg: "#e2e8f0", text: "#1e293b" }} isAi={group?.key === "ai"} className="rounded-t-[11px]" />
       <div className="flex items-baseline gap-1.5 border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-1.5 text-xs text-sdc-muted">
         <span className="font-bold tabular-nums text-sdc-navy">{count}</span>
         <span>active</span>
+        {hiringOpenings > 0 && (
+          <>
+            <span className="text-sdc-gray-400">·</span>
+            <span className="font-bold tabular-nums text-sdc-green-text">{hiringOpenings}</span>
+            <span>hiring</span>
+            <span className="text-sdc-gray-400">·</span>
+            <span className="font-bold tabular-nums text-sdc-navy">{count + hiringOpenings}</span>
+            <span>planned</span>
+          </>
+        )}
       </div>
       {hasCapacityPolicy && ctx.onSelectCapacity && (
         <button
           type="button"
-          onClick={() => ctx.onSelectCapacity!({ title: `${title} — Capacity`, employees: rowsIn(nodes, ctx.people), hiringPositions: [] })}
+          onClick={() => ctx.onSelectCapacity!({ title: `${title} — Capacity`, employees: rowsIn(nodes, ctx.people), hiringPositions: cardHiring })}
           title="See how this capacity total was built, by employee and open position"
           className="flex items-baseline gap-1.5 border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-1.5 text-left text-xs text-sdc-muted hover:bg-sdc-blue-light/30"
         >
-          <span className="font-bold tabular-nums text-sdc-navy">{fmtHours(employeeCapacityHours(count, ctx.year!))}</span>
+          <span className="font-bold tabular-nums text-sdc-navy">{fmtHours(currentHours)}</span>
           <span>current hrs/yr</span>
+          {hiringHours > 0 && (
+            <>
+              <span className="text-sdc-gray-400">·</span>
+              <span className="font-bold tabular-nums text-sdc-green-text">+{fmtHours(hiringHours)}</span>
+              <span>hiring</span>
+              <span className="text-sdc-gray-400">·</span>
+              <span className="font-bold tabular-nums text-sdc-navy">{fmtHours(currentHours + hiringHours)}</span>
+              <span>planned</span>
+            </>
+          )}
         </button>
       )}
       {children(title)}
+      <OpenPositionsDropdown positions={visibleTo(cardHiring, ctx)} onSelect={ctx.onSelectHiring} />
     </section>
   );
 }
@@ -172,6 +216,9 @@ export function OrgChart({
   onSelectPerson,
   year,
   onSelectCapacity,
+  hiringPositions,
+  onSelectHiringPosition,
+  canAssignHiring,
 }: {
   chart: OrgChartData;
   people: Map<number, EmployeeRow>;
@@ -179,6 +226,10 @@ export function OrgChart({
   /** With onSelectCapacity: each card shows its current hrs/yr and opens the breakdown. */
   year?: number;
   onSelectCapacity?: (target: CapacityDrillTarget) => void;
+  /** Open positions, placed on the hiring manager's card or under Not placed. Omitted, the chart draws no hiring. */
+  hiringPositions?: HiringPosition[];
+  onSelectHiringPosition?: (position: HiringPosition) => void;
+  canAssignHiring?: boolean;
 }) {
   if (!chart.ready) {
     return (
@@ -188,12 +239,22 @@ export function OrgChart({
       />
     );
   }
-  const ctx: Ctx = { people, onSelect: onSelectPerson, year, onSelectCapacity };
+  const placement = placeHiringOnChart(hiringPositions ?? [], chart, people);
+  const ctx: Ctx = {
+    people,
+    onSelect: onSelectPerson,
+    year,
+    onSelectCapacity,
+    hiringByCard: placement.byCard,
+    onSelectHiring: onSelectHiringPosition,
+    canAssignHiring,
+  };
+  const unplacedHiring = visibleTo(placement.unplaced, ctx);
   return (
     // Groups share a line when they fit, the same flow the Cards view uses.
     <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
       <Group title="Leadership" active={chart.leaderCount} cardCount={1}>
-        <TeamCard team="exec" count={chart.leaderCount} nodes={chart.leaders} ctx={ctx}>
+        <TeamCard id={LEADERS_CARD} team="exec" count={chart.leaderCount} nodes={chart.leaders} ctx={ctx}>
           {(title) => <Tree nodes={chart.leaders} cardTitle={title} ctx={{ ...ctx, leadershipCard: true }} />}
         </TeamCard>
       </Group>
@@ -201,18 +262,20 @@ export function OrgChart({
       {chart.bands.map((b) => (
         <Group key={b.leader.id} title={`Reporting to ${b.leader.name}`} active={b.people} cardCount={b.cards.length}>
           {b.cards.map((c) => (
-            <TeamCard key={c.team ?? "none"} team={c.team} count={c.people} nodes={c.heads} ctx={ctx}>
+            <TeamCard key={c.team ?? "none"} id={cardId(b.leader.id, c.team)} team={c.team} count={c.people} nodes={c.heads} ctx={ctx}>
               {(title) => <CardBody nodes={c.heads} cardTitle={title} ctx={ctx} />}
             </TeamCard>
           ))}
         </Group>
       ))}
 
-      {chart.unplaced.length > 0 && (
+      {(chart.unplaced.length > 0 || unplacedHiring.length > 0) && (
         <Group title="Not placed" active={chart.unplaced.length} cardCount={1}>
           <section className="flex flex-col rounded-xl border border-dashed border-sdc-border bg-white">
             <p className="rounded-t-[11px] border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-1.5 text-xs text-sdc-muted">
-              No Leadership above them — their team is left as it is
+              {chart.unplaced.length > 0
+                ? "No Leadership above them — their team is left as it is"
+                : "Open positions whose hiring manager isn't on the chart — open one to place it"}
             </p>
             <ul className="p-1.5">
               {chart.unplaced.map((u) => {
@@ -224,6 +287,7 @@ export function OrgChart({
                 ) : null;
               })}
             </ul>
+            <OpenPositionsDropdown positions={unplacedHiring} onSelect={ctx.onSelectHiring} />
           </section>
         </Group>
       )}
