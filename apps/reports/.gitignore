@@ -23,6 +23,10 @@
 # and the next one is now covered before it is created.
 /.next/
 /.next-*/
+# Which of .next-a / .next-b the app serves, and which one a build just finished
+# (scripts/deploy-lib.mjs). Per-machine state, never committed.
+/.active-dist
+/.built-dist
 /out/
 
 # production

@@ -46,12 +46,20 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { activeDist, LEGACY_DIST } from "./deploy-lib.mjs";
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NEXT_BIN = path.join(APP_DIR, "node_modules", "next", "dist", "bin", "next");
 const NEXT_PKG = path.join(APP_DIR, "node_modules", "next", "package.json");
 const PRISMA_CLIENT = path.join(APP_DIR, "node_modules", ".prisma", "client", "index.js");
-const BUILD_ID = path.join(APP_DIR, ".next", "BUILD_ID");
+// Which build directory to serve (2026-10-07): the one `.active-dist` names, which a
+// deploy flips only after the new build is finished (deploy-lib.mjs). Falls back to
+// the legacy `.next`, which is also where a first-ever build lands. next.config.ts
+// reads NEXT_DIST_DIR for its distDir, so setting it here, before Next loads, is
+// what points both `next start` and the repair-path build below at the same place.
+const DIST = activeDist(APP_DIR) ?? LEGACY_DIST;
+process.env.NEXT_DIST_DIR = DIST;
+const BUILD_ID = path.join(APP_DIR, DIST, "BUILD_ID");
 const PORT = process.env.PORT || "4006";
 const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
 
@@ -126,11 +134,11 @@ if (repaired || !existsSync(PRISMA_CLIENT)) {
 // A reinstall does not touch .next, so this normally passes untouched. It matters
 // on a first boot in a fresh clone, and after anyone clears the build directory.
 if (!existsSync(BUILD_ID)) {
-  log("No production build found (.next/BUILD_ID missing) — building.");
+  log(`No production build found (${DIST}/BUILD_ID missing) — building.`);
   run(NPM, ["run", "build"]);
 }
 
-log(`preflight ok — starting next on port ${PORT}`);
+log(`preflight ok — starting next on port ${PORT}, serving ${DIST}`);
 
 // Hand off to Next's own CLI in this same process. Its bin reads process.argv, so
 // stage the argv it would have seen had PM2 launched it directly.
