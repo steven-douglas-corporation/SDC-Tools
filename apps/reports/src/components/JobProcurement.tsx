@@ -1570,8 +1570,8 @@ function PartsListTab({
         dateType === "invoice" ? p.invoicedDate :
         dateType === "req" ? p.requiredDate :
         // The Delivered Date column's own field — actual arrival, never a promised
-        // date. A row with nothing received has no delivered date and drops out of the
-        // range, the same way a row with no purchase date drops out of a Purchase range.
+        // date. A row with nothing received has no delivered date: it drops out of a
+        // two-sided range and stays in an open-ended one (see dayInRange).
         dateType === "delivered" ? p.receivedDate :
         p.expectedDate; // "exp"
       if (dateType === "req") return inRange(d) ? p : null;
