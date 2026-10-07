@@ -263,7 +263,9 @@ module.exports = {
     // `pm2 logs sdc-reports --err` for EADDRINUSE before trusting it.
     {
       name:          'sdc-reports',
-      // Serves the production build in .next. Still a single node process (no
+      // Serves the production build named in apps/reports/.active-dist (.next-a or
+      // .next-b; plain .next before the first switch) — see scripts/deploy-lib.mjs.
+      // Still a single node process (no
       // npm shim) — scripts/start.mjs preflights and then loads Next's own bin
       // in-process, so PM2 supervises the real server exactly as before.
       //

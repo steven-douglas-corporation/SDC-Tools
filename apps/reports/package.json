@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start -p 4006",
     "free-port": "node scripts/free-port.mjs 4006",
-    "deploy": "next build && pm2 stop sdc-reports && node scripts/free-port.mjs 4006 && pm2 start sdc-reports",
+    "deploy": "node scripts/deploy.mjs",
     "lint": "eslint",
     "db:seed-dev": "tsx prisma/seed-dev.ts",
     "test": "tsx -r ./scripts/shim-server-only.cjs --test tests/*.test.ts",

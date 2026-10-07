@@ -251,64 +251,135 @@ async function checkAndUpdate() {
     //
     //     Three things make it different from the two above:
     //
-    //       • It is a Next.js app. Its build output is `.next`, which is gitignored,
-    //         so checking source out in step 4 is again only half a deploy — and a
-    //         stale `.next` against fresh source is worse than a stale Vite bundle,
-    //         because the server reads that directory at request time.
+    //       • It is a Next.js app. Its build output is gitignored, so checking source
+    //         out in step 4 is only half a deploy — and a stale build against fresh
+    //         source is worse than a stale Vite bundle, because the server reads that
+    //         directory at request time.
     //       • It owns a Prisma schema. `prisma migrate deploy` has to run BEFORE the
     //         build, and `prisma generate` cannot run at all while the app is up:
     //         PM2 holds query_engine-windows.dll.node and the rename fails EPERM,
-    //         leaving a ~21 MB orphaned .tmp file behind each time. So the app is
-    //         STOPPED for this sequence rather than restarted after it.
-    //       • Being stopped is acceptable here in a way it would not be for the
-    //         others: a Next.js deploy restarts the process anyway, so the outage is
-    //         the one the deploy already implies rather than a new one.
+    //         leaving a ~21 MB orphaned .tmp file behind each time.
+    //       • Its `next build` cannot write to the directory the running server reads.
     //
-    //     Ordering is load-bearing: stop → migrate → generate → build → start. A
-    //     generate before the stop fails; a build before the generate compiles
-    //     against the old client; a start before the build serves the old .next.
+    //     Until 2026-10-07 the answer to all three was the same: STOP the app, then
+    //     migrate, generate and build, then start — about 60 s with nobody on it for
+    //     every change. Now (see apps/reports/scripts/deploy-lib.mjs for the design):
+    //
+    //       fast  — source-only change. The app KEEPS RUNNING while it is built into the
+    //               spare build directory (.next-a / .next-b); then a stop → free-port →
+    //               switch → start of a few seconds, with a health check and an automatic
+    //               rollback to the previous build if the new one does not come up. A
+    //               build that fails leaves the running app untouched.
+    //       full  — package.json / lockfile / Prisma schema or migrations changed. These
+    //               still need the app stopped (an install rewrites node_modules the app
+    //               holds open; generate hits the EPERM above; a migration should not run
+    //               under code that predates it), so the original order is kept:
+    //               stop → install → migrate → generate → build → start. The build now goes
+    //               into the spare directory too, so a failed build restarts the app on
+    //               the build that was already serving.
+    //
+    //     Run FROM the app's own directory rather than with --schema/--prefix from the
+    //     repo root: Prisma resolves DATABASE_URL from the .env beside the schema, and
+    //     `next build` needs that same .env plus the app's own node_modules. This is the
+    //     cwd `npm run deploy` uses too, and both go through scripts/deploy.mjs, so the
+    //     updater and a manual deploy do the identical thing.
     if (monorepoFiles.some(f => f.startsWith('apps/reports/'))) {
-      log('Reports app changed — stopping it for migrate + generate + build…');
-      // Run these FROM the app's own directory rather than with --schema/--prefix
-      // from the repo root: Prisma resolves DATABASE_URL from the .env beside the
-      // schema, and `next build` needs that same .env plus the app's own
-      // node_modules. This is exactly the cwd the app's own `npm run deploy` uses,
-      // so the updater and a manual deploy do the identical thing.
       const reportsDir = path.join(REPO_DIR, 'apps', 'reports');
       const inApp = { cwd: reportsDir };
-      try {
-        // Stop first, and tolerate it not being registered yet.
-        try {
-          run('pm2 stop sdc-reports');
-        } catch (stopErr) {
-          log(`  pm2 stop warning: ${stopErr.message} — continuing.`);
-        }
-        // migrate deploy, not migrate dev: it applies pending migrations without
-        // prompting and never invents one from schema drift.
-        // Dependencies first (2026-09-13): a Dependabot merge changes package.json
-        // and the lockfile, and nothing else here installed them — the build then
-        // compiled against whatever node_modules already held. Only when the
-        // package files moved, so an ordinary source change stays a build + start.
-        if (monorepoFiles.some(f => f === 'apps/reports/package.json' || f === 'apps/reports/package-lock.json')) {
-          log('  Reports dependencies changed — npm install…');
-          // --include=dev (2026-10-04): under pm2's NODE_ENV=production a plain install
-          // pruned every devDependency (@types/react and the rest), and `next build`'s
-          // type check then failed — Reports was down after PR #81 added `pg`.
-          run('npm install --include=dev --no-audit --no-fund', inApp);
-        }
-        run('npx prisma migrate deploy', inApp);
-        run('npx prisma generate', inApp);
-        run('npm run build', inApp);
-      } catch (reportsErr) {
-        // Loud, and NOT fatal: step 8 must still run so the app comes back up on
-        // its previous build rather than being left stopped by a failed deploy.
-        log(`  Reports app deploy FAILED: ${reportsErr.message}`);
-        log('  It will be restarted on its previous build — fix and re-push.');
+      // The mode rule lives next to the code it describes (and is unit-tested there);
+      // it is imported rather than copied so the two cannot drift. Dynamic import
+      // because deploy-lib.mjs is an ES module and this file is CommonJS.
+      let mode = 'full';
+      // Are the deploy scripts on disk? They are not when this very change has been
+      // reverted: this process loaded its code before the revert, and step 4 has just
+      // deleted deploy.mjs / deploy-lib.mjs from the tree. Calling a script that is gone
+      // would fail after the app was already stopped and leave Reports down, so without
+      // them the OLD inline steps run instead (stop -> install -> migrate -> generate ->
+      // `npm run build` into .next -> start), which is exactly what the reverted tree's own
+      // start.mjs and package.json expect.
+      const hasDeployScripts =
+        fs.existsSync(path.join(reportsDir, 'scripts', 'deploy.mjs')) &&
+        fs.existsSync(path.join(reportsDir, 'scripts', 'deploy-lib.mjs'));
+      if (!hasDeployScripts) {
+        log('  Reports deploy scripts are not in the tree (this change was reverted?) — using the original stop-first steps.');
       }
       try {
-        run('pm2 start sdc-reports');
-      } catch (startErr) {
-        log(`  pm2 start FAILED for sdc-reports: ${startErr.message} — MANUAL START REQUIRED.`);
+        if (!hasDeployScripts) throw new Error('deploy scripts not present');
+        const { pathToFileURL } = require('url');
+        const lib = await import(pathToFileURL(path.join(reportsDir, 'scripts', 'deploy-lib.mjs')).href);
+        mode = lib.reportsDeployMode(monorepoFiles);
+      } catch (modeErr) {
+        // Unknown means the slow, safe path — never the fast one.
+        if (hasDeployScripts) {
+          log(`  Could not read the Reports deploy mode (${modeErr.message}) — using the full stop-first deploy.`);
+        }
+      }
+
+      if (mode === 'fast') {
+        log('Reports app changed (source only) — building beside the running app, then switching…');
+        let built = false;
+        try {
+          run('node scripts/deploy.mjs build', inApp);
+          built = true;
+        } catch (buildErr) {
+          // The app was never stopped, so it is still serving its previous build.
+          log(`  Reports build FAILED: ${buildErr.message}`);
+          log('  Reports is still running on its previous build — fix and re-push.');
+        }
+        if (built) {
+          try {
+            run('node scripts/deploy.mjs activate', inApp);
+          } catch (activateErr) {
+            // activate exits non-zero for a rollback too: the app is then up on the old
+            // build, but the deploy did not take and must not read as success.
+            log(`  Reports switch did not complete: ${activateErr.message}`);
+            log('  Check `pm2 list` and `pm2 logs sdc-reports --err` — the app may be on its previous build, or down.');
+          }
+        }
+      } else {
+        log('Reports app changed (dependencies, schema or migrations) — stopping it for install + migrate + generate + build…');
+        let built = false;
+        try {
+          // Stop first, and tolerate it not being registered yet.
+          try {
+            run('pm2 stop sdc-reports');
+          } catch (stopErr) {
+            log(`  pm2 stop warning: ${stopErr.message} — continuing.`);
+          }
+          // Dependencies first (2026-09-13): a Dependabot merge changes package.json
+          // and the lockfile, and nothing else here installed them — the build then
+          // compiled against whatever node_modules already held. Only when the
+          // package files moved.
+          if (monorepoFiles.some(f => f === 'apps/reports/package.json' || f === 'apps/reports/package-lock.json')) {
+            log('  Reports dependencies changed — npm install…');
+            // --include=dev (2026-10-04): under pm2's NODE_ENV=production a plain install
+            // pruned every devDependency (@types/react and the rest), and `next build`'s
+            // type check then failed — Reports was down after PR #81 added `pg`.
+            run('npm install --include=dev --no-audit --no-fund', inApp);
+          }
+          // migrate deploy, not migrate dev: it applies pending migrations without
+          // prompting and never invents one from schema drift.
+          run('npx prisma migrate deploy', inApp);
+          run('npx prisma generate', inApp);
+          run(hasDeployScripts ? 'node scripts/deploy.mjs build' : 'npm run build', inApp);
+          built = true;
+        } catch (reportsErr) {
+          // Loud, and NOT fatal: the app must still come back up rather than being left
+          // stopped by a failed deploy. The failed build went into the spare directory,
+          // so `restart` brings it back on the build that was already serving.
+          log(`  Reports app deploy FAILED: ${reportsErr.message}`);
+          log('  It will be restarted on its previous build — fix and re-push.');
+        }
+        try {
+          // `activate` switches to the finished build and rolls back if it does not come up.
+          if (hasDeployScripts) {
+            run(built ? 'node scripts/deploy.mjs activate' : 'node scripts/deploy.mjs restart', inApp);
+          } else {
+            run('pm2 start sdc-reports');
+          }
+        } catch (startErr) {
+          log(`  Reports start FAILED: ${startErr.message} — MANUAL START REQUIRED.`);
+        }
       }
     }
 
