@@ -6,6 +6,7 @@ import {
   isSafeViewKey,
   toggleHidden,
   deptParamFromHidden,
+  viewSyncKey,
 } from "../src/lib/grid-view";
 
 // The properties that make a presentational filter instant, and the two that make it
@@ -130,4 +131,26 @@ test("the URL the client writes round-trips through the server's own parser", ()
     const expected = new Set(hidden.length === groups.length ? groups : groups.filter((g) => !hidden.includes(g)));
     assert.deepEqual([...shownAfterReload].sort(), [...expected].sort(), `round-trip failed for hidden=${JSON.stringify(hidden)}`);
   }
+});
+
+// ── Re-showing a workspace tab must not rewrite the URL (2026-10-08) ─────────────
+//
+// REPORTED: add Monthly ETC as a tab, leave it, and it can never be entered again. The
+// provider's URL sync skipped only its FIRST effect pass; <Activity> re-runs effects on
+// every show, so each re-show rewrote the URL from a stale workspace and put the previous
+// tab back. The write is now keyed on what it writes FROM, seeded with the server's value.
+
+test("viewSyncKey is the same for the same page and hidden set, in any order", () => {
+  assert.equal(viewSyncKey("/etc", ["10-311", "Shop"]), viewSyncKey("/etc", ["Shop", "10-311"]));
+  assert.equal(viewSyncKey("/etc", []), viewSyncKey("/etc", new Set<string>()));
+});
+
+test("viewSyncKey moves when the hidden set or the page does", () => {
+  assert.notEqual(viewSyncKey("/etc", []), viewSyncKey("/etc", ["Shop"]));
+  assert.notEqual(viewSyncKey("/etc", ["Shop"]), viewSyncKey("/etc", ["Shop", "10-311"]));
+  assert.notEqual(viewSyncKey("/etc", ["Shop"]), viewSyncKey("/quoted", ["Shop"]));
+});
+
+test("viewSyncKey cannot confuse a path with a key", () => {
+  assert.notEqual(viewSyncKey("/etc Shop", []), viewSyncKey("/etc", ["Shop"]));
 });
