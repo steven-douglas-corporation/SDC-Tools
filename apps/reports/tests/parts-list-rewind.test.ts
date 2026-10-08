@@ -189,3 +189,21 @@ test("the list is built from the rewound lines, and the reconciliation reads the
   assert.match(src, /for \(const l of lines \?\? \[\]\) \{\s*jobTotal \+= l\.totalPrice;/);
   assert.match(src, /const rewindCutoff = windowRequested \? null : monthEndCutoff\(rewind\);/, "ignored while an Invoiced range is requested");
 });
+
+test("both footers leave not-bought-yet BOM estimates out of Total $, so Total − Invoiced = Left to Invoice", () => {
+  const src = readFileSync(join(process.cwd(), "src", "components", "JobProcurement.tsx"), "utf8");
+  // The on-screen footer sums the estimate separately (for its tooltip); the export's total row skips it.
+  assert.match(src, /if \(p\.matchReason === "no-purchase"\) a\.estimate \+= p\.totalPrice;\s*else a\.total \+= p\.totalPrice;/);
+  assert.match(src, /if \(p\.matchReason !== "no-purchase"\) a\.total \+= p\.totalPrice;/);
+  assert.ok(!/^\s*a\.total \+= p\.totalPrice;/m.test(src), "no footer may add every row's Total $ again");
+});
+
+test("with the estimate out of the footer sum, Total − Invoiced equals the Left to Invoice sum", () => {
+  const bom = bomOf([part({ id: 1, pn: "A" }), part({ id: 2, pn: "UNBOUGHT", qty: 2, unitPrice: 11.44 })]);
+  const rows = flattenBomParts(bom, [
+    line({ itemId: 1, partNumber: "A", purchaseDate: "2026-09-05", totalPrice: 500, invoicedAmount: 200, actualAmount: 200, invoicedDate: "2026-09-20", postings: [{ day: "2026-09-20", amount: 200 }] }),
+  ]);
+  const sum = (f: (r: (typeof rows)[number]) => number) => rows.reduce((s, r) => s + f(r), 0);
+  const total = sum((r) => (r.matchReason === "no-purchase" ? 0 : r.totalPrice));
+  assert.equal(cents(total - sum((r) => r.invoicedAmount)), cents(sum((r) => r.leftToSpend ?? 0)));
+});

@@ -1777,7 +1777,8 @@ function PartsListTab({
     const tot = filtered.reduce(
       (a, p) => {
         a.qty += p.qty;
-        a.total += p.totalPrice;
+        // Not-bought-yet BOM estimates stay out of Total $, as in the on-screen footer.
+        if (p.matchReason !== "no-purchase") a.total += p.totalPrice;
         a.invoiced += p.invoicedAmount;
         if (p.leftToSpend !== null) a.left += p.leftToSpend;
         return a;
@@ -2408,15 +2409,21 @@ function PartsTableView({
   // No `unit` accumulator — a sum of per-unit PRICES is not a price of
   // anything (unlike Total $, which is genuinely additive money). The footer's
   // Unit $ cell is blank instead of a number nobody asked to compute.
+  //
+  // Total $ here leaves out BOM parts nothing has been bought for: their row still shows
+  // the estimate, but it is not money committed, so it stays out of the sum and
+  // `Total − Invoiced = Left to Invoice` holds on the footer (2026-10-08, by request).
+  // `estimate` is what was left out, for the cell's tooltip.
   const tot = parts.reduce(
     (a, p) => {
       a.qty += p.qty;
-      a.total += p.totalPrice;
+      if (p.matchReason === "no-purchase") a.estimate += p.totalPrice;
+      else a.total += p.totalPrice;
       a.invoiced += p.invoicedAmount;
       if (p.leftToSpend !== null) a.left += p.leftToSpend;
       return a;
     },
-    { qty: 0, total: 0, invoiced: 0, left: 0 },
+    { qty: 0, total: 0, invoiced: 0, left: 0, estimate: 0 },
   );
   const totPct = windowStatus.active ? null : tot.total > 0 ? Math.round((tot.invoiced / tot.total) * 100) : tot.invoiced > 0 ? 100 : 0;
   const footCell = (key: ColKey, idx: number): string => {
@@ -2566,7 +2573,11 @@ function PartsTableView({
           <tfoot className="sticky bottom-0 z-[2]">
             <tr className="h-7 border-t-2 border-sdc-blue bg-sdc-navy text-xs font-bold text-white">
               {cols.map((c, idx) => (
-                <td key={c.key} className={`overflow-hidden whitespace-nowrap border-r border-white/15 px-2 py-1 align-middle font-mono font-bold tabular-nums ${c.align === "right" ? "text-right" : ""}`}>
+                <td
+                  key={c.key}
+                  title={c.key === "total" && tot.estimate !== 0 ? `Leaves out ${usd(tot.estimate)} of BOM estimates for parts not bought yet, so Total − Invoiced = Left to Invoice.` : undefined}
+                  className={`overflow-hidden whitespace-nowrap border-r border-white/15 px-2 py-1 align-middle font-mono font-bold tabular-nums ${c.align === "right" ? "text-right" : ""}`}
+                >
                   {footCell(c.key, idx)}
                 </td>
               ))}
