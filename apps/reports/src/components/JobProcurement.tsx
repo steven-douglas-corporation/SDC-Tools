@@ -1,6 +1,6 @@
 "use client";
 
-import { hasInvoiceBalance, partHasInvoiceBalance } from "@/lib/left-to-invoice";
+import { hasInvoiceBalance, monthEndCutoff, monthEndLabel, partHasInvoiceBalance, rewindLines } from "@/lib/left-to-invoice";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bom";
 import { isUncoveredPart, quantityReadiness } from "@/lib/job-bom-rules";
@@ -170,6 +170,8 @@ type PersistedState = {
   upcomingWeek: number;
   /** Only rows with a Left to Invoice other than $0.00 (over-invoiced negatives included). */
   onlyLeftToInvoice?: boolean;
+  /** "Rewind to": a `YYYY-MM` month, or "" for today (see left-to-invoice.ts rewindLines). */
+  rewind?: string;
   hiddenPartCols: ColKey[];
   /** One-shot marker: the Left to Invoice column has been revealed once (see below). */
   leftToInvoiceShown?: boolean;
@@ -224,6 +226,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
   const [from, setFrom] = useState(() => saved.from ?? "");
   const [to, setTo] = useState(() => saved.to ?? "");
   const [onlyLeftToInvoice, setOnlyLeftToInvoice] = useState<boolean>(() => saved.onlyLeftToInvoice ?? false);
+  const [rewind, setRewind] = useState(() => (monthEndCutoff(saved.rewind) ? (saved.rewind ?? "") : ""));
   // Default hidden columns (fresh users; anyone with a stored set keeps theirs).
   // ── Why a stored set gets one forced correction (2026-09-02) ──────────────
   //
@@ -258,13 +261,13 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
   // Persist everything under one key.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const data: PersistedState = { tab, view, query, status: [...status], category, manufacturer, supplier, dateType, from, to, upcomingWeek, onlyLeftToInvoice, hiddenPartCols: [...hidden], leftToInvoiceShown: true, colWidths };
+    const data: PersistedState = { tab, view, query, status: [...status], category, manufacturer, supplier, dateType, from, to, upcomingWeek, onlyLeftToInvoice, rewind, hiddenPartCols: [...hidden], leftToInvoiceShown: true, colWidths };
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch {
       /* quota / disabled — non-fatal */
     }
-  }, [tab, view, query, status, category, manufacturer, supplier, dateType, from, to, upcomingWeek, onlyLeftToInvoice, hidden, colWidths]);
+  }, [tab, view, query, status, category, manufacturer, supplier, dateType, from, to, upcomingWeek, onlyLeftToInvoice, rewind, hidden, colWidths]);
 
   // Drill target — key = String(part.id). `nonce` bumps on every drill so the
   // Parts List effect re-fires even when the same row is targeted twice.
@@ -294,6 +297,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
       setTo("");
       setDateType("purchase");
       setOnlyLeftToInvoice(false);
+      setRewind("");
       setView("list");
       setTab("parts");
       setDrill((d) => ({ key: String(p.id), nonce: d.nonce + 1 }));
@@ -341,9 +345,10 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
     setFrom("");
     setTo("");
     setOnlyLeftToInvoice(false);
+    setRewind("");
   }, []);
 
-  const partsState = { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, hidden, setHidden, upcomingWeek, setUpcomingWeek, colWidths, setColWidths, clearFilters } as const;
+  const partsState = { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, rewind, setRewind, hidden, setHidden, upcomingWeek, setUpcomingWeek, colWidths, setColWidths, clearFilters } as const;
 
   // Every normalized part number in the CURRENT BOM tree — independent of
   // partsLines (which comes from TotalETO's purchasing data, not the
@@ -417,13 +422,24 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
       : null;
   const windowRequested = dateType === "invoice" && Boolean(from || to);
 
+  // ── "Rewind to": the whole list as it stood at a month end ──────────────────────
+  //
+  // Done on the purchase LINES, before anything is built from them, so every figure the
+  // list shows (rows, PO breakdowns, footer, reconciliation) follows from one rewound set
+  // instead of a second calculation that could drift from Monthly ETC's. Ignored while an
+  // Invoiced date range is requested: that mode already re-sums from its own window and
+  // blanks Left to Invoice, so there is nothing for a cutoff to mean (the control is
+  // disabled then).
+  const rewindCutoff = windowRequested ? null : monthEndCutoff(rewind);
+  const lines = useMemo(() => (rewindCutoff ? rewindLines(partsLines ?? [], rewindCutoff) : partsLines), [partsLines, rewindCutoff]);
+
   // Every BOM leaf part flattened + enriched + deduped by part id, so this is a
   // true procurement buy-list (each physical part once) — the source for the
   // Parts List table, the two summary cards, and the top readiness line.
   // (lib/po-detail.ts — shared with the Build Readiness PO drawer, which
   // fetches its own bom/partsLines for a single PO via a Server Action rather
   // than rendering this whole component.)
-  const parts = useMemo<FlatPart[]>(() => flattenBomParts(bom, partsLines, activeAttribution), [bom, partsLines, activeAttribution]);
+  const parts = useMemo<FlatPart[]>(() => flattenBomParts(bom, lines, activeAttribution), [bom, lines, activeAttribution]);
   const unattachedResidual = useMemo(() => {
     if (!activeAttribution) return 0;
     const onRows = parts.reduce((sum, p) => (p.nonBom ? sum + p.invoicedAmount : sum), 0);
@@ -461,7 +477,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
   const reconcile = useMemo(() => {
     let jobTotal = 0;
     let jobInvoiced = 0;
-    for (const l of partsLines ?? []) {
+    for (const l of lines ?? []) {
       jobTotal += l.totalPrice;
       jobInvoiced += l.actualAmount;
     }
@@ -511,7 +527,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
       // total matches" is a claim this footer should be able to prove each render.
       unexplained: jobTotal - (matchedTotal - estimated),
     };
-  }, [parts, partsLines]);
+  }, [parts, lines]);
 
   // Top summary line. `noPO` is a real procurement gap — nothing purchased,
   // nothing pulled from stock, no process schedule — and is counted separately
@@ -1344,6 +1360,8 @@ type PartsListState = {
   setTo: (v: string) => void;
   onlyLeftToInvoice: boolean;
   setOnlyLeftToInvoice: (v: boolean) => void;
+  rewind: string;
+  setRewind: (v: string) => void;
   hidden: Set<ColKey>;
   setHidden: (updater: (prev: Set<ColKey>) => Set<ColKey>) => void;
   upcomingWeek: number;
@@ -1438,7 +1456,7 @@ function PartsListTab({
   /** The human job number (JobBom.jobId) — for the Export menu's filename and audit trail. */
   jobId: string;
 }) {
-  const { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, hidden, setHidden, colWidths, setColWidths, clearFilters } = state;
+  const { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, rewind, setRewind, hidden, setHidden, colWidths, setColWidths, clearFilters } = state;
   const { toast } = useToast();
   const now = useStableNow();
   // "Active" for status means the selection differs from the default (every
@@ -1559,7 +1577,8 @@ function PartsListTab({
     dateType !== "purchase" ||
     from !== "" ||
     to !== "" ||
-    onlyLeftToInvoice;
+    onlyLeftToInvoice ||
+    rewind !== "";
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1791,12 +1810,13 @@ function PartsListTab({
       effManufacturer !== FILTER_ALL ? `Mfr: ${effManufacturer}` : null,
       effSupplier !== FILTER_ALL ? `Supplier: ${effSupplier}` : null,
       onlyLeftToInvoice ? "Left to invoice only" : null,
+      rewind && !windowStatus.requested ? `Rewound to ${monthEndLabel(rewind)}` : null,
       from || to ? `${dateTypeLabel}: ${from || "…"} to ${to || "…"}` : null,
       query ? `Search: "${query}"` : null,
     ].filter((s): s is string => Boolean(s));
 
     return { jobId, tab: "parts" as const, columns, rows, totals, filters };
-  }, [visibleCols, sortColumns, filtered, windowStatus.active, statusIsDefault, status, scope, allParts, effCategory, effManufacturer, effSupplier, onlyLeftToInvoice, from, to, dateType, query, jobId]);
+  }, [visibleCols, sortColumns, filtered, windowStatus.active, statusIsDefault, status, scope, allParts, effCategory, effManufacturer, effSupplier, onlyLeftToInvoice, rewind, windowStatus.requested, from, to, dateType, query, jobId]);
 
   async function runExport(format: "xlsx" | "csv") {
     if (exportBusy) return; // one click, one export
@@ -1934,6 +1954,33 @@ function PartsListTab({
         >
           Left to invoice
         </button>
+
+        {/* Rewind to: the list as it stood at the end of a month — the same position Monthly
+            ETC reports for that month. The hover text spells out what changes. Off (blank)
+            is today. Disabled with an Invoiced date range, which already re-sums on its
+            own window and blanks Left to Invoice. */}
+        <label
+          title={
+            windowStatus.requested
+              ? "Not available with an Invoiced date range"
+              : `Show the list as it stood at the end of a month, the same position Monthly ETC reports for that month.${
+                  rewind ? ` Now showing ${monthEndLabel(rewind)}.` : ""
+                }\n• Purchases made after that day are left out.\n• Invoices posted after that day count as not yet invoiced, so their amount is back in Left to Invoice.\n• Status, expected and received dates stay as of today.`
+          }
+          className={`flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium ${
+            rewind && !windowStatus.requested ? "border-sdc-blue bg-sdc-blue-light text-sdc-blue-dark" : "border-sdc-border bg-white text-sdc-navy"
+          } ${windowStatus.requested ? "cursor-not-allowed opacity-50" : ""}`}
+        >
+          Rewind to
+          <input
+            type="month"
+            aria-label="Rewind to month"
+            value={rewind}
+            disabled={windowStatus.requested}
+            onChange={(e) => setRewind(e.target.value)}
+            className="h-6 rounded border border-sdc-border bg-white px-1.5 text-xs text-sdc-navy outline-none focus:border-sdc-blue disabled:cursor-not-allowed"
+          />
+        </label>
 
         <span className="mx-1 h-5 w-px bg-sdc-border" aria-hidden />
 
