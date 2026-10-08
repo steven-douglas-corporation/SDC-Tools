@@ -872,6 +872,18 @@ export type PartsCostLine = {
    * silently drops those 3%; an id join cannot.
    */
   lineId: string;
+  /**
+   * Total ETO's internal part id (`POD.ItemID`) — the SAME key as a BOM row's `id`
+   * (job-bom.ts: `ChildID`), and the only reliable way to say which BOM part a
+   * purchase line belongs to. `partNumber` below is the supplier's own spelling and
+   * can differ from the item master's `ItemCompanyID` the BOM shows (34 of job
+   * 1116's 1083 lines), so the Parts List joins on this and falls back to the part
+   * number text ONLY when it is null.
+   *
+   * Null for lines with no purchase line behind them: Extra Costs (freight, fees,
+   * tariffs) and non-PO AP lines.
+   */
+  itemId: number | null;
   purchaseDate: string | null;
   invoicedDate: string | null;
   supplier: string | null;
@@ -940,6 +952,7 @@ const partsDetailSql = (where: { pod: string; ec: string }) => `
 SELECT
    POD.ProjectID AS JobId
   ,CONCAT('pod:', CAST(POD.PurchaseDetailID AS varchar(20))) AS LineId
+  ,POD.ItemID AS ItemId
   ,CONVERT(varchar(10), POH.PurchaseDate, 23) AS PurchaseDate
   ,CONVERT(varchar(10), INV.APDocDate, 23) AS InvoicedDate
   ,SUP.CName AS Supplier
@@ -984,6 +997,7 @@ SELECT
   -- CONCAT, not '+': it coerces and treats NULL as '', so one null component
   -- cannot collapse the whole id to NULL the way string concatenation would.
   ,CONCAT('ec:', CAST(EC.APDocID AS varchar(20)), ':', EC.PurchaseSupplierItem, ':', CAST(EC.decExtraCostingValue AS varchar(40))) AS LineId
+  ,CAST(NULL AS int) AS ItemId
   ,CONVERT(varchar(10), EC.APDocDate, 23) AS PurchaseDate
   ,CONVERT(varchar(10), EC.APDocDate, 23) AS InvoicedDate
   ,EC.Vendor AS Supplier
@@ -1020,6 +1034,7 @@ const PARTS_DETAIL_SQL = partsDetailSql({ pod: "POD.ProjectID = @job", ec: "EC.P
 function toPartsCostLine(r: Record<string, unknown>): PartsCostLine {
   return {
     lineId: (r.LineId as string) ?? "",
+    itemId: r.ItemId != null ? Number(r.ItemId) : null,
     purchaseDate: (r.PurchaseDate as string) ?? null,
     invoicedDate: (r.InvoicedDate as string) ?? null,
     supplier: (r.Supplier as string) ?? null,
@@ -1195,6 +1210,7 @@ export async function getJobPartsInvoicedInMonth(jobId: string, monthStart: Date
           -- APDocDetailID. Prefixed distinctly so an id from here can never be
           -- mistaken for a 'pod:' one from PARTS_DETAIL_SQL.
            CONCAT('apdd:', CAST(APDD.APDocDetailID AS varchar(20))) AS LineId
+          ,POD.ItemID AS ItemId
           ,CONVERT(varchar(10), POH.PurchaseDate, 23) AS PurchaseDate
           ,CONVERT(varchar(10), APBD.APDocDate, 23) AS InvoicedDate
           ,SUP.CName AS Supplier
@@ -1229,6 +1245,7 @@ export async function getJobPartsInvoicedInMonth(jobId: string, monthStart: Date
       `);
     const lines: PartsCostLine[] = result.recordset.map((r) => ({
       lineId: r.LineId ?? "",
+      itemId: r.ItemId != null ? Number(r.ItemId) : null,
       purchaseDate: r.PurchaseDate ?? null,
       invoicedDate: r.InvoicedDate ?? null,
       supplier: r.Supplier ?? null,

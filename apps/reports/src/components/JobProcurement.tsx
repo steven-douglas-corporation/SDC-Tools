@@ -8,7 +8,7 @@ import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { usd, safePct } from "@/components/ui/format";
 import { useToast } from "@/components/ui/Toast";
 import { DragScroll } from "@/components/DragScroll";
-import { normPn, attributeInvoicedWindow, type WindowAttribution } from "@/lib/parts-cost-window-attribution";
+import { normPn, attributeInvoicedWindow, collectBomItemIds, type WindowAttribution } from "@/lib/parts-cost-window-attribution";
 import { normalizeVendor } from "@/lib/vendor-normalize";
 import { loadPartsListInvoicedInWindow } from "@/lib/hours-detail-actions";
 import { sequenced } from "@/lib/request-sequence";
@@ -368,6 +368,10 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
     return set;
   }, [bom]);
 
+  // The same BOM by Total ETO item id — what a purchase line is actually joined on.
+  // Part number text above is only for lines that carry no item id.
+  const bomItemIds = useMemo(() => collectBomItemIds(bom.roots), [bom]);
+
   // ── Window-scoped invoiced totals for "Invoiced" + a date range ────────────
   //
   // Fetched on demand (not with the page) — the SAME lazy-drill judgement
@@ -394,13 +398,13 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
     startWindowFetch(async () => {
       const out = await sequenced("parts-list-window", key, () => loadPartsListInvoicedInWindow(jobId, from, to));
       if (out.ok) {
-        setWindowResult({ jobId, from, to, attribution: attributeInvoicedWindow(out.value.lines, bomPartNumbers) });
+        setWindowResult({ jobId, from, to, attribution: attributeInvoicedWindow(out.value.lines, bomPartNumbers, bomItemIds) });
         setWindowError(null);
       } else if (out.reason === "error") {
         setWindowError(out.error instanceof Error ? out.error.message : "Could not load invoiced totals for this range.");
       }
     });
-  }, [dateType, from, to, bom.jobId, windowResult, bomPartNumbers]);
+  }, [dateType, from, to, bom.jobId, windowResult, bomPartNumbers, bomItemIds]);
 
   // The resolved attribution to actually USE right now — null covers every
   // case that must fall back to lifetime figures: Purchase mode, Invoiced
