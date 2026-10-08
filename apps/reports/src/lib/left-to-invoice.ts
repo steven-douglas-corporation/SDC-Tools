@@ -329,7 +329,17 @@ export function partsNewEtc(leftToInvoice: number | null, leftToPurchase: number
 }
 
 /**
- * Does a Parts List row still owe money — the test behind the "Left to invoice" filter.
+ * A Left to Invoice figure that is not $0.00 as displayed, positive or negative (2026-10-08).
+ * Compared at cent precision so a sub-cent float residue does not count.
+ */
+export function hasInvoiceBalance(n: number): boolean {
+  return Math.round(n * 100) !== 0;
+}
+
+/**
+ * Does a Parts List row carry a Left to Invoice balance — the test behind the "Left to
+ * invoice" filter. It keeps anything not $0.00, so over-invoiced (negative) rows show
+ * alongside the ones still owed; it was "> 0" only until 2026-10-08.
  *
  * Per ORDER when the row has orders: its blended `leftToSpend` sums every PO the part
  * was bought on, so an over-invoiced PO's negative can cancel a genuinely open one.
@@ -337,10 +347,10 @@ export function partsNewEtc(leftToInvoice: number | null, leftToPurchase: number
  * Falls back to the row's own figure when it has NO orders (2026-10-05). A BOM row the
  * cost feed has no purchase line for reads `totalPrice − invoicedAmount` as its Left to
  * Invoice (po-detail.ts) yet has an empty `poBreakdown`; judging it on the breakdown
- * alone dropped it from the filter although its own column showed money owed. The
- * filter must never hide a row whose Left to Invoice cell is positive.
+ * alone dropped it from the filter although its own column showed a balance. The
+ * filter must never hide a row whose Left to Invoice cell is not $0.00.
  */
-export function partOwesInvoice(p: { poBreakdown: readonly { leftToInvoice: number }[]; leftToSpend: number | null }): boolean {
-  if (p.poBreakdown.length > 0) return p.poBreakdown.some((g) => g.leftToInvoice > 0);
-  return (p.leftToSpend ?? 0) > 0;
+export function partHasInvoiceBalance(p: { poBreakdown: readonly { leftToInvoice: number }[]; leftToSpend: number | null }): boolean {
+  if (p.poBreakdown.length > 0) return p.poBreakdown.some((g) => hasInvoiceBalance(g.leftToInvoice));
+  return hasInvoiceBalance(p.leftToSpend ?? 0);
 }

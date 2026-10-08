@@ -58,7 +58,7 @@ test("display rows interleave each open part with its PO groups, in poBreakdown 
   // Sub-rows follow the chevron again; the auto-expand on filter-on (PartsListTab)
   // is what opens them. The filter only NARROWS which POs show.
   assert.match(body, /if \(expanded\.has\(p\.id\)\) \{/, "sub-rows must follow the expanded set");
-  assert.match(body, /if \(onlyLeftToInvoice && !\(g\.leftToInvoice > 0\)\) continue;/, "under the filter, settled POs stay hidden");
+  assert.match(body, /if \(onlyLeftToInvoice && !hasInvoiceBalance\(g\.leftToInvoice\)\) continue;/, "under the filter, zero-balance POs stay hidden");
   assert.match(
     body,
     /for \(const g of p\.poBreakdown\) \{\s*[\s\S]*?rows\.push\(\{ kind: "po", p, g \}\);/,

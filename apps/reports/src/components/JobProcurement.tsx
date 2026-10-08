@@ -1,6 +1,6 @@
 "use client";
 
-import { partOwesInvoice } from "@/lib/left-to-invoice";
+import { hasInvoiceBalance, partHasInvoiceBalance } from "@/lib/left-to-invoice";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bom";
 import { isUncoveredPart, quantityReadiness } from "@/lib/job-bom-rules";
@@ -151,7 +151,7 @@ type PersistedState = {
   from: string;
   to: string;
   upcomingWeek: number;
-  /** Only rows with Left to Invoice > 0. Null/negative (over-invoiced) excluded either way. */
+  /** Only rows with a Left to Invoice other than $0.00 (over-invoiced negatives included). */
   onlyLeftToInvoice?: boolean;
   hiddenPartCols: ColKey[];
   /** One-shot marker: the Left to Invoice column has been revealed once (see below). */
@@ -1624,13 +1624,13 @@ function PartsListTab({
       // over-invoiced PO's negative figure can cancel out a genuinely open
       // one in that sum — a part could read leftToSpend <= 0 overall while
       // one specific PO still owes money. poBreakdown carries each PO's own
-      // leftToInvoice, so "does this part have an order still owed" is
+      // leftToInvoice, so "does this part have an order with a balance" is
       // answered per-order and then OR'd, not by the row's single number.
       // leftToSpend (and so leftToInvoice) is null uniformly, component-wide,
       // exactly when a windowed Invoiced figure is active — nothing meaningful
       // to filter on in that mode, so a row passes rather than being silently
       // dropped by a filter that cannot answer the question.
-      if (onlyLeftToInvoice && !windowStatus.active && !partOwesInvoice(p)) return false;
+      if (onlyLeftToInvoice && !windowStatus.active && !partHasInvoiceBalance(p)) return false;
       return true;
     });
   }, [parts, status, effCategory, effManufacturer, effSupplier, from, to, dateType, query, onlyLeftToInvoice, windowStatus.active]);
@@ -1663,7 +1663,7 @@ function PartsListTab({
   }, [allOpen, expandableIds]);
 
   // Turning "Left to invoice" ON auto-unfolds every qualifying part (2026-09-15,
-  // by request) — the whole point of the filter is "show me what's still owed",
+  // by request) — the whole point of the filter is "show me what has a balance",
   // and that answer lives on the PO sub-rows, not the part row's blended total.
   // Turning it back OFF collapses everything again (2026-09-16, by request) —
   // starting that view with every part still expanded from the filter would
@@ -1897,7 +1897,7 @@ function PartsListTab({
         <FilterSelect label="Mfr" value={effManufacturer} onChange={setManufacturer} options={[{ value: FILTER_ALL, label: "All manufacturers" }, ...distinct.mfrs.map((c) => ({ value: c, label: c }))]} />
         <FilterSelect label="Supplier" value={effSupplier} onChange={setSupplier} options={[{ value: FILTER_ALL, label: "All suppliers" }, ...distinct.sups.map((c) => ({ value: c, label: c }))]} />
 
-        {/* Left to Invoice > 0 only. Meaningless while a windowed Invoiced figure
+        {/* Left to Invoice not $0.00 only (over-invoiced rows included). Meaningless while a windowed Invoiced figure
             is active — leftToSpend is null for every row in that mode (see the
             footer's own comment) — so the toggle is disabled rather than silently
             doing nothing. */}
@@ -1906,7 +1906,7 @@ function PartsListTab({
           aria-pressed={onlyLeftToInvoice}
           disabled={windowStatus.active}
           onClick={() => setOnlyLeftToInvoice(!onlyLeftToInvoice)}
-          title={windowStatus.active ? "Not meaningful for a windowed Invoiced $ figure" : "Show only parts with money still left to invoice"}
+          title={windowStatus.active ? "Not meaningful for a windowed Invoiced $ figure" : "Show only parts whose Left to Invoice is not $0.00 (over-invoiced included)"}
           className={`flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
             onlyLeftToInvoice ? "border-sdc-blue bg-sdc-blue-light text-sdc-blue-dark" : "border-sdc-border bg-white text-sdc-navy hover:bg-sdc-blue-light"
           }`}
@@ -2220,11 +2220,11 @@ function PartsTableView({
       if (expanded.has(p.id)) {
         // Per order, not per part (2026-09-15): a part shown under "Left to
         // invoice" has at least one qualifying PO (or none at all — see
-        // partOwesInvoice), but its OTHER, already-settled POs are not what the
+        // partHasInvoiceBalance), but its OTHER, settled POs are not what the
         // filter was asked for — unfolding it must not show them back beside
-        // the one(s) that actually still owe money.
+        // the one(s) that actually carry a balance.
         for (const g of p.poBreakdown) {
-          if (onlyLeftToInvoice && !(g.leftToInvoice > 0)) continue;
+          if (onlyLeftToInvoice && !hasInvoiceBalance(g.leftToInvoice)) continue;
           rows.push({ kind: "po", p, g });
         }
       }
