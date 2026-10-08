@@ -162,7 +162,7 @@ test("one definition: SDC billing is an SDC vendor on a PO; a no-PO line is neve
   assert.equal(isSdcBilling("Steven Douglas Corp.", false), false);
   assert.equal(isSdcBilling("Steven Douglas Corp."), true, "hasPo omitted = PO-backed");
   assert.equal(isSdcBilling("McMASTER-CARR SUPPLY CO.", true), false);
-  const base = { purchaseDate: null, invoicedDate: null, manufacturer: null, category: null, partNumber: null, description: null, quantity: 1, unitPrice: 0, totalPrice: 0, invoicedAmount: 0, actualAmount: 0 };
+  const base = { itemId: null, purchaseDate: null, invoicedDate: null, manufacturer: null, category: null, partNumber: null, description: null, quantity: 1, unitPrice: 0, totalPrice: 0, invoicedAmount: 0, actualAmount: 0 };
   const adj = { ...base, lineId: "ec:6652::209625", supplier: "Steven Douglas Corp. [Concord] (Approved)", poNumber: "1106 correction" };
   const made = { ...base, lineId: "pod:77", supplier: "Steven Douglas Corp.", poNumber: "106331" };
   assert.equal(isNonPoLine(adj), true);

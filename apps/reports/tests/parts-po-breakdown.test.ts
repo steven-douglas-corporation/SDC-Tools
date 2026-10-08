@@ -24,6 +24,7 @@ import type { PartsCostLine } from "../src/lib/sync-totaleto";
 let seq = 0;
 const line = (o: Partial<PartsCostLine>): PartsCostLine => ({
   lineId: `pod:${++seq}`,
+  itemId: null,
   purchaseDate: null,
   invoicedDate: null,
   supplier: null,

@@ -78,6 +78,8 @@ export function fakePartsLines(jobId: string): PartsCostLine[] {
 
     out.push({
       lineId: `pod:${n * 1000 + i}`,
+      // Fake lines carry no item id, so they take the part-number fallback join.
+      itemId: null,
       purchaseDate: ymd(purchased),
       invoicedDate: invDate,
       supplier: SUPPLIERS[Math.floor(rand() * SUPPLIERS.length)],
@@ -99,7 +101,7 @@ export function fakePartsLines(jobId: string): PartsCostLine[] {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 10 + i);
     const amt = r2(150 + rand() * 600);
     out.push({
-      lineId: `ec:${n}:${i}:${amt}`, purchaseDate: ymd(d), invoicedDate: ymd(d), supplier: "DEV Freight", manufacturer: null,
+      lineId: `ec:${n}:${i}:${amt}`, itemId: null, purchaseDate: ymd(d), invoicedDate: ymd(d), supplier: "DEV Freight", manufacturer: null,
       category: "Extra Cost", poNumber: null, partNumber: null, description: "DEV freight / expedite", quantity: 1, unitPrice: amt,
       totalPrice: amt, invoicedAmount: amt, actualAmount: amt,
     });

@@ -18,6 +18,7 @@ let lineSeq = 0;
 function line(partial: Partial<PartsCostLine>): PartsCostLine {
   return {
     lineId: `fixture:${++lineSeq}`,
+    itemId: null,
     purchaseDate: null,
     invoicedDate: null,
     supplier: null,

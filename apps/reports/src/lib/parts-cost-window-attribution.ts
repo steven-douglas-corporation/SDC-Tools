@@ -55,21 +55,56 @@ export function collectBomPartNumbers(roots: readonly BomNode[]): Set<string> {
 }
 
 /**
- * The key a purchase line is grouped under when no BOM part claims it — part number,
- * else its description. THE one definition: flattenBomParts groups its non-BOM rows
- * with it, and attributeInvoicedWindow buckets the window's non-BOM money with it, so
- * a window line always finds the row that represents it.
+ * Every Total ETO item id (`BomPart.id`) a BOM tree carries — the `bomItemIds`
+ * argument `attributeInvoicedWindow` takes, walked the same way as
+ * `collectBomPartNumbers` (each node's `self` included).
+ */
+export function collectBomItemIds(roots: readonly BomNode[]): Set<number> {
+  const set = new Set<number>();
+  const walk = (node: BomNode) => {
+    if (node.self) set.add(node.self.id);
+    for (const p of node.parts) set.add(p.id);
+    for (const c of node.children) walk(c);
+  };
+  for (const section of roots) walk(section);
+  return set;
+}
+
+/**
+ * The text a purchase line is grouped under when it has no item id — part number,
+ * else its description. Prefer `lineLeftoverKey`, which takes the item id first.
  */
 export function leftoverKey(partNumber: string | null | undefined, description: string | null | undefined): string {
   return normPn(partNumber) || `\u0000blank:${normPn(description) || "(none)"}`;
 }
 
+/**
+ * The key a purchase line is grouped under when no BOM part claims it — its item id,
+ * else (Extra Costs and non-PO AP lines, which have none) part number, else its
+ * description. THE one definition: flattenBomParts groups its non-BOM rows with it, and
+ * attributeInvoicedWindow buckets the window's non-BOM money with it, so a window line
+ * always finds the row that represents it.
+ *
+ * Item id first so that one item bought under two supplier spellings is one row, not
+ * two with half the columns each.
+ */
+export function lineLeftoverKey(line: Pick<PartsCostLine, "itemId" | "partNumber" | "description">): string {
+  return line.itemId != null ? `item:${line.itemId}` : leftoverKey(line.partNumber, line.description);
+}
+
 export type WindowAttribution = {
-  /** normalized part number -> summed invoiced amount within the window. */
+  /** normalized part number -> summed invoiced amount within the window. Only lines
+   *  with NO item id land here (see `byItemId`). */
   byPartNumber: Map<string, number>;
   /** The invoice events behind byPartNumber, per part number — what the row's expanded
    *  PO lines show, so they list exactly the invoices the row's Invoiced $ adds up. */
   linesByPartNumber: Map<string, PartsCostLine[]>;
+  /** Total ETO item id -> summed invoiced amount within the window, for lines that
+   *  carry one and whose item is in the BOM. The Parts List reads this for a BOM row
+   *  (`BomPart.id`); part number text is only for lines without an item id. */
+  byItemId: Map<number, number>;
+  /** The invoice events behind byItemId — the row's expanded PO lines in a window. */
+  linesByItemId: Map<number, PartsCostLine[]>;
   /** Invoiced money in the window that doesn't resolve to any part number —
    *  non-PO AP lines (freight/tariffs/reimbursements, which have no
    *  PurchaseDetailID at all) and PO lines whose part isn't in the
@@ -118,9 +153,15 @@ export type WindowAttribution = {
  * the window drops out of an Invoiced+range view rather than showing a false
  * "$0 invoiced this month".
  */
-export function attributeInvoicedWindow(lines: PartsCostLine[], bomPartNumbers: ReadonlySet<string>): WindowAttribution {
+export function attributeInvoicedWindow(
+  lines: PartsCostLine[],
+  bomPartNumbers: ReadonlySet<string>,
+  bomItemIds: ReadonlySet<number> = new Set(),
+): WindowAttribution {
   const byPartNumber = new Map<string, number>();
   const linesByPartNumber = new Map<string, PartsCostLine[]>();
+  const byItemId = new Map<number, number>();
+  const linesByItemId = new Map<number, PartsCostLine[]>();
   let unattachedAmount = 0;
   let unattachedCount = 0;
   const nonBomByKey = new Map<string, { amount: number; lines: PartsCostLine[] }>();
@@ -131,11 +172,21 @@ export function attributeInvoicedWindow(lines: PartsCostLine[], bomPartNumbers: 
     // the outside invoice and drop the SDC one. Dropped from every bucket, the unattached
     // total included — it is excluded on purpose, not "unmatched".
     if (isSdcBillingLine(line)) continue;
+    // A line with an item id belongs to exactly the BOM row of that item — never matched
+    // on part number text, which is the supplier's spelling and can name a different
+    // item entirely. Only a line with no item id (Extra Costs, non-PO AP) falls to text.
+    if (line.itemId != null && bomItemIds.has(line.itemId)) {
+      byItemId.set(line.itemId, (byItemId.get(line.itemId) ?? 0) + line.invoicedAmount);
+      const itemLines = linesByItemId.get(line.itemId);
+      if (itemLines) itemLines.push(line);
+      else linesByItemId.set(line.itemId, [line]);
+      continue;
+    }
     const key = normPn(line.partNumber);
-    if (!key || !bomPartNumbers.has(key)) {
+    if (line.itemId != null || !key || !bomPartNumbers.has(key)) {
       unattachedAmount += line.invoicedAmount;
       unattachedCount++;
-      const lk = leftoverKey(line.partNumber, line.description);
+      const lk = lineLeftoverKey(line);
       const bucket = nonBomByKey.get(lk);
       if (bucket) {
         bucket.amount += line.invoicedAmount;
@@ -161,6 +212,12 @@ export function attributeInvoicedWindow(lines: PartsCostLine[], bomPartNumbers: 
       linesByPartNumber.delete(key);
     }
   }
+  for (const [id, amount] of byItemId) {
+    if (amount === 0) {
+      byItemId.delete(id);
+      linesByItemId.delete(id);
+    }
+  }
 
-  return { byPartNumber, linesByPartNumber, unattachedAmount, unattachedCount, nonBomByKey };
+  return { byPartNumber, linesByPartNumber, byItemId, linesByItemId, unattachedAmount, unattachedCount, nonBomByKey };
 }

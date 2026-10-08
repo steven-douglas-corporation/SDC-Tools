@@ -16,6 +16,7 @@ const proj = (invoiced: number, priorEtc: number | null, spent: number, openBala
 let lineSeq = 0;
 const line = (over: Partial<PartsCostLine>): PartsCostLine => ({
   lineId: `fixture:${++lineSeq}`,
+  itemId: null,
   purchaseDate: null,
   invoicedDate: null,
   supplier: null,

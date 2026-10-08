@@ -14,7 +14,7 @@ import type { PartsCostLine } from "../src/lib/sync-totaleto";
 let seq = 0;
 function line(p: Partial<PartsCostLine>): PartsCostLine {
   return {
-    lineId: `pod:${++seq}`, purchaseDate: null, invoicedDate: null, supplier: "Pemco Incorporated", manufacturer: null,
+    lineId: `pod:${++seq}`, itemId: null, purchaseDate: null, invoicedDate: null, supplier: "Pemco Incorporated", manufacturer: null,
     category: null, poNumber: "1", partNumber: "P-1", description: null, quantity: 1, unitPrice: 0,
     totalPrice: 0, invoicedAmount: 0, actualAmount: 0, ...p,
   };

@@ -9,7 +9,7 @@ import type { PartsCostLine } from "../src/lib/sync-totaleto";
 
 function line(p: Partial<PartsCostLine>): PartsCostLine {
   return {
-    lineId: "pod:1", purchaseDate: null, invoicedDate: null, supplier: "Steven Douglas Corp.", manufacturer: null,
+    lineId: "pod:1", itemId: null, purchaseDate: null, invoicedDate: null, supplier: "Steven Douglas Corp.", manufacturer: null,
     category: null, poNumber: null, partNumber: null, description: null, quantity: 1, unitPrice: 0,
     totalPrice: 0, invoicedAmount: 0, actualAmount: 0, ...p,
   };

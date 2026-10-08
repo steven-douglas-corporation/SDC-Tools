@@ -12,7 +12,7 @@
 
 import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bom";
 import type { PartsCostLine } from "@/lib/sync-totaleto";
-import { normPn, leftoverKey, type WindowAttribution } from "@/lib/parts-cost-window-attribution";
+import { normPn, lineLeftoverKey, type WindowAttribution } from "@/lib/parts-cost-window-attribution";
 import { alternateKeys, classifyUnmatched, type MatchReason } from "@/lib/parts-match-reason";
 import { normalizeVendor, SDC_CANONICAL } from "@/lib/vendor-normalize";
 import { isNonPoLine, isSdcBillingLine } from "@/lib/parts-actual-sdc";
@@ -498,8 +498,28 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       }
     }
   }
+  // ── Purchase lines join a BOM row on Total ETO's item id, not on text (2026-10-08) ──
+  //
+  // A BOM row's `id` IS the item id (job-bom.ts: ChildID) and a purchase line carries
+  // the same key (`itemId`, POD.ItemID). The part number text each side shows is a
+  // DIFFERENT field — the BOM prints the item master's ItemCompanyID, the line prints
+  // the supplier's own spelling — and joining on it is what made the 34-of-1083 spelling
+  // mismatches on job 1116, the alternate-spelling recovery below, and the share
+  // division for two rows with one part number necessary at all.
+  //
+  // So a line WITH an item id belongs to the BOM row of that item and to no other, and
+  // can never be claimed by text. Only a line with no item id (Extra Costs and non-PO AP
+  // lines: freight, fees, tariffs, card charges) goes in the text index, and keeps the
+  // old exact / recovered / shared matching, because text is all it has.
+  const itemLineIndex = new Map<number, PartsCostLine[]>();
   const lineIndex = new Map<string, PartsCostLine[]>();
   for (const l of partsLines ?? []) {
+    if (l.itemId != null) {
+      const arr = itemLineIndex.get(l.itemId);
+      if (arr) arr.push(l);
+      else itemLineIndex.set(l.itemId, [l]);
+      continue;
+    }
     const key = normPn(l.partNumber);
     if (!key) continue;
     const arr = lineIndex.get(key);
@@ -545,6 +565,9 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
   // that reports the difference beats one that absorbs it.
   const altClaimed = new Set<PartsCostLine>();
   for (const arr of lineIndex.values()) {
+    arr.sort((a, b) => (b.purchaseDate ?? "").localeCompare(a.purchaseDate ?? ""));
+  }
+  for (const arr of itemLineIndex.values()) {
     arr.sort((a, b) => (b.purchaseDate ?? "").localeCompare(a.purchaseDate ?? ""));
   }
 
@@ -641,6 +664,10 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     // where recovery had fired on a part that also shares its number with another
     // BOM row. Same defect twice, found only because the footer's guard reports the
     // difference instead of absorbing it.
+    // The row's own purchases, by item id: every one is wholly this row's (the BOM walk
+    // emits each item id once — `seen` above), so unlike the text lines below they take
+    // no share. `exactLines` / `altLines` are now ONLY lines that had no item id.
+    const itemLines = itemLineIndex.get(p.id) ?? [];
     const exactLines = (lineIndex.get(normPn(p.pn)) ?? []).filter((l) => !altClaimed.has(l));
     const altLines: PartsCostLine[] = [];
     let recovered: MatchReason | null = null;
@@ -654,11 +681,11 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
         recovered = recovered ?? alt.reason;
       }
     }
-    const collected = [...exactLines, ...altLines];
+    const collected = [...itemLines, ...exactLines, ...altLines];
     const pnLines = collected.length > 0 ? collected : null;
     /** Exact lines take a share; recovered lines belong wholly to this row. */
     const splitSum = (f: (l: PartsCostLine) => number) =>
-      sumLines(exactLines, f) / shareOf(p.pn) + sumLines(altLines, f);
+      sumLines(itemLines, f) + sumLines(exactLines, f) / shareOf(p.pn) + sumLines(altLines, f);
     // "no-purchase", not "non-bom": a row with no line IS a BOM part, it just has
     // nothing bought against it yet, so its money below is the BOM's own estimate
     // rather than spend. Conflating the two put estimate money into a total meant
@@ -727,6 +754,8 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     // one lineIndex shows), and pctInvoiced/leftToSpend become null rather
     // than mixing a windowed figure with totalPrice's lifetime one.
     const windowedInvoiced = activeAttribution?.byPartNumber.get(normPn(p.pn));
+    // Invoiced in the window against THIS item (by id) — whole, no share.
+    const windowedItemInvoiced = activeAttribution?.byItemId.get(p.id) ?? 0;
     // Same change on the invoiced side, and note WHICH field: `actualAmount`, the
     // GL-posted slice — the app's one definition of Parts Actual, and the field
     // getPartsCostFinancials sums for the card. This used `invoicedAmount` (billed,
@@ -743,7 +772,7 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     // was Pemco's; and the reverse case zeroed an outside supplier's money when the newest
     // PO happened to be SDC's.
     const invoicedAmount = activeAttribution
-      ? (windowedInvoiced ?? 0) / shareOf(p.pn)
+      ? windowedItemInvoiced + (windowedInvoiced ?? 0) / shareOf(p.pn)
       : pnLines
         ? splitSum((l) => (isSdcBillingLine(l) ? 0 : l.actualAmount))
         : 0;
@@ -754,11 +783,18 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
         : invoicedAmount > 0
           ? 100
           : 0;
-    const poBreakdown = groupLinesByPo(exactLines, altLines, shareOf(p.pn), poLineDates);
+    // `alt` is the "belongs wholly to this row" slot of groupLinesByPo: item-id lines and
+    // recovered lines are both that, so the breakdown sums to the same totals above.
+    const poBreakdown = groupLinesByPo(exactLines, [...itemLines, ...altLines], shareOf(p.pn), poLineDates);
     // Invoiced + range: the invoice events behind this row's windowed Invoiced $, shown as
     // its expanded PO lines instead of the part's whole history (see scopePartToWindow).
     const windowPoBreakdown = activeAttribution
-      ? groupLinesByPo(activeAttribution.linesByPartNumber.get(normPn(p.pn)) ?? [], [], shareOf(p.pn), poLineDates)
+      ? groupLinesByPo(
+          activeAttribution.linesByPartNumber.get(normPn(p.pn)) ?? [],
+          activeAttribution.linesByItemId.get(p.id) ?? [],
+          shareOf(p.pn),
+          poLineDates,
+        )
       : undefined;
     const purchasedQty = poBreakdown.reduce((sum, g) => sum + g.qty, 0);
     const flat: FlatPart = {
@@ -859,7 +895,7 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
   const leftovers = new Map<string, PartsCostLine[]>();
   for (const l of partsLines ?? []) {
     if (usedLines.has(l)) continue;
-    const key = leftoverKey(l.partNumber, l.description);
+    const key = lineLeftoverKey(l);
     const arr = leftovers.get(key);
     if (arr) arr.push(l);
     else leftovers.set(key, [l]);
@@ -880,7 +916,7 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     // Same per-LINE "SDC never invoices itself" rule as the BOM branch above (PO-backed SDC
     // lines only — a non-PO AP invoice from SDC, job 1106's "Adjustment to match Sage", is
     // real). In a window the SDC lines are already out of nonBomByKey.
-    const nonBomWindow = activeAttribution?.nonBomByKey.get(leftoverKey(first.partNumber, first.description));
+    const nonBomWindow = activeAttribution?.nonBomByKey.get(lineLeftoverKey(first));
     const invoicedAmount = activeAttribution
       ? (nonBomWindow?.amount ?? 0)
       : sumLines(lines, (l) => (isSdcBillingLine(l) ? 0 : l.actualAmount));
