@@ -199,13 +199,13 @@ export function useWorkspaceActions() {
       // right answer. Both go through lib/workspace.ts's sidebarClick now, so the
       // href in the markup and the action behind the click cannot disagree.
       //
-      // The one pairing /w refuses (Monthly ETC beside Monthly ETC) is left to the
-      // <Link>: its href is the page's own route, and leaving the workspace to open
-      // it full width is the useful reading of that click.
+      // Monthly ETC beside Monthly ETC never needs refusing here: when the other pane
+      // already shows the page, sidebarClick activates THAT pane, and an ETC tab open
+      // outside the split takes the active pane's slot. This used to refuse and leave the
+      // click to the <Link>, whose href is the page's own route — so clicking Monthly ETC
+      // with ETC in the other pane navigated to /etc full width and dropped the whole
+      // workspace, split included (2026-10-08).
       if (workspace.split) {
-        const target = sidebarTarget(workspace);
-        const other = workspace.split.left === target ? workspace.split.right : workspace.split.left;
-        if (pairingRefusal(path, tabById(workspace, other)?.path)) return false;
         const routed = sidebarClick(workspace, path);
         if (routed === workspace) return true; // the active pane is already on that page
         // A re-routed pane has content the server has never rendered.

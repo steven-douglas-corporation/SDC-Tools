@@ -94,16 +94,12 @@ export function useSplitNav() {
       // recycles the oldest unused tab rather than refusing, so a click here always
       // goes somewhere.
       if (workspace) {
-        if (workspace.split) {
-          const other =
-            workspace.split.left === workspace.active
-              ? tabById(workspace, workspace.split.right)?.path
-              : tabById(workspace, workspace.split.left)?.path;
-          // Would create the one pairing /w refuses (Monthly ETC twice). Leaving the
-          // workspace and opening the page full width is the useful reading of the
-          // click, and it is what the menu's own refusal explains.
-          if (pairingRefusal(href, other)) return href;
-        }
+        // No Monthly ETC pairing check here (2026-10-08): sidebarClick never builds the
+        // pairing /w refuses — a page already in the other pane is ACTIVATED, not copied,
+        // and an exclusive tab open elsewhere takes the active pane's slot. The check used
+        // to return the page's own route, so clicking Monthly ETC with ETC in the other
+        // pane navigated to /etc and threw the whole workspace away.
+        //
         // The SAME reducer useWorkspaceActions.openExistingTab applies on click, so
         // the href in the markup and the action behind it cannot disagree — they did
         // once (2026-09-14), and the click opened a tab the split never showed.
