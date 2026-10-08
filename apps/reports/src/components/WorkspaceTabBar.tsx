@@ -7,26 +7,71 @@ import {
   closeOtherTabs,
   closeTab,
   duplicateTab,
-  enterSplit,
-  exitSplit,
-  moveTab,
+  focusedSide,
+  groupTabs,
+  moveTabTo,
+  needsRender,
   openTab,
-  openableRoutes,
-  tabById,
-  tabIndex,
   tabTitle,
+  visibleIn,
+  type Side,
   type TabId,
   type Workspace,
 } from "@/lib/workspace";
-import { isExclusive, pairingRefusal } from "@/lib/split-view";
-import { usePermittedRoutes } from "@/lib/permitted-routes-store";
+import { isExclusive, isSplittable } from "@/lib/split-view";
+import { beginDrag, currentDrag, endDrag } from "@/lib/drag-payload";
+
+// ── Ctrl+Tab / Ctrl+W / Ctrl+1..8 ────────────────────────────────────────────
+//
+// Registered ONCE, by WorkspaceShell — the strips are one per group now, and a shortcut
+// registered by each would fire twice. They act on the group the user is working in:
+// Ctrl+Tab cycles through ITS tabs, Ctrl+1..8 numbers ITS strip.
+//
+// Skipped while focus is in a text field: Monthly ETC is a grid of inputs, and a
+// shortcut that fires mid-cell-edit would navigate away from an unsaved value. Same
+// guard, for the same reason, as the shell's Ctrl+\.
+export function useTabShortcuts(ws: Workspace, apply: (next: Workspace) => void): void {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+
+      const mine = groupTabs(ws, focusedSide(ws));
+      if (e.key === "Tab" && mine.length > 1) {
+        e.preventDefault();
+        const step = e.shiftKey ? -1 : 1;
+        const at = mine.findIndex((m) => m.id === ws.active);
+        apply(activateTab(ws, mine[(at + step + mine.length) % mine.length].id));
+      } else if (e.key.toLowerCase() === "w" && ws.tabs.length > 0) {
+        e.preventDefault();
+        apply(closeTab(ws, ws.active));
+      } else if (/^[1-8]$/.test(e.key)) {
+        const i = Number(e.key) - 1;
+        if (i < mine.length) {
+          e.preventDefault();
+          apply(activateTab(ws, mine[i].id));
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ws, apply]);
+}
 
 // ── The tab strip ────────────────────────────────────────────────────────────
 //
 // Chrome only. Every mutation goes through lib/workspace.ts and comes back as a URL,
 // so this file holds no rules — which tab is active, what closing does to the split,
-// and where a drag leaves the indices are all decided (and tested) there. What lives
-// here is the strip, the two menus, and the drag.
+// and where a drag leaves the tabs are all decided (and tested) there. What lives
+// here is the strip, the menus, and the drag.
+//
+// ── One strip per group (2026-10-08) ────────────────────────────────────────
+//
+// Outside a split this is the one strip across the top, holding every tab. In a split
+// each GROUP has its own — rendered by WorkspaceShell at the top of that group's pane —
+// holding only that group's tabs. `side` says which; outside a split it is "left",
+// which is every tab.
 //
 // ── No action here is a navigation any more (2026-09-04) ────────────────────
 //
@@ -41,102 +86,82 @@ import { usePermittedRoutes } from "@/lib/permitted-routes-store";
 export function WorkspaceTabBar({
   ws,
   apply,
+  side = "left",
 }: {
   ws: Workspace;
   apply: (next: Workspace, opts?: { navigate?: boolean }) => void;
+  /** Which group's tabs this strip shows. Outside a split there is only "left". */
+  side?: Side;
 }) {
   const go = (next: Workspace) => apply(next);
   const goOpen = (next: Workspace) => apply(next, { navigate: true });
 
-  const [menu, setMenu] = useState<null | "add" | "split">(null);
-  const [dragFrom, setDragFrom] = useState<number | null>(null);
-  const [dragOver, setDragOver] = useState<number | null>(null);
+  /** The tab a drag is currently hovering, for the insertion marker. */
+  const [dragOver, setDragOver] = useState<TabId | null>(null);
   /** Which tab's right-click menu is open. */
   const [ctxMenu, setCtxMenu] = useState<TabId | null>(null);
   const stripRef = useRef<HTMLDivElement | null>(null);
 
-  // Close either menu on an outside click or Escape. Both are single-select and
-  // short-lived, so they get this rather than a focus trap.
-  useEffect(() => {
-    if (!menu) return;
-    const onDown = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement)?.closest("[data-ws-menu]")) setMenu(null);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenu(null);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menu]);
+  const tabs = groupTabs(ws, side);
+  const shownId = visibleIn(ws, side);
+  // Outside a split there is one group and it is always the one in use.
+  const focused = !ws.split || focusedSide(ws) === side;
 
-  // Keep the active tab in view. A workspace restored from a URL can open with the
-  // active tab scrolled out of the strip, which reads as the wrong tab being active.
+  // Keep the group's visible tab in view. A workspace restored from a URL can open with
+  // it scrolled out of the strip, which reads as the wrong tab being active.
   useEffect(() => {
     stripRef.current
       ?.querySelector<HTMLElement>("[data-active='true']")
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [ws.active, ws.tabs.length]);
-
-  // ── Ctrl+Tab / Ctrl+W / Ctrl+1..8 ────────────────────────────────────────
-  //
-  // Skipped while focus is in a text field: Monthly ETC is a grid of inputs, and a
-  // shortcut that fires mid-cell-edit would navigate away from an unsaved value. Same
-  // guard, for the same reason, as SplitViewShell's Ctrl+\.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-
-      if (e.key === "Tab" && ws.tabs.length > 1) {
-        e.preventDefault();
-        const step = e.shiftKey ? -1 : 1;
-        const at = tabIndex(ws, ws.active);
-        go(activateTab(ws, ws.tabs[(at + step + ws.tabs.length) % ws.tabs.length].id));
-      } else if (e.key.toLowerCase() === "w" && ws.tabs.length > 0) {
-        e.preventDefault();
-        go(closeTab(ws, ws.active));
-      } else if (/^[1-8]$/.test(e.key)) {
-        const i = Number(e.key) - 1;
-        if (i < ws.tabs.length) {
-          e.preventDefault();
-          go(activateTab(ws, ws.tabs[i].id));
-        }
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // `go` and `router` are stable for a given ws; ws is the only real dependency.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ws]);
+  }, [shownId, tabs.length]);
 
   const atCap = ws.tabs.length >= MAX_TABS;
-  const openPaths = new Set(ws.tabs.map((t) => t.path));
-  const activePath = tabById(ws, ws.active)?.path;
-  // The pages this role may open — the sidebar's own list, published through
-  // lib/permitted-routes-store. Offering a page the role cannot see used to open a
-  // tab whose body then redirect()ed the whole workspace away (2026-09-14).
-  const permitted = usePermittedRoutes();
-  const openable = openableRoutes(permitted);
 
   return (
-    <div className="flex h-9 shrink-0 items-stretch border-b border-sdc-border bg-sdc-gray-50">
+    <div
+      // data-ws-strip: SplitDropOverlay starts its edge zones below this, so they never
+      // sit over a strip that is itself a drop target.
+      data-ws-strip
+      className={`flex h-9 shrink-0 items-stretch border-b bg-sdc-gray-50 ${
+        ws.split && focused ? "border-sdc-blue/40" : "border-sdc-border"
+      }`}
+    >
       {/* The strip scrolls; the controls after it do not. min-w-0 is what confines the
           overflow to this element instead of letting it widen the bar. */}
       <div
         ref={stripRef}
         role="tablist"
-        aria-label="Open pages"
+        aria-label={ws.split ? `Open pages, ${side} side` : "Open pages"}
+        // A tab dropped on the empty part of a strip goes to the end of THIS group. Only a
+        // TAB is handled here: a dragged page is the pane's to place (see PaneHost) — except
+        // outside a split, where there is no pane and dropping a page on the strip is
+        // simply "open this as a tab".
+        onDragOver={(e) => {
+          const d = currentDrag();
+          const takes = d?.kind === "tab" || (d?.kind === "page" && !ws.split && isSplittable(d.path));
+          if (!takes) return;
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onDrop={(e) => {
+          const d = currentDrag();
+          if (d?.kind === "tab") {
+            e.preventDefault();
+            e.stopPropagation();
+            go(moveTabTo(ws, d.id, side));
+          } else if (d?.kind === "page" && !ws.split && isSplittable(d.path)) {
+            e.preventDefault();
+            e.stopPropagation();
+            const next = openTab(ws, d.path);
+            apply(next, needsRender(ws, next) ? { navigate: true } : undefined);
+          }
+          setDragOver(null);
+        }}
         className="flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {ws.tabs.map((tab, i) => {
+        {tabs.map((tab) => {
           const id = tab.id;
-          const isActive = id === ws.active;
-          const inSplit = ws.split != null && (ws.split.left === id || ws.split.right === id);
+          const isActive = id === shownId;
           // tabTitle appends the instance hint ("Job Details - 1101") only when this
           // workspace actually holds more than one of that page, so a lone tab keeps its
           // plain name. See lib/workspace.ts.
@@ -159,33 +184,40 @@ export function WorkspaceTabBar({
               }}
               draggable
               onDragStart={(e) => {
-                setDragFrom(i);
+                beginDrag({ kind: "tab", id });
                 e.dataTransfer.effectAllowed = "move";
                 // Firefox will not start a drag unless data is set on the transfer.
-                e.dataTransfer.setData("text/plain", String(i));
+                e.dataTransfer.setData("text/plain", id);
               }}
               onDragOver={(e) => {
-                if (dragFrom === null) return;
+                const d = currentDrag();
+                if (d?.kind !== "tab") return; // a page is the pane's, or the strip's
                 e.preventDefault();
-                setDragOver(i);
+                e.stopPropagation();
+                setDragOver(id);
               }}
               onDrop={(e) => {
+                const d = currentDrag();
+                if (d?.kind !== "tab") return;
                 e.preventDefault();
-                if (dragFrom !== null && dragFrom !== i) go(moveTab(ws, ws.tabs[dragFrom].id, i));
-                setDragFrom(null);
+                e.stopPropagation();
+                if (d.id !== id) go(moveTabTo(ws, d.id, side, id));
                 setDragOver(null);
               }}
               onDragEnd={() => {
-                setDragFrom(null);
                 setDragOver(null);
+                endDrag();
               }}
               className={`motion-interactive group relative flex max-w-[220px] shrink-0 items-center gap-1.5 border-r border-sdc-border px-3 ${
                 isActive ? "bg-background" : "bg-sdc-gray-50 hover:bg-white/60"
-              } ${dragOver === i && dragFrom !== i ? "border-l-2 border-l-sdc-blue" : ""}`}
+              } ${dragOver === id ? "border-l-2 border-l-sdc-blue" : ""}`}
             >
-              {/* A 2px top rule marks the active tab, matching the split panes' own
-                  active indication rather than inventing a second visual language. */}
-              {isActive && <span aria-hidden className="absolute inset-x-0 top-0 h-0.5 bg-sdc-blue" />}
+              {/* A 2px top rule marks the group's visible tab. In a split it is blue only in
+                  the group the sidebar will open into, so which side is in use is legible
+                  from the strip alone. */}
+              {isActive && (
+                <span aria-hidden className={`absolute inset-x-0 top-0 h-0.5 ${focused ? "bg-sdc-blue" : "bg-sdc-gray-300"}`} />
+              )}
               <button
                 type="button"
                 role="tab"
@@ -200,16 +232,6 @@ export function WorkspaceTabBar({
               >
                 {label}
               </button>
-              {inSplit && (
-                // Which tabs the split is showing has to be legible from the strip:
-                // without this, two pages are on screen and only one tab looks active.
-                <span
-                  title="Shown in the split view"
-                  className="shrink-0 rounded bg-sdc-blue/10 px-1 text-micro font-semibold text-sdc-blue-dark"
-                >
-                  split
-                </span>
-              )}
               <button
                 type="button"
                 onClick={(e) => {
@@ -266,7 +288,7 @@ export function WorkspaceTabBar({
                       Close
                     </MenuItem>
                     <MenuItem
-                      disabled={ws.tabs.length < 2}
+                      disabled={tabs.length < 2}
                       onClick={() => {
                         setCtxMenu(null);
                         go(closeOtherTabs(ws, id));
@@ -274,165 +296,34 @@ export function WorkspaceTabBar({
                     >
                       Close Other Tabs
                     </MenuItem>
+                    {ws.split && (
+                      // The keyboard-and-menu way to do what dragging between the strips does.
+                      <MenuItem
+                        onClick={() => {
+                          setCtxMenu(null);
+                          go(moveTabTo(ws, id, side === "left" ? "right" : "left"));
+                        }}
+                      >
+                        {side === "left" ? "Move to the Right Side" : "Move to the Left Side"}
+                      </MenuItem>
+                    )}
                   </Menu>
                 </div>
               )}
             </div>
           );
         })}
-
-        {/* ── "+" ──────────────────────────────────────────────────────────── */}
-        <div className="relative flex shrink-0 items-stretch" data-ws-menu>
-          <button
-            type="button"
-            onClick={() => setMenu(menu === "add" ? null : "add")}
-            disabled={atCap}
-            aria-label="Open another page in a new tab"
-            title={atCap ? `At the ${MAX_TABS}-tab limit — close a tab first` : "Open another page in a new tab"}
-            className="motion-interactive px-3 text-sdc-muted hover:bg-white/60 hover:text-sdc-navy disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <svg viewBox="0 0 14 14" className="h-3.5 w-3.5" aria-hidden fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M7 2.5v9M2.5 7h9" strokeLinecap="round" />
-            </svg>
-          </button>
-          {menu === "add" && (
-            <Menu title="Open in a new tab">
-              {openable.map((r) => (
-                <MenuItem
-                  key={r.path}
-                  onClick={() => {
-                    setMenu(null);
-                    goOpen(openTab(ws, r.path, {}, { newInstance: true }));
-                  }}
-                  // "+" is the EXPLICIT way to ask for another instance, so it requests
-                  // a new one rather than resuming - that is exactly what separates it
-                  // from a sidebar click. Monthly ETC resumes anyway, and the note says
-                  // so rather than the item being disabled, because switching to it is
-                  // still a useful answer to this click.
-                  note={
-                    !openPaths.has(r.path)
-                      ? undefined
-                      : isExclusive(r.path)
-                        ? "already open - switches to it"
-                        : "opens another one"
-                  }
-                >
-                  {r.label}
-                </MenuItem>
-              ))}
-            </Menu>
-          )}
-        </div>
-      </div>
-
-      {/* ── Split View ───────────────────────────────────────────────────────
-          The requested picker: currently open tabs as the primary choices, with
-          "Open another page…" beneath for a page that is not open yet. */}
-      <div className="relative flex shrink-0 items-stretch border-l border-sdc-border" data-ws-menu>
-        {ws.split ? (
-          <button
-            type="button"
-            // The ACTIVE tab survives — the same thing Ctrl+\ (WorkspaceShell) and the
-            // sidebar's Exit Split View (useWorkspaceActions.exitSplitView) do, so the
-            // three controls that end a split agree on which pane you keep.
-            onClick={() => go(exitSplit(ws, ws.active))}
-            title="Leave the split and go back to one tab at a time (Ctrl+\)"
-            className="motion-interactive px-3 text-label font-medium text-sdc-blue-dark hover:bg-white/60"
-          >
-            Exit Split
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setMenu(menu === "split" ? null : "split")}
-            disabled={ws.tabs.length === 0}
-            title={
-              ws.tabs.length < 2
-                ? "Open a second page first — a split shows two tabs side by side"
-                : "Show another tab beside this one"
-            }
-            className="motion-interactive px-3 text-label font-medium text-sdc-gray-600 hover:bg-white/60 hover:text-sdc-navy disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Split View
-          </button>
-        )}
-        {menu === "split" && (
-          <Menu title="Show beside this tab" align="right">
-            {ws.tabs.map((t) => {
-              if (t.id === ws.active) return null;
-              // Monthly ETC beside Monthly ETC is refused, with the reason shown.
-              // Path-based duplicate matching means two ETC tabs cannot normally both
-              // exist, so this is reachable only from a hand-edited URL — but the
-              // guard belongs wherever the pairing is offered. See split-view.ts.
-              const refusal = pairingRefusal(t.path, activePath);
-              return (
-                <MenuItem
-                  key={t.id}
-                  disabled={refusal != null}
-                  note={refusal ?? undefined}
-                  onClick={() => {
-                    setMenu(null);
-                    go(enterSplit(ws, t.id));
-                  }}
-                >
-                  {/* detailed: the whole job of a label HERE is telling two otherwise
-                      identical entries apart, which is the case the request called out
-                      - "show enough context to distinguish duplicate tabs". */}
-                  {tabTitle(ws, t.id, { detailed: true })}
-                </MenuItem>
-              );
-            })}
-            {ws.tabs.length < 2 && <p className="px-3 py-2 text-micro text-sdc-muted">No other tab is open yet.</p>}
-            <div className="my-1 border-t border-sdc-border" />
-            <p className="px-3 pb-1 pt-1 text-micro font-semibold uppercase tracking-wide text-sdc-gray-400">
-              Open another page…
-            </p>
-            {openable
-              .filter((r) => !openPaths.has(r.path))
-              .map((r) => {
-                const refusal = pairingRefusal(r.path, activePath);
-                return (
-                  <MenuItem
-                    key={r.path}
-                    disabled={refusal != null || atCap}
-                    note={refusal ?? (atCap ? `at the ${MAX_TABS}-tab limit` : undefined)}
-                    onClick={() => {
-                      setMenu(null);
-                      // Open it, then split. openTab makes the NEW tab active, so the
-                      // split is entered from the tab we were on — which keeps the
-                      // page the user was reading on the left, where they left it.
-                      const opened = openTab(ws, r.path);
-                      const newIndex = opened.active;
-                      go(enterSplit(activateTab(opened, ws.active), newIndex));
-                    }}
-                  >
-                    {r.label}
-                  </MenuItem>
-                );
-              })}
-          </Menu>
-        )}
       </div>
     </div>
   );
 }
 
-function Menu({
-  title,
-  align = "left",
-  children,
-}: {
-  title: string;
-  align?: "left" | "right";
-  children: React.ReactNode;
-}) {
+function Menu({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div
       role="menu"
       aria-label={title}
-      className={`absolute top-full z-30 mt-px max-h-[calc(var(--app-vh)*0.7)] w-64 overflow-y-auto rounded-md border border-sdc-border bg-white py-1 shadow-lg ${
-        align === "right" ? "right-0" : "left-0"
-      }`}
+      className="absolute left-0 top-full z-30 mt-px max-h-[calc(var(--app-vh)*0.7)] w-64 overflow-y-auto rounded-md border border-sdc-border bg-white py-1 shadow-lg"
     >
       <p className="px-3 pb-1 text-micro font-semibold uppercase tracking-wide text-sdc-gray-400">{title}</p>
       {children}

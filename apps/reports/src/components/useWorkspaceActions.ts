@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   EMPTY_WORKSPACE,
   MAX_TABS,
+  dropOnSide,
   duplicateTab as duplicateTabIn,
   enterSplit,
   exitSplit,
@@ -16,6 +17,8 @@ import {
   tabById,
   tabTitle,
   workspaceHref,
+  type DropSource,
+  type Side,
   type TabId,
   type Workspace,
 } from "@/lib/workspace";
@@ -191,24 +194,24 @@ export function useWorkspaceActions() {
         // is right. The caller lets the <Link> handle it.
         return false;
       }
-      // ── While split, the click lands in the ACTIVE pane (2026-09-14) ─────────
+      // ── In a split, the click lands in the group you are working in (2026-09-14) ──
       //
-      // openTab adds or activates a tab and never touches `split`, and the shell
-      // shows only the two split tabs — so a plain click used to open a tab nobody
-      // could see, while the <Link>'s own href (useSplitNav.hrefFor) had computed the
-      // right answer. Both go through lib/workspace.ts's sidebarClick now, so the
-      // href in the markup and the action behind the click cannot disagree.
+      // A page that is already open, in either group, comes forward there; otherwise it
+      // opens as a new tab in the focused group (2026-10-08 — it used to re-route the
+      // active pane, which no longer makes sense now that a pane is a strip of tabs).
+      // Both this and the <Link>'s own href (useSplitNav.hrefFor) go through
+      // lib/workspace.ts's sidebarClick, so the markup and the action behind the click
+      // cannot disagree — they did once, and the click opened a tab nobody could see.
       //
-      // Monthly ETC beside Monthly ETC never needs refusing here: when the other pane
-      // already shows the page, sidebarClick activates THAT pane, and an ETC tab open
-      // outside the split takes the active pane's slot. This used to refuse and leave the
-      // click to the <Link>, whose href is the page's own route — so clicking Monthly ETC
-      // with ETC in the other pane navigated to /etc full width and dropped the whole
-      // workspace, split included (2026-10-08).
+      // Monthly ETC never needs refusing here: it can only exist once, so the click
+      // brings the open one forward. This used to refuse and leave the click to the
+      // <Link>, whose href is the page's own route — so clicking Monthly ETC with ETC in
+      // the other pane navigated to /etc full width and dropped the whole workspace,
+      // split included (2026-10-08).
       if (workspace.split) {
         const routed = sidebarClick(workspace, path);
-        if (routed === workspace) return true; // the active pane is already on that page
-        // A re-routed pane has content the server has never rendered.
+        if (routed === workspace) return true; // already showing that page, nothing to do
+        // A new tab has content the server has never rendered.
         return commit(routed, needsRender(workspace, routed) ? { navigate: true } : undefined);
       }
       const next = openTab(workspace, path);
@@ -354,6 +357,40 @@ export function useWorkspaceActions() {
     [workspace, commit],
   );
 
+  /**
+   * A page or a tab dropped on a side of the screen — what SplitDropOverlay's zones do.
+   *
+   * Inside the workspace this is lib/workspace.ts's dropOnSide (the same rule the panes of
+   * an open split use). From an ordinary route there is no workspace yet, so it is built
+   * the way openInSplitView builds one: the page on screen becomes the first tab, the
+   * dropped page the second, split with the dropped page on the side it was dropped on.
+   *
+   * False when nothing happened — a page that cannot be a tab, the page already on
+   * screen, or a drop with no second page to split against.
+   */
+  const dropToSide = useCallback(
+    (src: DropSource, side: Side): boolean => {
+      if (src.kind === "page" && !canHost(src.path)) return false;
+
+      if (workspace) {
+        const next = dropOnSide(workspace, src, side);
+        if (next === workspace) return false;
+        return commit(next, needsRender(workspace, next) ? { navigate: true } : undefined);
+      }
+
+      // No workspace: only a page can start one (a tab belongs to a workspace), and only
+      // from a page that can itself be a tab.
+      if (src.kind !== "page" || pathname === "/split" || !canHost(pathname)) return false;
+      const base = openTab(EMPTY_WORKSPACE, pathname, currentParams);
+      const next = dropOnSide(base, src, side);
+      if (next === base) return false;
+      if (!confirmLeaving()) return true; // handled: the user chose to stay
+      router.push(workspaceHref(next));
+      return true;
+    },
+    [canHost, workspace, commit, pathname, currentParams, confirmLeaving, router],
+  );
+
   /** The instance a Duplicate offered next to `path` would copy, or null when none is open. */
   const duplicableInstance = useCallback(
     (path: string): TabId | null => (workspace ? mostRecentInstance(workspace, path) : null),
@@ -370,6 +407,7 @@ export function useWorkspaceActions() {
     openExistingTab,
     openNewTab,
     openInSplitView,
+    dropToSide,
     duplicateTab,
     exitSplitView,
   };

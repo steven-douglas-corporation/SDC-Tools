@@ -66,10 +66,26 @@ export type Workspace = {
   /** The active tab's id. Always an id that exists when there is at least one tab. */
   active: TabId;
   /**
-   * Which two tab INSTANCES the split shows, or null for the ordinary
-   * one-tab-at-a-time view. Holds ids, so `Job Details | Job Details` is expressible.
+   * Null for the ordinary one-tab-at-a-time view. Otherwise the workspace is two GROUPS
+   * of tabs side by side, each with its own strip and its own visible tab (2026-10-08).
+   *
+   * `tabs` stays one flat list, because every tab's pane stays mounted and a pane
+   * needs one stable place in the tree. Group membership rides on top of it:
+   *
+   *   right group  the ids in `rightTabs`
+   *   left group   every other tab
+   *
+   * and each group's strip is its members in `tabs` order. `left` and `right` are the
+   * tab each group is SHOWING, so everything that only asks "what is on screen" keeps
+   * reading them as it always did.
+   *
+   * Invariants every function here preserves, and decodeWorkspace restores:
+   *   - `right` is in `rightTabs`; `left` is not
+   *   - `active` is `left` or `right` — the focused group's visible tab
+   *   - neither group is ever empty. Emptying one ends the split, and the other group
+   *     simply becomes the whole workspace.
    */
-  split: { left: TabId; right: TabId; ratio: number } | null;
+  split: { left: TabId; right: TabId; ratio: number; rightTabs: TabId[] } | null;
   /**
    * Most-recently-active first. What a sidebar click uses to pick WHICH instance of a
    * page to return you to, and what `closeTab` uses to decide where to land.
@@ -98,6 +114,31 @@ function pickParams(path: string, params: Record<string, string>): Record<string
 export const tabById = (ws: Workspace, id: TabId): Tab | undefined => ws.tabs.find((t) => t.id === id);
 export const hasTab = (ws: Workspace, id: TabId): boolean => ws.tabs.some((t) => t.id === id);
 export const tabIndex = (ws: Workspace, id: TabId): number => ws.tabs.findIndex((t) => t.id === id);
+
+// ── Groups ──────────────────────────────────────────────────────────────────
+
+export type Side = "left" | "right";
+
+/** Which group a tab belongs to. Outside a split there is one group, which is "left". */
+export function groupOf(ws: Workspace, id: TabId): Side {
+  return ws.split?.rightTabs.includes(id) ? "right" : "left";
+}
+
+/** The group the user is working in — the one whose visible tab is `active`. */
+export const focusedSide = (ws: Workspace): Side => groupOf(ws, ws.active);
+
+/** One group's tabs in strip order. Outside a split, `left` is every tab. */
+export function groupTabs(ws: Workspace, side: Side): Tab[] {
+  return ws.tabs.filter((t) => groupOf(ws, t.id) === side);
+}
+
+/** The tab a group is showing. Outside a split, the active tab. */
+export function visibleIn(ws: Workspace, side: Side): TabId {
+  if (!ws.split) return ws.active;
+  return ws.split[side];
+}
+
+const otherSide = (side: Side): Side => (side === "left" ? "right" : "left");
 
 /**
  * A fresh id for this workspace.
@@ -281,7 +322,16 @@ export function openTab(
 
   const id = nextTabId(base);
   const tabs = [...base.tabs, { id, path: p, params: pickParams(p, params) }];
-  return { ...base, tabs, active: id, mru: touchMru(base, id, tabs) };
+  // In a split the new tab joins the group the user is working in, and that group shows it.
+  return showNewTab(base, tabs, id, focusedSide(base));
+}
+
+/** `id` has just been appended to `tabs`: put it in `side`'s group (if split) and show it. */
+function showNewTab(base: Workspace, tabs: Tab[], id: TabId, side: Side): Workspace {
+  const mru = touchMru(base, id, tabs);
+  if (!base.split) return { ...base, tabs, active: id, mru };
+  const rightTabs = side === "right" ? [...base.split.rightTabs, id] : base.split.rightTabs;
+  return { ...base, tabs, active: id, mru, split: { ...base.split, rightTabs, [side]: id } };
 }
 
 /**
@@ -302,7 +352,8 @@ export function duplicateTab(ws: Workspace, id: TabId): Workspace {
   const newId = nextTabId(ws);
   const tabs = [...ws.tabs];
   tabs.splice(tabIndex(ws, id) + 1, 0, { id: newId, path: src.path, params: { ...src.params } });
-  return { ...ws, tabs, active: newId, mru: touchMru(ws, newId, tabs) };
+  // The copy lands in the source's own group, whichever group is focused.
+  return showNewTab(ws, tabs, newId, groupOf(ws, id));
 }
 
 /**
@@ -327,12 +378,27 @@ export function navigateTab(ws: Workspace, id: TabId, path: string, params: Reco
   if (i < 0) return ws;
   const tabs = [...ws.tabs];
   tabs[i] = { id, path: p, params: pickParams(p, params) };
-  return { ...ws, tabs, active: id, mru: touchMru(ws, id, tabs) };
+  return activateTab({ ...ws, tabs }, id);
 }
 
+/**
+ * Make `id` the tab the user is in.
+ *
+ * In a split that also makes it its group's visible tab and focuses that group — so
+ * activating a tab that was hiding behind another in the OTHER group is one move, not
+ * two, and `active` can never name a tab neither group is showing.
+ *
+ * Returns `ws` itself when nothing would change, so callers can tell a no-op from a move.
+ */
 export function activateTab(ws: Workspace, id: TabId): Workspace {
   if (!hasTab(ws, id)) return ws;
-  return { ...ws, active: id, mru: touchMru(ws, id) };
+  const mru = touchMru(ws, id);
+  if (!ws.split) {
+    return ws.active === id && mru.join() === ws.mru.join() ? ws : { ...ws, active: id, mru };
+  }
+  const side = groupOf(ws, id);
+  if (ws.active === id && ws.split[side] === id && mru.join() === ws.mru.join()) return ws;
+  return { ...ws, active: id, mru, split: { ...ws.split, [side]: id } };
 }
 
 /** Replace one tab's params — a job picked, a month changed — touching no other tab. */
@@ -366,12 +432,25 @@ export function closeTab(ws: Workspace, id: TabId): Workspace {
   const live = new Set(tabs.map((t) => t.id));
   const mru = ws.mru.filter((m) => live.has(m));
 
-  // Closing a tab that is IN the split ends the split rather than leaving one pane
-  // pointing at nothing. The survivor becomes the ordinary active tab.
-  if (ws.split && (ws.split.left === id || ws.split.right === id)) {
-    const survivor = ws.split.left === id ? ws.split.right : ws.split.left;
-    const active = live.has(survivor) ? survivor : (mru[0] ?? tabs[0].id);
-    return { tabs, active, split: null, mru: [active, ...mru.filter((m) => m !== active)] };
+  if (ws.split) {
+    const side = groupOf(ws, id);
+    const rightTabs = ws.split.rightTabs.filter((r) => r !== id);
+    const members = (s: Side) => tabs.filter((t) => (s === "right") === rightTabs.includes(t.id)).map((t) => t.id);
+
+    // The group's last tab is gone: the other group is all that is left, so the split
+    // ends and that group fills the page, showing what it was showing.
+    if (members(side).length === 0) {
+      const active = ws.split[otherSide(side)];
+      return { tabs, active, split: null, mru: [active, ...mru.filter((m) => m !== active)] };
+    }
+
+    // Otherwise the group stays. If it was showing the closed tab it lands on its most
+    // recently used survivor, the same rule as the single-strip case below.
+    const mine = members(side);
+    const shown = ws.split[side] === id ? (mru.find((m) => mine.includes(m)) ?? mine[0]) : ws.split[side];
+    const split = { ...ws.split, rightTabs, [side]: shown };
+    const active = ws.active === id ? shown : ws.active;
+    return { tabs, active, split, mru: [active, ...mru.filter((m) => m !== active)] };
   }
 
   const active = id === ws.active ? (mru.find((m) => m !== id) ?? tabs[0].id) : ws.active;
@@ -384,15 +463,24 @@ export function closeTab(ws: Workspace, id: TabId): Workspace {
 }
 
 /**
- * "Close Other Tabs" — keep exactly one.
+ * "Close Other Tabs" — keep exactly one, in the strip it was chosen from.
  *
- * Exits the split, because a split whose panes were both just closed is not a state
- * worth defining. The kept tab becomes the whole view.
+ * Outside a split that is the whole workspace. In a split it is that group only: the
+ * other group has its own strip and is not what the menu on this one is about.
  */
 export function closeOtherTabs(ws: Workspace, keep: TabId): Workspace {
   const tab = tabById(ws, keep);
   if (!tab) return ws;
-  return { tabs: [tab], active: keep, split: null, mru: [keep] };
+  if (!ws.split) return { tabs: [tab], active: keep, split: null, mru: [keep] };
+
+  const side = groupOf(ws, keep);
+  const dropped = new Set(groupTabs(ws, side).filter((t) => t.id !== keep).map((t) => t.id));
+  const tabs = ws.tabs.filter((t) => !dropped.has(t.id));
+  const rightTabs = ws.split.rightTabs.filter((r) => !dropped.has(r));
+  const split = { ...ws.split, rightTabs, [side]: keep };
+  const active = dropped.has(ws.active) ? keep : ws.active;
+  const mru = [active, ...ws.mru.filter((m) => m !== active && !dropped.has(m))];
+  return { tabs, active, split, mru };
 }
 
 // ── Reordering ──────────────────────────────────────────────────────────────
@@ -426,17 +514,124 @@ export function moveTab(ws: Workspace, id: TabId, toIndex: number): Workspace {
  * `Job Details [A] | Job Details [B]` a valid split rather than a special case.
  */
 export function enterSplit(ws: Workspace, other: TabId, ratio: number = DEFAULT_RATIO): Workspace {
+  if (ws.split) return ws;
   if (!hasTab(ws, other)) return ws;
   if (other === ws.active) return ws; // an instance cannot be split against itself
-  return { ...ws, split: { left: ws.active, right: other, ratio: clampRatio(ratio) } };
+  // `other` becomes a group of its own, on the right; every other tab stays on the left.
+  return {
+    ...ws,
+    split: { left: ws.active, right: other, ratio: clampRatio(ratio), rightTabs: [other] },
+  };
 }
 
-/** Leave the split, keeping `keep` (default: the left pane) as the active tab. */
+/**
+ * Split off `id` into a group of its own on `side`, leaving every other tab together in
+ * the other group — what dropping a tab on the edge of the screen does.
+ *
+ * Needs a second tab for the other group to hold; with one tab there is nothing to
+ * split from, so it is returned unchanged. `id` becomes the focused tab.
+ */
+export function splitWithTab(ws: Workspace, id: TabId, side: Side, ratio: number = DEFAULT_RATIO): Workspace {
+  if (ws.split || !hasTab(ws, id) || ws.tabs.length < 2) return ws;
+  const others = ws.tabs.filter((t) => t.id !== id).map((t) => t.id);
+  // What the other group shows: the tab the user was in, or failing that the one before.
+  const kept = ws.active !== id && others.includes(ws.active) ? ws.active : (ws.mru.find((m) => others.includes(m)) ?? others[0]);
+  const split =
+    side === "right"
+      ? { left: kept, right: id, ratio: clampRatio(ratio), rightTabs: [id] }
+      : { left: id, right: kept, ratio: clampRatio(ratio), rightTabs: others };
+  return { ...ws, active: id, mru: touchMru(ws, id), split };
+}
+
+/**
+ * Leave the split, keeping `keep` (default: the left pane) as the active tab.
+ *
+ * No tab is lost: the right group's tabs are appended to the end of the left group's
+ * strip, in the order they had.
+ */
 export function exitSplit(ws: Workspace, keep?: TabId): Workspace {
   if (!ws.split) return ws;
   const target = keep ?? ws.split.left;
-  const active = hasTab(ws, target) ? target : ws.tabs[0]?.id ?? "";
-  return { tabs: ws.tabs, active, split: null, mru: touchMru(ws, active) };
+  const tabs = [...groupTabs(ws, "left"), ...groupTabs(ws, "right")];
+  const active = hasTab(ws, target) ? target : tabs[0]?.id ?? "";
+  return { tabs, active, split: null, mru: touchMru(ws, active) };
+}
+
+/**
+ * Move a tab to `side`'s strip, before `beforeId` (or to the end when null or not in
+ * that strip). Used for dragging between strips and for reordering within one.
+ *
+ * Moving ACROSS groups shows the tab in its new group and focuses it, because a tab
+ * you just dropped somewhere is the one you are about to look at. If that leaves the
+ * group it came from empty, the split ends and the new group is the whole workspace.
+ * Reordering inside a group changes nothing but the order.
+ *
+ * Outside a split there is one strip, so `side` is ignored and this is a plain reorder.
+ */
+export function moveTabTo(ws: Workspace, id: TabId, side: Side, beforeId: TabId | null = null): Workspace {
+  if (!hasTab(ws, id) || beforeId === id) return ws;
+  const rest = ws.tabs.filter((t) => t.id !== id);
+  const moved = tabById(ws, id)!;
+
+  if (!ws.split) {
+    const at = beforeId ? rest.findIndex((t) => t.id === beforeId) : -1;
+    const tabs = [...rest];
+    tabs.splice(at < 0 ? tabs.length : at, 0, moved);
+    return tabs.every((t, i) => t.id === ws.tabs[i].id) ? ws : { ...ws, tabs };
+  }
+
+  const from = groupOf(ws, id);
+  const rightTabs = (side === "right" ? [...ws.split.rightTabs.filter((r) => r !== id), id] : ws.split.rightTabs.filter((r) => r !== id));
+  const inTarget = (tid: TabId) => rightTabs.includes(tid) === (side === "right");
+
+  let at = beforeId && inTarget(beforeId) ? rest.findIndex((t) => t.id === beforeId) : -1;
+  if (at < 0) {
+    // After the last member of the target group.
+    let last = -1;
+    rest.forEach((t, i) => {
+      if (inTarget(t.id)) last = i;
+    });
+    at = last + 1;
+  }
+  const tabs = [...rest];
+  tabs.splice(at, 0, moved);
+
+  if (from === side) return { ...ws, tabs, split: { ...ws.split, rightTabs } };
+
+  const mine = (s: Side) => tabs.filter((t) => (s === "right") === rightTabs.includes(t.id)).map((t) => t.id);
+  const mru = touchMru(ws, id, tabs);
+  if (mine(from).length === 0) return { tabs, active: id, split: null, mru };
+
+  // The group it left may have been showing it; hand that group its best remaining tab.
+  const left = from === "left" && ws.split.left === id ? (mru.find((m) => mine("left").includes(m)) ?? mine("left")[0]) : ws.split.left;
+  const right = from === "right" && ws.split.right === id ? (mru.find((m) => mine("right").includes(m)) ?? mine("right")[0]) : ws.split.right;
+  return { tabs, active: id, mru, split: { ...ws.split, rightTabs, left, right, [side]: id } };
+}
+
+/**
+ * Put a PAGE (dragged from the sidebar) on `side` — in a new group if there is no split.
+ *
+ * If the page is already open anywhere it is MOVED rather than opened again: a drag
+ * says "this page, there", and a second copy is what middle-click and "+" are for. That
+ * is also the only reading that works for Monthly ETC, which can exist once.
+ * With no second tab to split from, the page just opens normally.
+ */
+export function placePage(ws: Workspace, path: string, params: Record<string, string> = {}, side: Side): Workspace {
+  const p = normalizePath(path);
+  if (!isSplittable(p)) return ws;
+
+  const existing = mostRecentInstance(ws, p);
+  let next = ws;
+  let id: TabId;
+  if (existing) {
+    id = existing;
+    if (Object.keys(pickParams(p, params)).length > 0) next = setTabParams(ws, id, params);
+  } else {
+    next = openTab(ws, p, params, { newInstance: true });
+    if (next === ws) return ws;
+    id = next.active;
+  }
+  return next.split ? moveTabTo(next, id, side) : splitWithTab(next, id, side);
 }
 
 export function setSplitRatio(ws: Workspace, ratio: number): Workspace {
@@ -455,60 +650,49 @@ export function sidebarTarget(ws: Workspace): TabId {
   return ws.active;
 }
 
+/** What can be dropped on a group or on the screen edge: a sidebar page, or a tab. */
+export type DropSource = { kind: "page"; path: string; params?: Record<string, string> } | { kind: "tab"; id: TabId };
+
+/**
+ * THE rule for a drop on `side` — shared by the panes of a split and the edge-of-screen
+ * zones, so the two cannot disagree about what a drop means.
+ *
+ *   page, split     placePage — move or open it in that group
+ *   page, no split  placePage — start a split with it on that edge
+ *   tab,  split     moveTabTo — into that group (a no-op on its own group's body)
+ *   tab,  no split  splitWithTab — split it off to that edge
+ */
+export function dropOnSide(ws: Workspace, src: DropSource, side: Side): Workspace {
+  if (src.kind === "page") return placePage(ws, src.path, src.params ?? {}, side);
+  if (!ws.split) return splitWithTab(ws, src.id, side);
+  return groupOf(ws, src.id) === side ? ws : moveTabTo(ws, src.id, side);
+}
+
 /**
  * What a plain sidebar click does to the workspace — THE rule, in one place.
  *
- * REPORTED 2026-09-14: in a split, a sidebar click opened a tab nobody could see.
- * useWorkspaceActions.openExistingTab called openTab, which adds or activates a tab
- * but never touches `split` — and WorkspaceShell shows only the two split tabs. So
- * the click looked like it did nothing, while the <Link>'s own href (useSplitNav's
- * hrefFor, which the click preventDefault()ed) had computed the right answer all
- * along: navigate the ACTIVE pane. The two disagreed because they were two
- * implementations. Both call this now.
+ * One rule, split or not: resume the most recent instance of that page wherever it is
+ * open, otherwise open it as a new tab.
  *
- *   not split                        openTab — resume the MRU instance or open one
- *   split, active pane already on    nothing to do
- *     that route
- *   split, the OTHER pane is on it   activate that pane — the page the user asked
- *                                    for is already on screen; making both panes
- *                                    show it would be the surprising reading
- *   split, otherwise                 navigateTab on the active pane, leaving the
- *                                    other pane alone (the /split contract)
+ *   resume   activateTab — which, in a split, shows that tab in its own group and
+ *            focuses that group. A page already on screen is therefore never opened
+ *            twice, and a page hiding behind another tab in the other group comes
+ *            forward there.
+ *   open     a new tab in the group the user is working in (openTab).
  *
- * The one pairing that is refused (Monthly ETC beside Monthly ETC) is the caller's
- * to check with pairingRefusal, because the useful answer there — leave the
- * workspace and open the page full width — is a navigation, not a workspace.
+ * This replaced a split-only rule that re-routed the active PANE to the clicked page
+ * (navigateTab). With a strip per group a pane is no longer one page — it is a stack of
+ * tabs — so replacing its page would silently throw away whichever tab was showing.
+ * History: REPORTED 2026-09-14, a split click opened a tab nobody could see; both the
+ * <Link>'s href (useSplitNav) and the click handler call this, so they cannot disagree.
+ *
+ * The caller still checks pairingRefusal, because the useful answer to a refused
+ * pairing is a navigation, not a workspace.
  */
 export function sidebarClick(ws: Workspace, path: string, params: Record<string, string> = {}): Workspace {
   const p = normalizePath(path);
   if (!isSplittable(p)) return ws;
-  if (!ws.split) return openTab(ws, p, params);
-  const target = sidebarTarget(ws);
-  if (tabById(ws, target)?.path === p) {
-    return Object.keys(pickParams(p, params)).length > 0 ? setTabParams(ws, target, params) : ws;
-  }
-  const other = ws.split.left === target ? ws.split.right : ws.split.left;
-  if (tabById(ws, other)?.path === p) {
-    const next = Object.keys(pickParams(p, params)).length > 0 ? setTabParams(ws, other, params) : ws;
-    return activateTab(next, other);
-  }
-  // ── An exclusive page that is open, but not in either pane (2026-10-08) ──────
-  //
-  // Re-routing the active pane to Monthly ETC while an ETC tab already exists would put
-  // two live ETC grids in one document, which is the one thing `isExclusive` exists to
-  // prevent (see openTab). The pane the user was working in gives up its slot to the
-  // ETC tab that is already open instead: the split stays, ETC stays single, and the tab
-  // that was in that slot is still in the strip. Its pane is already mounted, so this is
-  // a visibility change, not a render.
-  if (isExclusive(p)) {
-    const held = mostRecentInstance(ws, p);
-    if (held) {
-      const base = Object.keys(pickParams(p, params)).length > 0 ? setTabParams(ws, held, params) : ws;
-      const split = ws.split.left === target ? { ...ws.split, left: held } : { ...ws.split, right: held };
-      return { ...base, split, active: held, mru: touchMru(base, held) };
-    }
-  }
-  return navigateTab(ws, target, p, params);
+  return openTab(ws, p, params);
 }
 
 /**
@@ -567,11 +751,16 @@ export function encodeWorkspace(ws: Workspace): string {
   for (const t of ws.tabs) {
     for (const [k, v] of Object.entries(t.params)) sp.set(tabParamKey(t.id, k), v);
   }
-  // Absent means "the first tab", so the commonest workspace carries no noise.
-  if (ws.active && ws.active !== ws.tabs[0].id) sp.set("a", ws.active);
+  // Absent means "the first tab" — or, in a split, the left group's visible tab — so the
+  // commonest workspace carries no noise.
+  const defaultActive = ws.split ? ws.split.left : ws.tabs[0].id;
+  if (ws.active && ws.active !== defaultActive) sp.set("a", ws.active);
   if (ws.split) {
     sp.set("s", `${ws.split.left}:${ws.split.right}`);
     sp.set("r", String(clampRatio(ws.split.ratio)));
+    // Which tabs are in the right group. Absent in an old URL, which meant "just the
+    // right-hand tab" — see decodeWorkspace.
+    sp.set("g", ws.split.rightTabs.filter((r) => hasTab(ws, r)).join(","));
   }
   // Only when it says something the tab order does not — which is most of the time
   // once a tab has been revisited, but never on a freshly-opened strip.
@@ -647,8 +836,6 @@ export function decodeWorkspace(raw: RawParams): Workspace {
     return Number.isInteger(n) && n >= 0 && n < tabs.length ? tabs[n].id : undefined;
   };
 
-  const active = byIndex(one(raw.a)) ?? tabs[0].id;
-
   let split: Workspace["split"] = null;
   const s = one(raw.s);
   if (s) {
@@ -656,8 +843,23 @@ export function decodeWorkspace(raw: RawParams): Workspace {
     const left = byIndex(l);
     const right = byIndex(r);
     if (left && right && left !== right) {
-      split = { left, right, ratio: clampRatio(Number(one(raw.r) ?? DEFAULT_RATIO)) };
+      // The right group: the ids in `g`, plus the visible right tab, minus the visible
+      // left one. An old URL has no `g`, so its right group is the one tab it named and
+      // every other tab joins the left group.
+      const g = (one(raw.g) ?? "").split(",").map((x) => x.trim()).filter((x) => ids.has(x) && x !== left);
+      const rightTabs = [...new Set([...g, right])];
+      split = { left, right, ratio: clampRatio(Number(one(raw.r) ?? DEFAULT_RATIO)), rightTabs };
     }
+  }
+
+  // `a` names the tab the user is in. In a split that tab has to be on screen, so a
+  // hand-edited `a` pointing at a tab hiding in a group makes that tab its group's
+  // visible one; absent, the left group's visible tab is the default.
+  const named = byIndex(one(raw.a));
+  const active = named ?? (split ? split.left : tabs[0].id);
+  if (split && named) {
+    const side = split.rightTabs.includes(named) ? "right" : "left";
+    split = { ...split, [side]: named };
   }
 
   const mruRaw = (one(raw.m) ?? "").split(",").map((x) => x.trim()).filter((x) => ids.has(x));

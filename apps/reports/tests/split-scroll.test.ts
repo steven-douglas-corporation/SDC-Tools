@@ -23,7 +23,8 @@ test("a two-pane split pins the workspace to the window, so each pane scrolls it
   assert.match(shell, /const independentScroll = split != null && !collapsed;/);
   assert.match(shell, /independentScroll \? "h-\[var\(--app-vh\)\] overflow-hidden" : "min-h-\[var\(--app-vh\)\]"/);
   // A pane that cannot shrink below its content would out-grow the pinned workspace.
-  assert.match(shell, /className="flex min-h-0 min-w-0 flex-col"/);
+  // (`relative` is the anchor for the drop-target outline, and changes nothing here.)
+  assert.match(shell, /className="relative flex min-h-0 min-w-0 flex-col"/);
 });
 
 test("the per-pane scroll container is bounded by its pane", () => {

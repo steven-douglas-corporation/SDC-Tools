@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import AppShell from "@/components/AppShell";
@@ -5,6 +6,7 @@ import { COLLAPSED_COOKIE, WIDTH_COOKIE, parseSidebarPrefs } from "@/lib/sidebar
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { RealtimeProvider } from "@/components/RealtimeProvider";
 import { InteractionMetrics } from "@/components/InteractionMetrics";
+import { SplitDropOverlay } from "@/components/SplitDropOverlay";
 import { getSchedulerBaseUrlForRequest } from "@/lib/scheduler-link";
 import { withSchedulerSso } from "@/lib/scheduler-sso";
 import { hasPermission } from "@/lib/permissions";
@@ -104,6 +106,12 @@ export default async function AppGroupLayout({ children }: { children: React.Rea
           the same way. Renders nothing, sends nothing, and stays dormant in production
           until somebody asks for it with ?perf=1 — see the header note. */}
       <InteractionMetrics />
+      {/* The two screen-edge drop zones that start a split, shown only while a page or tab
+          is being dragged. Here, above every page, because they have to work from an
+          ordinary single-page route too. See SplitDropOverlay. */}
+      <Suspense fallback={null}>
+        <SplitDropOverlay />
+      </Suspense>
       {children}
     </AppShell>
   );

@@ -44,18 +44,15 @@ test("permittedRoutePaths is the layout's own visibleHrefs rule, verbatim", () =
   assert.match(lib, /if \(hasPermission\(role, "dashboard:view"\)\) out\.push\("\/"\)/);
 });
 
-test("the tab bar offers only what the role may see", () => {
+// The tab strip's "+" picker, which this used to guard, was removed (2026-10-08): pages
+// now reach a tab only from the sidebar, which already lists just what the role may see,
+// so the role filter lives in the one place a page can come from. The helper stays.
+test("openableRoutes offers only what the role may see", () => {
   const offered = openableRoutes(["/etc", "/hours"]).map((r) => r.path);
   assert.deepEqual(offered, ["/etc", "/hours"]);
   assert.equal(openableRoutes(null).length, SPLIT_ROUTES.length, "unknown yet: offer everything, never nothing");
   assert.equal(openableRoutes(undefined).length, SPLIT_ROUTES.length);
   assert.deepEqual(openableRoutes([]), [], "a role with no pages gets no picker entries");
-  const bar = readFileSync(join(process.cwd(), "src", "components", "WorkspaceTabBar.tsx"), "utf8");
-  assert.match(bar, /const permitted = usePermittedRoutes\(\);/);
-  assert.match(bar, /const openable = openableRoutes\(permitted\);/);
-  assert.ok(!/openableRoutes\(\)/.test(bar), "no unfiltered call left");
-  const sidebar = readFileSync(join(process.cwd(), "src", "components", "Sidebar.tsx"), "utf8");
-  assert.match(sidebar, /publishPermittedRoutes\(visibleHrefs\);/, "the sidebar publishes the same list it filters on");
 });
 
 test("PaneView renders the in-pane refusal instead of letting the page-level redirect fire", () => {
