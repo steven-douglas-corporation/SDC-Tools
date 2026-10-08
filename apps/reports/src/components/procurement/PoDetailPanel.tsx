@@ -331,6 +331,9 @@ export function partsListSortColumns(now: number): SortColumns<FlatPart, ColKey>
   };
 }
 
+// Translucent, so the row's own status tint still reads through it.
+const FILTERED_COL_BG = "bg-sdc-blue/15";
+
 export function PartRowCells({
   p,
   cols,
@@ -339,6 +342,7 @@ export function PartRowCells({
   onOpenPart,
   expand,
   onCopy,
+  filteredCol,
 }: {
   p: FlatPart;
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
@@ -366,6 +370,8 @@ export function PartRowCells({
    * `onCopy` of their own (the PO drawer's table) render no icon at all.
    */
   onCopy?: (text: string, label?: string) => void;
+  /** The column a date range is filtering on, tinted light blue down the table. */
+  filteredCol?: ColKey | null;
 }) {
   const parentLine = parentLineFor(p);
   const cell = (key: ColKey) => {
@@ -624,7 +630,7 @@ export function PartRowCells({
       {cols.map((c) => (
         <td
           key={c.key}
-          className={`overflow-hidden border-b border-r border-sdc-border-soft px-2 py-1 align-middle ${c.align === "right" ? "text-right" : ""}`}
+          className={`overflow-hidden border-b border-r border-sdc-border-soft px-2 py-1 align-middle ${c.key === filteredCol ? FILTERED_COL_BG : ""} ${c.align === "right" ? "text-right" : ""}`}
         >
           {cell(c.key)}
         </td>
@@ -655,6 +661,7 @@ export function PartPoSubRowCells({
   cols,
   onOpenPo,
   showPartIdentity,
+  filteredCol,
 }: {
   p: FlatPart;
   g: PartPoGroup;
@@ -674,6 +681,8 @@ export function PartPoSubRowCells({
    * original label.
    */
   showPartIdentity?: boolean;
+  /** The column a date range is filtering on, tinted light blue down the table. */
+  filteredCol?: ColKey | null;
 }) {
   const money = "font-mono text-note tabular-nums text-sdc-gray-700";
   const date = "whitespace-nowrap font-mono text-label text-sdc-gray-700";
@@ -782,7 +791,7 @@ export function PartPoSubRowCells({
       {cols.map((c) => (
         <td
           key={c.key}
-          className={`overflow-hidden whitespace-nowrap border-b border-r border-sdc-border-soft px-2 py-0 align-middle ${c.align === "right" ? "text-right" : ""}`}
+          className={`overflow-hidden whitespace-nowrap border-b border-r border-sdc-border-soft px-2 py-0 align-middle ${c.key === filteredCol ? FILTERED_COL_BG : ""} ${c.align === "right" ? "text-right" : ""}`}
         >
           {cell(c.key)}
         </td>
