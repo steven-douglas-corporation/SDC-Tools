@@ -890,6 +890,17 @@ export type PartsCostLine = {
   // line billed by a document flagged never-to-export. Summing THIS field is how
   // every view gets a Parts Actual that agrees with every other view.
   actualAmount: number;
+  /**
+   * `actualAmount` split by the date of each AP document that posted it — one entry per
+   * invoice DAY, GL-posted money only, so the amounts sum to `actualAmount`.
+   *
+   * Exists because `invoicedDate` is MAX(APDocDate) over every document a line has ever
+   * received: a line billed in September AND October reads "October", so a cutoff test on
+   * it cannot tell how much had posted by 09/30. This can. Present only on PO lines
+   * (`pod:`) from getPartsCostForJobs, and only when it reconciles to `actualAmount`;
+   * absent means "not known per document" and callers fall back to `invoicedDate`.
+   */
+  postings?: readonly { day: string; amount: number }[];
 };
 
 export type JobPartsCost = {
@@ -1063,9 +1074,56 @@ export async function getPartsCostForJobs(jobIds: string[]): Promise<Map<string,
       if (arr) arr.push(line);
       else byJob.set(job, [line]);
     }
+    await attachPostings(pool, list, byJob);
     for (const [job, lines] of byJob) out.set(job, meaningfulLines(lines));
     return out;
   }, { requestTimeout: 300_000, feed: "parts_cost.lines_for_jobs" });
+}
+
+// ── Per-document GL postings, so a month-end figure can be a month-end figure ──
+//
+// One grouped query per call: GL-posted AP money per PO line per invoice DAY, under the
+// same filters as the INV subquery in partsDetailSql (entry types 2 and 3 out, the
+// shared GL-posted test), so its per-line total IS that subquery's GlPostedAmount.
+//
+// Attached only where it reconciles to the line's own `actualAmount` (to 2 cents). A line
+// that does not — a refund whose sign was flipped after the fact, say — keeps no
+// postings and falls back to its `invoicedDate`, which is the rule that applied before
+// this existed. Never throws: losing the split degrades to that fallback, not to an
+// error on a page that only needed the figure.
+async function attachPostings(pool: sql.ConnectionPool, jobList: string, byJob: Map<string, PartsCostLine[]>): Promise<void> {
+  try {
+    const result = await pool.request().query(`
+      SELECT APDD.PurchaseDetailID AS Pd,
+             CONVERT(varchar(10), APBD.APDocDate, 23) AS Day,
+             SUM(APDD.APDocQty * APDD.APDocUnitPrice * (1 - APDD.APDocItemPctDisc) * APBD.APDocCurrRate) AS Amount
+      FROM tblAPDocumentDetails APDD WITH(NOLOCK)
+        INNER JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
+        INNER JOIN tblPurchaseOrderDetails POD WITH(NOLOCK) ON POD.PurchaseDetailID = APDD.PurchaseDetailID
+        ${sageFirstJoin("SFC")}
+      WHERE POD.ProjectID IN (${jobList})
+        AND APBD.BatchEntryTypeID NOT IN (2, 3)
+        AND ${glPostedAp("SFC")}
+      GROUP BY APDD.PurchaseDetailID, CONVERT(varchar(10), APBD.APDocDate, 23)`);
+    const byLine = new Map<string, { day: string; amount: number }[]>();
+    for (const r of result.recordset) {
+      const id = `pod:${r.Pd}`;
+      const entry = { day: String(r.Day), amount: Number(r.Amount) || 0 };
+      const arr = byLine.get(id);
+      if (arr) arr.push(entry);
+      else byLine.set(id, [entry]);
+    }
+    for (const lines of byJob.values()) {
+      for (const l of lines) {
+        const p = byLine.get(l.lineId);
+        if (!p) continue;
+        if (Math.abs(p.reduce((s, x) => s + x.amount, 0) - l.actualAmount) > 0.02) continue;
+        l.postings = p;
+      }
+    }
+  } catch (e) {
+    console.error("[sync-totaleto] per-document postings unavailable; Left to Invoice falls back to invoicedDate:", e);
+  }
 }
 
 // ── Genuinely month-scoped invoice lines, for the Parts Spent drill (2026-08-07) ──

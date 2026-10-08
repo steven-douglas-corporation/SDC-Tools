@@ -2001,13 +2001,9 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                         // here exactly as it does in the Parts List, and there is nothing
                         // left to explain away.
                         //
-                        // DRIFT is real and stays: a GL posting dated after the cutoff
-                        // still reduces this month, because the Parts List’s rule pairs a
-                        // purchase-date cutoff with lifetime invoicing. 31 of 49 jobs in
-                        // August 2026. It does NOT make the two surfaces disagree — they
-                        // drift together — but a month whose number keeps moving should
-                        // say so.
-                        const suggestionLatePostings = round2(suggestion?.postedAfterCutoff ?? 0);
+                        // DRIFT is gone (2026-10-08): the figure is an as-of-month-end
+                        // position, so a GL posting dated after the cutoff is left out of it
+                        // rather than subtracted. A closed month no longer moves.
                         // ── Left to Invoice is COMPUTED, not entered (2026-09-04) ───
                         //
                         // "Monthly ETC Left to Invoice = Parts List Left to Invoice …
@@ -2202,10 +2198,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                                   ? `Total ETO could not be reached for this job, so there is no figure here. This cell cannot be edited — New ETC stays blank until it and Left to Purchase both have a value.`
                                   : resolvedInvoice.overridden
                                   ? `Manually adjusted earlier. Total ETO’s figure as of ${cutoffLabel} is ${currencyExact(resolvedInvoice.defaultValue ?? 0)}; this cell holds ${currencyExact(leftToInvoiceValue)}. This cell can no longer be edited.`
-                                  : `${currencyExact(leftToInvoiceValue)} on purchase orders and not yet invoiced as of ${cutoffLabel} — the same figure this job’s Parts List shows filtered through that date. This cell cannot be edited.` +
-                                    (suggestionLatePostings > 0
-                                      ? ` ${currencyExact(suggestionLatePostings)} has posted after ${cutoffLabel} against orders placed on or before it, and is already deducted — so this figure keeps falling as later invoices post. The Parts List moves with it.`
-                                      : "") +
+                                  : `${currencyExact(leftToInvoiceValue)} on purchase orders and not yet invoiced as of ${cutoffLabel}. Only invoices dated on or before that day are counted, so later invoices do not change it. This cell cannot be edited.` +
                                     (supersededNewEtc != null
                                       ? ` This row previously carried a hand-typed New ETC of ${currencyExact(supersededNewEtc)}; New ETC is now this figure plus Left to Purchase.`
                                       : "")
