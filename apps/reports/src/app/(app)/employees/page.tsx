@@ -53,6 +53,9 @@ export async function EmployeesView() {
   const teamRule = resolveTeams(peopleForRule, families);
   const leads = departmentLeads(peopleForRule, teamRule);
   const orgChart = buildOrgChart(peopleForRule, families);
+  // The same chart with hidden people drawn too, for "Show inactive". Built here
+  // because the builder is server-only; the grid just picks one.
+  const orgChartWithInactive = buildOrgChart(peopleForRule, families, { includeInactive: true });
 
   // id → name across the WHOLE roster, so a supervisor who has since been
   // deactivated still resolves to a name instead of showing as a dash.
@@ -140,6 +143,7 @@ export async function EmployeesView() {
           canAssignHiring={canAssignHiring}
           year={year}
           orgChart={orgChart}
+          orgChartWithInactive={orgChartWithInactive}
         />
       </div>
     </div>

@@ -11,7 +11,7 @@ import { HiringPositionsList } from "@/components/HiringPositionsList";
 import { HiringPositionDetailDrawer } from "@/components/HiringPositionDetailDrawer";
 import { CreateHiringPositionDrawer } from "@/components/CreateHiringPositionDrawer";
 import { CapacityDrillDrawer } from "@/components/CapacityDrillDrawer";
-import { DASH, type EmployeeRow } from "@/lib/employee-row";
+import { DASH, rowMatchesSearch, type EmployeeRow } from "@/lib/employee-row";
 import { resolveEmployeeGroup } from "@/lib/employee-card-theme";
 import { resolvePlaceholderGroup } from "@/lib/employee-department-cards";
 import {
@@ -157,6 +157,26 @@ function GroupHeader({
   );
 }
 
+// The Employees page's search box — one control for the Cards view and the Org
+// chart, bound to the same text so switching views keeps what you typed.
+function SearchBox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg border border-sdc-border bg-white px-3.5">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-sdc-gray-400">
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+      </svg>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search…"
+        aria-label="Search people"
+        className="w-56 border-none bg-transparent py-2 text-sm text-sdc-navy outline-none placeholder:text-sdc-gray-400"
+      />
+    </div>
+  );
+}
+
 // `disciplines` drives the toolbar filter only. The table itself is read-only,
 // so it no longer needs the discipline or supervisor option lists that used to
 // populate its in-cell dropdowns.
@@ -170,6 +190,7 @@ export function EmployeesGrid({
   canAssignHiring,
   year,
   orgChart,
+  orgChartWithInactive,
 }: {
   rows: EmployeeRow[];
   disciplines: string[];
@@ -182,10 +203,13 @@ export function EmployeesGrid({
   year: number;
   /** The Org chart view (2026-10-02): the same people, nested by reporting line — see lib/org-chart.ts. */
   orgChart: OrgChartData;
+  /** The same chart with inactive people drawn too — what "Show inactive" switches to. */
+  orgChartWithInactive: OrgChartData;
 }) {
   // Org chart (reporting lines, the default since 2026-10-02) or Cards
-  // (departments). The filters below narrow the cards only; the chart is
-  // always the whole organisation.
+  // (departments). Search and "Show inactive" are shared by both views (the same
+  // text, the same switch); the team scope and the discipline / department
+  // filters narrow the cards only — the chart is always the whole organisation.
   const [view, setView] = useState<"cards" | "chart">("chart");
   const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const [q, setQ] = useState("");
@@ -294,16 +318,12 @@ export function EmployeesGrid({
   );
 
   const visible = useMemo(() => {
-    const s = q.trim().toLowerCase();
     return scopedToTeam.filter((r) => {
       if (!showInactive && !r.active) return false;
       if (discipline && r.discipline !== discipline) return false;
       if (dept.length > 0 && !dept.includes(r.department?.trim() ?? "")) return false;
-      if (!s) return true;
-      // Same fields the old grid's quick filter covered.
-      return [r.name, r.discipline, r.positionTitle, r.supervisor, r.department].some((v) =>
-        String(v ?? "").toLowerCase().includes(s),
-      );
+      // The same words the Org chart searches (employee-row.ts).
+      return rowMatchesSearch(r, q);
     });
   }, [scopedToTeam, q, showInactive, discipline, dept]);
 
@@ -316,14 +336,14 @@ export function EmployeesGrid({
   // unfindable (search only filters the visible/active rows) and reactivation,
   // the whole point of soft-delete, is hard to discover.
   const hiddenInactiveMatches = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s || showInactive) return 0;
-    return scopedToTeam.filter(
-      (r) =>
-        !r.active &&
-        [r.name, r.discipline, r.positionTitle, r.supervisor, r.department].some((v) => String(v ?? "").toLowerCase().includes(s)),
-    ).length;
+    if (!q.trim() || showInactive) return 0;
+    return scopedToTeam.filter((r) => !r.active && rowMatchesSearch(r, q)).length;
   }, [scopedToTeam, q, showInactive]);
+  // The same offer on the Org chart, which is always the whole organisation.
+  const chartHiddenInactiveMatches = useMemo(() => {
+    if (!q.trim() || showInactive) return 0;
+    return rows.filter((r) => !r.active && rowMatchesSearch(r, q)).length;
+  }, [rows, q, showInactive]);
 
 
   // Clicking the open card again collapses it — the card IS the toggle, so
@@ -453,6 +473,21 @@ export function EmployeesGrid({
             </button>
           ))}
         </div>
+        {view === "chart" && (
+          <>
+            {/* The same search box as Cards, on the same text: switching views keeps it. */}
+            <SearchBox value={q} onChange={setQ} />
+            <label className="flex items-center gap-2 text-xs font-medium text-sdc-gray-600">
+              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="h-3.5 w-3.5" />
+              Show inactive
+            </label>
+            {chartHiddenInactiveMatches > 0 && (
+              <button type="button" onClick={() => setShowInactive(true)} className="text-xs font-medium text-sdc-blue hover:underline">
+                {chartHiddenInactiveMatches} inactive {chartHiddenInactiveMatches === 1 ? "person matches" : "people match"} — show them
+              </button>
+            )}
+          </>
+        )}
         {view === "cards" && (
           <>
             {/* Team scope — first in the toolbar because it is a level ABOVE the
@@ -485,18 +520,7 @@ export function EmployeesGrid({
                 );
               })}
             </div>
-            <div className="flex items-center gap-2.5 rounded-lg border border-sdc-border bg-white px-3.5">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-sdc-gray-400">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search…"
-                className="w-56 border-none bg-transparent py-2 text-sm text-sdc-navy outline-none placeholder:text-sdc-gray-400"
-              />
-            </div>
+            <SearchBox value={q} onChange={setQ} />
             <select value={discipline} onChange={(e) => setDiscipline(e.target.value)} aria-label="Filter by discipline" className={SELECT}>
               <option value="">All disciplines</option>
               {disciplines.map((d) => (
@@ -548,7 +572,8 @@ export function EmployeesGrid({
           />
           {orgChart.pending.length > 0 && <PendingTeamChanges pending={orgChart.pending} />}
           <OrgChart
-            chart={orgChart}
+            chart={showInactive ? orgChartWithInactive : orgChart}
+            query={q}
             people={rowsById}
             onSelectPerson={selectEmployee}
             year={year}

@@ -6,7 +6,7 @@ import type { HiringPosition } from "../src/lib/hiring-positions";
 import type { EmployeeRow } from "../src/lib/employee-row";
 
 function node(id: number, team: string | null = null, reports: OrgNode[] = []): OrgNode {
-  return { id, name: `P${id}`, title: null, positionCode: null, team, note: null, override: false, byHand: false, isHead: reports.length > 0, reports };
+  return { id, name: `P${id}`, title: null, positionCode: null, active: true, team, note: null, override: false, byHand: false, isHead: reports.length > 0, reports };
 }
 
 // employee id → Paylocity id: 1→100 (a leader), 2→200 and 5→500 (Mechanical, under leader 1),
@@ -20,19 +20,22 @@ const chart: OrgChart = {
   ready: true,
   leaders: [node(1)],
   leaderCount: 1,
+  leaderActive: 1,
   bands: [
     {
       leader: { id: 1, name: "Leader One", title: null },
       people: 4,
+      active: 4,
       cards: [
-        { team: "mech", name: "Mechanical Engineering", people: 2, heads: [node(2, "mech", [node(5, "mech")])] },
-        { team: "controls", name: "Controls Engineering", people: 1, heads: [node(3, "controls")] },
+        { team: "mech", name: "Mechanical Engineering", people: 2, active: 2, heads: [node(2, "mech", [node(5, "mech")])] },
+        { team: "controls", name: "Controls Engineering", people: 1, active: 1, heads: [node(3, "controls")] },
       ],
     },
     {
       leader: { id: 9, name: "Leader Nine", title: null },
       people: 1,
-      cards: [{ team: "mech", name: "Mechanical Engineering", people: 1, heads: [node(4, "mech")] }],
+      active: 1,
+      cards: [{ team: "mech", name: "Mechanical Engineering", people: 1, active: 1, heads: [node(4, "mech")] }],
     },
   ],
   unplaced: [],

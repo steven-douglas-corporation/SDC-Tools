@@ -6,6 +6,7 @@ import { OrgChart } from "../src/components/OrgChart";
 import { buildOrgChart, type OrgEmployee } from "../src/lib/org-chart";
 import type { PositionFamilyRow } from "../src/lib/position-families-parse";
 import type { EmployeeRow } from "../src/lib/employee-row";
+import type { HiringPosition } from "../src/lib/hiring-positions";
 import { employeeCapacityHours } from "../src/lib/workforce-capacity";
 import { hours as fmtHours } from "../src/components/ui/format";
 
@@ -33,7 +34,7 @@ const render = (props: { year?: number; onSelectCapacity?: () => void }) =>
 
 test("every card shows its current hrs/yr, from its active headcount", () => {
   const html = render({ year: 2026, onSelectCapacity: () => {} });
-  assert.equal((html.match(/current hrs\/yr/g) ?? []).length, 2, "the Leadership card and the Mechanical card");
+  assert.equal((html.match(/hrs\/yr/g) ?? []).length, 2, "the Leadership card and the Mechanical card");
   // Mechanical Engineering: Chief, Ian and Zed.
   assert.ok(html.includes(fmtHours(employeeCapacityHours(3, 2026))));
   // Executive Leadership: Dan alone.
@@ -41,8 +42,48 @@ test("every card shows its current hrs/yr, from its active headcount", () => {
 });
 
 test("no hours line without a drill handler, or for a year with no capacity policy", () => {
-  assert.ok(!render({ year: 2026 }).includes("current hrs/yr"), "nothing to open, so nothing offered");
-  assert.ok(!render({ year: 1999, onSelectCapacity: () => {} }).includes("current hrs/yr"), "no policy for that year");
+  assert.ok(!render({ year: 2026 }).includes("hrs/yr"), "nothing to open, so nothing offered");
+  assert.ok(!render({ year: 1999, onSelectCapacity: () => {} }).includes("hrs/yr"), "no policy for that year");
+  assert.ok(render({ year: 1999, onSelectCapacity: () => {} }).includes("people"), "the headcount is still there");
+});
+
+// The stat block (2026-10-08): one line without openings, a small table with them,
+// and a search that narrows what is drawn without changing what a card is.
+const render2 = (props: Record<string, unknown>) =>
+  renderToStaticMarkup(createElement(OrgChart, { chart, people, year: 2026, onSelectCapacity: () => {}, ...props }));
+
+test("a card with no openings reads as one line", () => {
+  const html = render2({});
+  assert.ok(html.includes(" people"), "N people · hours");
+  assert.ok(!html.includes("Planned"), "no table without openings");
+});
+
+test("a card with an open position shows current, hiring and planned", () => {
+  // Two openings, placed on Chief's card (the Mechanical one) through their hiring manager.
+  const position = {
+    sourceId: "p1", title: "ME", status: "Published", subStatus: null, isOpen: true, quantity: 2, filledCount: 0, remainingQuantity: 2,
+    source: "workbook", workforceGroup: null, department: null, hiringManagerIds: ["100002"], isManuallyAssigned: false,
+    expectedStartDate: null, isVisible: true,
+  } as unknown as HiringPosition;
+  const html = render2({ hiringPositions: [position] });
+  for (const word of ["Current", "+ Hiring", "Planned", "People", "Hrs/yr"]) assert.ok(html.includes(word), word);
+  assert.ok(html.includes(">+2<"), "two openings");
+  assert.ok(html.includes(">5<"), "planned: three people and two openings");
+});
+
+test("a search draws the matches and the managers above them, dims those managers, and keeps the card's own numbers", () => {
+  const html = render2({ query: "Ian" });
+  assert.ok(html.includes("Ian"), "the match");
+  assert.ok(html.includes("Chief"), "the manager above them, for context");
+  assert.ok(!html.includes("Zed"), "a colleague who doesn't match is not drawn");
+  assert.ok(html.includes("2 of 3 shown"), "Chief and Ian are drawn of the card's three");
+  assert.ok(html.includes(fmtHours(employeeCapacityHours(3, 2026))), "the card's hours still count all three");
+  assert.ok(html.includes("opacity-50"), "the context manager is dimmed");
+});
+
+test("a search with no match says so, and a blank one changes nothing", () => {
+  assert.ok(render2({ query: "nobody by that name" }).includes("No one matches"));
+  assert.equal(render2({ query: "   " }), render2({}), "whitespace is no search");
 });
 
 // A card reads top to bottom: the Paylocity roster, then people whose team was set

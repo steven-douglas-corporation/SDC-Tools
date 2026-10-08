@@ -35,6 +35,20 @@ export function isPaylocityId(paylocityId: string | null | undefined): boolean {
   return !!paylocityId && /^\d+$/.test(paylocityId.trim());
 }
 
+/**
+ * The Employees page's search, shared by the Cards view and the Org chart so they
+ * agree: a case-insensitive piece of the name, discipline, job title, supervisor or
+ * department. A blank query matches everyone.
+ */
+export function rowMatchesSearch(
+  r: { name: string; discipline: string; positionTitle: string; supervisor: string; department: string | null | undefined },
+  query: string,
+): boolean {
+  const s = query.trim().toLowerCase();
+  if (!s) return true;
+  return [r.name, r.discipline, r.positionTitle, r.supervisor, r.department].some((v) => String(v ?? "").toLowerCase().includes(s));
+}
+
 export type EmployeeRow = {
   id: number;
   name: string;
