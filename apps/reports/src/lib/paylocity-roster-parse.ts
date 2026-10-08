@@ -213,7 +213,15 @@ export type RosterPlan = {
   unchanged: number;
 };
 
-export function planRosterSync(file: RosterFileRow[], app: AppEmployee[]): RosterPlan {
+/**
+ * `hideLeavers: false` suspends the one-way hide: someone shown here whom the
+ * file marks "No" is left shown and never reaches `plan.hide`. The policy lives
+ * in paylocity-roster-sync.ts (HIDE_LEAVERS); the default stays true so this
+ * function's own rules are unchanged. The disagreement is still reported —
+ * rosterQualityFindings lists those people as `shownButInactive`.
+ */
+export function planRosterSync(file: RosterFileRow[], app: AppEmployee[], opts: { hideLeavers?: boolean } = {}): RosterPlan {
+  const hideLeavers = opts.hideLeavers ?? true;
   const byPid = new Map<string, AppEmployee>();
   for (const e of app) if (e.paylocityId) byPid.set(e.paylocityId, e);
   const byId = new Map(app.map((e) => [e.id, e]));
@@ -311,7 +319,7 @@ export function planRosterSync(file: RosterFileRow[], app: AppEmployee[]): Roste
       }
     }
 
-    if (current?.active && !r.paylocityActive) {
+    if (hideLeavers && current?.active && !r.paylocityActive) {
       plan.hide.push({ paylocityId: r.paylocityId, name: current.name });
       changed = true;
     }

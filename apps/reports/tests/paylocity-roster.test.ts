@@ -187,6 +187,21 @@ test("plan: a shown person marked No is hidden; a hidden person marked Yes is no
   assert.equal(isEmptyPlan(plan), false);
 });
 
+test("plan: with hideLeavers off a shown person marked No stays shown, and is still reported", () => {
+  const boss = app({ id: 1, name: "Pat Boss", paylocityId: "100042", positionTitle: "President" });
+  const leaver = app({ id: 2, name: "Old Timer", paylocityId: "100002", positionTitle: "Builder", supervisorId: 1 });
+  const file = parseRosterGrid(grid(BOSS, ["100002", "Old", "Timer", "Builder", "", "100042", "No"]));
+  const plan = planRosterSync(file, [boss, leaver], { hideLeavers: false });
+  assert.deepEqual(plan.hide, [], "nothing to hide");
+  assert.equal(plan.hideHeld, false);
+  assert.ok(isEmptyPlan(plan), "a paused hide is not a change to apply — no hourly audit entry for nothing");
+  // The data-quality report is how the disagreement stays visible while paused.
+  assert.deepEqual(rosterQualityFindings(file, [boss, leaver]).shownButInactive.map((p) => p.name), ["Old Timer"]);
+  // Everything else the pass does is unaffected by the switch.
+  const withNew = planRosterSync(parseRosterGrid(grid(BOSS, ["100002", "Old", "Timer", "Builder", "", "100042", "No"], ["100003", "New", "Hire", "Clerk", "", "100042", "Yes"])), [boss, leaver], { hideLeavers: false });
+  assert.deepEqual(withNew.create.map((r) => r.name), ["New Hire"]);
+});
+
 test("plan: hiding more than half the shown roster is held as a broken export", () => {
   const boss = app({ id: 9, name: "Pat Boss", paylocityId: "100042", positionTitle: "President" });
   const people = [0, 1, 2].map((i) => app({ id: i + 1, name: `P ${i}`, paylocityId: `10000${i}`, positionTitle: "Builder", supervisorId: 9 }));
