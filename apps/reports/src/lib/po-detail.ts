@@ -14,7 +14,7 @@ import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bo
 import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { normPn, lineLeftoverKey, type WindowAttribution } from "@/lib/parts-cost-window-attribution";
 import { alternateKeys, classifyUnmatched, type MatchReason } from "@/lib/parts-match-reason";
-import { normalizeVendor, SDC_CANONICAL } from "@/lib/vendor-normalize";
+import { normalizeVendor } from "@/lib/vendor-normalize";
 import { isNonPoLine, isSdcBillingLine } from "@/lib/parts-actual-sdc";
 import { isUncoveredPart } from "@/lib/job-bom-rules";
 import { lineLeftToInvoice } from "@/lib/left-to-invoice";
@@ -727,11 +727,6 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
     // — the same source `poNumber` and `purchasedDate` below use, so the three
     // cells describe one purchase.
     const supplier = normalizeVendor(line ? line.supplier : p.supplier);
-    // SDC never invoices itself (same rule tm-parts-source.ts already applies
-    // to Part Invoiced Amount — see isSdcManufacturedLine there): a row bought
-    // FROM Steven Douglas Corp carries no real external invoice, so Invoiced $
-    // and Left to Invoice below are not meaningful figures for it either.
-    const sdcSupplier = supplier === SDC_CANONICAL;
     // ── EVERY PO line for this part, not just the newest (2026-09-02) ────────
     //
     // This read `line.totalPrice` — the single newest PO line — as the part's cost.
@@ -841,7 +836,15 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       // Bought FROM Steven Douglas Corp (2026-09-17, by request) joins that same
       // zeroed set for the same reason: SDC does not invoice itself, so nothing
       // is ever "left to invoice" on a line it supplied.
-      leftToSpend: activeAttribution ? null : p.source === "process" || p.source === "stock" ? 0 : pnLines ? splitSum((l) => (isSdcBillingLine(l) ? 0 : lineLeftToInvoice(l))) : sdcSupplier ? 0 : totalPrice - invoicedAmount,
+      //
+      // EVERY row with no purchase lines owes $0 (2026-10-08, by request), not just
+      // those three. The three were the cases someone had noticed; the rule behind them is
+      // that nothing bought means nothing to be invoiced, and Monthly ETC already reads it
+      // that way (it sums purchase lines only). A part that is simply not bought yet — or
+      // whose only purchase the "Rewind to" cutoff removed — was the gap: job 1161 at 09/30
+      // read $23 here against ETC's $11,243. Its estimate stays in Total $ and in the
+      // footer's "not bought yet" line, and is never reported as spend.
+      leftToSpend: activeAttribution ? null : p.source === "process" || p.source === "stock" ? 0 : pnLines ? splitSum((l) => (isSdcBillingLine(l) ? 0 : lineLeftToInvoice(l))) : 0,
       matchReason,
       nonBom: false,
       // A BOM part bought three times is three lines under one row, same as below.

@@ -419,10 +419,12 @@ export function hasInvoiceBalance(n: number): boolean {
  * was bought on, so an over-invoiced PO's negative can cancel a genuinely open one.
  *
  * Falls back to the row's own figure when it has NO orders (2026-10-05). A BOM row the
- * cost feed has no purchase line for reads `totalPrice − invoicedAmount` as its Left to
- * Invoice (po-detail.ts) yet has an empty `poBreakdown`; judging it on the breakdown
- * alone dropped it from the filter although its own column showed a balance. The
- * filter must never hide a row whose Left to Invoice cell is not $0.00.
+ * cost feed has no purchase line for used to read `totalPrice − invoicedAmount` as its
+ * Left to Invoice yet has an empty `poBreakdown`; judging it on the breakdown alone
+ * dropped it from the filter although its own column showed a balance. The filter must
+ * never hide a row whose Left to Invoice cell is not $0.00. Since 2026-10-08 such a row
+ * reads $0 (po-detail.ts: nothing bought, nothing to invoice), so the fallback is now
+ * inert for built rows, but it stays the rule for any row that carries a figure.
  */
 export function partHasInvoiceBalance(p: { poBreakdown: readonly { leftToInvoice: number }[]; leftToSpend: number | null }): boolean {
   if (p.poBreakdown.length > 0) return p.poBreakdown.some((g) => hasInvoiceBalance(g.leftToInvoice));
