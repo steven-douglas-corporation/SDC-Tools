@@ -1291,6 +1291,10 @@ export async function getJobPartsCost(jobId: string): Promise<JobPartsCost> {
       // so the totals inherit it too. See lib/parts-refund.ts.
       .map(applyRefundSign);
     // Sort newest purchase first; drop fully-zero noise rows.
+    // Per-document postings, so the Parts List's "Rewind to" can tell how much of a line had
+    // posted by a month end (see left-to-invoice.ts rewindLines). Never throws; a line it
+    // cannot split keeps none and is dated by its latest invoice instead.
+    await attachPostings(pool, String(numericJob), new Map([[String(numericJob), lines]]));
     const meaningful = meaningfulLines(lines);
     const purchased = meaningful.reduce((s, l) => s + l.totalPrice, 0);
     const paid = meaningful.reduce((s, l) => s + l.invoicedAmount, 0);

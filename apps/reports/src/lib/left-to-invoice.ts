@@ -189,6 +189,47 @@ export function postedThrough(line: PartsCostLine, asOf: string): number {
 }
 
 /**
+ * The purchase lines as they stood at the end of `asOf` — the Parts List's "Rewind to".
+ *
+ * Built so every Parts List figure follows from the lines alone (no second formula):
+ *   - a line purchased after `asOf` is left out, exactly as Monthly ETC leaves it out
+ *     (`isWithinAsOf`; an undated line stays);
+ *   - a line keeps only the GL postings dated on or before `asOf` (`postedThrough`, the
+ *     same per-document rule Monthly ETC's `asOfPosting` uses), so an invoice posted later
+ *     reads as not yet invoiced and its amount is back in Left to Invoice.
+ *
+ * Summing `lineLeftToInvoice` over the result therefore equals `rawLeftToInvoice(lines,
+ * { asOf, asOfPosting: true })`, which is Monthly ETC's figure before the aggregate floor.
+ *
+ * A line the cutoff does not change is returned as the SAME object. `totalPrice` is as of
+ * today (the feed has no quantity history), which is also what Monthly ETC reads.
+ */
+export function rewindLines(lines: readonly PartsCostLine[], asOf: string): PartsCostLine[] {
+  const out: PartsCostLine[] = [];
+  for (const line of lines) {
+    if (!isWithinAsOf(line, asOf)) continue;
+    const posted = postedThrough(line, asOf);
+    const later = line.actualAmount - posted;
+    if (Math.abs(later) < 0.005) {
+      out.push(line);
+      continue;
+    }
+    const postings = line.postings?.filter((p) => p.day <= asOf);
+    out.push({
+      ...line,
+      actualAmount: posted,
+      invoicedAmount: line.invoicedAmount - later,
+      postings,
+      // The newest invoice still standing at the cutoff, so the Invoiced date column does
+      // not show a day after the month it was rewound to. Without a split `postedThrough`
+      // keeps all the money or none of it, and a changed line is the "none" case.
+      invoicedDate: postings && postings.length > 0 ? postings.reduce((best, p) => (p.day > best ? p.day : best), postings[0].day) : null,
+    });
+  }
+  return out;
+}
+
+/**
  * Left to Invoice for a set of lines — THE definition, for every caller.
  *
  * Floored at 0 on the AGGREGATE. A job cannot owe negative money to its suppliers,

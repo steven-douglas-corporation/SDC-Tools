@@ -132,15 +132,17 @@ test("the footer never mixes the visible-row scope with the job scope", () => {
 
 test("the residual describes the job, not the current filter", () => {
   // Computed over the unfiltered `parts` and every line: a supplier filter must not
-  // change what "no BOM row" means.
-  const block = PROC.slice(PROC.indexOf("const reconcile = useMemo("), PROC.indexOf("}, [parts, partsLines]);"));
+  // change what "no BOM row" means. `lines` is every purchase line, rewound to the
+  // "Rewind to" month when one is set — the same set `parts` is built from, so the
+  // bridge still balances at a month end.
+  const block = PROC.slice(PROC.indexOf("const reconcile = useMemo("), PROC.indexOf("}, [parts, lines]);"));
   assert.match(block, /for \(const p of parts\)/, "unfiltered parts");
   assert.ok(!/filtered/.test(block), "must not read the filtered row set");
-  assert.match(PROC, /\}, \[parts, partsLines\]\)/);
+  assert.match(PROC, /\}, \[parts, lines\]\)/);
 });
 
 test("the residual is measured on the GL-posted basis, like both totals it bridges", () => {
-  const block = PROC.slice(PROC.indexOf("const reconcile = useMemo("), PROC.indexOf("}, [parts, partsLines])"));
+  const block = PROC.slice(PROC.indexOf("const reconcile = useMemo("), PROC.indexOf("}, [parts, lines])"));
   assert.match(block, /jobInvoiced \+= l\.actualAmount/);
   assert.ok(!/l\.invoicedAmount/.test(block), "the bridge must not mix a billed figure into a GL-posted one");
 });
