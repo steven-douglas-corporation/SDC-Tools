@@ -120,6 +120,25 @@ export function bandColSpan(entries: readonly string[], hidden: ReadonlySet<View
   return visible * mult;
 }
 
+/**
+ * What the view's URL write is a function of: the page it is on and the hidden set,
+ * order-independent. GridViewProvider writes the URL only when this CHANGES.
+ *
+ * ── Why "when it changes" and not "after the first run" (2026-10-08) ─────────
+ *
+ * The provider used to skip only its first effect pass, with a ref. Inside a workspace
+ * tab that is wrong: <Activity mode="hidden"> destroys effects and re-runs them on show,
+ * so every time the tab was shown again the "not the first pass" branch ran and rewrote
+ * the URL — from the live workspace as it was a render earlier, with the PREVIOUS tab
+ * still active. That put the user straight back where they came from, which is why
+ * Monthly ETC (and Projects, the other grid on this provider) could be left but never
+ * re-entered. Comparing against what was last written makes a re-run with nothing new to
+ * say a no-op, which is the property an effect that survives hide/show needs.
+ */
+export function viewSyncKey(pathname: string, hidden: Iterable<ViewKey>): string {
+  return `${pathname}\u0000${[...hidden].sort().join(" ")}`;
+}
+
 /** Toggle one key in a hidden set, returning a new array (stable order for the URL). */
 export function toggleHidden(hidden: readonly ViewKey[], key: ViewKey): ViewKey[] {
   return hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key];

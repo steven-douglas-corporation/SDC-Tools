@@ -302,8 +302,26 @@ export function WorkspaceShell({
     return id === split.left ? `${effectiveRatio}%` : `${100 - effectiveRatio}%`;
   };
 
+  // ── Two panes on screen: the workspace is exactly one window tall (2026-10-08) ──
+  //
+  // REPORTED: "scroll down on one tab while keeping the second tab in place". It could
+  // not be done, because nothing ever bounded the panes' height. The workspace was
+  // `min-h-[var(--app-vh)]`, so each pane grew to its page's full length and the DOCUMENT
+  // scrolled — both panes riding on the one scrollbar. The per-pane scroll container
+  // (TabScrollMemory: `overflow-auto`, `min-h-0`, `flex-1`) was in place the whole time and
+  // simply never had a height to overflow against.
+  //
+  // So while a split is showing two panes, the workspace is pinned to the window and
+  // clips; every pane then scrolls inside its own container and the document does not
+  // scroll at all. A single tab keeps the document scroll it has always had — pinning it
+  // would change how every page scrolls to fix a problem only a split has — and so does a
+  // split that has collapsed to one pane, which is one page again.
+  const independentScroll = split != null && !collapsed;
+
   return (
-    <div className="flex min-h-[var(--app-vh)] flex-col">
+    <div
+      className={`flex flex-col ${independentScroll ? "h-[var(--app-vh)] overflow-hidden" : "min-h-[var(--app-vh)]"}`}
+    >
       {bar}
       <div
         ref={rowRef}
@@ -413,7 +431,10 @@ function PaneHost({
       // min-w-0 is what lets a dense page scroll horizontally INSIDE its pane rather
       // than forcing the pane wider than its share, which would push the divider off
       // the ratio the user set.
-      className="flex min-w-0 flex-col"
+      // min-h-0 is the other half of the split's independent scrolling: without it a flex
+      // child never shrinks below its content, so the pane would out-grow the pinned
+      // workspace instead of scrolling inside it.
+      className="flex min-h-0 min-w-0 flex-col"
       style={{ width, order, minWidth: collapsed || !showHeader ? undefined : MIN_PANE_PX }}
     >
       {/* Thin (h-7, one line): two of these are on screen at once, above pages that
