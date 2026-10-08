@@ -39,6 +39,15 @@ import type { PositionFamilyRow } from "@/lib/position-families-parse";
 // never read; if a pass lands mid-upload, the stable-read check below refuses
 // the half-written file and the next pass picks it up.
 
+// PAUSED (2026-10-08): someone shown in this app whom Paylocity marks inactive
+// stays shown. There is an open conflict over those people's records and their
+// Paylocity-id users are being kept until it is settled, so the sync must not
+// hide them. Flip back to true to resume hiding leavers — nobody is un-hidden or
+// hidden retroactively either way; the next pass simply applies the rule again.
+// The people this skips are still listed as "shown but inactive in Paylocity" by
+// rosterQualityFindings (the Data Quality panel), so the disagreement stays visible.
+const HIDE_LEAVERS = false;
+
 export function rosterFilePath(): string | null {
   return process.env.PAYLOCITY_EMPLOYEES_LOCAL_PATH?.trim() || null;
 }
@@ -112,7 +121,7 @@ export async function getRosterQuality(): Promise<RosterQuality> {
 export async function previewRosterSync(path?: string): Promise<RosterPlan | { skip: string }> {
   if (!path && !rosterSource()) return { skip: NOT_CONFIGURED };
   const rows = await readRosterRows(path);
-  return planRosterSync(rows, await loadAppEmployees());
+  return planRosterSync(rows, await loadAppEmployees(), { hideLeavers: HIDE_LEAVERS });
 }
 
 /**
@@ -125,7 +134,7 @@ export async function syncPaylocityRoster(): Promise<string | { skip: string }> 
   if (!path) return { skip: NOT_CONFIGURED };
   const rows = await readRosterRows();
   const app = await loadAppEmployees();
-  const plan = planRosterSync(rows, app);
+  const plan = planRosterSync(rows, app, { hideLeavers: HIDE_LEAVERS });
   // Always a string, never null: null means "skipped" to the runner, which would
   // leave the freshness row unstamped and the source looking stale on every quiet day.
   const roster = isEmptyPlan(plan) ? `no roster changes — ${describePlan(plan)}` : await applyRosterPlan(path, rows, plan);
