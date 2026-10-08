@@ -13,6 +13,7 @@ import {
   monthEndLabel,
   resolveLeftToInvoice,
   partsNewEtc,
+  postedThrough,
 } from "../src/lib/left-to-invoice";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 
@@ -243,7 +244,7 @@ test("the cutoff is what the fix IS — without it August inherits September", (
   // explainLeftToInvoice, not leftToInvoiceForLines — same arithmetic (`total` IS what
   // leftToInvoiceForLines returns), and it also yields the floor and drift figures the
   // tooltip discloses. The assertion that matters is that the CUTOFF is passed.
-  assert.match(breakout, /explainLeftToInvoice\(lines, \{ asOf \}\)/);
+  assert.match(breakout, /explainLeftToInvoice\(lines, \{ asOf, asOfPosting: true \}\)/);
   assert.match(breakout, /month: string \| null,/, "month must be required, not optional");
 });
 
@@ -263,7 +264,7 @@ test("Left to Invoice excludes Steven Douglas Corp. PO billing, via the one shar
   // The filter must happen strictly before the call, not after (which would be too
   // late to affect the sum at all).
   const filterAt = breakout.indexOf("!isSdcBillingLine(l)");
-  const callAt = breakout.indexOf("explainLeftToInvoice(lines, { asOf })");
+  const callAt = breakout.indexOf("explainLeftToInvoice(lines, { asOf, asOfPosting: true })");
   assert.ok(filterAt > 0 && callAt > filterAt, "the filter must precede the explainLeftToInvoice call it feeds");
 });
 
@@ -419,20 +420,21 @@ test("the upstream figure is read once, and never bypasses the resolution rule",
   assert.match(code, /const leftToInvoiceValue = resolvedInvoice\.value;/);
 });
 
-test("the grid carries the drift caveat out of the data layer", () => {
+test("the grid carries the floor and cutoff disclosure out of the data layer", () => {
   // Structural: a figure the page cannot explain is a figure that will be re-reported as
   // a bug. The FLOOR caveat went when the cell started showing the signed figure; the
   // drift is still real and still disclosed.
   const breakout = readFileSync(join(process.cwd(), "src", "lib", "parts-etc-breakout.ts"), "utf8");
   assert.match(breakout, /rawLeftToInvoice: number \| null;/);
   assert.match(breakout, /postedAfterCutoff: number;/);
-  assert.match(breakout, /const x = explainLeftToInvoice\(lines, \{ asOf \}\);/);
+  assert.match(breakout, /const x = explainLeftToInvoice\(lines, \{ asOf, asOfPosting: true \}\);/);
 
   const page = readFileSync(join(process.cwd(), "src", "app", "(app)", "etc", "page.tsx"), "utf8");
   assert.match(page, /const cutoffLabel = monthEndLabel\(month\);/, "the page must use the shared label");
   assert.ok(!/const monthEndLabel = \(\(\) =>/.test(page), "the untestable inline copy must be gone");
-  assert.match(page, /suggestionLatePostings/, "the drift must reach the tooltip");
+  assert.ok(!/suggestionLatePostings/.test(page), "the drift caveat is gone with asOfPosting; nothing should read it");
   assert.match(page, /not yet invoiced as of \$\{cutoffLabel\}/, "and the tooltip must name the cutoff");
+  assert.match(page, /Only invoices dated on or before that day are counted/, "and say that later invoices do not move it");
   // Not editable (2026-10-06): the tooltip says so.
   assert.match(page, /This cell cannot be edited/);
   assert.ok(!/you can type over it/.test(page), "the editable wording must be gone");
@@ -522,4 +524,84 @@ test("zero is a real override, not an absence", () => {
   const r = resolveLeftToInvoice({ computed: 35_496.12, stored: 0 });
   assert.equal(r.value, 0);
   assert.equal(r.overridden, true);
+});
+
+// ── Month-end position, judged per invoice document (2026-10-08) ─────────────
+//
+// September 2026: $60,581.24 posted after 09/30 against POs bought on or before it, across
+// 15 jobs, and Monthly ETC was subtracting all of it. Job 1161's PO 105833 is the clean
+// case — bought Jul 10, a second shipment of $8,892.83 invoiced Oct 7 — which moved the
+// September figure from $11,243.30 to $2,350.47 the day that invoice posted.
+
+const SEPT = "2026-09-30";
+
+test("asOfPosting: an invoice dated after the cutoff does not reduce the month", () => {
+  // Bought in July, fully billed Oct 7 — open on 09/30, so September owes all of it.
+  const l = line({
+    purchaseDate: "2026-07-10", invoicedDate: "2026-10-07", totalPrice: 8064.9, invoicedAmount: 8064.9, actualAmount: 8064.9,
+    postings: [{ day: "2026-10-07", amount: 8064.9 }],
+  });
+  assert.equal(cents(rawLeftToInvoice([l], { asOf: SEPT })), 0, "today's balance: nothing left");
+  assert.equal(cents(rawLeftToInvoice([l], { asOf: SEPT, asOfPosting: true })), 8064.9, "as of 09/30: all of it was open");
+});
+
+test("asOfPosting: a line billed in BOTH months keeps its September part", () => {
+  // The case the old invoicedDate-based mode got wrong: MAX(APDocDate) is October, so the
+  // whole line read as unposted at 09/30 and the job was overstated (1163, 1130).
+  const l = line({
+    purchaseDate: "2026-07-10", invoicedDate: "2026-10-07", totalPrice: 5000, invoicedAmount: 5000, actualAmount: 5000,
+    postings: [
+      { day: "2026-09-10", amount: 3000 },
+      { day: "2026-10-07", amount: 2000 },
+    ],
+  });
+  assert.equal(cents(rawLeftToInvoice([l], { asOf: SEPT, asOfPosting: true })), 2000, "only October's $2,000 was still open");
+  // Without the split the same line falls back to its latest invoice date — the old,
+  // overstating answer — which is why the split exists.
+  const { postings: _omit, ...noSplit } = l;
+  assert.equal(cents(rawLeftToInvoice([noSplit], { asOf: SEPT, asOfPosting: true })), 5000);
+});
+
+test("asOfPosting: invoices dated on the cutoff day count as posted", () => {
+  const l = line({
+    purchaseDate: "2026-09-01", totalPrice: 100, actualAmount: 100, invoicedDate: SEPT,
+    postings: [{ day: SEPT, amount: 100 }],
+  });
+  assert.equal(rawLeftToInvoice([l], { asOf: SEPT, asOfPosting: true }), 0, "the 30th belongs to September");
+});
+
+test("asOfPosting is never lower than today's balance", () => {
+  for (const lines of Object.values(JOBS)) {
+    const asOf = monthEndCutoff("2026-08");
+    // JOBS carry no `postings`; only C3 (1162) posts after month end.
+    const a = rawLeftToInvoice(lines, { asOf });
+    const b = rawLeftToInvoice(lines, { asOf, asOfPosting: true });
+    assert.ok(b >= a, "the snapshot is never lower than today's balance");
+  }
+});
+
+test("under asOfPosting the drift disclosure is zero: nothing after the cutoff is subtracted", () => {
+  const asOf = monthEndCutoff("2026-08");
+  const x = explainLeftToInvoice(JOBS["1162"], { asOf, asOfPosting: true });
+  assert.equal(x.postedAfterCutoff, 0);
+  assert.equal(cents(x.raw), 7905.22, "the $5,000 that posted 2026-09-04 is not subtracted from August");
+  // And the default rule still reports it, so the two modes stay distinguishable.
+  assert.equal(explainLeftToInvoice(JOBS["1162"], { asOf }).postedAfterCutoff, 5000);
+});
+
+test("postedThrough sums per document, and falls back to the latest invoice date without them", () => {
+  const split = line({ totalPrice: 10, actualAmount: 10, postings: [{ day: "2026-09-01", amount: 4 }, { day: "2026-10-02", amount: 6 }] });
+  assert.equal(postedThrough(split, SEPT), 4);
+  assert.equal(postedThrough(split, "2026-10-31"), 10);
+  assert.equal(postedThrough(split, "2026-08-31"), 0);
+  assert.equal(postedThrough(line({ totalPrice: 10, actualAmount: 10, invoicedDate: "2026-10-02" }), SEPT), 0);
+  assert.equal(postedThrough(line({ totalPrice: 10, actualAmount: 10, invoicedDate: "2026-09-02" }), SEPT), 10);
+});
+
+test("the feed attaches per-document postings only where they reconcile to actualAmount", () => {
+  const feed = readFileSync(join(process.cwd(), "src", "lib", "sync-totaleto.ts"), "utf8");
+  assert.match(feed, /await attachPostings\(pool, list, byJob\);/, "getPartsCostForJobs must attach them");
+  assert.match(feed, /> 0\.02\) continue;/, "a split that does not sum to actualAmount must be dropped, not trusted");
+  assert.match(feed, /BatchEntryTypeID NOT IN \(2, 3\)/, "same entry-type filter as the INV subquery");
+  assert.match(feed, /\$\{glPostedAp\("SFC"\)\}/, "same GL-posted test as every other actual");
 });

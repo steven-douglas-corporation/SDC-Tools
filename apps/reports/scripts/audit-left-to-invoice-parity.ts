@@ -27,8 +27,8 @@ const usd = (n: number) => (n < 0 ? "-" : "") + "$" + Math.abs(n).toLocaleString
 
 // Every definition in play, over one job's lines.
 const defs = {
-  /** What Monthly ETC ships NOW — the shared function with this month's cutoff. */
-  etcShipped: (ls: PartsCostLine[]) => leftToInvoiceForLines(ls, { asOf: monthEndCutoff(month) }),
+  /** What Monthly ETC ships NOW (2026-10-08): the shared function, month-end cutoff, postings judged per invoice date. */
+  etcShipped: (ls: PartsCostLine[]) => leftToInvoiceForLines(ls, { asOf: monthEndCutoff(month), asOfPosting: true }),
   /** What it shipped BEFORE the fix: lifetime, no cutoff. */
   etcToday: (ls: PartsCostLine[]) => Math.max(0, ls.reduce((a, l) => a + (l.totalPrice - l.actualAmount), 0)),
   /** Same, unfloored — isolates how much the floor is doing. */

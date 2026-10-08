@@ -59,13 +59,10 @@ export type PartsEtcBreakout = {
   /**
    * GL postings dated AFTER the cutoff that this figure nonetheless subtracts.
    *
-   * The Parts List's rule — and therefore this one — takes a purchase-date cutoff with
-   * lifetime invoicing, so a September posting against an August PO reduces August
-   * retroactively. 31 of 49 jobs in August 2026, $76,866.43 in total. This does NOT
-   * make the two surfaces disagree (they drift together, which is why parity holds on
-   * any given day); it makes a closed month's figure keep moving. Carried so the grid
-   * can disclose the amount instead of a manager discovering it by rereading the cell
-   * next week.
+   * Always 0 now that Monthly ETC reads `asOfPosting`: postings dated after month end are
+   * left out of the figure rather than subtracted from it, so a closed month no longer
+   * moves as later invoices post. Kept on the type because the grid and tooltip still
+   * read it, and because the default (non-`asOfPosting`) rule can still produce a value.
    */
   postedAfterCutoff: number;
 };
@@ -148,7 +145,11 @@ export async function readPartsEtcBreakout(
     // figure was before flooring, and how much of it a post-cutoff posting has already
     // taken off. Both are documented remaining differences from the Parts List, and a
     // documented difference nobody can see on the screen is still a surprise.
-    const x = explainLeftToInvoice(lines, { asOf });
+    // `asOfPosting: true` (2026-10-08): a closed month is a month-end POSITION. Only GL
+    // postings dated on or before the cutoff are subtracted, judged per invoice document,
+    // so October invoices can no longer lower September (job 1161, PO 105833: $8,892.83
+    // billed Oct 7 against a Jul 10 PO moved September from $11,243.30 to $2,350.47).
+    const x = explainLeftToInvoice(lines, { asOf, asOfPosting: true });
     byJobPk.set(j.pk, {
       leftToInvoice: x.total,
       rawLeftToInvoice: x.raw,

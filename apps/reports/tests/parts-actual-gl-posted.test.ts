@@ -469,9 +469,13 @@ test("the flag is tested in exactly ONE place, and every site calls it", () => {
   // columns) is a sixth caller of the shared predicate, on purpose — it must share
   // getPartsActualByJob's basis exactly, which is what a copy of the flag test could
   // not promise.
+  //
+  // Seven since 2026-10-08: attachPostings (the per-invoice-document split behind Monthly
+  // ETC's month-end Left to Invoice) is a seventh, and must be — its per-line total has to
+  // equal the INV subquery's GlPostedAmount, and it only attaches when it does.
   assert.equal(
     (totalEtoCode.match(/glPostedAp\(/g) ?? []).length,
-    6,
+    7,
     "every site that decides posted-vs-billed must call the shared predicate",
   );
   // Money Spent Month specifically, because it is the one that drives the forecast.

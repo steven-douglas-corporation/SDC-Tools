@@ -72,6 +72,15 @@ import type { PartsCostLine } from "@/lib/sync-totaleto";
 // as-of-31-August snapshot — `asOfPosting: true` below — holds still instead.
 // Both are implemented; the Parts List's rule is the default because it is the one
 // that was asked for.
+//
+// 2026-10-08 — Monthly ETC now uses `asOfPosting`. For September 2026 the drift was
+// $60,581.24 across 15 jobs (job 1161 alone: $8,892.83 billed Oct 7 against a Jul 10
+// PO), so a closed month's number kept falling as October posted. The Parts List's own
+// date-filtered footer still uses the lifetime rule, so on those jobs the two now differ
+// by exactly the late postings — by design, and the Parts List is the one that is "as of
+// today". `asOfPosting` itself is per invoice DOCUMENT, not per line's latest invoice
+// date: a line billed in both months had its September part wrongly treated as unposted
+// by the first version of this mode (job 1163: $6,019.35 and job 1130: $2,725.00).
 
 /** An inclusive `YYYY-MM-DD` cutoff, or null for "everything, lifetime". */
 export type LeftToInvoiceScope = {
@@ -82,8 +91,10 @@ export type LeftToInvoiceScope = {
   asOf?: string | null;
   /**
    * Also ignore GL postings dated after `asOf`, giving a true point-in-time
-   * snapshot rather than "August's POs, today's invoices". Off by default: the
-   * Parts List does not do this, and the Parts List is the source of truth.
+   * snapshot rather than "August's POs, today's invoices". Judged per invoice
+   * document (see `postedThrough`). Off by default — the Parts List does not do
+   * this — but Monthly ETC turns it on (parts-etc-breakout.ts, 2026-10-08): a
+   * closed month's figure must not move as later invoices post.
    */
   asOfPosting?: boolean;
 };
@@ -154,9 +165,27 @@ export function isWithinAsOf(line: PartsCostLine, asOf: string | null | undefine
  * flooring belongs on the aggregate, and only there.
  */
 export function lineLeftToInvoice(line: PartsCostLine, scope: LeftToInvoiceScope = {}): number {
-  const posted =
-    scope.asOfPosting && scope.asOf && (dayOf(line.invoicedDate) ?? "9999-12-31") > scope.asOf ? 0 : line.actualAmount;
+  const posted = scope.asOfPosting && scope.asOf ? postedThrough(line, scope.asOf) : line.actualAmount;
   return line.totalPrice - posted;
+}
+
+/**
+ * GL-posted money on a line that was already posted on or before `asOf`.
+ *
+ * Per invoice document when the feed carries the split (`postings`): a line billed
+ * $X in September and $Y in October had exactly $X posted by 09/30. Without it, falls
+ * back to the line's `invoicedDate` — which is the LATEST document, so a part-billed
+ * line straddling the cutoff reads as wholly unposted (overstating what was owed).
+ * That fallback is only ever reached for lines the split does not cover (extra-cost
+ * lines, or any that failed to reconcile).
+ */
+export function postedThrough(line: PartsCostLine, asOf: string): number {
+  if (line.postings) {
+    let sum = 0;
+    for (const p of line.postings) if (p.day <= asOf) sum += p.amount;
+    return sum;
+  }
+  return (dayOf(line.invoicedDate) ?? "9999-12-31") > asOf ? 0 : line.actualAmount;
 }
 
 /**
@@ -220,7 +249,11 @@ export function explainLeftToInvoice(
     }
     included++;
     raw += lineLeftToInvoice(line, scope);
-    if (scope.asOf && (dayOf(line.invoicedDate) ?? "") > scope.asOf) postedAfterCutoff += line.actualAmount;
+    // What posted after the cutoff against a line bought on or before it. Under the
+    // default rule this is money the figure subtracts anyway (drift); under
+    // `asOfPosting` it is money the figure deliberately leaves out, so it reads 0 —
+    // nothing dated after the cutoff touches the number any more.
+    if (scope.asOf && !scope.asOfPosting) postedAfterCutoff += line.actualAmount - postedThrough(line, scope.asOf);
   }
   return {
     total: Math.max(0, raw),
