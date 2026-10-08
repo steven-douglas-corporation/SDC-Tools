@@ -148,9 +148,62 @@ test("the single-job feed attaches postings, or Rewind to would date every line 
   assert.match(feed, /await attachPostings\(pool, String\(numericJob\), new Map\(\[\[String\(numericJob\), lines\]\]\)\);/);
 });
 
+// ── A row with no purchase lines owes nothing (2026-10-08) ───────────────────────
+//
+// Job 1161 rewound to 09/30: the Parts List footer read $11,266 against Monthly ETC's
+// $11,243. The $23 was part 4W64K312 — Qty 2 x $11.44 from the BOM, Purch Qty "-" — a
+// part bought and received in October, so the rewind left it as a BOM estimate and the
+// estimate was read as still owed. Nothing bought means nothing to invoice, which is the
+// rule in-house, stock and SDC rows already followed; it now covers every such row.
+
+test("a BOM part with no purchase lines owes $0 but keeps its estimate in Total $", () => {
+  const bom = bomOf([part({ id: 9, pn: "NEVER-BOUGHT", qty: 2, unitPrice: 11.44 })]);
+  const [row] = flattenBomParts(bom, []);
+  assert.equal(row.matchReason, "no-purchase");
+  assert.equal(cents(row.totalPrice), 22.88, "the BOM estimate is still shown");
+  assert.equal(row.invoicedAmount, 0);
+  assert.equal(row.leftToSpend, 0, "…but it is not owed");
+});
+
+test("a part whose only PO falls after the cutoff owes $0 at the cutoff, and the footer still equals ETC's", () => {
+  const bom = bomOf([part({ id: 1, pn: "A", qty: 2, unitPrice: 11.44 }), part({ id: 2, pn: "B" })]);
+  const lines = [
+    line({ itemId: 1, partNumber: "A", purchaseDate: "2026-10-05", totalPrice: 22.88, poNumber: "200" }),
+    line({ itemId: 2, partNumber: "B", purchaseDate: "2026-09-05", totalPrice: 500, poNumber: "101" }),
+  ];
+  const today = flattenBomParts(bom, lines);
+  const rewound = flattenBomParts(bom, rewindLines(lines, SEPT));
+  const a = (rows: typeof today) => rows.find((r) => r.pn === "A")!;
+
+  assert.equal(cents(a(today).leftToSpend ?? NaN), 22.88, "today the October PO is open");
+  assert.equal(a(rewound).matchReason, "no-purchase", "rewound, it is just a BOM part");
+  assert.equal(a(rewound).leftToSpend, 0);
+  const footer = rewound.reduce((s, r) => s + (r.leftToSpend ?? 0), 0);
+  assert.equal(cents(footer), cents(rawLeftToInvoice(lines, { asOf: SEPT, asOfPosting: true })));
+  assert.equal(cents(footer), 500);
+});
+
 test("the list is built from the rewound lines, and the reconciliation reads the same set", () => {
   const src = readFileSync(join(process.cwd(), "src", "components", "JobProcurement.tsx"), "utf8");
   assert.match(src, /flattenBomParts\(bom, lines, activeAttribution\)/);
   assert.match(src, /for \(const l of lines \?\? \[\]\) \{\s*jobTotal \+= l\.totalPrice;/);
   assert.match(src, /const rewindCutoff = windowRequested \? null : monthEndCutoff\(rewind\);/, "ignored while an Invoiced range is requested");
+});
+
+test("both footers leave not-bought-yet BOM estimates out of Total $, so Total − Invoiced = Left to Invoice", () => {
+  const src = readFileSync(join(process.cwd(), "src", "components", "JobProcurement.tsx"), "utf8");
+  // The on-screen footer sums the estimate separately (for its tooltip); the export's total row skips it.
+  assert.match(src, /if \(p\.matchReason === "no-purchase"\) a\.estimate \+= p\.totalPrice;\s*else a\.total \+= p\.totalPrice;/);
+  assert.match(src, /if \(p\.matchReason !== "no-purchase"\) a\.total \+= p\.totalPrice;/);
+  assert.ok(!/^\s*a\.total \+= p\.totalPrice;/m.test(src), "no footer may add every row's Total $ again");
+});
+
+test("with the estimate out of the footer sum, Total − Invoiced equals the Left to Invoice sum", () => {
+  const bom = bomOf([part({ id: 1, pn: "A" }), part({ id: 2, pn: "UNBOUGHT", qty: 2, unitPrice: 11.44 })]);
+  const rows = flattenBomParts(bom, [
+    line({ itemId: 1, partNumber: "A", purchaseDate: "2026-09-05", totalPrice: 500, invoicedAmount: 200, actualAmount: 200, invoicedDate: "2026-09-20", postings: [{ day: "2026-09-20", amount: 200 }] }),
+  ]);
+  const sum = (f: (r: (typeof rows)[number]) => number) => rows.reduce((s, r) => s + f(r), 0);
+  const total = sum((r) => (r.matchReason === "no-purchase" ? 0 : r.totalPrice));
+  assert.equal(cents(total - sum((r) => r.invoicedAmount)), cents(sum((r) => r.leftToSpend ?? 0)));
 });
