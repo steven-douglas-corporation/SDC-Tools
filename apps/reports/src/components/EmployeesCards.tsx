@@ -12,7 +12,7 @@ import { DepartmentCardHeader, EmployeePersonRow, HandPlacedSection, TempsSectio
 import { OpenPositionsDropdown } from "@/components/OpenPositionsDropdown";
 import { employeeCapacityHours, hiringCapacityHours } from "@/lib/workforce-capacity";
 import { hasYearPolicy } from "@/lib/workforce-capacity-policy";
-import { hours as fmtHours } from "@/components/ui/format";
+import { CardStats } from "@/components/CardStats";
 import type { CapacityDrillTarget } from "@/components/WorkforceSummaryCards";
 import { countOpenings } from "@/lib/hiring-openings";
 
@@ -159,11 +159,12 @@ export function EmployeesCards({
         // only, never on cardHiring itself, so the counts and capacity hours
         // above keep counting every open position regardless of visibility.
         const listedHiring = cardHiring.filter((p) => p.isVisible || canAssignHiring);
-        const plannedCount = activeCount + cardHiringOpenings;
         const hasCapacityPolicy = year != null && hasYearPolicy(year);
+        // Hours only with a policy for the year AND a breakdown to open: nothing
+        // to click, nothing offered.
+        const canOpenCapacity = hasCapacityPolicy && !!onSelectCapacity;
         const cardCurrentHours = hasCapacityPolicy ? employeeCapacityHours(activeCount, year) : 0;
         const cardHiringHours = hasCapacityPolicy ? hiringCapacityHours(cardHiring, year) : 0;
-        const cardPlannedHours = cardCurrentHours + cardHiringHours;
         return (
           <section
             key={card.key}
@@ -173,54 +174,19 @@ export function EmployeesCards({
             }`}
           >
             <DepartmentCardHeader title={card.title} colors={card.colors} isAi={card.key === "ai"} />
-            <div className="flex items-baseline gap-1.5 border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-1.5 text-xs text-sdc-muted">
-              <span className="font-bold tabular-nums text-sdc-navy">{activeCount}</span>
-              <span>active</span>
-              {inactiveCount > 0 && (
-                <>
-                  <span className="text-sdc-gray-400">·</span>
-                  <span className="font-bold tabular-nums text-sdc-navy">{inactiveCount}</span>
-                  <span>inactive</span>
-                </>
-              )}
-              {cardHiringOpenings > 0 && (
-                <>
-                  <span className="text-sdc-gray-400">·</span>
-                  <span className="font-bold tabular-nums text-sdc-green-text">{cardHiringOpenings}</span>
-                  <span>hiring</span>
-                  <span className="text-sdc-gray-400">·</span>
-                  <span className="font-bold tabular-nums text-sdc-navy">{plannedCount}</span>
-                  <span>planned</span>
-                </>
-              )}
-            </div>
-            {hasCapacityPolicy && onSelectCapacity && (
-              <button
-                type="button"
-                onClick={() =>
-                  onSelectCapacity({
-                    title: `${card.title} — Capacity`,
-                    employees: card.people.filter((p) => p.active),
-                    hiringPositions: cardHiring,
-                  })
-                }
-                title="See how this capacity total was built, by employee and open position"
-                className="flex items-baseline gap-1.5 border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-1.5 text-left text-xs text-sdc-muted hover:bg-sdc-blue-light/30"
-              >
-                <span className="font-bold tabular-nums text-sdc-navy">{fmtHours(cardCurrentHours)}</span>
-                <span>current hrs/yr</span>
-                {cardHiringHours > 0 && (
-                  <>
-                    <span className="text-sdc-gray-400">·</span>
-                    <span className="font-bold tabular-nums text-sdc-green-text">+{fmtHours(cardHiringHours)}</span>
-                    <span>hiring</span>
-                    <span className="text-sdc-gray-400">·</span>
-                    <span className="font-bold tabular-nums text-sdc-navy">{fmtHours(cardPlannedHours)}</span>
-                    <span>planned</span>
-                  </>
-                )}
-              </button>
-            )}
+            <CardStats
+              stats={{ active: activeCount, inactive: inactiveCount, hiringOpenings: cardHiringOpenings, currentHours: canOpenCapacity ? cardCurrentHours : null, hiringHours: cardHiringHours }}
+              onOpen={
+                canOpenCapacity
+                  ? () =>
+                      onSelectCapacity!({
+                        title: `${card.title} — Capacity`,
+                        employees: card.people.filter((p) => p.active),
+                        hiringPositions: cardHiring,
+                      })
+                  : undefined
+              }
+            />
             <ul className={`p-1.5 ${contractors.length + placedByHand.length > 0 ? "" : "min-h-[72px]"}`}>
               {roster.map((p) => (
                 <li key={p.id}>

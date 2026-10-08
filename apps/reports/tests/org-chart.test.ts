@@ -57,6 +57,52 @@ test("people with no Leadership above them are listed apart", () => {
   assert.deepEqual(chart.unplaced.map((u) => [u.name, u.detail]), [["Deborah", "No supervisor in Paylocity"]]);
 });
 
+// "Show inactive" (2026-10-08): hidden people are drawn, each under their own manager —
+// nobody is lifted past them — and the counts keep saying how many are ACTIVE.
+const withInactive = buildOrgChart(
+  [...PEOPLE, e(41, "Gone Gary", null, null, { active: false })],
+  ROWS,
+  { includeInactive: true },
+);
+
+test("with inactive people included, a hidden manager is drawn and keeps their reports", () => {
+  const build = withInactive.bands[1].cards[0];
+  assert.equal(build.team, "build");
+  const sean = build.heads[0];
+  assert.deepEqual([sean.name, sean.reports.map((r) => r.name), sean.reports[0].reports.map((r) => r.name)], ["Sean", ["Hidden Lead"], ["Frank"]], "Frank is no longer lifted to Sean");
+  assert.equal(sean.reports[0].active, false);
+  assert.equal(sean.active, true);
+});
+
+test("with inactive people included, counts still separate active from drawn", () => {
+  const build = withInactive.bands[1].cards[0];
+  assert.deepEqual([build.people, build.active], [3, 2], "Sean, Hidden Lead and Frank are drawn; two are active");
+  assert.deepEqual([withInactive.bands[1].people, withInactive.bands[1].active], [5, 4]);
+  assert.equal(withInactive.leaderActive, withInactive.leaderCount, "no inactive leader in this data");
+});
+
+test("with inactive people included, an unplaced inactive person is listed and flagged", () => {
+  assert.deepEqual(withInactive.unplaced.map((u) => [u.name, u.active]), [["Deborah", true], ["Gone Gary", false]]);
+});
+
+test("by default nobody inactive is drawn, and active equals drawn everywhere", () => {
+  const plain = buildOrgChart([...PEOPLE, e(41, "Gone Gary", null, null, { active: false })], ROWS);
+  assert.deepEqual(plain.unplaced.map((u) => u.name), ["Deborah"]);
+  assert.ok(plain.bands.every((b) => b.active === b.people && b.cards.every((c) => c.active === c.people)));
+  assert.equal(plain.leaderActive, plain.leaderCount);
+  assert.ok(!names(plain.bands[1].cards[0].heads).includes("Hidden Lead"));
+});
+
+test("an inactive leader appears in Leadership only when inactive people are included", () => {
+  const people = [...PEOPLE, e(5, "Retired VP", "VPO", 1, { active: false })];
+  const all = buildOrgChart(people, ROWS, { includeInactive: true });
+  assert.deepEqual([all.leaderCount, all.leaderActive], [3, 2]);
+  assert.equal(names(all.leaders).includes("Retired VP"), true);
+  const plain = buildOrgChart(people, ROWS);
+  assert.deepEqual([plain.leaderCount, plain.leaderActive], [2, 2]);
+  assert.equal(names(plain.leaders).includes("Retired VP"), false);
+});
+
 test("pending changes list only what the rule would write", () => {
   assert.deepEqual(chart.pending.map((c) => [c.name, c.to]).sort(), [["Billy", "service"], ["Frank", "build"], ["Monica", "service"], ["Moses", "ai"], ["Sean", "build"]]);
 });

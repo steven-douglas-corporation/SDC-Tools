@@ -13,14 +13,19 @@ import { isPaylocityId as inPaylocity, comparePositionCode } from "@/lib/employe
 // lib/team-resolution.ts — what the roster sync will write once switched on —
 // with the list of what would change alongside. Reads only.
 //
-// Active people only. Someone hidden is skipped, but their reports are still
-// drawn, attached to the nearest shown manager above them.
+// Active people only, unless `includeInactive` (the page's "Show inactive"). Someone
+// hidden is skipped, but their reports are still drawn, attached to the nearest
+// shown manager above them. With inactive people included nobody is skipped, so
+// everyone sits under their own manager; counts still say how many are active, so
+// the "N active" figures and the capacity hours built on them don't move.
 
 export type OrgNode = {
   id: number;
   name: string;
   title: string | null;
   positionCode: string | null;
+  /** False for someone hidden — only ever drawn with `includeInactive`. */
+  active: boolean;
   team: string | null;
   /** Shown beside the name on hover: why this person isn't placed by their own family. */
   note: string | null;
@@ -33,17 +38,20 @@ export type OrgNode = {
   reports: OrgNode[];
 };
 
-export type OrgTeamCard = { team: string | null; name: string; people: number; heads: OrgNode[] };
-export type OrgBand = { leader: { id: number; name: string; title: string | null }; people: number; cards: OrgTeamCard[] };
+/** `people` is everyone drawn; `active` is the active ones among them (the same number unless inactive people are included). */
+export type OrgTeamCard = { team: string | null; name: string; people: number; active: number; heads: OrgNode[] };
+export type OrgBand = { leader: { id: number; name: string; title: string | null }; people: number; active: number; cards: OrgTeamCard[] };
 
 export type OrgChart = {
   /** False until the position families have been imported at least once. */
   ready: boolean;
   leaders: OrgNode[];
   leaderCount: number;
+  /** The active leaders among `leaderCount`. */
+  leaderActive: number;
   bands: OrgBand[];
   /** Shown, not Leadership, with no leader above and no team from the rule. */
-  unplaced: { id: number; name: string; title: string | null; detail: string }[];
+  unplaced: { id: number; name: string; title: string | null; detail: string; active: boolean }[];
   pending: (TeamChange & { fromName: string | null; toName: string })[];
 };
 
@@ -84,7 +92,8 @@ export type OrgEmployee = {
 };
 
 /** The chart from people and family rows — pure, so it is testable without a database. */
-export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[]): OrgChart {
+export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[], opts: { includeInactive?: boolean } = {}): OrgChart {
+  const isShown = (e: OrgEmployee) => !!opts.includeInactive || e.active;
   const families = mergePositionFamilies(rows);
   const res = resolveTeams(employees, rows);
   const byId = new Map(employees.map((e) => [e.id, e]));
@@ -127,7 +136,7 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
   function shownReports(id: number, seen = new Set<number>()): typeof employees {
     if (seen.has(id)) return [];
     seen.add(id);
-    return (reportsOf.get(id) ?? []).flatMap((r) => (r.active ? [r] : shownReports(r.id, seen)));
+    return (reportsOf.get(id) ?? []).flatMap((r) => (isShown(r) ? [r] : shownReports(r.id, seen)));
   }
 
   const orgNode = (e: (typeof employees)[number], reports: OrgNode[]): OrgNode => ({
@@ -135,6 +144,7 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
     name: e.name,
     title: e.positionTitle?.trim() || null,
     positionCode: e.positionCode,
+    active: e.active,
     team: displayTeam(e),
     note: noteFor(e),
     override: !!e.positionCode && families.get(codeKey(e.positionCode))?.source === "override",
@@ -150,8 +160,9 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
     return orgNode(e, kids.map((k) => leaderNode(k, seen)));
   }
   const count = (n: OrgNode): number => 1 + n.reports.reduce((s, k) => s + count(k), 0);
+  const countActive = (n: OrgNode): number => (n.active ? 1 : 0) + n.reports.reduce((s, k) => s + countActive(k), 0);
 
-  const shown = employees.filter((e) => e.active);
+  const shown = employees.filter(isShown);
   const leaders = shown.filter((e) => isLeader(e.id));
   const leaderIds = new Set(leaders.map((l) => l.id));
   // Leadership as its own tree: a leader is a root when nobody shown above them is Leadership.
@@ -212,9 +223,20 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
       const t = teamOf.get(m.id) ?? null;
       (byTeam.get(t) ?? byTeam.set(t, []).get(t)!).push(build(m));
     }
-    const cards = [...byTeam].map(([team, hs]) => ({ team, name: teamName(team), people: hs.reduce((n, h) => n + count(h), 0), heads: hs }));
+    const cards = [...byTeam].map(([team, hs]) => ({
+      team,
+      name: teamName(team),
+      people: hs.reduce((n, h) => n + count(h), 0),
+      active: hs.reduce((n, h) => n + countActive(h), 0),
+      heads: hs,
+    }));
     cards.sort((a, b) => cardRank(a.team) - cardRank(b.team) || a.name.localeCompare(b.name));
-    bands.push({ leader: { id: L.id, name: L.name, title: L.positionTitle?.trim() || null }, people: cards.reduce((s, c) => s + c.people, 0), cards });
+    bands.push({
+      leader: { id: L.id, name: L.name, title: L.positionTitle?.trim() || null },
+      people: cards.reduce((s, c) => s + c.people, 0),
+      active: cards.reduce((s, c) => s + c.active, 0),
+      cards,
+    });
   }
 
   // Shown people the bands don't reach: no Leadership anywhere above them.
@@ -229,6 +251,7 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
       id: e.id,
       name: e.name,
       title: e.positionTitle?.trim() || null,
+      active: e.active,
       detail: !inPaylocity(e.paylocityId) ? "Not in Paylocity — set a supervisor on the Employees page" : e.supervisorId == null ? "No supervisor in Paylocity" : "No Leadership above them",
     }));
 
@@ -238,6 +261,7 @@ export function buildOrgChart(employees: OrgEmployee[], rows: PositionFamilyRow[
     ready: rows.length > 0,
     leaders: leaderRoots,
     leaderCount: leaders.length,
+    leaderActive: leaders.filter((l) => l.active).length,
     bands,
     unplaced,
     pending,

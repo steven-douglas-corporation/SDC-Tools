@@ -59,8 +59,11 @@ export function EmployeePersonRow({
   onSelect,
   note,
   hideLeadershipBadge,
+  dimmed,
 }: {
   p: EmployeeRow;
+  /** The Org chart while searching: a manager shown only because someone under them matches. */
+  dimmed?: boolean;
   /** The Executive Leadership card, where everyone is Leadership: the badge says nothing there and crowds the names out. */
   hideLeadershipBadge?: boolean;
   cardTitle: string;
@@ -85,7 +88,7 @@ export function EmployeePersonRow({
       }
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
-      className={`relative flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-sdc-blue-light/40 ${onSelect ? "cursor-pointer" : ""} ${p.active ? "" : "opacity-70"}`}
+      className={`relative flex items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-sdc-blue-light/40 ${onSelect ? "cursor-pointer" : ""} ${dimmed ? "opacity-50" : p.active ? "" : "opacity-70"}`}
     >
       {p.isLead && (
         <span className="shrink-0 text-sm text-sdc-yellow" title="Department lead" aria-hidden>
