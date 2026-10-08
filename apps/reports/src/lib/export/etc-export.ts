@@ -18,6 +18,8 @@ import {
   type PartsCostLive,
 } from "@/lib/etc";
 import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
+import { readPartsEtcBreakout, type PartsEtcBreakoutResult } from "@/lib/parts-etc-breakout";
+import { resolveLeftToInvoice } from "@/lib/left-to-invoice";
 import type { CellValue, SheetColumn, SheetSpec } from "@/lib/export/sheet";
 
 // ── The Monthly ETC grid, as a spreadsheet (§24.4) ────────────────────────────
@@ -82,6 +84,21 @@ export async function buildEtcExport(
     return (effective && showBillable) || (!effective && showNonBillable);
   });
 
+  // Left to Invoice / Left to Purchase sit between Money Left and New ETC on the grid, on
+  // the months that have them (August 2026 on) — the export mirrors that.
+  const showBreakout = showsPartsBreakout(month);
+  // Same upstream read the grid makes. Never throws; a failure leaves the computed
+  // default unknown, and a stored override (or blank) is exported instead.
+  const breakout: PartsEtcBreakoutResult | null = showBreakout
+    ? await readPartsEtcBreakout(
+        visible.filter((j) => j.jobId).map((j) => ({ pk: j.id, jobNumber: j.jobId })),
+        month,
+      ).catch((e) => {
+        console.error("[etc-export] parts breakout failed; Left to Invoice will export from stored values:", e);
+        return null;
+      })
+    : null;
+
   const columns: SheetColumn[] = [
     { header: "Job Id", type: "text", width: 12 },
     { header: "Job Name", type: "text", width: 38 },
@@ -102,6 +119,12 @@ export async function buildEtcExport(
     { header: "Prior ETC", type: "currency" as const },
     { header: "Money Spent Month", type: "currency" as const },
     { header: "Money Left", type: "currency" as const },
+    ...(showBreakout
+      ? [
+          { header: "Left to Invoice", type: "currency" as const },
+          { header: "Left to Purchase", type: "currency" as const },
+        ]
+      : []),
     { header: "New ETC", type: "currency" as const },
     { header: "Diff", type: "currency" as const },
   ]) {
@@ -129,15 +152,18 @@ export async function buildEtcExport(
     let i = 6;
 
     const pushCell = (entry: (typeof job.etcEntries)[number] | undefined, money: boolean) => {
+      const extra = money && showBreakout ? 2 : 0; // the two breakout columns
       if (!entry) {
         // A section the job was never quoted for. Zeroes for the facts (no prior
         // estimate, no time booked) and BLANK for the two judgement columns, which is
         // exactly what the grid shows.
-        row.push(0, 0, 0, null, null);
+        row.push(0, 0, 0);
+        if (extra) row.push(null, null);
+        row.push(null, null);
         addTotal(i, 0);
         addTotal(i + 1, 0);
         addTotal(i + 2, 0);
-        i += 5;
+        i += 5 + extra;
         return;
       }
       const prior = Number(entry.priorEtc);
@@ -168,16 +194,30 @@ export async function buildEtcExport(
       const shown: number | null = seed.trim() === "" ? null : Number(seed);
       const diff = money ? partsCostDiff(entry, partsLive) : newEtcDiff(entry);
       if (shown === null && worked !== 0 && entry.needsReview) needsCount++;
-      row.push(prior, worked, left, shown, diff);
+      row.push(prior, worked, left);
+      if (extra) {
+        // The cell's own resolution (computed default, or a stored override), signed —
+        // the grid renders it through the same function.
+        const b = breakout?.byJobPk.get(job.id) ?? null;
+        const invoice = resolveLeftToInvoice({
+          computed: b?.rawLeftToInvoice == null ? null : round2(b.rawLeftToInvoice),
+          stored: entry.leftToInvoice != null ? round2(Number(entry.leftToInvoice)) : null,
+        }).value;
+        const purchase = entry.leftToPurchase != null ? round2(Number(entry.leftToPurchase)) : null;
+        row.push(invoice, purchase);
+        addTotal(i + 3, invoice);
+        addTotal(i + 4, purchase);
+      }
+      row.push(shown, diff);
       addTotal(i, prior);
       addTotal(i + 1, worked);
       addTotal(i + 2, left);
       // The New ETC total sums what the month would SUBMIT as (effectiveNewEtc), which
       // is what the grid's own total row does — a column of blanks would otherwise total
       // to less than the month is planned at.
-      addTotal(i + 3, money ? partsCostEffectiveNewEtc(entry, partsLive) : effectiveNewEtc(entry));
-      addTotal(i + 4, diff);
-      i += 5;
+      addTotal(i + 3 + extra, money ? partsCostEffectiveNewEtc(entry, partsLive) : effectiveNewEtc(entry));
+      addTotal(i + 4 + extra, diff);
+      i += 5 + extra;
     };
 
     for (const s of ETC_SECTIONS) pushCell(byCode.get(s.code), false);
