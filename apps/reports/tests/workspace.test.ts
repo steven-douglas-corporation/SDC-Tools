@@ -151,20 +151,35 @@ test("Duplicate Tab clones params and lands beside its source", () => {
   assert.equal(ws.tabs[0].params.jobs, "1101");
 });
 
-test("Close Other Tabs keeps exactly one and ends the split", () => {
+test("Close Other Tabs keeps exactly one", () => {
   let ws = openTab(EMPTY_WORKSPACE, "/etc");
   ws = openTab(ws, "/job-hours", {}, { newInstance: true });
   ws = openTab(ws, "/quoted", {}, { newInstance: true });
   const keep = ws.tabs[1].id;
-  ws = enterSplit(ws, ws.tabs[0].id);
 
   ws = closeOtherTabs(ws, keep);
   assert.deepEqual(ids(ws), [keep]);
   assert.equal(ws.active, keep);
-  assert.equal(ws.split, null, "a split whose panes were just closed is not a state worth defining");
+  assert.equal(ws.split, null);
   assert.deepEqual(ws.mru, [keep]);
   // Keeping a tab that does not exist changes nothing.
   assert.equal(closeOtherTabs(ws, "t99"), ws);
+});
+
+test("in a split, Close Other Tabs is about that strip only — the other group is untouched", () => {
+  let ws = openTab(EMPTY_WORKSPACE, "/etc");
+  ws = openTab(ws, "/job-hours", {}, { newInstance: true });
+  ws = openTab(ws, "/quoted", {}, { newInstance: true });
+  const [etc, jobs, quoted] = ws.tabs.map((t) => t.id);
+  ws = enterSplit(ws, etc); // left group: Job Details, Quoted (active) | right group: ETC
+
+  const next = closeOtherTabs(ws, jobs);
+  assert.deepEqual(ids(next), [etc, jobs], "Quoted, the other tab in that strip, closed");
+  assert.equal(next.split!.left, jobs);
+  assert.equal(next.split!.right, etc, "the right group was not touched");
+  assert.deepEqual(next.split!.rightTabs, [etc]);
+  assert.equal(next.active, jobs, "the active tab was in the closed set, so the kept tab takes over");
+  assert.ok(!next.mru.includes(quoted));
 });
 
 // ── Monthly ETC stays single-instance ───────────────────────────────────────
@@ -284,7 +299,9 @@ test("navigating a tab keeps its position, its id and the split intact", () => {
   const next = navigateTab(ws, middle, "/hours");
   assert.deepEqual(paths(next), ["/etc", "/hours", "/quoted"]);
   assert.equal(next.tabs[1].id, middle, "the instance survives a re-route");
-  assert.deepEqual(next.split, ws.split);
+  // Navigating a tab also brings it forward: it is now the left group's visible tab.
+  assert.deepEqual(next.split, { ...ws.split!, left: middle });
+  assert.equal(next.active, middle);
 });
 
 test("navigating drops the params of the route being left", () => {
@@ -612,9 +629,10 @@ test("switching a tab does not touch the router", () => {
   const barCode = stripComments(TABBAR);
   assert.ok(!/router\.push/.test(shellCode), "no push path left in the shell");
   assert.ok(!/router\.push/.test(barCode), "no push path left in the tab bar");
-  // Only opening and duplicating ask to navigate.
+  // Only duplicating asks to navigate from the strip. Opening a page is the sidebar's
+  // (useWorkspaceActions), since the strip's "+" was removed.
   const navCalls = TABBAR.match(/goOpen\(/g) ?? [];
-  assert.equal(navCalls.length, 2, `expected open + duplicate to navigate, found ${navCalls.length}`);
+  assert.equal(navCalls.length, 1, `expected only duplicate to navigate, found ${navCalls.length}`);
 });
 
 test("panes are keyed by instance id, so a reorder never remounts one", () => {
@@ -864,14 +882,16 @@ function splitWorkspace() {
   return enterSplit(ws, right); // ETC (t1, active, left) | Job Details (t2, right)
 }
 
-test("split: a click on a page open in neither pane re-routes the ACTIVE pane", () => {
+test("split: a click on a page open nowhere opens it as a tab in the ACTIVE group", () => {
   const ws = splitWorkspace();
   const next = sidebarClick(ws, "/hours");
-  assert.equal(next.tabs.length, 2, "no hidden third tab");
-  assert.equal(tabById(next, ws.split!.left)?.path, "/hours", "the active (left) pane now shows Hours");
-  assert.equal(tabById(next, ws.split!.right)?.path, "/job-hours", "the other pane is untouched");
-  assert.deepEqual(next.split, ws.split, "the split itself is unchanged");
-  assert.equal(needsRender(ws, next), true, "a re-routed pane has content the server has not rendered");
+  assert.equal(next.tabs.length, 3, "a new tab, not a replaced one");
+  assert.equal(tabById(next, ws.split!.left)?.path, "/etc", "ETC is still a tab in its group");
+  assert.equal(tabById(next, next.split!.left)?.path, "/hours", "the active (left) group now shows Hours");
+  assert.equal(next.active, next.split!.left);
+  assert.equal(next.split!.right, ws.split!.right, "the other group is untouched");
+  assert.deepEqual(next.split!.rightTabs, ws.split!.rightTabs, "and the new tab did not land in it");
+  assert.equal(needsRender(ws, next), true, "a new tab has content the server has not rendered");
   // The href and the action agree by construction — same function.
   assert.equal(workspaceHref(next), workspaceHref(sidebarClick(ws, "/hours")));
 });
@@ -939,8 +959,10 @@ test("split: the same holds when the ACTIVE pane is the right one", () => {
   const [hours, jobs, etc] = ws.tabs.map((t) => t.id);
   ws = activateTab(enterSplit(activateTab(ws, hours), jobs), jobs); // active = right
   const next = sidebarClick(ws, "/etc");
-  assert.deepEqual([next.split!.left, next.split!.right], [hours, etc]);
+  // ETC is in the LEFT group (behind Hours), so that group shows it and takes focus.
+  assert.deepEqual([next.split!.left, next.split!.right], [etc, jobs]);
   assert.equal(next.active, etc);
+  assert.equal(next.tabs.filter((t) => t.path === "/etc").length, 1);
 });
 
 test("split: clicking ETC with a month carries it onto the tab that is already open", () => {

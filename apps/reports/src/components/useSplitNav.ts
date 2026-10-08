@@ -95,10 +95,10 @@ export function useSplitNav() {
       // goes somewhere.
       if (workspace) {
         // No Monthly ETC pairing check here (2026-10-08): sidebarClick never builds the
-        // pairing /w refuses — a page already in the other pane is ACTIVATED, not copied,
-        // and an exclusive tab open elsewhere takes the active pane's slot. The check used
-        // to return the page's own route, so clicking Monthly ETC with ETC in the other
-        // pane navigated to /etc and threw the whole workspace away.
+        // pairing /w refuses — a page that is already open (in either group) is ACTIVATED,
+        // not copied, and Monthly ETC can only exist once. The check used to return the
+        // page's own route, so clicking Monthly ETC with ETC in the other pane navigated
+        // to /etc and threw the whole workspace away.
         //
         // The SAME reducer useWorkspaceActions.openExistingTab applies on click, so
         // the href in the markup and the action behind it cannot disagree — they did

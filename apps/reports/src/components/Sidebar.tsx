@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSplitNav } from "@/components/useSplitNav";
 import { tabById } from "@/lib/workspace";
 import { exitSplitPlan } from "@/lib/exit-split";
+import { beginDrag, endDrag } from "@/lib/drag-payload";
 import { publishPermittedRoutes } from "@/lib/permitted-routes-store";
 import { useWorkspaceActions } from "@/components/useWorkspaceActions";
 import { NavItemMenu, NavItemMenuButton, type NavMenuAnchor } from "@/components/NavItemMenu";
@@ -805,16 +806,20 @@ export default function Sidebar({
                     title={
                       collapsed
                         ? item.label
-                        : `${item.label} — middle-click for another tab; drag to reorder, or Alt+↑/↓`
+                        : `${item.label} — middle-click for another tab; drag to reorder (Alt+↑/↓)${hostable ? ", or onto a side of the screen to split" : ""}`
                     }
                     // Reorderable by drag, and by Alt+Arrow for anyone not using a
                     // mouse. Only within this group: the headings above say what
                     // these links are, so a link that moved out from under one
                     // would make the heading wrong.
-                    draggable={group.items.length > 1}
+                    // Also draggable for a page the workspace can host, even alone in its
+                    // group: the same gesture drops it on a side of the screen (see
+                    // SplitDropOverlay) or onto a pane of an open split.
+                    draggable={group.items.length > 1 || hostable}
                     onDragStart={(e) => {
                       dragRef.current = { group: group.label, index };
                       setDrag({ group: group.label, index });
+                      if (hostable) beginDrag({ kind: "page", path: item.href });
                       // Firefox ignores a drag with no payload; the href is also the
                       // sensible thing to hand to anything else that accepts a drop.
                       e.dataTransfer.setData("text/plain", item.href);
@@ -840,6 +845,7 @@ export default function Sidebar({
                       dragRef.current = null;
                       setDrag(null);
                       setOver(null);
+                      endDrag();
                     }}
                     onKeyDown={(e) => {
                       if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
@@ -1024,40 +1030,22 @@ export default function Sidebar({
             be at two densities on two tabs. See lib/app-zoom.ts. */}
         <AppZoom collapsed={collapsed} />
 
-        {/* ── Split View, on its own row (2026-09-03) ──────────────────────────
-            The discoverable half of the feature. The right-click menu on a nav item
-            is the useful entry point — it is the only one that can say WHICH page to
-            open beside this one — but a context menu discovers nobody, so this
-            states that the feature exists and what the gesture is.
+        {/* ── Exit Split View — the legacy /split route only (2026-10-08) ─────────
+            A workspace split has no button any more: pages and tabs are dragged into
+            place, and a split ends when one side runs out of tabs (or with Ctrl+\). The
+            old /split route, still reachable from old links, has no tabs to run out of,
+            so it keeps its way out. `splitNav.state` exists only there.
 
-            Its behaviour depends on which state you are in, and it only ever does
-            the unambiguous thing:
-              not split  There is no way to guess which page you want beside this
-                         one, so this does not open a split. It points at the
-                         gesture that can, and stays disabled-looking rather than
-                         picking a page for you.
-              split      Closes it, leaving the active pane full width — the same
-                         thing Ctrl+\ does, which is why the shortcut is on the
-                         label rather than hidden in a tooltip.
-
-            Full width in both states, and label-free when collapsed, for the same
-            reason recorded in App Refresh's note directly below: this footer's
-            widths have been guessed wrong before, and at 128px two labels already
-            fill a row. */}
-        <div className="flex pt-1">
-          {splitNav.isSplit ? (
+            Full width, and label-free when collapsed, for the reason recorded in App
+            Refresh's note directly below: this footer's widths have been guessed wrong
+            before. */}
+        {splitNav.isSplit && splitNav.state && (
+          <div className="flex pt-1">
             <button
               type="button"
               onClick={() => {
-                // ── Which layout's split this is (2026-09-14) ──────────────────
-                //
-                // `isSplit` is true for BOTH a /split pair and a /w workspace split,
-                // but `splitNav.state` exists only on /split — so this used to
-                // dereference null in the workspace and throw. lib/exit-split.ts
-                // decides: the workspace ends its split as a state change through
-                // the same centralized action the tab bar uses (no navigation, both
-                // panes stay mounted); /split ends it by navigating to the surviving
-                // pane's own route. The pane you are working in survives either way.
+                // lib/exit-split.ts decides how this layout ends its split: /split ends it
+                // by navigating to the surviving pane's own route.
                 const plan = exitSplitPlan(splitNav.workspace, splitNav.state);
                 if (!plan) return;
                 if (plan.kind === "workspace") {
@@ -1075,18 +1063,8 @@ export default function Sidebar({
               <SplitIcon />
               {!collapsed && <span>Exit Split View</span>}
             </button>
-          ) : (
-            <div
-              title="Right-click any page in the sidebar and choose “Open in Split View” to open it beside this one"
-              className={`flex h-[30px] w-full cursor-default items-center justify-center gap-[7px] rounded-[7px] bg-[#0B2846] text-xs whitespace-nowrap text-[#5A7391] shadow-[inset_0_0_0_1px_#17395C] ${
-                collapsed ? "shrink-0" : "px-2"
-              }`}
-            >
-              <SplitIcon />
-              {!collapsed && <span>Split View</span>}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* ── App Refresh, on its own row (2026-09-02) ─────────────────────────
             The SECOND refresh: it reloads this tab's frontend and changes no data

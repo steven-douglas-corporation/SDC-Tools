@@ -2,17 +2,23 @@
 
 import { Activity, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { WorkspaceTabBar } from "@/components/WorkspaceTabBar";
+import { WorkspaceTabBar, useTabShortcuts } from "@/components/WorkspaceTabBar";
 import { TabScrollMemory } from "@/components/TabScrollMemory";
-import { DEFAULT_RATIO, MIN_PANE_PX, clampRatio, ratioBounds } from "@/lib/split-view";
+import { DEFAULT_RATIO, MIN_PANE_PX, clampRatio, isSplittable, ratioBounds } from "@/lib/split-view";
+import { currentDrag, useDragPayload, type DragPayload } from "@/lib/drag-payload";
 import { publishWorkspace, registerWorkspaceApply } from "@/lib/workspace-store";
 import { clearTabScrollState, staleScrollScopes, tabScrollScope } from "@/lib/tab-scroll-state";
 import {
   activateTab,
+  dropOnSide,
   exitSplit,
+  groupOf,
   hasTab,
+  needsRender,
   tabById,
   tabTitle,
+  visibleIn,
+  type Side,
   workspaceHref,
   workspaceSignature,
   type TabId,
@@ -169,6 +175,8 @@ export function WorkspaceShell({
     [apply, ws],
   );
 
+  useTabShortcuts(ws, apply);
+
   // Ctrl+\ leaves the split, keeping the pane you were in — the toggle's "off"
   // direction. Turning it ON needs a target tab, which a shortcut cannot guess; that
   // is what the Split View picker is for.
@@ -200,7 +208,10 @@ export function WorkspaceShell({
     return () => ro.disconnect();
   }, []);
 
-  const bar = <WorkspaceTabBar ws={ws} apply={apply} />;
+  // Outside a split: one strip across the top. In a split there is no top bar — each
+  // group has its own strip at the top of its pane (PaneHost), so the tabs belong to the
+  // side they are on.
+  const bar = ws.split ? null : <WorkspaceTabBar ws={ws} apply={apply} />;
 
   if (ws.tabs.length === 0) {
     return (
@@ -208,8 +219,7 @@ export function WorkspaceShell({
         {bar}
         <div className="flex flex-1 items-center justify-center p-8">
           <p className="text-body text-sdc-muted">
-            No tabs open. Pick a page from the sidebar, or use{" "}
-            <span className="font-semibold text-sdc-gray-700">+</span> above.
+            No tabs open. Pick a page from the sidebar.
           </p>
         </div>
       </div>
@@ -294,7 +304,7 @@ export function WorkspaceShell({
   };
   const isVisible = (id: TabId): boolean => {
     if (!split) return id === ws.active;
-    if (collapsed) return id === ws.active || (ws.active !== split.left && ws.active !== split.right && id === split.left);
+    if (collapsed) return id === ws.active;
     return id === split.left || id === split.right;
   };
   const widthOf = (id: TabId): string => {
@@ -338,6 +348,9 @@ export function WorkspaceShell({
               order={orderOf(tab.id)}
               width={widthOf(tab.id)}
               showHeader={split != null && !collapsed}
+              // A strip heads the group's VISIBLE tab only; hidden tabs would just mount a
+              // second copy of it.
+              showStrip={split != null && isVisible(tab.id) && tab.id === visibleIn(ws, groupOf(ws, tab.id))}
               collapsed={collapsed}
               apply={apply}
             >
@@ -397,6 +410,7 @@ function PaneHost({
   order,
   width,
   showHeader,
+  showStrip,
   collapsed,
   apply,
   children,
@@ -405,20 +419,41 @@ function PaneHost({
   id: TabId;
   order: number;
   width: string;
+  /** Two panes are on screen, so each has a minimum width. */
   showHeader: boolean;
+  /** This pane is its group's visible tab: it carries the group's tab strip. */
+  showStrip: boolean;
   collapsed: boolean;
   apply: (next: Workspace, opts?: { navigate?: boolean }) => void;
   children: React.ReactNode;
 }) {
   const isActive = ws.active === id;
   const label = tabTitle(ws, id, { detailed: true });
-  if (!hasTab(ws, id)) return null;
 
   // Activating is local state now, so this is free — which is what makes clicking into
   // the other pane feel like clicking into a pane rather than like a navigation.
   const activate = () => {
     if (!isActive) apply(activateTab(ws, id));
   };
+
+  // ── A drop target: drag a sidebar page or a tab onto this side of the split ──
+  //
+  // The panes themselves are the targets — they already are the "sides" — so there is
+  // no overlay to keep in step with the divider. What a drop means is lib/workspace.ts's
+  // dropOnSide, shared with the screen-edge zones. A tab dragged from this very group has
+  // nothing to do here (reordering is the strip's), so the pane does not light up for it.
+  const side: Side = groupOf(ws, id);
+  const drag = useDragPayload();
+  const [over, setOver] = useState(false);
+  const accepts = showStrip && drag != null && (drag.kind === "tab" ? groupOf(ws, drag.id) !== side : isSplittable(drag.path));
+  const drop = (d: DragPayload) => {
+    const next = dropOnSide(ws, d.kind === "page" ? { kind: "page", path: d.path } : { kind: "tab", id: d.id }, side);
+    if (next !== ws) apply(next, needsRender(ws, next) ? { navigate: true } : undefined);
+  };
+
+  // After every hook above, never before: a tab that has just been closed can still be
+  // rendered once with its old id.
+  if (!hasTab(ws, id)) return null;
 
   return (
     // onFocusCapture alongside the mousedown: tabbing into a pane makes it active too,
@@ -427,6 +462,21 @@ function PaneHost({
     <section
       onMouseDown={activate}
       onFocusCapture={activate}
+      onDragOver={(e) => {
+        if (!accepts) return;
+        e.preventDefault();
+        if (!over) setOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+      }}
+      onDrop={(e) => {
+        setOver(false);
+        const d = currentDrag();
+        if (!accepts || !d) return;
+        e.preventDefault();
+        drop(d);
+      }}
       aria-label={`${label} pane`}
       // min-w-0 is what lets a dense page scroll horizontally INSIDE its pane rather
       // than forcing the pane wider than its share, which would push the divider off
@@ -434,31 +484,30 @@ function PaneHost({
       // min-h-0 is the other half of the split's independent scrolling: without it a flex
       // child never shrinks below its content, so the pane would out-grow the pinned
       // workspace instead of scrolling inside it.
-      className="flex min-h-0 min-w-0 flex-col"
+      className="relative flex min-h-0 min-w-0 flex-col"
       style={{ width, order, minWidth: collapsed || !showHeader ? undefined : MIN_PANE_PX }}
     >
-      {/* Thin (h-7, one line): two of these are on screen at once, above pages that
-          already have their own titles and toolbars. The tab strip above names both
-          pages, so this bar carries only what the strip cannot — WHICH pane the
-          sidebar will open into. Not rendered at all outside the split, where the strip
-          alone names the page and a second title bar would be chrome competing with
-          the page's own. */}
-      {showHeader && (
-        <header
-          className={`flex h-7 shrink-0 items-center gap-1.5 border-b px-2 ${
-            isActive ? "border-sdc-blue/40 bg-sdc-blue-light/40" : "border-sdc-border bg-sdc-gray-50"
+      {/* The group's own tab strip. It names the pages AND says which side the sidebar will
+          open into (the focused group's strip carries the blue rule), which is all the thin
+          title bar that used to sit here said. Not rendered outside the split, where the one
+          strip across the top does the job. */}
+      {showStrip && <WorkspaceTabBar ws={ws} apply={apply} side={side} />}
+      {/* While something is being dragged, every side that would take it is outlined, and
+          the one under the cursor says what the drop will do. Both ignore the pointer, so
+          they can never swallow the drop they are advertising. */}
+      {accepts && (
+        <div
+          aria-hidden
+          className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed ${
+            over ? "border-sdc-blue bg-sdc-blue/10" : "border-sdc-blue/30"
           }`}
         >
-          <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? "bg-sdc-blue" : "bg-sdc-gray-300"}`} />
-          <span className={`truncate text-label font-semibold ${isActive ? "text-sdc-navy" : "text-sdc-gray-600"}`}>
-            {label}
-          </span>
-          {isActive && (
-            // Says WHY the highlight matters, which an active-pane outline on its own
-            // never manages to communicate.
-            <span className="hidden whitespace-nowrap text-micro text-sdc-blue-dark sm:inline">· sidebar opens here</span>
+          {over && (
+            <span className="rounded bg-white/95 px-2.5 py-1 text-label font-semibold text-sdc-blue-dark shadow-sm">
+              {drag?.kind === "tab" ? "Move to this side" : "Open on this side"}
+            </span>
           )}
-        </header>
+        </div>
       )}
       {/* Each pane its own scroll container: scrolling Monthly ETC on the left must not
           move Job Details on the right. */}
