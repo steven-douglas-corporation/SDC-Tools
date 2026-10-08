@@ -147,6 +147,15 @@ const STORAGE_KEY = "sdc-etc-proc-state";
  */
 type PartsDateFilter = "purchase" | "invoice" | "req" | "exp" | "delivered";
 
+/** The table column each date mode reads, so the filtered column can be picked out. */
+const DATE_FILTER_COL: Record<PartsDateFilter, ColKey> = {
+  purchase: "purchased",
+  invoice: "invoiceddate",
+  req: "req",
+  exp: "exp",
+  delivered: "delivered",
+};
+
 type PersistedState = {
   tab: "assemblies" | "parts";
   view: "list" | "card";
@@ -1924,20 +1933,27 @@ function PartsListTab({
 
         <span className="mx-1 h-5 w-px bg-sdc-border" aria-hidden />
 
-        <Segmented
-          value={dateType}
-          onChange={(v) => setDateType(v as PartsDateFilter)}
-          options={[
-            { value: "purchase", label: "Purchase" },
-            { value: "invoice", label: "Invoiced" },
-            { value: "req", label: "Req Date" },
-            { value: "exp", label: "Exp Date" },
-            { value: "delivered", label: "Received" },
-          ]}
-        />
-        <input type="date" aria-label="From date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 rounded-md border border-sdc-border bg-white px-2 text-xs text-sdc-navy outline-none focus:border-sdc-blue" />
-        <span className="text-xs text-sdc-gray-400">to</span>
-        <input type="date" aria-label="To date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 rounded-md border border-sdc-border bg-white px-2 text-xs text-sdc-navy outline-none focus:border-sdc-blue" />
+        {/* The date filter is one unit (2026-10-08, by request): shrink-0 + nowrap keep
+            the mode, From and To on a single line — when the bar runs out of room the
+            whole group drops to the next line rather than splitting — and the tinted
+            background sets it apart from the other filters. -my-1 offsets the padding
+            so the group does not make the row taller. */}
+        <div className="-my-1 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md bg-sdc-gray-100 px-2 py-1">
+          <Segmented
+            value={dateType}
+            onChange={(v) => setDateType(v as PartsDateFilter)}
+            options={[
+              { value: "purchase", label: "Purchase" },
+              { value: "invoice", label: "Invoiced" },
+              { value: "req", label: "Req Date" },
+              { value: "exp", label: "Exp Date" },
+              { value: "delivered", label: "Received" },
+            ]}
+          />
+          <input type="date" aria-label="From date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 rounded-md border border-sdc-border bg-white px-2 text-xs text-sdc-navy outline-none focus:border-sdc-blue" />
+          <span className="text-xs text-sdc-gray-400">to</span>
+          <input type="date" aria-label="To date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 rounded-md border border-sdc-border bg-white px-2 text-xs text-sdc-navy outline-none focus:border-sdc-blue" />
+        </div>
 
         {filtersActive && (
           <button type="button" onClick={clearFilters} className="h-8 rounded-md border border-sdc-border bg-white px-3 text-xs font-medium text-sdc-navy hover:bg-sdc-blue-light">
@@ -2004,7 +2020,7 @@ function PartsListTab({
           No parts match the current filters.
         </p>
       ) : view === "list" ? (
-        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} scope={scope} setScope={setScope} drillKey={drill.key} expanded={expanded} toggleExpanded={toggleExpanded} onlyLeftToInvoice={onlyLeftToInvoice} />
+        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} scope={scope} setScope={setScope} drillKey={drill.key} expanded={expanded} toggleExpanded={toggleExpanded} onlyLeftToInvoice={onlyLeftToInvoice} filteredCol={from || to ? DATE_FILTER_COL[dateType] : null} />
       ) : (
         <PartsCardView parts={filtered} vendors={vendors} onCopy={onCopy} onOpenPo={onOpenPo} />
       )}
@@ -2125,6 +2141,7 @@ function PartsTableView({
   expanded,
   toggleExpanded,
   onlyLeftToInvoice,
+  filteredCol,
 }: {
   parts: FlatPart[];
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
@@ -2172,6 +2189,8 @@ function PartsTableView({
   toggleExpanded: (id: number) => void;
   /** Drives the auto-sort effect below and the PO sub-row filter in `displayRows`. */
   onlyLeftToInvoice: boolean;
+  /** The date column the From/To range is filtering on, tinted top to bottom; null when no range is set. */
+  filteredCol: ColKey | null;
 }) {
   const widthOf = (key: ColKey) => colWidths[key] ?? DEFAULT_COL_WIDTH[key];
   const totalWidth = cols.reduce((s, c) => s + widthOf(c.key), 0);
@@ -2386,7 +2405,11 @@ function PartsTableView({
           <thead className="sticky top-0 z-[2]">
             <tr className="bg-sdc-navy text-micro font-bold uppercase tracking-wider text-white">
               {cols.map((c) => (
-                <th key={c.key} title={c.title} className={`relative border-r border-white/15 px-2 py-1.5 font-bold ${c.align === "right" ? "text-right" : ""}`}>
+                <th
+                  key={c.key}
+                  title={filteredCol === c.key ? `${c.title ? `${c.title}\n` : ""}The date range is filtering on this column` : c.title}
+                  className={`relative border-r border-white/15 px-2 py-1.5 font-bold ${filteredCol === c.key ? "bg-sdc-blue" : ""} ${c.align === "right" ? "text-right" : ""}`}
+                >
                   {/* SortableColumnHeader, not SortableTh — this `<th>` already
                       carries its own title/border/resize-handle chrome, so the
                       shared component's non-`<th>` variant (built for exactly
@@ -2437,7 +2460,7 @@ function PartsTableView({
                     style={{ height: ROW_H }}
                     className="bg-sdc-gray-50 hover:bg-sdc-blue-light/40"
                   >
-                    <PartPoSubRowCells p={row.p} g={row.g} cols={cols} onOpenPo={onOpenPo} showPartIdentity={onlyLeftToInvoice} />
+                    <PartPoSubRowCells p={row.p} g={row.g} cols={cols} onOpenPo={onOpenPo} showPartIdentity={onlyLeftToInvoice} filteredCol={filteredCol} />
                   </tr>
                 );
               }
@@ -2472,6 +2495,7 @@ function PartsTableView({
                     onOpenPart={onOpenPart}
                     onCopy={onCopy}
                     expand={{ open: expanded.has(p.id), onToggle: () => toggleExpanded(p.id) }}
+                    filteredCol={filteredCol}
                   />
                 </tr>
               );
