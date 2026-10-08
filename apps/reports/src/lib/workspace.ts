@@ -492,6 +492,22 @@ export function sidebarClick(ws: Workspace, path: string, params: Record<string,
     const next = Object.keys(pickParams(p, params)).length > 0 ? setTabParams(ws, other, params) : ws;
     return activateTab(next, other);
   }
+  // ── An exclusive page that is open, but not in either pane (2026-10-08) ──────
+  //
+  // Re-routing the active pane to Monthly ETC while an ETC tab already exists would put
+  // two live ETC grids in one document, which is the one thing `isExclusive` exists to
+  // prevent (see openTab). The pane the user was working in gives up its slot to the
+  // ETC tab that is already open instead: the split stays, ETC stays single, and the tab
+  // that was in that slot is still in the strip. Its pane is already mounted, so this is
+  // a visibility change, not a render.
+  if (isExclusive(p)) {
+    const held = mostRecentInstance(ws, p);
+    if (held) {
+      const base = Object.keys(pickParams(p, params)).length > 0 ? setTabParams(ws, held, params) : ws;
+      const split = ws.split.left === target ? { ...ws.split, left: held } : { ...ws.split, right: held };
+      return { ...base, split, active: held, mru: touchMru(base, held) };
+    }
+  }
   return navigateTab(ws, target, p, params);
 }
 

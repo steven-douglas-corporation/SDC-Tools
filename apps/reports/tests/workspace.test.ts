@@ -899,6 +899,71 @@ test("split: a click that names a job re-points the pane AND carries the job", (
   assert.equal(tabById(next, ws.split!.right)?.params.jobs, "1148");
 });
 
+// ── Monthly ETC clicked while split (2026-10-08) ─────────────────────────────
+//
+// REPORTED: with a split open, pressing Monthly ETC in the sidebar filled the screen and
+// removed the split. useWorkspaceActions/useSplitNav refused the "ETC beside ETC" pairing
+// BEFORE asking sidebarClick, and a refusal there falls through to the <Link>'s own href:
+// /etc, full width, no workspace. sidebarClick already answers every one of these cases
+// without ever building the pairing, so the pre-check was only ever able to do harm.
+
+test("split: clicking ETC while ETC is the OTHER pane activates it and keeps the split", () => {
+  let ws = splitWorkspace(); // ETC (left, active) | Job Details (right)
+  ws = activateTab(ws, ws.split!.right); // now Job Details is the active pane
+  const next = sidebarClick(ws, "/etc");
+  assert.equal(next.active, ws.split!.left, "the ETC pane becomes the active one");
+  assert.deepEqual(next.split, ws.split, "the split is untouched");
+  assert.equal(next.tabs.length, 2);
+  assert.equal(needsRender(ws, next), false, "already mounted — a visibility change only");
+});
+
+test("split: ETC open as a tab OUTSIDE the split takes the active pane's slot — never a second grid", () => {
+  let ws = openTab(EMPTY_WORKSPACE, "/hours", {}, { newInstance: true });
+  ws = openTab(ws, "/job-hours", { jobs: "1101" }, { newInstance: true });
+  ws = openTab(ws, "/etc", { month: "2026-08" }, { newInstance: true });
+  const [hours, jobs, etc] = ws.tabs.map((t) => t.id);
+  ws = enterSplit(activateTab(ws, hours), jobs); // Hours | Job Details, ETC a third tab
+  const next = sidebarClick(ws, "/etc");
+  assert.equal(next.tabs.filter((t) => t.path === "/etc").length, 1, "exactly one ETC");
+  assert.equal(next.tabs.length, 3, "no tab was closed or added");
+  assert.deepEqual([next.split!.left, next.split!.right], [etc, jobs], "ETC replaced the active (left) pane's slot");
+  assert.equal(next.active, etc);
+  assert.equal(tabById(next, hours)?.path, "/hours", "the tab that gave up its slot is still open");
+  assert.equal(needsRender(ws, next), false, "the ETC pane was already mounted");
+});
+
+test("split: the same holds when the ACTIVE pane is the right one", () => {
+  let ws = openTab(EMPTY_WORKSPACE, "/hours", {}, { newInstance: true });
+  ws = openTab(ws, "/job-hours", { jobs: "1101" }, { newInstance: true });
+  ws = openTab(ws, "/etc", {}, { newInstance: true });
+  const [hours, jobs, etc] = ws.tabs.map((t) => t.id);
+  ws = activateTab(enterSplit(activateTab(ws, hours), jobs), jobs); // active = right
+  const next = sidebarClick(ws, "/etc");
+  assert.deepEqual([next.split!.left, next.split!.right], [hours, etc]);
+  assert.equal(next.active, etc);
+});
+
+test("split: clicking ETC with a month carries it onto the tab that is already open", () => {
+  let ws = openTab(EMPTY_WORKSPACE, "/hours", {}, { newInstance: true });
+  ws = openTab(ws, "/job-hours", {}, { newInstance: true });
+  ws = openTab(ws, "/etc", { month: "2026-08" }, { newInstance: true });
+  const [hours, jobs, etc] = ws.tabs.map((t) => t.id);
+  ws = enterSplit(activateTab(ws, hours), jobs);
+  const next = sidebarClick(ws, "/etc", { month: "2026-09" });
+  assert.equal(tabById(next, etc)?.params.month, "2026-09");
+});
+
+test("the sidebar no longer sends ETC-beside-ETC to a full-width link", () => {
+  const actions = readFileSync(join(process.cwd(), "src", "components", "useWorkspaceActions.ts"), "utf8");
+  const nav = readFileSync(join(process.cwd(), "src", "components", "useSplitNav.ts"), "utf8");
+  // The openExistingTab split branch and the workspace branch of hrefFor must go straight
+  // to sidebarClick; a pairingRefusal ahead of it is the bug.
+  const branch = actions.slice(actions.indexOf("if (workspace.split) {"), actions.indexOf("const next = openTab(workspace, path);"));
+  assert.doesNotMatch(branch, /pairingRefusal/);
+  const wsBranch = nav.slice(nav.indexOf("if (workspace) {"), nav.indexOf("if (!state) return href;"));
+  assert.doesNotMatch(wsBranch, /pairingRefusal/);
+});
+
 test("not split: sidebarClick IS openTab — resume or open, never a duplicate", () => {
   let ws = openTab(EMPTY_WORKSPACE, "/etc", {}, { newInstance: true });
   ws = openTab(ws, "/hours", {}, { newInstance: true });
