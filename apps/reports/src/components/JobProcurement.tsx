@@ -61,9 +61,16 @@ import type { ColumnType as SheetColumnType } from "@/lib/export/sheet";
 
 // Status filter options, in the order the multi-select checkbox list (and the
 // old single-select dropdown before it) presents them. Default selection is
-// every status except `hold` — "On hold" parts are real but usually not what
-// someone reviewing the buy-list wants to see by default; they can still turn
+// every status except `hold` and `noPO` — "On hold" parts are real but usually not
+// what someone reviewing the buy-list wants to see by default; they can still turn
 // it on.
+//
+// `noPO` is off for a different reason (2026-10-08, by request). An uncovered part has
+// nothing purchased against it yet, so it is not money owed — but its row still carries
+// the BOM's estimated Total $, and with the row visible people read it as part of the
+// accumulated total. It starts hidden, and is forced back off on every visit
+// (FORCED_OFF_STATUS_KEYS) rather than restored from storage; turning it on is
+// for the session you are in.
 const STATUS_FILTER_OPTIONS: { value: StatusKey; label: string }[] = [
   { value: "received", label: "Received" },
   { value: "ordered", label: "On order" },
@@ -75,7 +82,8 @@ const STATUS_FILTER_OPTIONS: { value: StatusKey; label: string }[] = [
   { value: "hold", label: "On hold" },
 ];
 const ALL_STATUS_KEYS: StatusKey[] = STATUS_FILTER_OPTIONS.map((o) => o.value);
-const DEFAULT_STATUS_KEYS: StatusKey[] = ALL_STATUS_KEYS.filter((k) => k !== "hold");
+const FORCED_OFF_STATUS_KEYS: StatusKey[] = ["noPO"];
+const DEFAULT_STATUS_KEYS: StatusKey[] = ALL_STATUS_KEYS.filter((k) => k !== "hold" && k !== "noPO");
 
 // Readiness bar color: green >= 90, amber >= 60, red below (matches the
 // Scheduler's _procBarColor threshold).
@@ -193,7 +201,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
   // An empty selection a user builds in front of themselves is still honoured; this is
   // the restore path only.
   const [status, setStatus] = useState<Set<StatusKey>>(
-    () => new Set(sanitizeStatusSelection(saved.status, ALL_STATUS_KEYS, DEFAULT_STATUS_KEYS)),
+    () => new Set(sanitizeStatusSelection(saved.status, ALL_STATUS_KEYS, DEFAULT_STATUS_KEYS, FORCED_OFF_STATUS_KEYS)),
   );
   // These three are persisted for the whole app rather than per job (one STORAGE_KEY),
   // so what is restored here may name a category/vendor the job in front of us has
@@ -1421,7 +1429,7 @@ function PartsListTab({
   const { toast } = useToast();
   const now = useStableNow();
   // "Active" for status means the selection differs from the default (every
-  // status except On Hold) — the same "not the neutral view" test every other
+  // status except No PO and On Hold) — the same "not the neutral view" test every other
   // filter here already applies against its own "all" baseline.
   // (filtersActive itself is computed below, once the three dropdown choices have been
   // resolved against the options that actually exist — an orphaned choice is not an
@@ -1757,7 +1765,7 @@ function PartsListTab({
     });
 
     const statusSummary = statusIsDefault
-      ? "Default (all except On Hold)"
+      ? "Default (all except No PO and On Hold)"
       : STATUS_FILTER_OPTIONS.filter((o) => status.has(o.value)).map((o) => o.label).join(", ") || "None selected";
     const scopeSummary =
       scope === "all" ? `All ${num(allParts.length)}` : scope === "bom" ? `BOM ${num(allParts.filter((p) => !p.nonBom).length)}` : `Non-BOM ${num(allParts.filter((p) => p.nonBom).length)}`;

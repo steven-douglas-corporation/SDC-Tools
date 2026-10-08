@@ -103,14 +103,21 @@ export function filterOptionValues(values: Iterable<string | null | undefined>):
  *
  * So this is for the restore path only. An empty set a user builds by unticking boxes
  * in front of them is their own doing and is left alone.
+ *
+ * `forcedOff` names statuses that must never come back from storage, however they
+ * were saved (the Parts List uses it for "Uncovered (no PO)", which readers took for
+ * part of the running total). They are dropped before the empty check, so a stored
+ * selection that was ONLY a forced-off status falls back rather than restoring empty.
  */
 export function sanitizeStatusSelection<T extends string>(
   stored: unknown,
   known: readonly T[],
   fallback: readonly T[],
+  forcedOff: readonly T[] = [],
 ): T[] {
   if (!Array.isArray(stored)) return [...fallback];
   const knownSet = new Set<string>(known);
-  const kept = [...new Set(stored.filter((k): k is T => typeof k === "string" && knownSet.has(k)))];
+  const offSet = new Set<string>(forcedOff);
+  const kept = [...new Set(stored.filter((k): k is T => typeof k === "string" && knownSet.has(k) && !offSet.has(k)))];
   return kept.length > 0 ? kept : [...fallback];
 }

@@ -87,6 +87,17 @@ test("a restored status selection cannot silently hide every BOM row", () => {
   assert.equal(fallback.length, known.length - 1);
 });
 
+test("a forced-off status never comes back from storage", () => {
+  const known = ["received", "ordered", "noPO", "hold"] as const;
+  const fallback = ["received", "ordered"] as const;
+  // Saved with it ticked: the rest of the selection is kept, it is not.
+  assert.deepEqual(sanitizeStatusSelection(["received", "noPO", "hold"], known, fallback, ["noPO"]), ["received", "hold"]);
+  // Saved as the ONLY status: nothing is left, so it falls back instead of restoring empty.
+  assert.deepEqual(sanitizeStatusSelection(["noPO"], known, fallback, ["noPO"]), [...fallback]);
+  // No forced-off list: unchanged behaviour.
+  assert.deepEqual(sanitizeStatusSelection(["received", "noPO"], known, fallback), ["received", "noPO"]);
+});
+
 test("the predicate and the <select> read the SAME resolved value", () => {
   // The actual fix, and the thing a future edit is most likely to undo. The defect was
   // not a wrong comparison — it was two places disagreeing about what the filter was,
