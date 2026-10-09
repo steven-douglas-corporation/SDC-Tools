@@ -20,7 +20,8 @@ const read = (...p: string[]) => readFileSync(join(process.cwd(), "src", ...p), 
 
 test("a two-pane split pins the workspace to the window, so each pane scrolls itself", () => {
   const shell = read("components", "WorkspaceShell.tsx");
-  assert.match(shell, /const independentScroll = split != null && !collapsed;/);
+  // Always on at /w (2026-10-09): the tab strip must stay put while a page scrolls.
+  assert.match(shell, /const independentScroll = true;/);
   assert.match(shell, /independentScroll \? "h-\[var\(--app-vh\)\] overflow-hidden" : "min-h-\[var\(--app-vh\)\]"/);
   // A pane that cannot shrink below its content would out-grow the pinned workspace.
   // (`relative` is the anchor for the drop-target outline, and changes nothing here.)

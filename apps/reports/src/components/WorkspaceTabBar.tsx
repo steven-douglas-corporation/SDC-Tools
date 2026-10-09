@@ -122,7 +122,10 @@ export function WorkspaceTabBar({
       // data-ws-strip: SplitDropOverlay starts its edge zones below this, so they never
       // sit over a strip that is itself a drop target.
       data-ws-strip
-      className={`flex h-9 shrink-0 items-stretch border-b bg-sdc-gray-50 ${
+      // sticky top-0: the strip stays on screen while the page scrolls. z-40 keeps it (and
+      // its z-30 dropdowns) above the sticky headers inside pages. In a split the panes
+      // scroll internally, so there it simply stays put as before.
+      className={`sticky top-0 z-40 flex h-11 shrink-0 items-stretch border-b bg-sdc-gray-50 ${
         ws.split && focused ? "border-sdc-blue/40" : "border-sdc-border"
       }`}
     >
@@ -208,7 +211,7 @@ export function WorkspaceTabBar({
                 setDragOver(null);
                 endDrag();
               }}
-              className={`motion-interactive group relative flex max-w-[220px] shrink-0 items-center gap-1.5 border-r border-sdc-border px-3 ${
+              className={`motion-interactive group relative flex max-w-[260px] shrink-0 items-center gap-1.5 border-r border-sdc-border px-3 ${
                 isActive ? "bg-background" : "bg-sdc-gray-50 hover:bg-white/60"
               } ${dragOver === id ? "border-l-2 border-l-sdc-blue" : ""}`}
             >
@@ -226,7 +229,7 @@ export function WorkspaceTabBar({
                   if (!isActive) go(activateTab(ws, id));
                 }}
                 title={tabTitle(ws, id, { detailed: true })}
-                className={`min-w-0 truncate py-1 text-label ${
+                className={`min-w-0 truncate py-1 text-sm ${
                   isActive ? "font-semibold text-sdc-navy" : "font-medium text-sdc-gray-600"
                 }`}
               >
@@ -350,7 +353,7 @@ function MenuItem({
       onClick={onClick}
       disabled={disabled}
       title={note}
-      className="motion-interactive block w-full px-3 py-1.5 text-left text-label text-sdc-gray-700 hover:bg-sdc-blue-light/40 hover:text-sdc-navy disabled:cursor-not-allowed disabled:text-sdc-gray-400 disabled:hover:bg-transparent"
+      className="motion-interactive block w-full px-3 py-1.5 text-left text-sm text-sdc-gray-700 hover:bg-sdc-blue-light/40 hover:text-sdc-navy disabled:cursor-not-allowed disabled:text-sdc-gray-400 disabled:hover:bg-transparent"
     >
       {children}
       {note && <span className="block truncate text-micro font-normal text-sdc-gray-400">{note}</span>}

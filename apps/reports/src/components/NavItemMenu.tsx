@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { TabId } from "@/lib/workspace";
 import type { TabInstance } from "@/components/useWorkspaceActions";
 
@@ -127,12 +128,17 @@ export function NavItemMenu({
   // action simply opens one.
   const choosable = instances.length > 1;
 
-  return (
+  // Portaled to <body>: the sidebar is `sticky z-20`, which makes it a stacking context, so
+  // a menu rendered inside it could never paint above a page's sticky table headers
+  // (Monthly ETC, Job Details, Hours...). At body level z-[100] wins over all of them.
+  // Only ever rendered after a click, so `document` always exists — no mount gate needed,
+  // and the measuring layout effect above still finds its ref on the first commit.
+  return createPortal(
     <div
       ref={ref}
       role="menu"
       aria-label={`${anchor.label} options`}
-      className="fixed z-50 min-w-[14rem] max-w-[18rem] overflow-hidden rounded-md border border-sdc-border bg-white py-1 shadow-lg"
+      className="fixed z-[100] min-w-[14rem] max-w-[18rem] overflow-hidden rounded-md border border-sdc-border bg-white py-1 shadow-lg"
       // Rendered off-screen for the one frame before it is measured, rather than at 0,0
       // where it would flash in the corner.
       style={pos ?? { left: -9999, top: 0 }}
@@ -205,7 +211,8 @@ export function NavItemMenu({
           <MenuItem onSelect={() => setStep("root")}>Back</MenuItem>
         </>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
