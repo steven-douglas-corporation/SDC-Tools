@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 import { INPUT } from "@/components/ui/classnames";
+import { useJobSwitch } from "@/components/JobSwitch";
 import { groupSelectionState, nextSelectionForGroup } from "@/lib/job-select-groups";
 import {
   JOB_HOURS_SELECTION_COOKIE,
@@ -49,11 +50,16 @@ function groupRank(name: string): [number, string] {
   return [1, name.toLowerCase()];
 }
 
-export function JobSelect({ jobs, selected }: { jobs: JobOpt[]; selected: string[] }) {
+export function JobSelect({ jobs, selected: serverSelected }: { jobs: JobOpt[]; selected: string[] }) {
   // Pane-aware (2026-09-14): inside a workspace tab, picking a job used to push
   // `jobs=` bare at "/w", which decodes to no tabs at all. usePaneUrl writes this
   // tab's own `jobs` and leaves every other tab alone.
   const url = usePaneUrl();
+  // Selecting is decoupled from loading (components/JobSwitch.tsx): the picker shows
+  // the click's selection immediately and the page loads behind it. `serverSelected`
+  // is what the page last rendered; without a provider it is all there is.
+  const sw = useJobSwitch();
+  const selected = sw?.selected ?? serverSelected;
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [query, setQuery] = useState("");
 
@@ -171,7 +177,9 @@ export function JobSelect({ jobs, selected }: { jobs: JobOpt[]; selected: string
     rememberJobHoursSelection(next);
     const q = qs.toString();
     notePendingParams(currentQs, q);
-    url.push(qs, { scroll: false });
+    const commit = () => url.push(qs, { scroll: false });
+    if (sw) sw.select(next, commit);
+    else commit();
   }
 
   // Add or remove one job, keeping the order the list is shown in so the chips
@@ -217,6 +225,14 @@ export function JobSelect({ jobs, selected }: { jobs: JobOpt[]; selected: string
     <details ref={detailsRef} className="group relative inline-block">
       <summary className="flex w-72 cursor-pointer list-none items-center justify-between gap-2 rounded-md border border-sdc-border bg-white px-3 py-2 text-sm font-medium text-sdc-navy shadow-sm hover:bg-sdc-blue-light">
         <span className="truncate">{summary}</span>
+        {/* Shown only once a load outlasts the shared loading delay (the wrapper
+            fades in; the inner ring spins — two elements because both use
+            `animation`). The page below dims at the same moment. */}
+        {sw?.pending && (
+          <span aria-hidden="true" className="motion-loading-reveal ml-auto shrink-0">
+            <span className="block h-3 w-3 animate-spin rounded-full border-2 border-sdc-border border-t-sdc-blue" />
+          </span>
+        )}
         <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0 opacity-70 motion-interactive group-open:rotate-180">
           <path d="M3.5 6 L8 10.5 L12.5 6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>

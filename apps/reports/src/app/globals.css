@@ -1206,6 +1206,18 @@ table[data-grid] textarea:disabled {
   opacity: 0;
   animation: motion-reveal var(--motion-panel) var(--ease-out) var(--motion-loading-delay) forwards;
 }
+/* The outgoing content while a selection is loading (Job Details job picker): the
+ * mirror image of motion-loading-reveal, with the same delay, so a switch that lands
+ * inside it never dims at all. Holds the old figures on screen, de-emphasised,
+ * instead of blanking them. */
+@keyframes motion-dim {
+  to {
+    opacity: 0.55;
+  }
+}
+.motion-pending-dim {
+  animation: motion-dim var(--motion-panel) var(--ease-out) var(--motion-loading-delay) forwards;
+}
 /* Skeleton blocks. Opacity only — a shimmer built from a moving gradient repaints
  * its whole box every frame, which is the CPU cost §36.9 warns about, on the one
  * screen where the main thread is already busy rendering the incoming route. */
