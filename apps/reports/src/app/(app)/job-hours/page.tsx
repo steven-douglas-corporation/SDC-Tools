@@ -3,6 +3,10 @@ import { PAGE_SHELL, card } from "@/components/ui/classnames";
 import { JobHoursDashboard } from "@/components/JobHoursDashboard";
 import { IndicatorCard } from "@/components/charts/IndicatorCard";
 import { JobSelect } from "@/components/JobSelect";
+import { JobSwitchProvider, JobSwitchBody } from "@/components/JobSwitch";
+import { ProcurementSkeleton } from "@/components/JobDetailsSkeletons";
+import { Suspense } from "react";
+import type { JobHoursDashboardParts } from "@/components/JobHoursDashboard";
 import { listDashboardJobs, getJobHoursDashboard, defaultDashboardJobId } from "@/lib/job-hours-dashboard";
 import { getPartsCostFinancials, type PartsCostFinancials } from "@/lib/parts-cost-financials";
 import { SchedulerJobLink } from "@/components/SchedulerJobLink";
@@ -82,11 +86,14 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
   // MySQL (populated by the hours sync), so it costs one indexed query and can't
   // disagree with the section totals above it. Empty when nothing's ingested yet
   // — the panel says so rather than looking broken.
-  const hoursDetail = data ? await getJobHoursDetail(data.jobRefs.map((r) => r.id)) : EMPTY_HOURS_DETAIL;
+  //
+  // STARTED here, awaited below with the Scheduler lookup (2026-10-09): the two used
+  // to run back to back, and neither needs the other.
+  const hoursDetailPromise = data ? getJobHoursDetail(data.jobRefs.map((r) => r.id)) : Promise.resolve(EMPTY_HOURS_DETAIL);
 
   // "Open in Scheduler" icon target + which jobs have a Scheduler project
   // (fail-soft empty set when its DB isn't configured).
-  const { baseUrl: schedulerBaseUrl, jobNumbers: schedulerJobNumbers, ssoEmail: schedulerSsoEmail } = await getSchedulerLinkContext();
+  const schedulerPromise = getSchedulerLinkContext();
 
   // Parts lines — live from TotalETO — aggregated across every selected job.
   // Feeds the Parts Cost card, and (single job only) the Procurement Parts List.
@@ -142,21 +149,32 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
   // month for these jobs" query job-hours-dashboard.ts's own `latestEtcMonth`
   // already runs (identical where/orderBy/select), so this reproduces
   // `data.kpis.latestEtcMonth` exactly.
-  const partsPromise: Promise<PartsCostFinancials> =
+  //
+  // ── STREAMED, not awaited (2026-10-09) ────────────────────────────────────
+  //
+  // Both reads are STARTED here and handed on as promises; nothing below awaits them.
+  // The page used to `await Promise.all` them before returning, so choosing a job
+  // waited on TotalETO (1–3s healthy, minutes degraded) before the hours charts —
+  // plain app-database reads — could appear. Now the hours, header and punch table
+  // render as soon as MySQL answers, and Parts Cost and Procurement fill in behind
+  // skeletons when their reads settle. Neither promise can reject (each is caught
+  // below), so an abandoned one — a job switched away from mid-load — cannot raise
+  // an unhandled rejection.
+  //
+  // null = "we asked and could not get it" OR "nothing was asked for"; the two are told
+  // apart by `partsCapped` / `singleJobId`, exactly as the two renders always did.
+  const financialsPromise: Promise<PartsCostFinancials | null> =
     data && !partsCapped
-      ? getPartsCostFinancials(data.jobRefs.map((r) => r.id))
-      : Promise.resolve({
-          budget: null, invoiced: 0, leftToInvoice: 0, etc: null, totalSpent: 0,
-          projection: 0, billedNotPosted: 0,
-          // Nothing selected, so there is nothing to project. `etcUnknown: true`
-          // rather than false: there is no prior ETC to report here, and claiming one
-          // of 0 would be a forecast nobody made.
-          purchased: 0, priorEtc: null, priorEtcSource: "none", partsSpentThisMonth: 0,
-          adjustedEtcRaw: null, adjustedEtc: 0, openBalance: 0, externalOpen: 0,
-          inHouseExcluded: 0, inHouseRows: 0, additionalExposure: 0, coverageLine: null,
-          etcUnknown: true, etcMonth: null,
-          variance: null, variancePct: null, failedJobs: 0, lineCount: 0, lines: [],
-        });
+      ? getPartsCostFinancials(data.jobRefs.map((r) => r.id)).then(
+          // Every job failed: show nothing rather than a confident set of $0 bars —
+          // same rule the old inline computation used (`failedJobs === jobRefs.length`).
+          (f) => (f.failedJobs === data.jobRefs.length && data.jobRefs.length > 0 ? null : f),
+          (e) => {
+            console.error("getPartsCostFinancials failed:", e);
+            return null;
+          },
+        )
+      : Promise.resolve(null);
 
   // Job Cost — the BOM cost hierarchy (formerly its own page) now lives below
   // Parts Cost here. It's a per-single-job view, so only load it when exactly
@@ -168,14 +186,21 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
         )
       : Promise.resolve(null);
 
-  const [financials, bom] = await Promise.all([partsPromise, bomPromise]);
-  // Every job failed: show nothing rather than a confident set of $0 bars —
-  // same rule the old inline computation used (`failedJobs === jobRefs.length`).
-  const partsUnavailable = !!data && financials.failedJobs === data.jobRefs.length && data.jobRefs.length > 0;
-  const parts = partsUnavailable ? null : financials;
-  // Distinguishes "we asked and could not get it" from "there is nothing to ask for",
-  // which is what decides between the warning EmptyState and the plain one below.
-  const bomFailed = !!(data && singleJobId) && bom == null;
+  // What the dashboard's Parts Cost slot reads. Null (no slot) when the selection is
+  // capped — nothing was asked for, and the capped note below says so.
+  const dashboardPartsPromise: Promise<JobHoursDashboardParts | null> | null =
+    data && !partsCapped
+      ? financialsPromise.then((f) => (f ? { financials: f, jobCount: data.jobRefs.length } : null))
+      : null;
+  // Re-keys the two Suspense boundaries below per selection. Without it a boundary that
+  // is already showing the previous job's content would, inside the navigation's
+  // transition, HOLD that content (and the whole new page with it) until its promise
+  // settled — i.e. the old behaviour. A new key is a new boundary, which paints its
+  // skeleton in the same commit as the hours.
+  const selectionKey = selectedJobIds.join(",");
+
+  const [hoursDetail, schedulerLink] = await Promise.all([hoursDetailPromise, schedulerPromise]);
+  const { baseUrl: schedulerBaseUrl, jobNumbers: schedulerJobNumbers, ssoEmail: schedulerSsoEmail } = schedulerLink;
 
   // ── Which Standard Fees sections this role may see (2026-09-02) ───────────
   //
@@ -201,6 +226,10 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
 
   return (
     <div className={PAGE_SHELL}>
+      {/* Picking a job and loading it are separate steps: the picker answers the
+          click at once and JobSwitchBody dims the previous job's figures until the new
+          ones land. See components/JobSwitch.tsx. */}
+      <JobSwitchProvider selected={selectedJobIds}>
       <div className="mb-1 flex flex-wrap items-end justify-between gap-4">
         <PageTitle>Job Details</PageTitle>
         <div className="flex items-center gap-2">
@@ -214,6 +243,7 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
         Quoted vs actual vs estimate-to-complete hours by section and billing group, per job.
       </p>
 
+      <JobSwitchBody>
       {data ? (
         <>
           {/* Header row (§57): the project-title card and the two summary
@@ -274,26 +304,18 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
             // none of the three grants, which is what every role got before — see
             // the note where this is computed.
             allowedPoolCodes={allowedPoolCodes}
-            // `partsCapped` forces null rather than passing the all-zero stub
-            // below. That stub used to reach the card, which then rendered
-            // Invoiced $0 / Left to invoice $0 / Spent $0 with the explanation
-            // relegated to a note underneath — indistinguishable from "this
-            // selection genuinely bought nothing", and read (reasonably) as
-            // broken aggregation. A number nobody computed must not be shown at
-            // all.
-            parts={parts && !partsCapped ? { financials: parts, jobCount: data.jobRefs.length } : null}
+            // A promise, so the hours render without waiting on Total ETO (see where
+            // it is made). Null when the selection is CAPPED: nothing was computed, and
+            // a number nobody computed must not be shown at all — a stub of $0s used to
+            // reach the card there and read as "this selection bought nothing". The
+            // "Total ETO unreachable" message lives in the card's own slot now.
+            parts={dashboardPartsPromise}
           />
 
           {partsCapped && (
             <p className="mt-6 rounded-lg border border-sdc-border bg-sdc-gray-50 px-4 py-3 text-sm text-sdc-gray-600">
               Parts Cost is hidden for selections above 100 jobs — the figures come from one live Total ETO call per job, and a
               selection this size would hammer it for a total nobody reads per job anyway. Narrow the selection to see parts dollars.
-            </p>
-          )}
-          {!partsCapped && !parts && (
-            <p className="mt-6 rounded-lg border border-sdc-yellow bg-sdc-yellow-bg px-4 py-3 text-sm text-sdc-yellow-text">
-              Parts Cost is unavailable — Total ETO couldn&apos;t be reached for {data.jobRefs.length === 1 ? "this job" : "any of the selected jobs"}.
-              This is usually a brief upstream hiccup; the hours above are unaffected.
             </p>
           )}
 
@@ -322,16 +344,12 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
             </p>
             {!singleJobId ? (
               <EmptyState title="Select a single job" message="Procurement is per job — pick one job above to see its assemblies and parts list." />
-            ) : bomFailed ? (
-              <EmptyState
-                tone="warning"
-                title="Procurement is temporarily unavailable"
-                message="The BOM couldn't be loaded from Total ETO / Power BI right now. This is usually a brief upstream hiccup — try again in a moment, or run Sync from the Dashboard."
-              />
-            ) : bom && bom.roots.length ? (
-              <JobProcurement bom={bom} partsLines={parts?.lines ?? []} />
             ) : (
-              <EmptyState title="No BOM found for this job" message="This job has no assembly/part records in Total ETO." />
+              // The heading above is on screen at once; only the Total ETO-backed body
+              // streams in. Keyed by selection — see `selectionKey`.
+              <Suspense key={selectionKey} fallback={<ProcurementSkeleton />}>
+                <ProcurementBody bomPromise={bomPromise} financialsPromise={financialsPromise} />
+              </Suspense>
             )}
           </div>
           )}
@@ -346,8 +364,38 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
           />
         </div>
       )}
+      </JobSwitchBody>
+      </JobSwitchProvider>
     </div>
   );
+}
+
+// The Procurement drawer's body — a separate async server component so the page can
+// return (and paint the hours) while the Total ETO BOM is still being read. It waits for
+// Parts Cost as well because the Parts List needs `financials.lines`; both reads were
+// already running, so this is the same wait the page used to take up front, moved off the
+// critical path rather than lengthened.
+async function ProcurementBody({
+  bomPromise,
+  financialsPromise,
+}: {
+  bomPromise: Promise<JobBom | null>;
+  financialsPromise: Promise<PartsCostFinancials | null>;
+}) {
+  const [bom, parts] = await Promise.all([bomPromise, financialsPromise]);
+  // Distinguishes "we asked and could not get it" from "there is nothing to ask for",
+  // which is what decides between the warning EmptyState and the plain one.
+  if (bom == null) {
+    return (
+      <EmptyState
+        tone="warning"
+        title="Procurement is temporarily unavailable"
+        message="The BOM couldn't be loaded from Total ETO / Power BI right now. This is usually a brief upstream hiccup — try again in a moment, or run Sync from the Dashboard."
+      />
+    );
+  }
+  if (bom.roots.length) return <JobProcurement bom={bom} partsLines={parts?.lines ?? []} />;
+  return <EmptyState title="No BOM found for this job" message="This job has no assembly/part records in Total ETO." />;
 }
 
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, use, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { card } from "@/components/ui/classnames";
+import { PartsCostSkeleton } from "@/components/JobDetailsSkeletons";
 import { abbreviateLabel } from "@/lib/abbrev";
 import { SERIES } from "@/components/charts/theme";
 import type { JobHoursDashboard as DashData, HoursType } from "@/lib/job-hours-dashboard";
@@ -27,13 +28,34 @@ const DEFAULT_HIDDEN_PHASES = [WARRANTY_PHASE, OFF_GRID_PHASE, UNMAPPED_PHASE];
 
 // The Parts Cost bullet bar (§52) joins the two hours charts in one row, so
 // its inputs travel as one prop rather than a second top-level component the
-// page has to lay out itself. Null when Parts Cost has nothing to show
-// (Total ETO unreachable, or the selection is capped) — the row then falls
-// back to its original two-column ratio instead of leaving an empty third cell.
+// page has to lay out itself.
+//
+// It arrives as a PROMISE (2026-10-09): Parts Cost is a live Total ETO read, and
+// it used to be awaited by the page before anything rendered, so the hours charts —
+// which come from the app's own database in ~30ms — waited on it. The page now
+// starts the read and streams it in; the hours render at once and this card's slot
+// shows a skeleton until the promise settles. The promise resolves to null when
+// Parts Cost has nothing to show because Total ETO was unreachable; the slot then
+// says so. The prop itself is null when the selection is capped (nothing was asked
+// for), and the row falls back to its original two-column ratio.
 export type JobHoursDashboardParts = {
   financials: PartsCostFinancials;
   jobCount: number;
 };
+
+// Reads the streamed Parts Cost and hands it to a render callback. A tiny component
+// of its own because `use()` suspends the component that calls it: this keeps the
+// suspension local to the Parts Cost slot (and to the drill below the row) instead
+// of blanking the whole dashboard.
+function ResolvedParts({
+  promise,
+  children,
+}: {
+  promise: Promise<JobHoursDashboardParts | null>;
+  children: (parts: JobHoursDashboardParts | null) => ReactNode;
+}) {
+  return <>{children(use(promise))}</>;
+}
 
 // Web recreation of the Power BI "Job Detail" dashboard (hours half). The Hours
 // Type toggle (Quoted / ETC) swaps the planned-basis series across the matrix
@@ -187,12 +209,12 @@ function groupRuns<T>(rows: T[], keyOf: (r: T) => string, labelOf: (r: T) => str
 export function JobHoursDashboard({
   data,
   hoursDetail,
-  parts = null,
+  parts: partsPromise = null,
   allowedPoolCodes = [],
 }: {
   data: DashData;
   hoursDetail: JobHoursDetailData;
-  parts?: JobHoursDashboardParts | null;
+  parts?: Promise<JobHoursDashboardParts | null> | null;
   /**
    * Standard Fees section codes the signed-in role may see, resolved server-side
    * from the same permission the Quoted page uses. Defaults to none, so a caller
@@ -481,7 +503,7 @@ export function JobHoursDashboard({
           overlap. See that card's own root-div comment. */}
       <div
         className={`grid grid-cols-1 gap-3 ${drillRow ? "items-start" : "items-stretch"} ${
-          parts ? "lg:grid-cols-[17fr_3fr]" : ""
+          partsPromise ? "lg:grid-cols-[17fr_3fr]" : ""
         }`}
       >
         <div className={`${card("p-4")} flex h-full min-w-0 flex-col`}>
@@ -539,35 +561,68 @@ export function JobHoursDashboard({
             </>
           )}
         </div>
-        {parts && (
-          <PartsCostSummary
-            financials={parts.financials}
-            jobCount={parts.jobCount}
-            onDrill={setPartsDrill}
-            drillMode={partsDrill}
-          />
+        {partsPromise && (
+          // Keyed by the jobs in play: a boundary already showing the previous job's
+          // card would otherwise hold it, and the new hours with it, until this
+          // promise settled — which is the wait this boundary exists to remove.
+          <Suspense key={data.jobRefs.map((j) => j.id).join(",")} fallback={<PartsCostSkeleton />}>
+            <ResolvedParts promise={partsPromise}>
+              {(parts) =>
+                parts ? (
+                  <PartsCostSummary
+                    financials={parts.financials}
+                    jobCount={parts.jobCount}
+                    onDrill={setPartsDrill}
+                    drillMode={partsDrill}
+                  />
+                ) : (
+                  // Total ETO could not be reached. Said in the slot itself (this
+                  // used to be a separate note under the row) because the slot is
+                  // now reserved before the answer is known, and an empty third
+                  // cell would read as "nothing bought" rather than "could not ask".
+                  <div className={`${card("p-4")} h-full border-sdc-yellow bg-sdc-yellow-bg text-sdc-yellow-text`}>
+                    <p className="text-xs font-semibold">Parts Cost unavailable</p>
+                    <p className="mt-1 text-note">
+                      Total ETO couldn&apos;t be reached. Usually a brief upstream hiccup — the hours are unaffected.
+                    </p>
+                  </div>
+                )
+              }
+            </ResolvedParts>
+          </Suspense>
         )}
       </div>
       {/* Full width, below the row — the detail table has eleven columns and the card
           that opens it is the narrow one. Rendered as a sibling of the row rather than
           inside the card, so opening it cannot resize either chart above it (§54.5's
           reason for `items-start` while a drill is open). */}
-      {parts && partsDrill && (
-        <PartsCostDrill
-          financials={parts.financials}
-          mode={partsDrill}
-          // The same jobs the card's money covers, so the ETC history cannot be
-          // scoped differently from the figure it explains.
-          jobIds={data.jobRefs.map((j) => j.id)}
-          jobLabel={
-            parts.jobCount > 1
-              ? `${parts.jobCount} selected jobs`
-              : `${data.job.jobId} — ${data.job.jobName}`
-          }
-          onModeChange={setPartsDrill}
-          onClose={() => setPartsDrill(null)}
-          className="mt-3"
-        />
+      {/* Only ever open after the card above has rendered, i.e. the promise has
+          settled, so this suspends for no time at all — the boundary is there because
+          `use()` requires one, not to show a fallback. */}
+      {partsPromise && partsDrill && (
+        <Suspense key={data.jobRefs.map((j) => j.id).join(",")} fallback={null}>
+          <ResolvedParts promise={partsPromise}>
+            {(parts) =>
+              parts && partsDrill && (
+                <PartsCostDrill
+                  financials={parts.financials}
+                  mode={partsDrill}
+                  // The same jobs the card's money covers, so the ETC history cannot be
+                  // scoped differently from the figure it explains.
+                  jobIds={data.jobRefs.map((j) => j.id)}
+                  jobLabel={
+                    parts.jobCount > 1
+                      ? `${parts.jobCount} selected jobs`
+                      : `${data.job.jobId} — ${data.job.jobName}`
+                  }
+                  onModeChange={setPartsDrill}
+                  onClose={() => setPartsDrill(null)}
+                  className="mt-3"
+                />
+              )
+            }
+          </ResolvedParts>
+        </Suspense>
       )}
       </>
       )}
