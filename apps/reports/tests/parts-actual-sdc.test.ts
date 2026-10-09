@@ -126,10 +126,11 @@ test("the export adds the four excl. SDC columns after Parts Cost Remaining, and
   ].map((s) => src.indexOf(s));
   assert.ok(order.every((n) => n > 0), "every new header is present");
   assert.deepEqual([...order].sort((a, b) => a - b), order, "in reading order");
-  // Fixed columns are indexes 0-17 now; the per-section running index starts at 18, or
-  // every section total would land one block too early.
-  assert.match(src, /let i = 18;/);
-  assert.match(src, /addTotal\(14, sdcBilled\);[\s\S]*addTotal\(15, costActualExcl\);[\s\S]*addTotal\(16, costRemainingExcl\);/);
+  // Fixed columns are indexes 0-19 now (Quoted Delivery and Weeks to Delivery sit after Start Date,
+  // 2026-10-09); the per-section running index starts at 20, or every section total would
+  // land one block too early.
+  assert.match(src, /let i = 20;/);
+  assert.match(src, /addTotal\(16, sdcBilled\);[\s\S]*addTotal\(17, costActualExcl\);[\s\S]*addTotal\(18, costRemainingExcl\);/);
   // The unqualified existing headers must survive, byte for byte.
   assert.match(src, /\{ header: `Parts Cost Actual \(GL-posted\$\{through\}\)`, type: "currency" \}/);
 });

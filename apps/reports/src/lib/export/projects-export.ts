@@ -6,6 +6,7 @@ import { loadActualHoursBySection } from "@/lib/actual-hours";
 import { getPartsActualSdcSplitByJob } from "@/lib/sync-totaleto";
 import type { PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
 import { round2 } from "@/lib/etc";
+import { deliveryWeeks } from "@/lib/delivery-weeks";
 import type { CellValue, SheetColumn, SheetSpec } from "@/lib/export/sheet";
 
 // ── The Projects grid, as a spreadsheet (§24.3) ───────────────────────────────
@@ -107,6 +108,8 @@ export async function buildProjectsExport(
     { header: "Status", type: "text", width: 12 },
     { header: "Billable", type: "text", width: 12 },
     { header: "Start Date", type: "date" },
+    { header: "Quoted Delivery", type: "date" },
+    { header: "Weeks to Delivery", type: "number" },
     { header: "Complete Date", type: "date" },
     { header: "Quoted Hours (total)", type: "hours", width: 14 },
     { header: `Actual Hours (total${through})`, type: "hours", width: 14 },
@@ -213,6 +216,8 @@ export async function buildProjectsExport(
       // Non-Billable whatever the stored flag says.
       job.billable && !isSdcCustomer(job.customer) ? "Billable" : "Non-Billable",
       job.startDate ?? null,
+      job.quotedDeliveryDate ?? null,
+      deliveryWeeks(job.startDate?.toISOString().slice(0, 10), job.quotedDeliveryDate?.toISOString().slice(0, 10)),
       job.completeDate ?? null,
       quotedTotal,
       actualTotal,
@@ -228,18 +233,19 @@ export async function buildProjectsExport(
       exclBasis,
     ];
     // Fixed-column totals.
-    addTotal(8, quotedTotal);
-    addTotal(9, actualTotal);
-    addTotal(10, quotedTotal - actualTotal);
-    addTotal(11, costQuoted);
-    addTotal(12, costActualShown);
-    addTotal(13, costQuoted === null ? null : costQuoted - (costActualShown ?? 0));
-    addTotal(14, sdcBilled);
-    addTotal(15, costActualExcl);
-    addTotal(16, costRemainingExcl);
+    addTotal(10, quotedTotal);
+    addTotal(11, actualTotal);
+    addTotal(12, quotedTotal - actualTotal);
+    addTotal(13, costQuoted);
+    addTotal(14, costActualShown);
+    addTotal(15, costQuoted === null ? null : costQuoted - (costActualShown ?? 0));
+    addTotal(16, sdcBilled);
+    addTotal(17, costActualExcl);
+    addTotal(18, costRemainingExcl);
 
-    // 18, not 14: the four excl. SDC columns above (14-17) sit before the section columns.
-    let i = 18;
+    // 20, not 14: the four excl. SDC columns above (16-19, after the two delivery columns) sit
+    // before the section columns.
+    let i = 20;
     for (const s of SECTIONS) {
       if (s.code === PARTS_COST_SECTION) continue;
       const q = quotedBySection.get(s.code) ?? 0;

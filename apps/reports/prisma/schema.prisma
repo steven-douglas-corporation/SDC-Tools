@@ -203,6 +203,9 @@ model Job {
   poStartDate              DateTime?
   startDate                DateTime? // confirmed from "Estimated Hours" tab — distinct from poStartDate
   completeDate             DateTime?
+  // Quoted delivery date. The Projects grid derives "Weeks to Delivery" from startDate and this
+  // (lib/delivery-weeks.ts) — only the date is stored, so the two cannot drift.
+  quotedDeliveryDate       DateTime?
   includeInTypeCalc        Boolean   @default(false)
   billable                 Boolean   @default(true) // Billable vs. Non-Billable — manager-set, no upstream sync touches this
   // Drops the job from the Standard Fees allocation (Total ETC pool share)

@@ -17,6 +17,8 @@ import { ProjectsDateFilter } from "@/components/ProjectsDateFilter";
 import { ProjectsAutosave } from "@/components/ProjectsAutosave";
 import { ProjectsLiveTotals } from "@/components/ProjectsLiveTotals";
 import { ProjectsRemoteCells } from "@/components/ProjectsRemoteCells";
+import { ProjectsDeliveryWeeks } from "@/components/ProjectsDeliveryWeeks";
+import { deliveryWeeks, formatWeeks } from "@/lib/delivery-weeks";
 import { ProjectsSectionsMenu } from "@/components/ProjectsSectionsMenu";
 import { ProjectsGridView } from "@/components/ProjectsGridView";
 import { PROJECTS_INFO_COLUMNS } from "@/lib/projects-view";
@@ -694,6 +696,7 @@ export async function ProjectsView({ params }: { params: {
           could not update a cell that had ever been typed in — see
           ProjectsRemoteCells for both halves of that. */}
       <ProjectsRemoteCells />
+      <ProjectsDeliveryWeeks />
       {/* ONE right-click menu for the whole grid — see JobCellMenuHost. It used
           to be a client component per Job cell, 2 per row. It also serves the hours
           cells: right-click one for the Hours tab filtered to that job and column. */}
@@ -816,6 +819,42 @@ export async function ProjectsView({ params }: { params: {
                   <div
                     className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
                     data-resize-var="--startdate-col-width"
+                    data-resize-min="65"
+                    data-resize-max="300"
+                    title="Drag to resize"
+                    style={{ touchAction: "none" }}
+                  />
+                </th>
+              )}
+              {show("quotedDelivery") && (
+                <th data-col="quotedDelivery"
+                  rowSpan={3}
+                  style={{ width: "var(--quoteddelivery-col-width, 92px)", minWidth: "var(--quoteddelivery-col-width, 92px)" }}
+                  className="relative px-1 py-2 align-bottom"
+                  title="The delivery date quoted to the customer"
+                >
+                  Quoted<br />Delivery
+                  <div
+                    className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
+                    data-resize-var="--quoteddelivery-col-width"
+                    data-resize-min="60"
+                    data-resize-max="300"
+                    title="Drag to resize"
+                    style={{ touchAction: "none" }}
+                  />
+                </th>
+              )}
+              {show("deliveryWeeks") && (
+                <th data-col="deliveryWeeks"
+                  rowSpan={3}
+                  style={{ width: "var(--deliveryweeks-col-width, 84px)", minWidth: "var(--deliveryweeks-col-width, 84px)" }}
+                  className="relative px-1 py-2 align-bottom"
+                  title="Weeks from the Start Date to the Quoted Delivery (calculated)"
+                >
+                  Weeks to<br />Delivery
+                  <div
+                    className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
+                    data-resize-var="--deliveryweeks-col-width"
                     data-resize-min="65"
                     data-resize-max="300"
                     title="Drag to resize"
@@ -1171,6 +1210,29 @@ export async function ProjectsView({ params }: { params: {
                           ariaLabel: `Start Date, ${job.jobName}`,
                         })}
                       />
+                    </td>
+                  )}
+                  {show("quotedDelivery") && (
+                    <td data-col="quotedDelivery"
+                      style={{ width: "var(--quoteddelivery-col-width, 92px)", minWidth: "var(--quoteddelivery-col-width, 92px)", maxWidth: "var(--quoteddelivery-col-width, 92px)" }}
+                      className="overflow-hidden whitespace-nowrap px-1 py-1.5 text-left align-middle text-label text-sdc-muted"
+                    >
+                      <input
+                        {...dateCellProps({
+                          name: `jobField__${job.id}__quotedDeliveryDate`,
+                          defaultValue: dateInputValue(job.quotedDeliveryDate),
+                          ariaLabel: `Quoted Delivery, ${job.jobName}`,
+                        })}
+                      />
+                    </td>
+                  )}
+                  {show("deliveryWeeks") && (
+                    <td data-col="deliveryWeeks" data-weeks-cell=""
+                      style={{ width: "var(--deliveryweeks-col-width, 84px)", minWidth: "var(--deliveryweeks-col-width, 84px)", maxWidth: "var(--deliveryweeks-col-width, 84px)" }}
+                      className="overflow-hidden whitespace-nowrap px-1 py-1.5 text-center align-middle font-mono text-label text-sdc-gray-600"
+                      title="Weeks from the Start Date to the Quoted Delivery"
+                    >
+                      {formatWeeks(deliveryWeeks(dateInputValue(job.startDate), dateInputValue(job.quotedDeliveryDate)))}
                     </td>
                   )}
                   {show("completeDate") && (

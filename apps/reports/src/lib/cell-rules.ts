@@ -436,6 +436,30 @@ export const CELL_SPECS = {
     allowNegative: false,
     decimals: 0,
   },
+  "projects.quotedDeliveryDate": {
+    id: "projects.quotedDeliveryDate",
+    tab: "Projects",
+    label: "Quoted Delivery",
+    kind: "date",
+    editable: true,
+    allowBlank: true,
+    allowZero: true,
+    allowNegative: false,
+    decimals: 0,
+    condition: "The date delivery was quoted to the customer. Weeks to Delivery is calculated from it and the Start Date.",
+  },
+  "projects.deliveryWeeks": {
+    id: "projects.deliveryWeeks",
+    tab: "Projects",
+    label: "Weeks to Delivery",
+    kind: "decimal",
+    editable: false,
+    formula: "(Quoted Delivery - Start Date) / 7 days, to one decimal (lib/delivery-weeks.ts)",
+    allowBlank: true,
+    allowZero: true,
+    allowNegative: true,
+    decimals: 1,
+  },
 
   // ── Job detail ────────────────────────────────────────────────────────────
   "jobtask.hours": {
