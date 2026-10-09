@@ -218,7 +218,10 @@ test("the panel renders full width below the row, in the selected job's context"
   // Inside the ~15% column the card occupies, an eleven-column table is unreadable;
   // and rendering it as a sibling of the grid row means opening it cannot resize
   // either chart above it.
-  assert.match(DASH, /\{parts && partsDrill && \(/);
+  // `parts` is the resolved value inside the streamed slot's render callback now
+  // (the dashboard receives a promise), so it is no longer a `{`-led expression —
+  // the condition itself is unchanged.
+  assert.match(DASH, /parts && partsDrill && \(/);
   assert.match(DASH, /jobLabel=\{/);
   assert.match(DASH, /\$\{data\.job\.jobId\} — \$\{data\.job\.jobName\}/, "one job: name the job");
   assert.match(DASH, /`\$\{parts\.jobCount\} selected jobs`/, "many jobs: say so rather than naming one");
