@@ -326,7 +326,13 @@ export function WorkspaceShell({
   // scroll at all. A single tab keeps the document scroll it has always had — pinning it
   // would change how every page scrolls to fix a problem only a split has — and so does a
   // split that has collapsed to one pane, which is one page again.
-  const independentScroll = split != null && !collapsed;
+  // 2026-10-09: now ALWAYS, for every workspace that is at /w (two or more tabs). REPORTED:
+  // "the tab strip scrolls away with the page". A sticky strip did not hold in the live
+  // layout, so the strip is kept in place structurally instead: the workspace is exactly one
+  // window tall, the strip sits above it, and the page scrolls inside its own pane. A lone
+  // tab never reaches this component (/w redirects it to its plain route), so single pages
+  // keep their document scroll.
+  const independentScroll = true;
 
   return (
     <div
