@@ -25,6 +25,8 @@ export const PROJECTS_INFO_COLUMNS = [
   { key: "billable", label: "Billable" },
   { key: "status", label: "Status" },
   { key: "startDate", label: "Start Date" },
+  { key: "quotedDelivery", label: "Quoted Delivery" },
+  { key: "deliveryWeeks", label: "Weeks to Delivery" },
   { key: "completeDate", label: "Complete Date" },
 ] as const;
 

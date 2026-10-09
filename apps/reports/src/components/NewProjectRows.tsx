@@ -115,6 +115,14 @@ export function NewProjectRows({
               <input {...dateCellProps({ name: `newRow__${tempId}__startDate`, defaultValue: "", ariaLabel: "New project Start Date" })} />
             </td>
           )}
+          {show("quotedDelivery") && (
+            <td className="overflow-hidden whitespace-nowrap px-1 py-1.5 text-left align-middle text-label text-sdc-muted">
+              <input {...dateCellProps({ name: `newRow__${tempId}__quotedDeliveryDate`, defaultValue: "", ariaLabel: "New project Quoted Delivery" })} />
+            </td>
+          )}
+          {show("deliveryWeeks") && (
+            <td data-weeks-cell="" className="overflow-hidden whitespace-nowrap px-1 py-1.5 text-center align-middle font-mono text-label text-sdc-gray-600" />
+          )}
           {show("completeDate") && (
             <td className="overflow-hidden whitespace-nowrap px-1 py-1.5 text-left align-middle text-label text-sdc-muted">
               <input {...dateCellProps({ name: `newRow__${tempId}__completeDate`, defaultValue: "", ariaLabel: "New project Complete Date" })} />

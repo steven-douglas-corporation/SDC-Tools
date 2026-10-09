@@ -20,7 +20,7 @@ const NEW_ROW_HOURS_PREFIX = "newRowHours__";
 // Job-level text/date fields that don't need special parsing/validation
 // beyond "trim, empty string means null".
 const PLAIN_FIELDS = ["jobName", "customer"] as const;
-const DATE_FIELDS = ["startDate", "completeDate"] as const;
+const DATE_FIELDS = ["startDate", "completeDate", "quotedDeliveryDate"] as const;
 const MONEY_FIELDS = ["costQuoted", "costActualHistorical"] as const;
 type PlainField = (typeof PLAIN_FIELDS)[number];
 type DateField = (typeof DATE_FIELDS)[number];
@@ -391,6 +391,7 @@ async function saveJobFields(formData: FormData): Promise<{ written: number; con
       status: true,
       startDate: true,
       completeDate: true,
+      quotedDeliveryDate: true,
       costQuoted: true,
       costActualHistorical: true,
       billable: true,
@@ -573,6 +574,7 @@ const JOB_FIELD_LABELS: Record<string, string> = {
   billable: "Billable",
   startDate: "Start Date",
   completeDate: "Complete Date",
+  quotedDeliveryDate: "Quoted Delivery",
   costQuoted: "Cost Quoted",
   costActualHistorical: "Cost Actual (Historical)",
 };
@@ -633,6 +635,7 @@ async function saveNewRows(formData: FormData): Promise<number> {
     status: string;
     startDate: Date | null;
     completeDate: Date | null;
+    quotedDeliveryDate: Date | null;
     costQuoted: number | null;
     costActualHistorical: number | null;
     hours: { section: string; quotedHours: number }[];
@@ -691,6 +694,7 @@ async function saveNewRows(formData: FormData): Promise<number> {
     }
     const startDate = parseDate((fields.get("startDate") ?? "").trim());
     const completeDate = parseDate((fields.get("completeDate") ?? "").trim());
+    const quotedDeliveryDate = parseDate((fields.get("quotedDeliveryDate") ?? "").trim());
     const costQuoted = parseMoney((fields.get("costQuoted") ?? "").trim(), "Parts Cost Quoted", `new project "${jobId}"`);
     const costActualHistorical = parseMoney((fields.get("costActualHistorical") ?? "").trim(), "Parts Cost Actual", `new project "${jobId}"`);
 
@@ -709,7 +713,7 @@ async function saveNewRows(formData: FormData): Promise<number> {
       if (n !== 0) hours.push({ section, quotedHours: n });
     }
 
-    rows.push({ jobId, jobName, customer, type, billable, status, startDate, completeDate, costQuoted, costActualHistorical, hours });
+    rows.push({ jobId, jobName, customer, type, billable, status, startDate, completeDate, quotedDeliveryDate, costQuoted, costActualHistorical, hours });
   }
 
   if (rows.length === 0) return 0;
@@ -731,6 +735,7 @@ async function saveNewRows(formData: FormData): Promise<number> {
           status: r.status,
           startDate: r.startDate,
           completeDate: r.completeDate,
+          quotedDeliveryDate: r.quotedDeliveryDate,
           costQuoted: r.costQuoted,
           costActualHistorical: r.costActualHistorical,
           source: "manual",
