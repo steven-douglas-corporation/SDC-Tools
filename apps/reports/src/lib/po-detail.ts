@@ -1032,6 +1032,19 @@ export function hasPoSubRows(p: Pick<FlatPart, "poBreakdown">): boolean {
   return p.poBreakdown.length > 1;
 }
 
+// Whether a Parts List row's money cells are a SUBTOTAL of the sub-rows drawn under it
+// (2026-10-12). An open part shows its money twice — once on the row, once split across
+// its POs — and the footer counts only the row, so a reader adding up what is on screen
+// overshoots. The row's money is dimmed while it is open, with a hover note.
+//
+// Not under the "Left to invoice" filter: it hides the POs with no balance, so the
+// sub-rows left no longer sum to the row and the note would be false.
+export function moneyIsSubtotal(p: Pick<FlatPart, "poBreakdown">, open: boolean, onlyLeftToInvoice: boolean): boolean {
+  return open && !onlyLeftToInvoice && hasPoSubRows(p);
+}
+
+export const SUBTOTAL_MONEY_NOTE = "Total of the rows below. Not counted twice in the footer.";
+
 export type PoGroup = {
   poKey: string;
   poNumber: string | null;
