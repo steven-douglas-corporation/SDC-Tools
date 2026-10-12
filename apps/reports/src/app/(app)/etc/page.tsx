@@ -4,6 +4,7 @@ import { compareJobIds, isSdcCustomer, validJobTypeFilter } from "@/lib/job-filt
 import { compareSections } from "@/lib/off-grid-hours";
 import { EtcViewMenu } from "@/components/EtcViewMenu";
 import { EtcGridView } from "@/components/EtcGridView";
+import { EtcQuickNav } from "@/components/EtcQuickNav";
 import { ETC_DEPT_GROUPS } from "@/lib/etc-view";
 import { bandColSpan } from "@/lib/grid-view";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -1403,8 +1404,12 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
               the height would not have changed, only its position. The paragraph was
               unconditional (`text-xs` + `mb-4`, one line at its shortest), so that is
               the constant recovered. The four banners were conditional and never part of
-              this figure. */}
-          <DragScroll scrollKey="etc-grid" className={`max-h-[calc(var(--app-vh)_-_183px)] ${GRID_SCROLLER}`}>
+              this figure.
+
+              183px -> 217px: EtcQuickNav above is a fixed 28px + 6px margin, so the grid
+              gives up exactly that to keep its footer on screen. */}
+          <EtcQuickNav />
+          <DragScroll scrollKey="etc-grid" className={`max-h-[calc(var(--app-vh)_-_217px)] ${GRID_SCROLLER}`}>
             <table data-grid="etc" className={`w-full text-sm ${TABLE_GRID} ${CELL_PADDING}`}>
               <thead className="sticky top-0 z-20 bg-sdc-gray-100">
                 <tr className={TABLE_HEADER_ROW}>
@@ -1442,6 +1447,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                     <th
                       key={p.key + i}
                       {...bandProps(p.codes, SUB_COLUMNS.length)}
+                      data-etc-nav={p.label}
                       className={`${i === 0 ? "border-l border-sdc-border" : PHASE_EDGE} px-3 py-1.5 text-center`}
                     >
                       {p.label}
@@ -1452,11 +1458,12 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                       keys the group filter hides. */}
                   <th
                     {...bandProps(visibleGroups, TOTAL_SUB_COLUMNS.length)}
+                    data-etc-nav="Total (New ETC)"
                     className={`${PHASE_EDGE} bg-sdc-yellow-bg px-3 py-1.5 text-center text-sdc-navy`}
                   >
                     Total (New ETC)
                   </th>
-                  <th colSpan={partsCostCols.length} className={`${PHASE_EDGE} bg-sdc-gray-100 px-3 py-1.5 text-center text-sdc-gray-700`}>
+                  <th colSpan={partsCostCols.length} data-etc-nav="Parts Cost" className={`${PHASE_EDGE} bg-sdc-gray-100 px-3 py-1.5 text-center text-sdc-gray-700`}>
                     Parts Cost
                   </th>
                   {showStandards && (
