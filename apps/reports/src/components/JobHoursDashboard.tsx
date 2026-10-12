@@ -222,7 +222,7 @@ export function JobHoursDashboard({
    */
   allowedPoolCodes?: string[];
 }) {
-  const [hoursType, setHoursType] = useState<HoursType>("Quoted");
+  const [hoursType, setHoursType] = useState<HoursType>("ETC");
   const planned = (s: { quoted: number; etc: number }) => (hoursType === "Quoted" ? s.quoted : s.etc);
   const plannedLabel = hoursType === "Quoted" ? "Quoted" : "ETC";
   // ETC (unlike Quoted) is scoped to ONE month — `s.etc` above is already "effective
