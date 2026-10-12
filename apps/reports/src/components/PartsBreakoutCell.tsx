@@ -151,6 +151,7 @@ export function PartsBreakoutCell({
   if (readOnly) {
     return (
       <td
+        data-col="parts"
         className={`motion-cell relative border-l border-sdc-border ${bg} ${PARTS_COL_W} px-1 py-1 text-center align-middle`}
         style={overridden ? manualOverrideStyle() : undefined}
         data-parts-override={overridden ? "1" : undefined}
@@ -168,6 +169,7 @@ export function PartsBreakoutCell({
 
   return (
     <td
+      data-col="parts"
       className={`motion-cell relative border-l border-sdc-border ${bg} ${PARTS_COL_W} px-1 py-1 text-center`}
       // Inline rather than a class: the highlight has to win over the column tint this
       // cell already carries, and an inline style is the one thing that reliably does

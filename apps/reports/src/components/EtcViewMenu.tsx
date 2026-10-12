@@ -3,12 +3,16 @@
 import { TOOLBAR_BTN, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL, TOOLBAR_MIN_W } from "@/components/ui/classnames";
 import { useDraftParamsMenu } from "@/components/useDraftParamMenu";
 import { useGridView } from "@/components/GridViewProvider";
-import { ETC_DEPT_GROUPS, nextHiddenGroups } from "@/lib/etc-view";
+import { ETC_DEPT_GROUPS, ETC_PARTS_KEY, nextHiddenBlocks } from "@/lib/etc-view";
 
 // Consolidated "View" dropdown for the Monthly ETC toolbar — what used to be three
 // separate buttons (Columns, Billable, Grid Size):
-//   • Section columns  -> `dept` param (Engineering/Shop)
+//   • Section columns  -> `dept` param (Engineering/Shop), plus Parts Cost -> `parts` ("0" = hidden)
 //   • Job Name column  -> `jobname` param ("0" = hidden)
+//
+// What is hidden here is also remembered for next time, in a cookie the server reads
+// (lib/etc-view-cookie.ts) — so a PM who unticks Engineering and Shop, keeping only Parts
+// Cost on, opens the grid that way next time.
 //   • Billable rows    -> `billables` param (Billable/Non-Billable)
 //
 // ── What is NOT in here any more (§45) ──────────────────────────────────────
@@ -82,9 +86,13 @@ export function EtcViewMenu({ selectedBillables }: { selectedBillables: string[]
   const billableSet = new Set(draft.billables);
   const groupSet = new Set(GROUPS.filter((g) => !isHidden(g)));
   const jobNameShown = !isHidden("jobname");
+  const partsShown = !isHidden(ETC_PARTS_KEY);
+  // The last block left on cannot be unticked: a grid with none is only job names. Parts
+  // Cost counts as a block alongside Engineering and Shop.
+  const onlyOneBlockLeft = GROUPS.filter((g) => groupSet.has(g)).length + (partsShown ? 1 : 0) === 1;
   const groupsFiltered = GROUPS.some((g) => !groupSet.has(g));
   const billableFiltered = BILLABLE.some((b) => !billableSet.has(b));
-  const anyFilterActive = groupsFiltered || billableFiltered || !jobNameShown;
+  const anyFilterActive = groupsFiltered || !partsShown || billableFiltered || !jobNameShown;
 
   // The mount effect that used to restore this grid's saved font size and density from
   // localStorage is gone with those controls (§45). The zoom level is restored once,
@@ -122,30 +130,44 @@ export function EtcViewMenu({ selectedBillables }: { selectedBillables: string[]
         </svg>
       </summary>
       <div className="motion-menu-panel absolute left-0 top-full z-30 mt-2 w-56 rounded-lg border border-sdc-border bg-white p-2 shadow-lg">
-        <p className="px-1.5 pb-1 text-note font-semibold uppercase tracking-wide text-sdc-gray-400">Section columns</p>
-        {GROUPS.map((g) => (
-          <label key={g} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-sdc-gray-100">
-            {/* Unticking the LAST group restores both, rather than leaving an empty
-                selection. The grid can never render zero section columns — the URL
-                treats "no dept" as "both" — and with a local draft the box would
-                otherwise sit unticked while the grid showed the column anyway. The
-                old server-driven checkbox snapped back on the next render; this does
-                the same thing, immediately and on purpose. */}
-            <input
-              type="checkbox"
-              checked={groupSet.has(g)}
-              onChange={() => {
-                // The rule (including "unticking the last one restores both") is
-                // nextHiddenGroups in lib/etc-view.ts, where it is unit-tested. Keys that
-                // are not billing groups — `jobname` — are carried through untouched.
-                const others = [...hidden].filter((k) => !GROUPS.includes(k as (typeof GROUPS)[number]));
-                setHidden([...others, ...nextHiddenGroups(groupSet, g)]);
-              }}
-              className="h-3.5 w-3.5 shrink-0"
-            />
-            <span className="flex-1">{g}</span>
-          </label>
-        ))}
+        <p className="px-1.5 pb-1 text-note font-semibold uppercase tracking-wide text-sdc-gray-400">Columns</p>
+        {GROUPS.map((g) => {
+          const on = groupSet.has(g);
+          return (
+            <label
+              key={g}
+              title={on && onlyOneBlockLeft ? "At least one block has to stay on" : undefined}
+              className={`flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-sdc-gray-100 ${on && onlyOneBlockLeft ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+            >
+              {/* The rule — including "the last block left on cannot be unticked" — is
+                  nextHiddenBlocks in lib/etc-view.ts, where it is unit-tested. Engineering
+                  and Shop can both be off now (that is the Parts Cost-only view), so the
+                  old "unticking the last one restores both" is gone; the box is disabled
+                  instead, which says why rather than silently undoing the click. */}
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={on && onlyOneBlockLeft}
+                onChange={() => setHidden(nextHiddenBlocks(hidden, g))}
+                className="h-3.5 w-3.5 shrink-0"
+              />
+              <span className="flex-1">{g}</span>
+            </label>
+          );
+        })}
+        <label
+          title={partsShown && onlyOneBlockLeft ? "At least one block has to stay on" : undefined}
+          className={`flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-sdc-gray-100 ${partsShown && onlyOneBlockLeft ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+        >
+          <input
+            type="checkbox"
+            checked={partsShown}
+            disabled={partsShown && onlyOneBlockLeft}
+            onChange={() => setHidden(nextHiddenBlocks(hidden, ETC_PARTS_KEY))}
+            className="h-3.5 w-3.5 shrink-0"
+          />
+          <span className="flex-1">Parts Cost</span>
+        </label>
         <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-sdc-gray-100">
           <input type="checkbox" checked={jobNameShown} onChange={() => toggle("jobname")} className="h-3.5 w-3.5 shrink-0" />
           <span className="flex-1">Job Name column</span>

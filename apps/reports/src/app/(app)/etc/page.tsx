@@ -5,7 +5,9 @@ import { compareSections } from "@/lib/off-grid-hours";
 import { EtcViewMenu } from "@/components/EtcViewMenu";
 import { EtcGridView } from "@/components/EtcGridView";
 import { EtcQuickNav } from "@/components/EtcQuickNav";
-import { ETC_DEPT_GROUPS } from "@/lib/etc-view";
+import { cookies } from "next/headers";
+import { ETC_DEPT_GROUPS, hiddenFromEtcParams } from "@/lib/etc-view";
+import { ETC_VIEW_COOKIE, hasExplicitEtcView, parseEtcViewCookie } from "@/lib/etc-view-cookie";
 import { bandColSpan } from "@/lib/grid-view";
 import { ExportMenu } from "@/components/ExportMenu";
 import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
@@ -458,13 +460,13 @@ const CELL_PADDING =
   "[&_tbody_td]:py-[0.2667rem] [&_tbody_td]:leading-none [&_td_input]:py-[0.2667rem] [&_td_input]:leading-none [&_td:not([class*='sticky'])]:px-[0.2667rem] [&_th:not([class*='sticky'])]:px-[0.2667rem] [&_td_input:not([class*='sticky'])]:px-[0.2667rem]";
 
 
-export async function MonthlyEtcView({ params }: { params: { month?: string; dept?: string; jobname?: string; billables?: string } }) {
+export async function MonthlyEtcView({ params }: { params: { month?: string; dept?: string; jobname?: string; parts?: string; billables?: string } }) {
   const etcSession = await requirePagePermission("monthly-etc:view");
   // Read-only is now a real state: monthly-etc:view without monthly-etc:edit.
   // The server action re-checks this independently (saveAllNewEtcDrafts), so
   // this flag only decides what is RENDERED — it is not the enforcement.
   const canEditEtc = hasPermission(etcSession.user.role, "monthly-etc:edit");
-  const { month: monthParam, dept: deptParam, jobname: jobnameParam, billables: billablesParam } = params;
+  const { month: monthParam, dept: deptParam, jobname: jobnameParam, parts: partsParam, billables: billablesParam } = params;
 
   // Billable / Non-Billable row filter (same pattern as the Projects tab).
   // Absent => both shown. SDC's own projects read as Non-Billable regardless of
@@ -474,25 +476,23 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
   const showBillable = selectedBillables.includes("Billable");
   const showNonBillable = selectedBillables.includes("Non-Billable");
   const billableFilterActive = !(showBillable && showNonBillable);
-  // Job Name column toggle (Columns dropdown) — shown unless ?jobname=0.
+  // The column view: which of Engineering / Shop / Parts Cost / Job Name start hidden.
   //
-  // NOT used to decide what to render any more (§40.2). The column is always printed
+  // NOT used to decide what to render any more (§40.2). Every column is always printed
   // and hidden with CSS, because a server round-trip plus a 3,649-mutation React
   // reconciliation to stop showing 49 cells that were already on screen is what made
-  // this menu feel broken. This value now only seeds the client's initial hidden set,
-  // so a reload and a shared link still show what the URL asks for. See
-  // lib/grid-view.ts and GridViewProvider.
-  const showJobName = jobnameParam !== "0";
-
-  // Engineering / Shop column filter. Empty or absent => show both (the full
-  // grid); the grid can never collapse to zero section columns.
-  const selectedGroups = (() => {
-    const raw = (deptParam ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter((g): g is (typeof DEPT_GROUPS)[number] => g === "Engineering" || g === "Shop");
-    return new Set(raw.length ? raw : DEPT_GROUPS);
-  })();
+  // this menu feel broken. This only seeds the client's initial hidden set, so a reload
+  // and a shared link still show what the URL asks for. See lib/grid-view.ts and
+  // GridViewProvider.
+  //
+  // A URL that names any of the view params is an explicit view and wins. With none of
+  // them, the browser's remembered view (lib/etc-view-cookie.ts) applies, so a PM who
+  // keeps Parts Cost only gets it on every plain visit — rendered here, so the first
+  // paint is already right rather than snapping after hydration.
+  const urlView = { dept: deptParam, jobname: jobnameParam, parts: partsParam };
+  const viewParams = hasExplicitEtcView(urlView)
+    ? urlView
+    : parseEtcViewCookie((await cookies()).get(ETC_VIEW_COOKIE)?.value);
   // ── The grid is printed COMPLETE, always (§40.2) ────────────────────────────
   //
   // These used to be filtered here, which meant every tick of the View menu's
@@ -512,12 +512,10 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
   // which still navigates.
   const visibleCols = ALL_ETC_COLS;
   const visibleGroups = DEPT_GROUPS;
-  // What the client starts hidden, parsed from the URL so SSR and a share link agree.
-  // `jobname` is a pseudo-column key: the Job Name cells carry data-col="jobname".
-  const initialHiddenView = [
-    ...DEPT_GROUPS.filter((g) => !selectedGroups.has(g)),
-    ...(showJobName ? [] : ["jobname"]),
-  ];
+  // What the client starts hidden, parsed from the URL (or the cookie) so SSR and a share
+  // link agree. `jobname` and `parts` are pseudo-column keys: the Job Name and Parts Cost
+  // cells carry them as their `data-col`.
+  const initialHiddenView = hiddenFromEtcParams(viewParams);
   const initialHiddenSet: ReadonlySet<string> = new Set(initialHiddenView);
 
   // The banded header cells' colSpans for the FIRST render.
@@ -1463,7 +1461,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                   >
                     Total (New ETC)
                   </th>
-                  <th colSpan={partsCostCols.length} data-etc-nav="Parts Cost" className={`${PHASE_EDGE} bg-sdc-gray-100 px-3 py-1.5 text-center text-sdc-gray-700`}>
+                  <th colSpan={partsCostCols.length} data-col="parts" data-etc-nav="Parts Cost" className={`${PHASE_EDGE} bg-sdc-gray-100 px-3 py-1.5 text-center text-sdc-gray-700`}>
                     Parts Cost
                   </th>
                   {showStandards && (
@@ -1503,7 +1501,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                   ))}
                   {/* Parts Cost has no Engineering/Shop split — one green Total
                       block spanning down to the column-label row, as printed. */}
-                  <th rowSpan={3} colSpan={partsCostCols.length} className={`${PHASE_EDGE} bg-sdc-green px-2 py-1 text-center text-white`}>
+                  <th rowSpan={3} colSpan={partsCostCols.length} data-col="parts" className={`${PHASE_EDGE} bg-sdc-green px-2 py-1 text-center text-white`}>
                     Total
                   </th>
                 </tr>
@@ -1604,6 +1602,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                   {partsCostCols.map((col, i) => (
                     <th
                       key={`parts-cost-${col}`}
+                      data-col="parts"
                       className={`${i === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-1 py-1.5 text-center text-label ${
                         subColHeaderBg(col) || "bg-sdc-gray-100 text-sdc-gray-700"
                       }`}
@@ -1960,6 +1959,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                           return partsCostCols.map((col, ci) => (
                             <td
                               key={`parts-cost-${col}`}
+                              data-col="parts"
                               className={`${ci === 0 ? PHASE_EDGE : "border-l border-sdc-border"} overflow-hidden px-2 py-1 text-center align-middle whitespace-nowrap text-sdc-gray-400 ${
                                 col === "Prior ETC" ? "bg-[#5E91D3] text-sdc-gray-700" : subColBodyBg(col) || "bg-sdc-gray-50"
                               }`}
@@ -2141,12 +2141,14 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                                 Diff still carries the same information in its own cell, and
                                 Left to Invoice carries its own override highlight. */}
                             <td
+                              data-col="parts"
                               className={`${PHASE_EDGE} ${PARTS_COL_W} overflow-hidden bg-[#5E91D3] px-1 py-1 text-center align-middle text-label whitespace-nowrap text-sdc-gray-700`}
                               title={currencyExact(prior)}
                             >
                               {currency(prior)}
                             </td>
                             <td
+                              data-col="parts"
                               className={`border-l border-sdc-border ${HOURS_WORKED_BG} ${PARTS_COL_W} overflow-hidden px-1 py-1 text-center align-middle whitespace-nowrap`}
                             >
                               {/* Not manager-editable — always Power BI's actual, passed through as a
@@ -2163,6 +2165,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                               </span>
                             </td>
                             <td
+                              data-col="parts"
                               className={`border-l border-sdc-border ${HOURS_LEFT_BG} ${PARTS_COL_W} overflow-hidden px-1 py-1 text-center align-middle text-label whitespace-nowrap text-sdc-muted`}
                               title={`${currencyExact(moneyLeft)} = Prior ETC (${currencyExact(prior)}) − Money Spent (${currencyExact(spent)})`}
                             >
@@ -2276,6 +2279,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                               frozen={locked}
                             />
                             <td
+                              data-col="parts"
                               // LIVE (2026-08-04). This cell was the one dependent figure
                               // on the grid that did not move: typing a Parts Cost New ETC
                               // updated the footer totals correctly but left the row's own
@@ -2480,12 +2484,13 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                       const diffCost = moneyLeft - t.newEtc;
                       return (
                         <Fragment key="parts-cost-total">
-                          <td className={`${PHASE_EDGE} overflow-hidden bg-[#5E91D3] px-1 py-2.5 text-center align-middle text-label whitespace-nowrap text-sdc-gray-700`} title={currencyExact(t.prior)}>{currency(t.prior)}</td>
+                          <td data-col="parts" className={`${PHASE_EDGE} overflow-hidden bg-[#5E91D3] px-1 py-2.5 text-center align-middle text-label whitespace-nowrap text-sdc-gray-700`} title={currencyExact(t.prior)}>{currency(t.prior)}</td>
                           {/* Total Money Spent is ALWAYS the live month-to-date
                               total, even while per-job cells are blanked pending
                               month completion. */}
-                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} overflow-hidden px-1 py-2.5 text-center align-middle text-label whitespace-nowrap text-sdc-navy`} title={`${currencyExact(t.worked)} — live month-to-date total`}>{currency(t.worked)}</td>
+                          <td data-col="parts" className={`border-l border-sdc-border ${HOURS_WORKED_BG} overflow-hidden px-1 py-2.5 text-center align-middle text-label whitespace-nowrap text-sdc-navy`} title={`${currencyExact(t.worked)} — live month-to-date total`}>{currency(t.worked)}</td>
                           <td
+                            data-col="parts"
                             className={`border-l border-sdc-border ${HOURS_LEFT_BG} overflow-hidden px-1 py-2.5 text-center align-middle text-label whitespace-nowrap text-sdc-navy`}
                             title={`${currencyExact(moneyLeft)} = Prior ETC (${currencyExact(t.prior)}) − Money Spent (${currencyExact(t.worked)})`}
                           >
@@ -2499,6 +2504,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                               it these two would be the only Parts Cost totals that
                               sat still while the column above them changed. */}
                           <td
+                            data-col="parts"
                             data-live="partsLeftToInvoice"
                             className={`border-l border-sdc-border ${newEtcBg(true)} overflow-hidden px-1 py-2.5 text-center align-middle text-label whitespace-nowrap text-sdc-navy`}
                             title={`${currencyExact(t.leftToInvoice)} on purchase orders, not yet invoiced, across every job shown`}
@@ -2506,6 +2512,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                             {currency(t.leftToInvoice)}
                           </td>
                           <td
+                            data-col="parts"
                             data-live="partsLeftToPurchase"
                             className={`border-l border-sdc-border ${newEtcBg(true)} overflow-hidden px-1 py-2.5 text-center align-middle text-label whitespace-nowrap text-sdc-navy`}
                             title={`${currencyExact(t.leftToPurchase)} still to be bought, across every job shown`}
@@ -2518,6 +2525,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                               (PartsCostNewEtcCell), so its grand total has to move
                               with it the same way the hours columns do. */}
                           <td
+                            data-col="parts"
                             data-live="partsNewEtc"
                             className={`border-l border-sdc-border ${newEtcBg(true)} overflow-hidden px-1 py-2.5 text-center align-middle text-label font-bold whitespace-nowrap text-sdc-navy`}
                             title={currencyExact(t.newEtc)}
@@ -2525,6 +2533,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                             {currency(t.newEtc)}
                           </td>
                           <td
+                            data-col="parts"
                             data-live="partsDiff"
                             className={`border-l border-sdc-border overflow-hidden px-1 py-2.5 text-center align-middle text-label whitespace-nowrap text-sdc-gray-700`}
                             style={diffTotalStyle(diffCost, DIFF_CEILING.moneyTotal)}
@@ -2607,6 +2616,6 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
 // Nothing about this route's behaviour changes: same URL, same params, same server
 // render. `searchParams` is still awaited HERE, which is what keeps this route
 // dynamic exactly as before.
-export default async function MonthlyEtcPage({ searchParams }: { searchParams: Promise<{ month?: string; dept?: string; jobname?: string; billables?: string }> }) {
+export default async function MonthlyEtcPage({ searchParams }: { searchParams: Promise<{ month?: string; dept?: string; jobname?: string; parts?: string; billables?: string }> }) {
   return <MonthlyEtcView params={await searchParams} />;
 }

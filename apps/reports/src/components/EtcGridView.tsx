@@ -2,6 +2,7 @@
 
 import { GridViewProvider } from "@/components/GridViewProvider";
 import { etcViewWriteParams, etcViewExtraRules } from "@/lib/etc-view";
+import { writeEtcViewCookie } from "@/lib/etc-view-cookie";
 
 // The Monthly ETC grid's half of the instant-view mechanism (lib/grid-view.ts).
 //
@@ -29,6 +30,7 @@ export function EtcGridView({
       initialHidden={initialHidden}
       writeParams={etcViewWriteParams}
       extraRules={etcViewExtraRules}
+      persist={writeEtcViewCookie}
     >
       {children}
     </GridViewProvider>

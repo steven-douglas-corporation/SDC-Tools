@@ -8,6 +8,7 @@ import {
   deptParamFromHidden,
   viewSyncKey,
 } from "../src/lib/grid-view";
+import { etcViewWriteParams, hiddenFromEtcParams } from "../src/lib/etc-view";
 
 // The properties that make a presentational filter instant, and the two that make it
 // SAFE. §40.2 asks for filter results within 150ms using already-loaded data; the
@@ -105,31 +106,27 @@ test("toggleHidden adds and removes without mutating its input", () => {
   assert.deepEqual(before, ["a"], "input array must not be mutated");
 });
 
-test("dept: hiding one group names the other; hiding both or neither is the default", () => {
+test("dept: hiding one group names the other; hiding both is written as `none`", () => {
   const groups = ["Engineering", "Shop"];
   assert.equal(deptParamFromHidden(groups, new Set()), null, "neither hidden = default URL");
   assert.equal(deptParamFromHidden(groups, new Set(["Shop"])), "Engineering");
   assert.equal(deptParamFromHidden(groups, new Set(["Engineering"])), "Shop");
-  // The grid cannot render zero section columns, and the server reads an absent
-  // `dept` as both — so "both hidden" must normalise to the same thing rather than
-  // producing a URL that renders an empty grid on reload.
-  assert.equal(deptParamFromHidden(groups, new Set(["Engineering", "Shop"])), null);
+  // A Parts Cost-only view hides both groups. An absent `dept` means "both shown", so
+  // the empty state needs its own spelling or a reload would bring the hours back.
+  assert.equal(deptParamFromHidden(groups, new Set(["Engineering", "Shop"])), "none");
 });
 
 test("the URL the client writes round-trips through the server's own parser", () => {
-  // The invariant that keeps a share link and a reload honest: whatever
-  // deptParamFromHidden writes, the page's parser must turn back into the same
-  // visible groups. This mirrors the parser at etc/page.tsx (raw -> Set, empty =>
-  // both) rather than importing it, because that module is server-only.
-  const groups = ["Engineering", "Shop"] as const;
-  const parse = (param: string | null) => {
-    const raw = (param ?? "").split(",").map((s) => s.trim()).filter((g) => g === "Engineering" || g === "Shop");
-    return new Set(raw.length ? raw : groups);
-  };
-  for (const hidden of [[], ["Shop"], ["Engineering"], ["Engineering", "Shop"]]) {
-    const shownAfterReload = parse(deptParamFromHidden(groups, new Set(hidden)));
-    const expected = new Set(hidden.length === groups.length ? groups : groups.filter((g) => !hidden.includes(g)));
-    assert.deepEqual([...shownAfterReload].sort(), [...expected].sort(), `round-trip failed for hidden=${JSON.stringify(hidden)}`);
+  // The invariant that keeps a share link and a reload honest: whatever the writer puts
+  // in the URL, hiddenFromEtcParams (the one parser the page and the cookie both use)
+  // must turn back into the same hidden set. Not run for the all-hidden set, which is
+  // not a state the grid can render and is normalised away — see etc-view.test.ts.
+  const sets = [[], ["Shop"], ["Engineering"], ["Engineering", "Shop"], ["parts"], ["Shop", "parts"], ["jobname"], ["Engineering", "Shop", "jobname"]];
+  for (const hidden of sets) {
+    const qs = new URLSearchParams();
+    etcViewWriteParams(new Set(hidden), qs);
+    const back = hiddenFromEtcParams({ dept: qs.get("dept") ?? undefined, jobname: qs.get("jobname") ?? undefined, parts: qs.get("parts") ?? undefined });
+    assert.deepEqual([...back].sort(), [...hidden].sort(), `round-trip failed for hidden=${JSON.stringify(hidden)}`);
   }
 });
 
