@@ -20,6 +20,7 @@ import {
   daysBetween,
   parentLineFor,
   poCellState,
+  hasPoSubRows,
   scopePartToPo,
   type FlatPart,
   type PoGroup,
@@ -392,7 +393,7 @@ export function PartRowCells({
                 lists, unfolded under the row so a reader can compare a part's
                 purchases against its neighbours without leaving the table. The
                 panel stays the full view; this is the glance. */}
-            {expand && p.poBreakdown.length > 0 ? (
+            {expand && hasPoSubRows(p) ? (
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); expand.onToggle(); }}

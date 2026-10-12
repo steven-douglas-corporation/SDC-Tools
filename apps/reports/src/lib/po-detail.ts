@@ -1025,6 +1025,13 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
 
 export const NO_PO_KEY = "__NO_PO__";
 
+// Whether a Parts List row gets a drop-down of PO sub-rows. One PO means the
+// sub-row would repeat the parent row's own figures, so the row has no chevron,
+// no click-to-expand, and nothing to unfold; the PO # cell already opens that PO.
+export function hasPoSubRows(p: Pick<FlatPart, "poBreakdown">): boolean {
+  return p.poBreakdown.length > 1;
+}
+
 export type PoGroup = {
   poKey: string;
   poNumber: string | null;
