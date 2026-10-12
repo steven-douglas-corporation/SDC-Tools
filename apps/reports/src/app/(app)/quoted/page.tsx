@@ -851,7 +851,7 @@ export async function ProjectsView({ params }: { params: {
                   className="relative px-1 py-2 align-bottom"
                   title="Weeks from the Start Date to the Quoted Delivery (calculated)"
                 >
-                  Weeks to<br />Delivery
+                  FAT<br />Date
                   <div
                     className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
                     data-resize-var="--deliveryweeks-col-width"
