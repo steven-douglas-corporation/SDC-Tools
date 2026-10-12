@@ -1,6 +1,6 @@
 "use client";
 
-import { hasInvoiceBalance, monthEndCutoff, monthEndLabel, partHasInvoiceBalance, rewindLines } from "@/lib/left-to-invoice";
+import { hasInvoiceBalance, monthEndCutoff, monthEndLabel, partHasInvoiceBalance, previousMonth, rewindLines } from "@/lib/left-to-invoice";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bom";
 import { isUncoveredPart, quantityReadiness } from "@/lib/job-bom-rules";
@@ -1991,7 +1991,12 @@ function PartsListTab({
             whole group drops to the next line rather than splitting — and the tinted
             background sets it apart from the other filters. -my-1 offsets the padding
             so the group does not make the row taller. */}
-        <div className="-my-1 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md bg-sdc-gray-100 px-2 py-1">
+        {/* Presets sit directly under the date group (PM, then Default). Default: back to the
+            stock view (default filters + default columns + All scope). PM: Default, then Left to
+            invoice + Rewind to last month's end for prior-month close figures; pressed again, it
+            clears just those two. The month can still be changed afterwards in Rewind to. */}
+        <div className="flex shrink-0 flex-col items-start gap-1.5">
+        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md bg-sdc-gray-100 px-2 py-1">
           <Segmented
             value={dateType}
             onChange={(v) => setDateType(v as PartsDateFilter)}
@@ -2006,6 +2011,43 @@ function PartsListTab({
           <input type="date" aria-label="From date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 rounded-md border border-sdc-border bg-white px-2 text-xs text-sdc-navy outline-none focus:border-sdc-blue" />
           <span className="text-xs text-sdc-gray-400">to</span>
           <input type="date" aria-label="To date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 rounded-md border border-sdc-border bg-white px-2 text-xs text-sdc-navy outline-none focus:border-sdc-blue" />
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-pressed={onlyLeftToInvoice && rewind !== ""}
+            onClick={() => {
+              if (onlyLeftToInvoice && rewind !== "") {
+                setOnlyLeftToInvoice(false);
+                setRewind("");
+                return;
+              }
+              clearFilters();
+              setScope("all");
+              setHidden(() => new Set(DEFAULT_HIDDEN_COLS));
+              setOnlyLeftToInvoice(true);
+              setRewind(previousMonth(new Date()));
+            }}
+            title="Left to invoice, rewound to the end of last month. Click again to clear both."
+            className={`flex h-8 items-center rounded-md border px-3 text-xs font-medium ${
+              onlyLeftToInvoice && rewind !== "" ? "border-sdc-blue bg-sdc-blue-light text-sdc-blue-dark" : "border-sdc-border bg-white text-sdc-navy hover:bg-sdc-blue-light"
+            }`}
+          >
+            PM
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearFilters();
+              setScope("all");
+              setHidden(() => new Set(DEFAULT_HIDDEN_COLS));
+            }}
+            title="Back to the default filters and columns"
+            className="flex h-8 items-center rounded-md border border-sdc-border bg-white px-3 text-xs font-medium text-sdc-navy hover:bg-sdc-blue-light"
+          >
+            Default
+          </button>
+        </div>
         </div>
 
         {filtersActive && (
