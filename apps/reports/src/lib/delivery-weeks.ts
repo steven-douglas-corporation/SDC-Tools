@@ -1,4 +1,4 @@
-// The Projects grid's "Weeks to Delivery": how many weeks lie between a job's Start Date and
+// The Projects grid's "FAT Date": how many weeks lie between a job's Start Date and
 // its Quoted Delivery date.
 //
 // Only the Quoted Delivery DATE is stored (Job.quotedDeliveryDate). The weeks are derived here,

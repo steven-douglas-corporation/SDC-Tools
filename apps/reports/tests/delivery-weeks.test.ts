@@ -38,7 +38,7 @@ test("weeks display without a trailing .0", () => {
   assert.equal(formatWeeks(null), "");
 });
 
-test("Quoted Delivery is an editable date; Weeks to Delivery is calculated and never saved", () => {
+test("Quoted Delivery is an editable date; FAT Date is calculated and never saved", () => {
   assert.equal(CELL_SPECS["projects.quotedDeliveryDate"].editable, true);
   assert.equal(CELL_SPECS["projects.quotedDeliveryDate"].kind, "date");
   assert.equal(CELL_SPECS["projects.deliveryWeeks"].editable, false);
@@ -59,6 +59,6 @@ test("the grid, the new-row form and the export carry both columns after Start D
   assert.match(read("components", "NewProjectRows.tsx"), /newRow__\$\{tempId\}__quotedDeliveryDate/);
   const exp = read("lib", "export", "projects-export.ts");
   assert.ok(exp.indexOf('header: "Start Date"') < exp.indexOf('header: "Quoted Delivery"'));
-  assert.ok(exp.indexOf('header: "Quoted Delivery"') < exp.indexOf('header: "Weeks to Delivery"'));
-  assert.ok(exp.indexOf('header: "Weeks to Delivery"') < exp.indexOf('header: "Complete Date"'));
+  assert.ok(exp.indexOf('header: "Quoted Delivery"') < exp.indexOf('header: "FAT Date"'));
+  assert.ok(exp.indexOf('header: "FAT Date"') < exp.indexOf('header: "Complete Date"'));
 });

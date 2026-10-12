@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { deliveryWeeks, formatWeeks } from "@/lib/delivery-weeks";
 import { subscribeRemoteEtcValues } from "@/lib/etc-remote-values";
 
-// Recalculates each row's "Weeks to Delivery" as its Start Date or Quoted Delivery is edited.
+// Recalculates each row's "FAT Date" (weeks between Start Date and Quoted Delivery) as its Start Date or Quoted Delivery is edited.
 //
 // The weeks cell is server-rendered (so the 233-row grid stays out of the client bundle, the
 // same reasoning as ProjectsLiveTotals) and is a pure function of two inputs in the SAME row.

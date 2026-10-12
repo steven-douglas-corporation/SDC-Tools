@@ -109,7 +109,7 @@ export async function buildProjectsExport(
     { header: "Billable", type: "text", width: 12 },
     { header: "Start Date", type: "date" },
     { header: "Quoted Delivery", type: "date" },
-    { header: "Weeks to Delivery", type: "number" },
+    { header: "FAT Date", type: "number" },
     { header: "Complete Date", type: "date" },
     { header: "Quoted Hours (total)", type: "hours", width: 14 },
     { header: `Actual Hours (total${through})`, type: "hours", width: 14 },
