@@ -21,6 +21,7 @@ import {
   parentLineFor,
   poCellState,
   hasPoSubRows,
+  SUBTOTAL_MONEY_NOTE,
   scopePartToPo,
   type FlatPart,
   type PoGroup,
@@ -344,6 +345,7 @@ export function PartRowCells({
   expand,
   onCopy,
   filteredCol,
+  subtotal,
 }: {
   p: FlatPart;
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
@@ -373,8 +375,13 @@ export function PartRowCells({
   onCopy?: (text: string, label?: string) => void;
   /** The column a date range is filtering on, tinted light blue down the table. */
   filteredCol?: ColKey | null;
+  /** The row's money is a subtotal of the sub-rows under it (moneyIsSubtotal): dimmed, with a hover note. */
+  subtotal?: boolean;
 }) {
   const parentLine = parentLineFor(p);
+  // Replaces the cells' navy while the row is open; the title wins over the cell's own note.
+  const moneyTone = (normal: string) => (subtotal ? "text-sdc-muted" : normal);
+  const moneyTitle = (own: string | undefined) => (subtotal ? SUBTOTAL_MONEY_NOTE : own);
   const cell = (key: ColKey) => {
     switch (key) {
       case "qty":
@@ -598,27 +605,27 @@ export function PartRowCells({
         );
       }
       case "total":
-        return <span className="whitespace-nowrap font-mono text-note font-semibold tabular-nums text-sdc-navy">{p.totalPrice > 0 ? usd(p.totalPrice) : "—"}</span>;
+        return <span className={`whitespace-nowrap font-mono text-note font-semibold tabular-nums ${moneyTone("text-sdc-navy")}`} title={moneyTitle(undefined)}>{p.totalPrice > 0 ? usd(p.totalPrice) : "—"}</span>;
       case "invoiced":
         // SDC never invoices itself (po-detail.ts already zeroes the figure
         // behind this) — said in words rather than printed as a real "$0",
         // which would read as "nothing invoiced yet" instead of "not applicable".
         return p.supplier === SDC_CANONICAL ? (
-          <span className="whitespace-nowrap text-note font-medium text-sdc-muted" title="Steven Douglas Corp (SDC) is the supplier — there is no external invoice for this line">
+          <span className="whitespace-nowrap text-note font-medium text-sdc-muted" title={moneyTitle("Steven Douglas Corp (SDC) is the supplier — there is no external invoice for this line")}>
             N/A
           </span>
         ) : (
-          <span className="whitespace-nowrap font-mono text-note font-medium tabular-nums text-sdc-navy">{usd(p.invoicedAmount)}</span>
+          <span className={`whitespace-nowrap font-mono text-note font-medium tabular-nums ${moneyTone("text-sdc-navy")}`} title={moneyTitle(undefined)}>{usd(p.invoicedAmount)}</span>
         );
       case "pctinv":
         return (
-          <span className="whitespace-nowrap font-mono text-note font-medium tabular-nums text-sdc-gray-600" title={p.pctInvoiced === null ? "Not meaningful for a windowed Invoiced $ figure" : undefined}>
+          <span className={`whitespace-nowrap font-mono text-note font-medium tabular-nums ${moneyTone("text-sdc-gray-600")}`} title={moneyTitle(p.pctInvoiced === null ? "Not meaningful for a windowed Invoiced $ figure" : undefined)}>
             {p.pctInvoiced === null ? "—" : `${p.pctInvoiced}%`}
           </span>
         );
       case "leftspend":
         return (
-          <span className="whitespace-nowrap font-mono text-note font-medium tabular-nums text-sdc-navy" title={p.leftToSpend === null ? "Not meaningful for a windowed Invoiced $ figure" : undefined}>
+          <span className={`whitespace-nowrap font-mono text-note font-medium tabular-nums ${moneyTone("text-sdc-navy")}`} title={moneyTitle(p.leftToSpend === null ? "Not meaningful for a windowed Invoiced $ figure" : undefined)}>
             {p.leftToSpend === null ? "—" : usd(p.leftToSpend)}
           </span>
         );

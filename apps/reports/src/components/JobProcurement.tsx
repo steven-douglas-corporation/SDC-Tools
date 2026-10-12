@@ -34,6 +34,7 @@ import {
   poCellState,
   partsOnPo,
   hasPoSubRows,
+  moneyIsSubtotal,
   NO_PO_KEY,
   type FlatPart,
   type PartPoGroup,
@@ -2597,6 +2598,7 @@ function PartsTableView({
                     onCopy={onCopy}
                     expand={{ open: expanded.has(p.id), onToggle: () => toggleExpanded(p.id) }}
                     filteredCol={filteredCol}
+                    subtotal={moneyIsSubtotal(p, expanded.has(p.id), onlyLeftToInvoice)}
                   />
                 </tr>
               );
