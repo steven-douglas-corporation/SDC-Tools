@@ -299,6 +299,7 @@ export function PartsCostNewEtcCell({
   return (
     // `relative` so the presence marker sits in the corner without resizing the cell.
     <td
+      data-col="parts"
       // motion-cell: same yellow ⇄ neutral crossfade as the hours cells (§36.7). One
       // class, one duration, so the two kinds of New ETC cell cannot end up behaving
       // differently — see EtcSectionCells and globals.css.

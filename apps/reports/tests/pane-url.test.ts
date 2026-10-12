@@ -168,7 +168,7 @@ test("params may arrive as URLSearchParams, a record or a query string", () => {
   assert.deepEqual(toParamRecord(new URLSearchParams("a=1&b=2")), { a: "1", b: "2" });
   assert.deepEqual(toParamRecord({ a: "1" }), { a: "1" });
   assert.deepEqual(toParamRecord("a=1&b=%20x"), { a: "1", b: " x" });
-  assert.deepEqual(declaredParamKeys("/etc"), ["month", "dept", "jobname", "billables"]);
+  assert.deepEqual(declaredParamKeys("/etc"), ["month", "dept", "jobname", "parts", "billables"]);
   assert.deepEqual(declaredParamKeys("/nope"), []);
 });
 

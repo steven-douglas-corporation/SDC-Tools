@@ -149,15 +149,18 @@ export function toggleHidden(hidden: readonly ViewKey[], key: ViewKey): ViewKey[
  * hidden. Kept here rather than in the menu so the URL this writes and the URL the
  * server parses are described in one place.
  *
- * Both groups hidden is not a state the grid can render (§ the menu restores both
- * when the last one is unticked), so it is normalised to "show both" — the same
- * thing the server does with an absent or empty `dept`.
+ * Both groups hidden is a real state since the Parts Cost toggle (lib/etc-view.ts): a
+ * Parts Cost-only view. It is written as `none`, because an absent or empty `dept`
+ * already means "both" and the two must not look alike. Whether `none` is allowed at
+ * all — it is not when Parts Cost is hidden too — is decided where the whole view is
+ * parsed (hiddenFromEtcParams), not here.
  */
 export function deptParamFromHidden(
   allGroups: readonly string[],
   hidden: ReadonlySet<ViewKey>,
 ): string | null {
   const shown = allGroups.filter((g) => !hidden.has(g));
-  if (shown.length === 0 || shown.length === allGroups.length) return null; // default: both
+  if (shown.length === allGroups.length) return null; // default: all shown
+  if (shown.length === 0) return "none";
   return shown.join(",");
 }

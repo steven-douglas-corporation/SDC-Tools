@@ -25,23 +25,71 @@ import { deptParamFromHidden, type ViewKey } from "@/lib/grid-view";
 export const ETC_DEPT_GROUPS = ["Engineering", "Shop"] as const;
 
 /**
- * Which billing groups are hidden after clicking one of the "Section columns" boxes.
- *
- * Pure and tested because the first version of this had its boolean inverted and simply
- * did nothing — the checkbox was clicked, no group was hidden, and there was no error to
- * notice. A silently inert filter is the exact failure §40 is about, so the rule lives
- * here rather than inline in an onChange.
- *
- * `visible` is the set currently shown. Returns the groups to hide; unticking the last
- * visible group returns none, because the grid cannot render zero section columns and
- * `?dept=` has no way to say "neither" (see deptParamFromHidden).
+ * The Parts Cost block's hide key. Its header, body and footer cells carry
+ * `data-col="parts"`, the same way the hours blocks carry their billing group.
  */
-export function nextHiddenGroups(
-  visible: ReadonlySet<string>,
-  clicked: string,
-): string[] {
-  const next = ETC_DEPT_GROUPS.filter((g) => (g === clicked ? visible.has(g) : !visible.has(g)));
-  return next.length === ETC_DEPT_GROUPS.length ? [] : [...next];
+export const ETC_PARTS_KEY = "parts";
+
+/**
+ * The three main blocks of the grid as far as the View menu is concerned: Engineering
+ * hours, Shop hours (each with its share of Total (New ETC)), and Parts Cost. At least
+ * one has to stay visible — a grid with none is just a list of job names.
+ */
+export const ETC_BLOCKS = [...ETC_DEPT_GROUPS, ETC_PARTS_KEY] as const;
+
+/**
+ * The hidden set after clicking one of the block boxes in the View menu.
+ *
+ * Pure and tested because the first version of the old group rule had its boolean
+ * inverted and simply did nothing — the checkbox was clicked, no group was hidden, and
+ * there was no error to notice. A silently inert filter is the exact failure §40 is
+ * about, so the rule lives here rather than inline in an onChange.
+ *
+ * Clicking a visible block hides it; clicking a hidden one shows it. Hiding the LAST
+ * visible block is refused and the set comes back unchanged (the menu also disables that
+ * box, so this is the backstop). Keys that are not blocks — `jobname` — are carried
+ * through untouched.
+ */
+export function nextHiddenBlocks(hidden: ReadonlySet<string>, clicked: string): string[] {
+  const current = [...hidden];
+  if (!(ETC_BLOCKS as readonly string[]).includes(clicked)) return current;
+  if (hidden.has(clicked)) return current.filter((k) => k !== clicked);
+  const stillVisible = ETC_BLOCKS.filter((b) => b !== clicked && !hidden.has(b));
+  return stillVisible.length === 0 ? current : [...current, clicked];
+}
+
+/**
+ * The view's query-string params, as the page receives them. The saved-view cookie uses
+ * the same three names (lib/etc-view-cookie.ts), so one parser reads both.
+ */
+export type EtcViewParams = { dept?: string; jobname?: string; parts?: string };
+
+/**
+ * The hidden set a URL (or the saved-view cookie) describes. The ONE parser: the page
+ * seeds the grid from it, and the round-trip test pins it against the writer below.
+ *
+ *   dept     "Engineering" / "Shop" / both, comma-separated — the groups SHOWN; "none" for
+ *            neither; absent, empty or unrecognised means both.
+ *   parts    "0" hides Parts Cost.
+ *   jobname  "0" hides the Job Name column.
+ *
+ * Hiding everything is not a state the grid can render, so it is normalised to showing
+ * every block. That can only come from a hand-edited URL or cookie — the menu cannot
+ * produce it — and the safe reading of nonsense is the full grid, not an empty one.
+ */
+export function hiddenFromEtcParams(p: EtcViewParams): string[] {
+  const named = (p.dept ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((g): g is (typeof ETC_DEPT_GROUPS)[number] => g === "Engineering" || g === "Shop");
+  const shownGroups: readonly string[] = named.length ? named : (p.dept ?? "").trim() === "none" ? [] : ETC_DEPT_GROUPS;
+  const partsHidden = p.parts === "0";
+  const nothingShown = shownGroups.length === 0 && partsHidden;
+  return [
+    ...(nothingShown ? [] : ETC_DEPT_GROUPS.filter((g) => !shownGroups.includes(g))),
+    ...(p.jobname === "0" ? ["jobname"] : []),
+    ...(partsHidden && !nothingShown ? [ETC_PARTS_KEY] : []),
+  ];
 }
 
 /**
@@ -58,6 +106,8 @@ export function etcViewWriteParams(hidden: ReadonlySet<ViewKey>, qs: URLSearchPa
   else qs.delete("dept");
   if (hidden.has("jobname")) qs.set("jobname", "0");
   else qs.delete("jobname");
+  if (hidden.has(ETC_PARTS_KEY)) qs.set("parts", "0");
+  else qs.delete("parts");
 }
 
 /**
