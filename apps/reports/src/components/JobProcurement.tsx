@@ -33,6 +33,7 @@ import {
   dayInRange,
   poCellState,
   partsOnPo,
+  hasPoSubRows,
   NO_PO_KEY,
   type FlatPart,
   type PartPoGroup,
@@ -1696,7 +1697,7 @@ function PartsListTab({
   // on sort order, and computing it here (rather than in PartsTableView, after
   // its own sort) is what lets the toolbar button exist without also lifting
   // the sort itself up a level.
-  const expandableIds = useMemo(() => filtered.filter((p) => p.poBreakdown.length > 0).map((p) => p.id), [filtered]);
+  const expandableIds = useMemo(() => filtered.filter(hasPoSubRows).map((p) => p.id), [filtered]);
   const allOpen = expandableIds.length > 0 && expandableIds.every((id) => expanded.has(id));
   const toggleAll = useCallback(() => {
     setExpanded(allOpen ? new Set() : new Set(expandableIds));
@@ -1922,7 +1923,7 @@ function PartsListTab({
             type="button"
             onClick={toggleAll}
             aria-expanded={allOpen}
-            title={allOpen ? "Collapse every part's POs" : `Show every part's POs under its row (${expandableIds.length} parts with purchases)`}
+            title={allOpen ? "Collapse every part's POs" : `Show every part's POs under its row (${expandableIds.length} parts bought on more than one PO)`}
             className="flex h-8 items-center gap-1.5 rounded-md border border-sdc-border bg-white px-3 text-xs font-medium text-sdc-navy hover:bg-sdc-blue-light"
           >
             <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" className={`motion-interactive ${allOpen ? "rotate-90" : ""}`} aria-hidden>
@@ -2296,7 +2297,7 @@ function PartsTableView({
       // carries the identity of the part; only its unfolded children are narrowed to
       // the POs that still owe (below).
       rows.push({ kind: "part", p });
-      if (expanded.has(p.id)) {
+      if (hasPoSubRows(p) && expanded.has(p.id)) {
         // Per order, not per part (2026-09-15): a part shown under "Left to
         // invoice" has at least one qualifying PO (or none at all — see
         // partHasInvoiceBalance), but its OTHER, settled POs are not what the
@@ -2527,7 +2528,7 @@ function PartsTableView({
               // status at a glance. Precedence: drill-flash (inline style, set
               // imperatively) > the status tint's hover > the status tint.
               const rowBg = STATUS_ROW_BG[p.st.key];
-              const expandable = p.poBreakdown.length > 0;
+              const expandable = hasPoSubRows(p);
               return (
                 <tr
                   key={`${p.id}-${i}`}

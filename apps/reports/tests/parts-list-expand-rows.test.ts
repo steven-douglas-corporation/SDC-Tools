@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { hasPoSubRows, type FlatPart } from "../src/lib/po-detail";
 
 // ── A part's POs unfold under its row (2026-09-13) ──────────────────────────
 //
@@ -57,7 +58,7 @@ test("display rows interleave each open part with its PO groups, in poBreakdown 
   assert.doesNotMatch(body, /if \(!onlyLeftToInvoice\) rows\.push/, "the parent row must not be conditional on the filter");
   // Sub-rows follow the chevron again; the auto-expand on filter-on (PartsListTab)
   // is what opens them. The filter only NARROWS which POs show.
-  assert.match(body, /if \(expanded\.has\(p\.id\)\) \{/, "sub-rows must follow the expanded set");
+  assert.match(body, /if \(hasPoSubRows\(p\) && expanded\.has\(p\.id\)\) \{/, "sub-rows must follow the expanded set, and only for a part on more than one PO");
   assert.match(body, /if \(onlyLeftToInvoice && !hasInvoiceBalance\(g\.leftToInvoice\)\) continue;/, "under the filter, zero-balance POs stay hidden");
   assert.match(
     body,
@@ -100,7 +101,7 @@ test("each sub-row cell reads the PO group's own field", () => {
 test("the chevron appears only where there is something to unfold, and the PO drawer's table gets none", () => {
   const panel = strip(read("components/procurement/PoDetailPanel.tsx"));
   assert.match(panel, /expand\?: \{ open: boolean; onToggle: \(\) => void \}/, "expand is optional — the PO drawer renders PartRowCells without it");
-  assert.match(panel, /\{expand && p\.poBreakdown\.length > 0 \? \(/, "no chevron on a part with no purchases");
+  assert.match(panel, /\{expand && hasPoSubRows\(p\) \? \(/, "no chevron on a part with fewer than two POs");
   assert.match(panel, /aria-expanded=\{expand\.open\}/, "the state must be announced, not only drawn");
   const job = strip(read("components/JobProcurement.tsx"));
   assert.match(job, /expand=\{\{ open: expanded\.has\(p\.id\), onToggle: \(\) => toggleExpanded\(p\.id\) \}\}/, "the Parts List wires the chevron");
@@ -109,5 +110,17 @@ test("the chevron appears only where there is something to unfold, and the PO dr
   // Parents stay under "Left to invoice" now, so the button is not hidden by it.
   assert.match(job, /view === "list" && expandableIds\.length > 0 && \(/, "the expand-all button must be list-mode only");
   assert.doesNotMatch(job, /view === "list" && !onlyLeftToInvoice && expandableIds/, "the expand-all button must not be hidden by the filter");
-  assert.match(job, /filtered\.filter\(\(p\) => p\.poBreakdown\.length > 0\)\.map\(\(p\) => p\.id\)/, "expandableIds must be computed before sorting, not after");
+  assert.match(job, /filtered\.filter\(hasPoSubRows\)\.map\(\(p\) => p\.id\)/, "expandableIds must be computed before sorting, not after");
+  assert.match(job, /const expandable = hasPoSubRows\(p\);/, "the row click and pointer cursor must follow the same rule as the chevron");
+});
+
+// ── One PO means nothing to unfold (2026-10-12, by request) ─────────────────
+// A part bought on a single PO showed a chevron that opened one sub-row repeating
+// the parent's own figures. The rule is one function so the chevron, the row click,
+// expand-all and the row list cannot disagree.
+test("hasPoSubRows: only a part on more than one PO has a drop-down", () => {
+  const po = (n: string) => ({ poNumber: n }) as unknown as FlatPart["poBreakdown"][number];
+  assert.equal(hasPoSubRows({ poBreakdown: [] }), false);
+  assert.equal(hasPoSubRows({ poBreakdown: [po("P1")] }), false);
+  assert.equal(hasPoSubRows({ poBreakdown: [po("P1"), po("P2")] }), true);
 });
