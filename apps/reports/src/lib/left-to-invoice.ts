@@ -99,6 +99,13 @@ export type LeftToInvoiceScope = {
   asOfPosting?: boolean;
 };
 
+/** The `YYYY-MM` month before the one `today` falls in (January rolls back to the prior December). */
+export function previousMonth(today: Date): string {
+  // Plain month arithmetic — this file builds no Date from a computed value (see the parity test).
+  const m = today.getMonth(); // 0-based: this month's 1-based number is also the previous month's 0-based index
+  return m === 0 ? `${today.getFullYear() - 1}-12` : `${today.getFullYear()}-${String(m).padStart(2, "0")}`;
+}
+
 /** `2026-08` → `2026-08-31`. Null for anything that is not a `YYYY-MM` month. */
 export function monthEndCutoff(month: string | null | undefined): string | null {
   if (!month || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return null;
