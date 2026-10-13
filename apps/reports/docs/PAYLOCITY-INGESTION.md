@@ -329,7 +329,7 @@ SHOP   2,697.91  app
   two deliberate exclusions.
 * **Excluded, by design:** 9.86h Warranty/Service; 429h ENG + 325h SHOP on jobs that are
   not Active+billable (already surfaced by the **Hours off the grid** KPI); 183h on job
-  numbers the app does not recognise (already the **Undefined Hours** KPI).
+  numbers the app does not recognize (already the **Undefined Hours** KPI).
 * **Manufacturing is not missing.** All 688.62h is imported; it is off the ETC grid by
   design, planned company-wide in the `SHOP_MANUFACTURING` Standard Fees pool, which is
   why the grid has no Mfg column.

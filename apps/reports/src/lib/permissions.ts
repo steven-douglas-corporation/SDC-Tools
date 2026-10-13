@@ -226,7 +226,7 @@ export function setOwnPermissions(next: OwnPermissionsShape): void {
  *
  * ONE ROLE, ONE LOOKUP. No rank comparison and no walk across other roles: the
  * question is only ever "does THIS role hold THIS permission". A role that is
- * not in the set at all — an unrecognised claim from a stale session cookie
+ * not in the set at all — an unrecognized claim from a stale session cookie
  * issued before the role list changed — fails closed rather than throwing.
  *
  * ELT is a wildcard and passes for ANY permission, including ones added after

@@ -75,7 +75,7 @@ test("a restored status selection cannot silently hide every BOM row", () => {
   // Stale keys — a renamed or retired status — match no row. Kept keys survive; the
   // dead ones go, so the badge counts what is actually doing something.
   assert.deepEqual(sanitizeStatusSelection(["received", "backordered"], known, fallback), ["received"]);
-  // Nothing recognisable left means "match no status", which is a fine thing to choose
+  // Nothing recognizable left means "match no status", which is a fine thing to choose
   // in front of you and a terrible thing to restore into a fresh job.
   assert.deepEqual(sanitizeStatusSelection(["backordered"], known, fallback), [...fallback]);
   assert.deepEqual(sanitizeStatusSelection([], known, fallback), [...fallback]);

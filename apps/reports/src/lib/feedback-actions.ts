@@ -97,7 +97,7 @@ export async function submitFeedback(input: SubmitFeedbackInput): Promise<Feedba
     observedValue: clamp(input.observedValue, SHORT_MAX),
     expectedValue: clamp(input.expectedValue, SHORT_MAX),
     body: body.length > BODY_MAX ? `${body.slice(0, BODY_MAX - 1)}…` : body,
-    // An unrecognised value falls back to the default rather than being
+    // An unrecognized value falls back to the default rather than being
     // rejected: the column is a VARCHAR, so a stale client posting a category
     // this build doesn't know about should still get its report filed.
     category: isFeedbackCategory(input.category ?? "") ? (input.category as never) : DEFAULT_FEEDBACK_CATEGORY,

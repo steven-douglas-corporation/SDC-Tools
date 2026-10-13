@@ -396,7 +396,7 @@ test("effectiveNewEtc reads a frozen history row's stored figure whether or not 
 });
 
 // ── historyConfirmedAt — the stamp history rows are confirmed at ────────────
-test("historyConfirmedAt: the last millisecond of the month, UTC, and recognisable as such", () => {
+test("historyConfirmedAt: the last millisecond of the month, UTC, and recognizable as such", () => {
   assert.equal(historyConfirmedAt("2026-08").toISOString(), "2026-08-31T23:59:59.999Z");
   assert.equal(historyConfirmedAt("2026-12").toISOString(), "2026-12-31T23:59:59.999Z"); // year rollover
   assert.equal(historyConfirmedAt("2024-02").toISOString(), "2024-02-29T23:59:59.999Z"); // leap year

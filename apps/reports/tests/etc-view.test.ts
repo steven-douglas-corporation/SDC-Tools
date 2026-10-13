@@ -58,7 +58,7 @@ test("hiddenFromEtcParams: the params a URL or cookie can carry", () => {
   assert.deepEqual(hiddenFromEtcParams({ parts: "0" }), ["parts"]);
   assert.deepEqual(hiddenFromEtcParams({ parts: "1" }), [], "only 0 hides Parts Cost");
   assert.deepEqual(hiddenFromEtcParams({ jobname: "0" }), ["jobname"]);
-  // Unrecognised dept values are the full grid, as before, not "none".
+  // Unrecognized dept values are the full grid, as before, not "none".
   assert.deepEqual(hiddenFromEtcParams({ dept: "Banana" }), []);
   assert.deepEqual(hiddenFromEtcParams({ dept: "" }), []);
 });

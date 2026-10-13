@@ -58,7 +58,7 @@ const COMPACT_SELECT = `${BTN_H_COMPACT} rounded-md border border-sdc-border bg-
 // SOFT tint derived from the existing SDC palette rather than a new one: Hours
 // reuses the brand blue, Parts and ETC reuse the exact tints the Monthly ETC grid
 // already uses for its own Parts Cost / ETC bands (etc/page.tsx), so a manager who
-// knows that grid recognises these on sight. Labor $ and Sales/Margin get their own
+// knows that grid recognizes these on sight. Labor $ and Sales/Margin get their own
 // soft washes (navy, lime) since nothing already claims those roles. All five are
 // `-bg`/opacity-modified tokens, never a saturated fill — see GROUP_META below.
 type GroupKey = "identity" | "hours" | "labor" | "etc" | "parts" | "sales";

@@ -16,7 +16,7 @@ import type { CellValue, ColumnType, SheetSpec } from "@/lib/export/sheet";
 //   * number    -> raw digits, no thousands separators, no currency symbol. The file is
 //                  data; formatting belongs to the XLSX export.
 //   * Date      -> ISO yyyy-mm-dd. Unambiguous, sorts correctly as text, and Excel
-//                  recognises it as a date on import.
+//                  recognizes it as a date on import.
 //   * string    -> quoted only when it has to be.
 
 export function csvCell(value: CellValue, type?: ColumnType): string {

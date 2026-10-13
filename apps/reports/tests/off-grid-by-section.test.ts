@@ -83,7 +83,7 @@ test("section codes are given their names", () => {
   assert.equal(rows.find((r) => r.section === "10-312")!.name, "System Design & Drawings");
 });
 
-test("an unrecognised code still counts, just unnamed", () => {
+test("an unrecognized code still counts, just unnamed", () => {
   // Dropping it would break the totals; the code alone is still actionable.
   const rows = offGridBySection([
     { jobId: "9999", jobName: "Odd", status: null, hours: 5, sections: [{ section: "99-999", hours: 5 }] },

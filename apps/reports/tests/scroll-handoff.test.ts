@@ -53,7 +53,7 @@ const pageWithRoom = () => scroller({ scrollTop: 500 });
 const UP = -100;
 const DOWN = 100;
 
-// ── Recognising a scroll container ──────────────────────────────────────────
+// ── Recognizing a scroll container ──────────────────────────────────────────
 
 test("only an overflowing auto/scroll container counts as a scroller", () => {
   assert.ok(scrollsVertically(scroller()));

@@ -236,7 +236,7 @@ export function classifyTotalEto(error: unknown, context?: { authenticated?: boo
   if (code === "EPARAM" || /Validation failed for parameter/i.test(message)) return "param_binding";
   if (code === "EINJECT" || code === "EARGS" || code === "EDUPEPARAM") return "param_binding";
 
-  // Prisma, i.e. OUR database rather than Total ETO's. Recognised by the client's
+  // Prisma, i.e. OUR database rather than Total ETO's. Recognized by the client's
   // own class names and its P#### error codes.
   if (typeof name === "string" && name.startsWith("PrismaClient")) return "app_write";
   if (typeof code === "string" && /^P\d{4}$/.test(code)) return "app_write";
@@ -323,7 +323,7 @@ export function describeTotalEtoFailure(error: unknown, context?: { authenticate
       return `This Total ETO query was cancelled because the step that asked for it ran out of its own time budget — the query was stopped rather than left running. Not a Total ETO fault. (${raw})`;
     default:
       // Only claim Total ETO when there is driver evidence for it. Without a code
-      // this is an unrecognised error from somewhere inside a step that happens to
+      // this is an unrecognized error from somewhere inside a step that happens to
       // own a Total ETO source, and naming the server would send whoever reads it
       // to check a system that may be perfectly healthy.
       return (error as { code?: unknown } | null)?.code != null

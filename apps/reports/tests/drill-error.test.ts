@@ -40,7 +40,7 @@ test("an unreachable upstream is named; anything else stays generic", () => {
     assert.ok(s.includes(code), `${code} should classify as "upstream unreachable"`);
   }
   assert.ok(s.includes("is not responding"), "the unreachable message should say the system is not responding");
-  assert.ok(s.includes("Couldn't load this detail"), "anything unrecognised keeps the generic message");
+  assert.ok(s.includes("Couldn't load this detail"), "anything unrecognized keeps the generic message");
   assert.ok(s.includes("figures already on the page are unaffected"), "tell the user the page's own numbers still stand");
 });
 

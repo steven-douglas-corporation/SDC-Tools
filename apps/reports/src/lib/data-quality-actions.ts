@@ -33,7 +33,7 @@ export type EmployeePunch = {
 
 export type EmployeePunchDetail = {
   employeeId: string;
-  // Resolved name, or null when this is one of the unrecognised IDs — which is
+  // Resolved name, or null when this is one of the unrecognized IDs — which is
   // itself the finding, so the panel says so rather than showing a blank.
   name: string | null;
   department: string | null;

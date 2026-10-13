@@ -93,7 +93,7 @@ export async function getTmHoursTotals(jobPks: number[], startDate: string, endD
   for (const g of grouped) {
     const hours = Number(g._sum?.hours ?? 0);
     const cols = mapPunchToColumns(g.section, hours);
-    // A raw pair mapPunchToColumns does not recognise at all yields NO columns —
+    // A raw pair mapPunchToColumns does not recognize at all yields NO columns —
     // Service/Spare Parts phases, the unmapped 10-400, and the malformed codes
     // ("-311", "1-312", "5-111") whose phase prefix is missing in the export.
     // Those hours were being dropped here without a trace; they land in
@@ -158,7 +158,7 @@ export async function getTmHoursDrillRows(
       // disagree with its own drill-through. One function decides now, in both
       // places.
       //
-      // An unrecognised raw pair yields no columns and is emitted as one
+      // An unrecognized raw pair yields no columns and is emitted as one
       // `otherHours` row carrying its own raw code, matching what
       // getTmHoursTotals adds to that bucket.
       const cols = mapPunchToColumns(d.section, hours);

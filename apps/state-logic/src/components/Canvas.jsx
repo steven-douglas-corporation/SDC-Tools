@@ -676,7 +676,7 @@ export function Canvas() {
     const sourceNode = sm.nodes.find(n => n.id === sourceNodeId);
     if (!sourceNode) return null;
 
-    // Recognise the source's "decision flavor":
+    // Recognize the source's "decision flavor":
     //  - DecisionNode (standalone)
     //  - StateNode with vision branching (`data.visionExitMode`)
     //  - StateNode with a v2 picker Branch action (newest path)

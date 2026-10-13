@@ -130,7 +130,7 @@ export function groupHoursRows(
       const ra = rank(a.values[0]);
       const rb = rank(b.values[0]);
       // Anything the grid has no place for sorts after everything it does — by hours, so
-      // an unrecognised department is still ordered usefully among its own kind rather
+      // an unrecognized department is still ordered usefully among its own kind rather
       // than alphabetically.
       if (ra !== rb) return ra - rb;
       return b.hours - a.hours || a.key.localeCompare(b.key);

@@ -5,7 +5,7 @@ import { cycleSortState, type SortState } from "@/lib/table-sort";
 
 // Shared sort STATE for a drill-through table's header row — shaped like
 // useDrillFilters.ts's {filters, count, toggle, ...}, so a component already reading
-// that hook family recognises this one.
+// that hook family recognizes this one.
 //
 // Deliberately thin: the actual `sortRows(...)` call stays inline at each call site,
 // next to whatever filter/group `useMemo` it composes with — every table's row shape and

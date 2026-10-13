@@ -29,7 +29,7 @@ const code = (p: string) =>
 const ETC_BOUNDARY = code("etc/error.tsx");
 const APP_BOUNDARY = code("error.tsx");
 
-test("the exact reported message is recognised", () => {
+test("the exact reported message is recognized", () => {
   // Verbatim from the screenshot, including the "from module" tail Turbopack adds.
   assert.equal(
     isStaleBundleError(new Error("Failed to load chunk /_next/static/chunks/3q20900fw39rz.js from module 964893")),
@@ -37,7 +37,7 @@ test("the exact reported message is recognised", () => {
   );
 });
 
-test("every bundler and browser wording is recognised", () => {
+test("every bundler and browser wording is recognized", () => {
   // There is no stable error code for this, so the list of phrasings IS the detector.
   const messages = [
     "Failed to load chunk /_next/static/chunks/abc.js from module 1",
@@ -63,7 +63,7 @@ test("every bundler and browser wording is recognised", () => {
 // failure, but reset() is equally useless (it re-sends the identical stale
 // reference), so it needs the same "reload" treatment, not the same
 // detection string.
-test("a stale Server Action reference is recognised — Next's exact wording", () => {
+test("a stale Server Action reference is recognized — Next's exact wording", () => {
   assert.equal(
     isStaleBundleError(new Error('Failed to find Server Action "60f0648c50f0a1234567890abcdef1234567890". This request might be from an older or newer deployment.')),
     true,

@@ -339,12 +339,12 @@ function PunchesSection({ dq, explorer }: { dq: DataQuality; explorer: PunchExpl
     },
     {
       key: "undefinedEmployees",
-      title: "Unrecognised employee IDs",
+      title: "Unrecognized employee IDs",
       rule: "Payroll IDs that appear on punches but match nobody on the roster. Their hours still count toward job totals, but nobody can be asked about them — usually a leaver who was never imported, or an ID typed into the wrong field.",
       count: dq.undefinedEmployees.count,
       hours: dq.undefinedEmployees.hours,
       unit: "IDs",
-      // Drillable: an unrecognised ID is only actionable once you can see what
+      // Drillable: an unrecognized ID is only actionable once you can see what
       // it has been booking to.
       body: <EmployeeIdDrill ids={dq.undefinedEmployees.ids} />,
     },
