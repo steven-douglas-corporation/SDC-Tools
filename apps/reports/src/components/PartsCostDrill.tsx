@@ -8,6 +8,7 @@ import { DrillPanel, DrillControls, DrillEmpty, DRILL_NUM, DRILL_TOTAL_LABEL } f
 import { usd, usd2 } from "@/components/ui/format";
 import { loadPartsEtcHistory, type PartsEtcMonth } from "@/lib/parts-etc-history-actions";
 import type { PartsCostFinancials } from "@/lib/parts-cost-financials-shared";
+import { describeTransfers, type JobTransferEntry } from "@/lib/parts-transfer-netting";
 import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { normalizeVendor } from "@/lib/vendor-normalize";
 
@@ -18,8 +19,14 @@ import { normalizeVendor } from "@/lib/vendor-normalize";
 // The card's figures come out of getPartsCostFinancials, which derives them from
 // exactly these rows (parts-cost-financials.ts:130-131):
 //
-//   Invoiced           = Σ line.actualAmount          (GL-posted spend, lifetime)
-//   Left to be invoiced = Σ line.totalPrice − Invoiced, floored at 0
+//   Invoiced           = Σ line.actualAmount + parts moved between jobs  (GL-posted spend, lifetime)
+//   Purchased          = Σ line.totalPrice   + parts moved between jobs
+//   Left to be invoiced = Σ line.totalPrice − Σ line.actualAmount, floored at 0   (transfers excluded)
+//
+// Parts moved between jobs (2026-10-13) are inventory pulls, not purchase lines, so they are
+// not in `lines`. They arrive as `financials.transfers` and are shown here as TRANSFER rows,
+// so the footer still sums to the card. Each adds the same amount to Purchased and Invoiced,
+// which is why it never touches Left to be invoiced.
 //
 // `financials.lines` carries those same rows, already fetched for the card, so this
 // panel re-sums the identical field rather than issuing a second query with a second
@@ -64,7 +71,42 @@ const MODE_TITLE: Record<PartsDrillMode, string> = {
   etc: "Parts Cost Detail — ETC",
 };
 
-type Row = PartsCostLine & { leftToInvoice: number };
+type Row = PartsCostLine & {
+  leftToInvoice: number;
+  /** A parts transfer between jobs, shown as a row so the footer ties to the card. Not a purchase line. */
+  isTransfer?: boolean;
+};
+
+/**
+ * One display row per transfer entry. Purchased and Invoiced are the same amount, so Left to
+ * invoice is 0 and the row only ever appears in the modes about money already spent. Built
+ * from `financials.transfers` — the SAME figures the card added to Invoiced and Purchased —
+ * so the rows can never sum to anything but the card.
+ */
+function transferRows(entries: readonly JobTransferEntry[]): Row[] {
+  return entries.map((e) => ({
+    lineId: `transfer:${e.direction}:${e.otherJob}`,
+    itemId: null,
+    purchaseDate: null,
+    invoicedDate: e.lastDay || null,
+    supplier: null,
+    manufacturer: null,
+    category: null,
+    poNumber: "TRANSFER",
+    partNumber: null,
+    description:
+      e.direction === "out"
+        ? `Parts moved to job ${e.otherJob} — ${e.transfers} item movement${e.transfers === 1 ? "" : "s"} (inventory pulls)`
+        : `Parts moved in from job ${e.otherJob} — ${e.transfers} item movement${e.transfers === 1 ? "" : "s"} (inventory pulls)`,
+    quantity: 0,
+    unitPrice: 0,
+    totalPrice: e.amount,
+    invoicedAmount: e.amount,
+    actualAmount: e.amount,
+    leftToInvoice: 0,
+    isTransfer: true,
+  }));
+}
 
 type ColKey =
   | "po"
@@ -181,14 +223,17 @@ export function PartsCostDrill({
     // normalization — without this the drill would show "SDC" beside a Parts List
     // showing "Steven Douglas Corp (SDC)" for the same line, and its own search box
     // would not find the canonical name.
-    () =>
-      financials.lines.map((l) => ({
+    () => [
+      ...financials.lines.map((l) => ({
         ...l,
         supplier: normalizeVendor(l.supplier),
         manufacturer: normalizeVendor(l.manufacturer),
         leftToInvoice: l.totalPrice - l.actualAmount,
       })),
-    [financials.lines],
+      // Parts moved between jobs, so these rows sum to the card's Invoiced and Purchased.
+      ...transferRows(financials.transfers),
+    ],
+    [financials.lines, financials.transfers],
   );
 
   const scoped = useMemo(() => rowsForMode(rows, mode), [rows, mode]);
@@ -255,7 +300,10 @@ export function PartsCostDrill({
     {
       label: "Purchased / committed",
       value: usd(financials.purchased),
-      hint: "Every parts line's total cost on this job, invoiced or not",
+      hint:
+        Math.abs(financials.transfersNet) >= 1
+          ? "Every parts line's total cost on this job, invoiced or not — plus parts moved between jobs (see Transferred between jobs)"
+          : "Every parts line's total cost on this job, invoiced or not",
     },
     // ── Scope in the label, not only in a hint (2026-09-02) ─────────────────
     //
@@ -266,8 +314,20 @@ export function PartsCostDrill({
     {
       label: "Invoiced actual (lifetime)",
       value: usd(financials.invoiced),
-      hint: "Every GL-posted line on this job, all POs, all dates. The bar's blue section",
+      hint:
+        Math.abs(financials.transfersNet) >= 1
+          ? "Every GL-posted line on this job, all POs, all dates, plus parts moved between jobs (see Transferred between jobs). The bar's blue section"
+          : "Every GL-posted line on this job, all POs, all dates. The bar's blue section",
     },
+    ...(Math.abs(financials.transfersNet) >= 1
+      ? [
+          {
+            label: "Transferred between jobs",
+            value: `${financials.transfersNet > 0 ? "+" : "−"}${usd(Math.abs(financials.transfersNet))}`,
+            hint: `${describeTransfers(financials.transfers)}. Already inside Purchased and Invoiced; it does not change Left to invoice. Booked as inventory pulls because Total ETO cannot re-code an invoice to another job`,
+          },
+        ]
+      : []),
     {
       label: "Left to invoice",
       value: usd(financials.openBalance),
@@ -337,9 +397,11 @@ export function PartsCostDrill({
       title={MODE_TITLE[mode]}
       meta={jobLabel}
       note={
-        floored
-          ? `These rows sum to ${usd(sums.left)} left to invoice; the card shows ${usd(financials.leftToInvoice)} because that figure is floored at zero job-wide.`
-          : undefined
+        financials.transfersUnavailable
+          ? "Parts moved between jobs couldn't be loaded, so these rows are invoices only and may not match the Projects grid."
+          : floored
+            ? `These rows sum to ${usd(sums.left)} left to invoice; the card shows ${usd(financials.leftToInvoice)} because that figure is floored at zero job-wide.`
+            : undefined
       }
       onClose={onClose}
       className={className}
@@ -460,14 +522,17 @@ export function PartsCostDrill({
               the duplicate-month case visible on the job it affects. */}
           {!historyLoading && history && history.length > 0 && (() => {
             const booked = history.reduce((sum, h) => sum + h.spent, 0);
-            const delta = booked - financials.invoiced;
+            // The monthly figures are booked INVOICES, so they are compared with the
+            // invoice total — transfers between jobs are not in them and are taken back out.
+            const invoiceBasis = financials.invoiced - financials.transfersNet;
+            const delta = booked - invoiceBasis;
             if (Math.abs(delta) < 1) return null;
             return (
               <p className="border-b border-sdc-border bg-sdc-yellow-bg/50 px-4 py-2 text-note leading-relaxed text-sdc-gray-600">
                 These months book{" "}
                 <span className="font-mono font-semibold tabular-nums text-sdc-navy">{usd(booked)}</span> of parts
                 against a lifetime GL-posted total of{" "}
-                <span className="font-mono font-semibold tabular-nums text-sdc-navy">{usd(financials.invoiced)}</span> —
+                <span className="font-mono font-semibold tabular-nums text-sdc-navy">{usd(invoiceBasis)}</span> —
                 a difference of{" "}
                 <span className="font-mono font-semibold tabular-nums text-sdc-navy">
                   {delta > 0 ? "+" : "−"}
@@ -554,8 +619,8 @@ export function PartsCostDrill({
                 <td className="px-2 py-1 font-mono">{dash(r.partNumber)}</td>
                 <td className="max-w-[22rem] truncate px-2 py-1" title={r.description ?? undefined}>{dash(r.description)}</td>
                 <td className="max-w-[12rem] truncate px-2 py-1" title={r.supplier ?? undefined}>{dash(r.supplier)}</td>
-                <td className={`px-2 py-1 ${DRILL_NUM}`}>{r.quantity}</td>
-                <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.unitPrice)}</td>
+                <td className={`px-2 py-1 ${DRILL_NUM}`}>{r.isTransfer ? "—" : r.quantity}</td>
+                <td className={`px-2 py-1 ${DRILL_NUM}`}>{r.isTransfer ? "—" : money(r.unitPrice)}</td>
                 <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.totalPrice)}</td>
                 <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.actualAmount)}</td>
                 <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.leftToInvoice)}</td>

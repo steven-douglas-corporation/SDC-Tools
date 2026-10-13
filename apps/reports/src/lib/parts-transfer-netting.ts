@@ -29,7 +29,8 @@
 //   - the positive side must NOT be linked to a purchase order: such a pull
 //     draws on that job's own receipt, whose invoice the app already counts
 //   - the two costs must be of the same order (within 2x), else it is not the same movement
-//   - the nearest date wins; ties go to the lowest pull id, so it is deterministic
+//   - unambiguous matches first; a genuine tie goes to the from -> to route with the most
+//     unambiguous matches, then the nearest date, then the lowest pull id (deterministic)
 //   - a transfer booked in PIECES (8 units out, 1 + 7 in) is matched in a second pass, only
 //     when the pieces sum exactly to the single pull on the other side, on ONE other job;
 //     if more than one job could complete the sum it is ambiguous and nothing is applied
@@ -207,22 +208,64 @@ export function matchTransfers(
     });
   };
 
-  // Pass 1 — one to one.
+  // Pass 1 — one to one, in two steps so a tie is settled by evidence and not by pull id.
+  //
+  // Every leaving pull's qualifying arrivals are listed first. Two identical leaving pulls
+  // (1155 and 1096, same item, same day) and two identical arrivals (1160 and 1162) can pair
+  // either way round; breaking that by id produced "1155 -> 1162" beside "1096 -> 1160" for a
+  // $17.60 item while 122 other items moved 1155 -> 1160 that same day.
+  //   A. a leaving pull with exactly ONE arrival left is matched — nothing to decide. Repeats
+  //      until none is left, because each match can leave another with a single choice. The
+  //      from -> to routes these establish are counted.
+  //   B. whatever still has several arrivals goes to the route with the most unambiguous
+  //      matches, then the nearest date, then the lowest id.
+  const arrivalsFor = new Map<number, PullRow[]>();
   for (const n of negatives) {
-    let best: PullRow | null = null;
-    let bestGap = Infinity;
+    const list: PullRow[] = [];
     for (const p of posByItem.get(n.itemId) ?? []) {
-      if (used.has(p.id) || p.jobId === n.jobId) continue;
+      if (p.jobId === n.jobId) continue;
       if (Math.abs(p.qty + n.qty) > QTY_EPS) continue;
-      const gap = gapDays(p.day, n.day);
-      if (gap > TRANSFER_WINDOW_DAYS) continue;
+      if (gapDays(p.day, n.day) > TRANSFER_WINDOW_DAYS) continue;
       if (!costsAgree(Math.abs(n.cost), p.cost)) continue;
-      if (gap < bestGap || (gap === bestGap && best && p.id < best.id)) {
-        best = p;
-        bestGap = gap;
+      list.push(p);
+    }
+    arrivalsFor.set(n.id, list);
+  }
+  const routeCount = new Map<string, number>();
+  const route = (n: PullRow, p: PullRow) => `${n.jobId}>${p.jobId}`;
+  for (let progressed = true; progressed; ) {
+    progressed = false;
+    for (const n of negatives) {
+      if (used.has(n.id)) continue;
+      const open = (arrivalsFor.get(n.id) ?? []).filter((p) => !used.has(p.id));
+      if (open.length !== 1) continue;
+      record([n], [open[0]]);
+      routeCount.set(route(n, open[0]), (routeCount.get(route(n, open[0])) ?? 0) + 1);
+      progressed = true;
+    }
+  }
+  // The strongest evidence is committed first — across ALL the leftover pairs, not in pull-id
+  // order. Walking leaving pulls by id let 1096 (lower id) take the 1160 arrival ahead of 1155,
+  // whose route to 1160 carries 122 other items that day.
+  for (;;) {
+    let best: { n: PullRow; p: PullRow; affinity: number; gap: number } | null = null;
+    for (const n of negatives) {
+      if (used.has(n.id)) continue;
+      for (const p of arrivalsFor.get(n.id) ?? []) {
+        if (used.has(p.id)) continue;
+        const affinity = routeCount.get(route(n, p)) ?? 0;
+        const gap = gapDays(p.day, n.day);
+        const better =
+          best === null ||
+          affinity > best.affinity ||
+          (affinity === best.affinity &&
+            (gap < best.gap || (gap === best.gap && (n.id < best.n.id || (n.id === best.n.id && p.id < best.p.id)))));
+        if (better) best = { n, p, affinity, gap };
       }
     }
-    if (best) record([n], [best]);
+    if (!best) break;
+    record([best.n], [best.p]);
+    routeCount.set(route(best.n, best.p), (routeCount.get(route(best.n, best.p)) ?? 0) + 1);
   }
 
   // Pass 2a — one leaving pull, arriving in pieces on a single other job.
@@ -306,4 +349,75 @@ export function applyNetting(actual: Map<string, number>, adjustments: ReadonlyM
     if (cur === undefined) continue;
     actual.set(job, cents(cur + delta));
   }
+}
+
+// ── What a Parts Cost card shows for a set of jobs (2026-10-13) ──────────────
+//
+// The Job Details Parts Cost card covers one job — or several at once. A transfer
+// between two jobs INSIDE the selection never left it, so it is not shown and not
+// counted; only transfers with the other side outside the selection are. For a single
+// job (the usual case) this is exactly `netTransfersByJob`'s figure for that job.
+
+export type JobTransferEntry = {
+  direction: "in" | "out";
+  /** The job on the other side of the transfer. */
+  otherJob: string;
+  /** Signed, as it moves the selection's Parts Actual: positive in, negative out. */
+  amount: number;
+  /** How many matched transfers (item movements) it is made of. */
+  transfers: number;
+  /** The latest day any of them completed, YYYY-MM-DD. */
+  lastDay: string;
+};
+
+export type JobTransferSummary = {
+  /** Sum of `entries` — what the card adds to both Invoiced and Purchased. */
+  net: number;
+  entries: JobTransferEntry[];
+};
+
+export const EMPTY_TRANSFER_SUMMARY: JobTransferSummary = { net: 0, entries: [] };
+
+export function summarizeTransfersForJobs(
+  transfers: readonly Transfer[],
+  jobs: Iterable<string>,
+): JobTransferSummary {
+  const set = new Set(jobs);
+  const byKey = new Map<string, JobTransferEntry>();
+  for (const t of transfers) {
+    const fromIn = set.has(t.fromJob);
+    const toIn = set.has(t.toJob);
+    if (fromIn === toIn) continue; // outside the selection entirely, or wholly inside it
+    const direction = toIn ? "in" : "out";
+    const otherJob = toIn ? t.fromJob : t.toJob;
+    const key = `${direction}:${otherJob}`;
+    const e = byKey.get(key) ?? { direction, otherJob, amount: 0, transfers: 0, lastDay: "" };
+    e.amount += toIn ? t.costIn : -t.costOut;
+    e.transfers++;
+    if (t.day > e.lastDay) e.lastDay = t.day;
+    byKey.set(key, e);
+  }
+  const entries = [...byKey.values()]
+    .map((e) => ({ ...e, amount: cents(e.amount) }))
+    .filter((e) => e.amount !== 0)
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || a.otherJob.localeCompare(b.otherJob));
+  return { net: cents(entries.reduce((s, e) => s + e.amount, 0)), entries };
+}
+
+const wholeDollars = (n: number) => `$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
+
+/**
+ * One line of words for a card: "moved to job 1160 (−$20,463)", "moved in from job 1155
+ * (+$20,463)", several joined, the smallest dropped into "+N more" past three. Pure and
+ * shared by every screen that names a transfer, so they cannot phrase the same fact two ways.
+ */
+export function describeTransfers(entries: readonly JobTransferEntry[], max = 3): string {
+  if (entries.length === 0) return "no transfers";
+  const one = (e: JobTransferEntry) =>
+    e.direction === "out"
+      ? `moved to job ${e.otherJob} (−${wholeDollars(e.amount)})`
+      : `moved in from job ${e.otherJob} (+${wholeDollars(e.amount)})`;
+  const shown = entries.slice(0, max).map(one);
+  const more = entries.length - shown.length;
+  return more > 0 ? `${shown.join(", ")}, +${more} more` : shown.join(", ");
 }

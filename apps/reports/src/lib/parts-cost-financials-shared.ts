@@ -1,4 +1,5 @@
 import type { PartsCostLine } from "@/lib/sync-totaleto";
+import type { JobTransferEntry } from "@/lib/parts-transfer-netting";
 import { reconcileRounding } from "@/lib/rounding";
 
 // Split out of parts-cost-financials.ts (2026-08-15): that file starts with
@@ -112,6 +113,23 @@ export type PartsCostFinancials = {
   failedJobs: number;
   /** Total PartsCostLine rows aggregated (0 when every job failed). */
   lineCount: number;
+  /**
+   * Parts moved between jobs as inventory pulls (2026-10-13), net, signed: positive when
+   * parts arrived from other jobs, negative when they left. ALREADY INCLUDED in `invoiced`
+   * and `purchased` above, and in everything derived from them (`totalSpent`, `projection`,
+   * `variance`) — it is stated separately so the card can show the line, and so a reader can
+   * take it back out: `invoiced - transfersNet` is the GL-posted invoice total of `lines`.
+   * `leftToInvoice` and `openBalance` are NOT touched: they come from open PO lines, and a
+   * transfer is not one. 0 when nothing moved or when `transfersUnavailable`.
+   */
+  transfersNet: number;
+  /** The other job and the dollars, one entry per direction and counterpart, largest first. */
+  transfers: JobTransferEntry[];
+  /**
+   * True when the transfers could not be read. `invoiced` and `purchased` then exclude them,
+   * and the card must say so — an un-netted figure is not the same as "no transfers".
+   */
+  transfersUnavailable: boolean;
   /**
    * The raw per-line rows this was aggregated from — exposed so a caller that
    * also needs line-level detail (e.g. JobProcurement's parts list) can reuse

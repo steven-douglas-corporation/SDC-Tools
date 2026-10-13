@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { getPartsCostForJobs, type PartsCostLine } from "@/lib/sync-totaleto";
+import { getPartsCostForJobs, getTransfersForJobs, type PartsCostLine } from "@/lib/sync-totaleto";
+import { EMPTY_TRANSFER_SUMMARY } from "@/lib/parts-transfer-netting";
 import { computePartsProjection, computeYetToInvoice } from "@/lib/parts-projection";
 import { readPriorEtcByJob, sumPriorEtc } from "@/lib/parts-prior-etc";
 import { computePartsBudgetProjection, purchasedTotal, actualTotal } from "@/lib/parts-budget-projection";
@@ -106,6 +107,7 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
       inHouseExcluded: 0, inHouseRows: 0, additionalExposure: 0, coverageLine: null,
       etcUnknown: true, etcMonth: null,
       variance: null, variancePct: null, failedJobs: 0, lineCount: 0, lines: [],
+      transfersNet: 0, transfers: [], transfersUnavailable: false,
     };
   }
 
@@ -141,10 +143,38 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
   const failedJobs = byJob ? 0 : jobs.length;
   const lines: PartsCostLine[] = byJob ? jobs.flatMap((j) => byJob.get(j.jobId) ?? []) : [];
 
+  // ── Parts transferred between jobs (2026-10-13) ───────────────────────────
+  //
+  // Total ETO cannot re-code an invoice to another job, so a transfer is booked as inventory
+  // pulls and the invoices stay on the job that bought the parts (lib/parts-transfer-netting.ts
+  // has the whole story and the matching rule). `lines` are those invoices, so on their own
+  // they keep a transferred job's cost on the wrong job — and disagree with the Projects
+  // grid, whose Parts Actual already nets the same transfers.
+  //
+  // Added to BOTH invoiced and purchased, by the same amount, and to nothing else:
+  //   - Purchased − Invoiced (= the whole open balance) is unchanged, because the parts that
+  //     moved were bought AND received; they leave open POs exactly where they were.
+  //   - leftToInvoice / openBalance / the in-house exclusion / the ETC chain are built from
+  //     open PO lines and the Monthly ETC row, and a transfer is neither.
+  // `lines` itself is never touched: every other reader of those lines (Build Readiness,
+  // T&M, the procurement API, PO-across-jobs, the Parts List rows) keeps seeing real
+  // purchase lines only.
+  //
+  // A failed read is SAID, never absorbed: un-netted figures on a budget card must not pass
+  // for "no transfers". Same all-or-nothing rule as the lines read just above.
+  const transferSummary = await withTimeoutOrNull(
+    `TotalETO transfers (${jobs.length} jobs)`,
+    PARTS_BATCH_BUDGET_MS,
+    () => getTransfersForJobs(jobs.map((j) => j.jobId)),
+    (e) => console.error("getPartsCostFinancials: getTransfersForJobs failed:", e),
+  );
+  const transfersUnavailable = transferSummary == null;
+  const transfers = transferSummary ?? EMPTY_TRANSFER_SUMMARY;
+
   const etcMonth = await resolveEtcMonth(jobs.map((j) => j.id), opts?.asOfDate);
   const projection = await computePartsBudgetProjection(jobs.map((j) => j.id), lines, etcMonth).catch(() => null);
 
-  const invoiced = actualTotal(lines);
+  const invoiced = actualTotal(lines) + transfers.net;
   // Billed but not GL-posted. Signed on purpose — a flagged refund makes it negative,
   // and clamping would hide exactly the case worth seeing (job 1148's -$31,765
   // BlackHawk credit). See the field's own note in parts-cost-financials-shared.ts.
@@ -206,7 +236,7 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
     etc,
     totalSpent,
     projection: projectionTotal,
-    purchased: purchasedTotal(lines),
+    purchased: purchasedTotal(lines) + transfers.net,
     billedNotPosted,
     priorEtc: projected.priorEtc,
     priorEtcSource: priorEtc.source,
@@ -226,5 +256,8 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
     failedJobs,
     lineCount: lines.length,
     lines,
+    transfersNet: transfers.net,
+    transfers: transfers.entries,
+    transfersUnavailable,
   };
 }

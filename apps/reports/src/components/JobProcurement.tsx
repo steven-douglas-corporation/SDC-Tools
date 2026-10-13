@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type 
 import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bom";
 import { isUncoveredPart, quantityReadiness } from "@/lib/job-bom-rules";
 import type { PartsCostLine } from "@/lib/sync-totaleto";
+import { describeTransfers, type JobTransferEntry } from "@/lib/parts-transfer-netting";
 import { usd, safePct } from "@/components/ui/format";
 import { useToast } from "@/components/ui/Toast";
 import { DragScroll } from "@/components/DragScroll";
@@ -196,7 +197,16 @@ function loadPersisted(): Partial<PersistedState> {
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: PartsCostLine[] }) {
+export function JobProcurement({
+  bom,
+  partsLines,
+  transfers,
+}: {
+  bom: JobBom;
+  partsLines: PartsCostLine[];
+  /** Parts moved between jobs, as the Parts Cost card nets them. Absent = the caller has none to show. */
+  transfers?: { net: number; entries: JobTransferEntry[]; unavailable: boolean };
+}) {
   const { toast } = useToast();
   const saved = useMemo(() => loadPersisted(), []);
 
@@ -531,6 +541,20 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
     };
   }, [parts, lines]);
 
+  // Parts moved between jobs, layered on AFTER the reconciliation above and kept out of it:
+  // a transfer is booked as inventory pulls, never as a purchase line, so it can neither
+  // explain nor un-explain a row. Carried only so the totals line can say how the Parts Cost
+  // card gets from this job total to its own figure.
+  const reconcileWithTransfers = useMemo(
+    () => ({
+      ...reconcile,
+      transfersNet: transfers?.net ?? 0,
+      transferEntries: transfers?.entries ?? [],
+      transfersUnavailable: transfers?.unavailable ?? false,
+    }),
+    [reconcile, transfers],
+  );
+
   // Top summary line. `noPO` is a real procurement gap — nothing purchased,
   // nothing pulled from stock, no process schedule — and is counted separately
   // from the parts that are covered without a PO, which get their own figure so
@@ -710,7 +734,7 @@ export function JobProcurement({ bom, partsLines }: { bom: JobBom; partsLines: P
           scope={scope}
           setScope={setScope}
           allParts={parts}
-          reconcile={reconcile}
+          reconcile={reconcileWithTransfers}
           state={partsState}
           jobId={bom.jobId}
           drill={drill}
@@ -1330,6 +1354,11 @@ type JobReconcile = {
   estimated: number;
   /** Job lifetime minus every PURCHASED row the table draws. Zero is the expected value. */
   unexplained: number;
+  /** Net parts moved between jobs (signed). Outside the rows and outside `unexplained`. */
+  transfersNet: number;
+  transferEntries: JobTransferEntry[];
+  /** The transfers could not be read, so the Parts Cost card may differ from this list. */
+  transfersUnavailable: boolean;
 };
 
 type WindowStatus = {
@@ -2806,6 +2835,27 @@ function PartsTableView({
                       <span className="text-white/45">
                         plus <span className="font-mono tabular-nums text-white/70">{usd(reconcile.estimated)}</span> of BOM
                         parts not bought yet (priced from the BOM, not spend)
+                      </span>
+                    )}
+                    {/* ── Parts moved between jobs (2026-10-13) ───────────────────────
+                        Not a row and not in the sum above: a transfer is booked as inventory
+                        pulls, never as a purchase line, so this list — which is the PO lines —
+                        cannot show it. The Parts Cost card does net it, so this says how the
+                        card gets from this total to its own. */}
+                    {Math.abs(reconcile.transfersNet) >= 1 && (
+                      <span className="text-white/45">
+                        {reconcile.transfersNet < 0 ? "less" : "plus"}{" "}
+                        <span className="font-mono tabular-nums text-white/70">{usd(Math.abs(reconcile.transfersNet))}</span>{" "}
+                        of parts {describeTransfers(reconcile.transferEntries)} (inventory pulls, not purchase lines) ={" "}
+                        <span className="font-mono tabular-nums text-white/70">
+                          {usd(reconcile.jobTotal + reconcile.transfersNet)}
+                        </span>{" "}
+                        purchased on the Parts Cost card
+                      </span>
+                    )}
+                    {reconcile.transfersUnavailable && (
+                      <span className="text-white/45">
+                        parts moved between jobs couldn&apos;t be loaded, so the Parts Cost card may differ from this list
                       </span>
                     )}
                   </span>

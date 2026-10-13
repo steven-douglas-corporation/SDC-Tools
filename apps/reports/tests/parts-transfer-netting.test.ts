@@ -285,3 +285,38 @@ test("the pull read is read-only, fulfilled-only, off the stock bin, and bounded
   assert.match(fn, /FulfilledDate >= @since/);
   assert.doesNotMatch(fn, /\b(INSERT|UPDATE|DELETE|MERGE)\b/i);
 });
+
+// ── Ties are settled by evidence, not by pull id (1155/1096 -> 1160/1162, $17.60) ─────────
+
+test("a tie follows the established route, not the pull-id order (item 93: 1155/1096 -> 1160/1162)", () => {
+  // The real shape: 4 units of item 93 left BOTH 1096 and 1155 on 08-24 and one issue of 4 went
+  // to 1160 that day; 1162 had its own on 08-21. The stock is interchangeable, so the data cannot
+  // say whose units reached 1160 — but 1155 -> 1160 is the route 122 other items took that same
+  // day. 1096's pull has the LOWER id, which used to let it take the 1160 arrival first.
+  const rows = [
+    ...move(1155, 1160, 100, 1, 50, "2026-08-24"),
+    ...move(1155, 1160, 101, 1, 60, "2026-08-24"),
+    ...move(1155, 1160, 102, 1, 70, "2026-08-24"),
+    pull({ jobId: 1162, itemId: 93, qty: 4, cost: 17.6, day: "2026-08-21" }),
+    pull({ jobId: 1096, itemId: 93, qty: -4, cost: -17.6, day: "2026-08-24" }), // lower id
+    pull({ jobId: 1155, itemId: 93, qty: -4, cost: -17.6, day: "2026-08-24" }),
+    pull({ jobId: 1160, itemId: 93, qty: 4, cost: 17.6, day: "2026-08-24" }),
+  ];
+  const routes = matchTransfers(rows).transfers.filter((t) => t.itemId === 93).map((t) => `${t.fromJob}>${t.toJob}`).sort();
+  assert.deepEqual(routes, ["1096>1162", "1155>1160"]);
+});
+
+test("a leaving pull with only one possible arrival is matched first, so it cannot be stolen by a tie", () => {
+  const a = pull({ jobId: 1155, itemId: 7, qty: -1, cost: -10, day: "2026-08-24" });
+  const b = pull({ jobId: 1096, itemId: 7, qty: -1, cost: -10, day: "2026-08-24" });
+  const only = pull({ jobId: 1160, itemId: 7, qty: 1, cost: 10, day: "2026-08-24" });
+  const { transfers, unmatched } = matchTransfers([a, b, only]);
+  assert.equal(transfers.length, 1, "one arrival balances one departure");
+  assert.equal(unmatched.length, 1, "the other departure stays on the review list");
+});
+
+test("the Parts List reconciliation memo keeps its own dependency list — transfers are layered on top, never inside it", () => {
+  const src = readFileSync(join(import.meta.dirname, "..", "src", "components", "JobProcurement.tsx"), "utf8");
+  assert.match(src, /\}, \[parts, lines\]\);\s*\n\s*\n?\s*\/\/ Parts moved between jobs, layered on AFTER/);
+  assert.match(src, /const reconcileWithTransfers = useMemo\(/);
+});
