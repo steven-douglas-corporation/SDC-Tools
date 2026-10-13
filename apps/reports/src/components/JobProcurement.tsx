@@ -1858,7 +1858,7 @@ function PartsListTab({
           gets the same three cards — see the note at that call site. */}
 
       {/* Filter row */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sdc-border bg-white px-3 py-2.5 shadow-sm">
+      <div className="flex flex-wrap items-start gap-2 rounded-lg border border-sdc-border bg-white px-3 py-2.5 shadow-sm">
         {/* List / Card */}
         <Segmented
           value={view}
@@ -1934,7 +1934,7 @@ function PartsListTab({
           </button>
         )}
 
-        <span className="mx-1 h-5 w-px bg-sdc-border" aria-hidden />
+        <span className="mx-1 mt-1.5 h-5 w-px bg-sdc-border" aria-hidden />
 
         <StatusFilter value={status} onChange={setStatus} />
         <FilterSelect label="Category" value={effCategory} onChange={setCategory} options={[{ value: FILTER_ALL, label: "All categories" }, ...distinct.cats.map((c) => ({ value: c, label: c }))]} />
@@ -1985,7 +1985,7 @@ function PartsListTab({
           />
         </label>
 
-        <span className="mx-1 h-5 w-px bg-sdc-border" aria-hidden />
+        <span className="mx-1 mt-1.5 h-5 w-px bg-sdc-border" aria-hidden />
 
         {/* The date filter is one unit (2026-10-08, by request): shrink-0 + nowrap keep
             the mode, From and To on a single line — when the bar runs out of room the
@@ -1997,7 +1997,7 @@ function PartsListTab({
             invoice + Rewind to last month's end for prior-month close figures; pressed again, it
             clears just those two. The month can still be changed afterwards in Rewind to. */}
         <div className="flex shrink-0 flex-col items-start gap-1.5">
-        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md bg-sdc-gray-100 px-2 py-1">
+        <div className="-my-1 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md bg-sdc-gray-100 px-2 py-1">
           <Segmented
             value={dateType}
             onChange={(v) => setDateType(v as PartsDateFilter)}
@@ -2013,7 +2013,7 @@ function PartsListTab({
           <span className="text-xs text-sdc-gray-400">to</span>
           <input type="date" aria-label="To date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 rounded-md border border-sdc-border bg-white px-2 text-xs text-sdc-navy outline-none focus:border-sdc-blue" />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="mt-1 flex items-center gap-2">
           <button
             type="button"
             aria-pressed={onlyLeftToInvoice && rewind !== ""}
@@ -2060,10 +2060,10 @@ function PartsListTab({
         {/* Fail-soft status for the Invoiced+range window fetch — never blanks
             the table, just discloses which figures are currently showing. */}
         {windowStatus.requested && windowStatus.pending && (
-          <span className="whitespace-nowrap text-label text-sdc-gray-400">Loading invoiced totals for this range…</span>
+          <span className="flex h-8 items-center whitespace-nowrap text-label text-sdc-gray-400">Loading invoiced totals for this range…</span>
         )}
         {windowStatus.requested && !windowStatus.pending && windowStatus.error && (
-          <span className="whitespace-nowrap text-label font-medium text-sdc-red-text" title={windowStatus.error}>
+          <span className="flex h-8 items-center whitespace-nowrap text-label font-medium text-sdc-red-text" title={windowStatus.error}>
             Couldn&apos;t load this range — showing lifetime totals
           </span>
         )}
@@ -2076,7 +2076,7 @@ function PartsListTab({
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search parts…" aria-label="Search parts" className="w-full border-none bg-transparent text-xs text-sdc-navy outline-none placeholder:text-sdc-gray-400" />
         </div>
 
-        <span className="ml-auto whitespace-nowrap text-xs font-semibold text-sdc-gray-600 tabular-nums">
+        <span className="ml-auto flex h-8 items-center whitespace-nowrap text-xs font-semibold text-sdc-gray-600 tabular-nums">
           {num(filtered.length)} line items
         </span>
 
