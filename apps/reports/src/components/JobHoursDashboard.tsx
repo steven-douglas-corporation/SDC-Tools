@@ -225,10 +225,10 @@ export function JobHoursDashboard({
   const [hoursType, setHoursType] = useState<HoursType>("ETC");
   const planned = (s: { quoted: number; etc: number }) => (hoursType === "Quoted" ? s.quoted : s.etc);
   const plannedLabel = hoursType === "Quoted" ? "Quoted" : "ETC";
-  // ETC (unlike Quoted) is scoped to ONE month — `s.etc` above is already "effective
-  // New ETC for latestEtcMonth only" (job-hours-dashboard.ts). Comparing that against
-  // the section's lifetime Actual was comparing one month's plan to the whole job's
-  // history; in ETC mode, Actual instead reads the same latestEtcMonth slice out of
+  // ETC (unlike Quoted) is scoped to ONE month — `s.etc` above is the New ETC from the
+  // month BEFORE latestEtcMonth, i.e. latestEtcMonth's Prior ETC (job-hours-dashboard.ts).
+  // Comparing that against the section's lifetime Actual was comparing one month's plan
+  // to the whole job's history; in ETC mode, Actual instead reads the latestEtcMonth slice out of
   // `monthlyBySection` — the identical per-month figures the drill-through below
   // already shows, so the two can't disagree. Quoted has no month of its own, so its
   // Actual stays the lifetime figure it always was.

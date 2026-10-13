@@ -18,6 +18,7 @@ import {
   newEtcDiff,
   latestPriorEtcByKey,
   priorEtcForMonth,
+  priorEtcBySection,
   monthOfDate,
   startsInMonth,
   redrivenDraft,
@@ -579,6 +580,29 @@ test("priorEtcForMonth: a job STARTING this month opens at its quote regardless"
   // Jobs 1159/1160: rows existed from before anyone typed their quote, carrying 0.
   assert.equal(priorEtcForMonth({ startsThisMonth: true, carried: 0, quoted: 260 }), 260);
   assert.equal(priorEtcForMonth({ startsThisMonth: true, carried: 999, quoted: 260 }), 260);
+});
+
+// ── priorEtcBySection (Job Details ETC = last month's New ETC) ────────────────
+
+test("priorEtcBySection: sums Prior ETC for the month only, across jobs", () => {
+  const m = priorEtcBySection(
+    [
+      { month: "2026-10", section: "10-211", priorEtc: "40.5" },
+      { month: "2026-10", section: "10-211", priorEtc: 10 },
+      { month: "2026-10", section: "40-411", priorEtc: 0 },
+      { month: "2026-09", section: "10-211", priorEtc: 999 },
+    ],
+    "2026-10",
+    "PARTS",
+  );
+  assert.equal(m.get("10-211"), 50.5);
+  assert.equal(m.get("40-411"), 0);
+  assert.equal(m.size, 2);
+});
+
+test("priorEtcBySection: skips the Parts Cost section (dollars, not hours)", () => {
+  const m = priorEtcBySection([{ month: "2026-10", section: "PARTS", priorEtc: 5000 }], "2026-10", "PARTS");
+  assert.equal(m.size, 0);
 });
 
 // ── startsInMonth / monthOfDate ───────────────────────────────────────────────

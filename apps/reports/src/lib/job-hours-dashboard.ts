@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { SECTIONS, ETC_SECTIONS, PHASE_GROUPS, PARTS_COST_SECTION, OFF_GRID_PHASE, UNMAPPED_PHASE, isServiceOrSparePartsCode } from "@/lib/sections";
-import { suggestNewEtc } from "@/lib/etc";
+import { priorEtcBySection } from "@/lib/etc";
 import { validJobTypeFilter, compareJobIds } from "@/lib/job-filters";
 import { loadActualHoursBySection, loadMonthlyWorkedBySection } from "@/lib/actual-hours";
 import { classifyPunchCode } from "@/lib/paylocity-standard-rules";
@@ -108,15 +108,6 @@ export type JobHoursDashboard = {
   monthlyBySection: Record<string, { month: string; worked: number }[]>;
 };
 
-// Effective New ETC — the same rule the ETC grid renders with (execution-etc.ts).
-function effectiveNewEtc(e: {
-  needsReview: boolean; newEtc: unknown; newEtcDraft: unknown; priorEtc: unknown; hoursWorked: unknown;
-}): number {
-  if (!e.needsReview) return Number(e.newEtc);
-  if (e.newEtcDraft != null) return Number(e.newEtcDraft);
-  return suggestNewEtc(Number(e.priorEtc), Number(e.hoursWorked));
-}
-
 export async function listDashboardJobs(): Promise<{ id: number; jobId: string; jobName: string; status: string }[]> {
   const jobs = await prisma.job.findMany({
     where: { ...validJobTypeFilter },
@@ -160,13 +151,12 @@ export async function getJobHoursDashboard(jobIdOrIds: number | number[]): Promi
     prisma.estimatedHours.findMany({ where: { jobId: { in: jobIds } }, select: { section: true, quotedHours: true } }),
     prisma.etcEntry.findMany({
       where: { jobId: { in: jobIds } },
-      select: { section: true, month: true, hoursWorked: true, newEtc: true, newEtcDraft: true, priorEtc: true, needsReview: true },
+      select: { section: true, month: true, priorEtc: true },
     }),
     // Actuals and their monthly timeline come from actual-hours.ts, not from
     // `entries` above: EtcEntry.hoursWorked is frozen once a month closes, so
     // reading it here understated every closed month by the late punches booked
-    // since (6,954h across Jan–Jul 2026). `entries` is still what drives ETC,
-    // which must keep using the frozen figure.
+    // since (6,954h across Jan–Jul 2026). `entries` only drives the ETC figure.
     loadActualHoursBySection(jobIds),
     loadMonthlyWorkedBySection(jobIds),
     prisma.powerBiFreshness.findUnique({ where: { source: "hours_actual" }, select: { refreshedThrough: true } }).catch(() => null),
@@ -200,14 +190,10 @@ export async function getJobHoursDashboard(jobIdOrIds: number | number[]): Promi
     for (const [section, hours] of sections) actualBy.set(section, (actualBy.get(section) ?? 0) + hours);
   }
 
-  // ETC per section — effective New ETC for the latest month only.
-  const etcBy = new Map<string, number>();
-  if (latestMonth) {
-    for (const e of entries) {
-      if (e.month !== latestMonth || e.section === PARTS_COST_SECTION) continue;
-      etcBy.set(e.section, (etcBy.get(e.section) ?? 0) + effectiveNewEtc(e));
-    }
-  }
+  // ETC per section — LAST month's New ETC (the latest month's Prior ETC), not
+  // the latest month's own New ETC, which is still being decided. The chart sets
+  // it against the hours worked in the latest month. See priorEtcBySection.
+  const etcBy = latestMonth ? priorEtcBySection(entries, latestMonth, PARTS_COST_SECTION) : new Map<string, number>();
 
   const gridSections: SectionHours[] = SECTIONS.map((s) => ({
     code: s.code,
