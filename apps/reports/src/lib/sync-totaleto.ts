@@ -1303,6 +1303,52 @@ export async function getJobPartsCost(jobId: string): Promise<JobPartsCost> {
   }, { requestTimeout: 120_000, feed: "parts_cost.job_detail" });
 }
 
+// ── Temporary probe: the Parts List lines with ARCHIVED PO lines left out ────
+//
+// The same statement, mapping, refund rule and zero-noise pass as getJobPartsCost,
+// with ONE added predicate on the PO branch, so the result differs from Job Details
+// by exactly the archived PO lines and nothing else. Cash-flow already filters
+// `ISNULL(POD.Archived, 0) = 0` (cash-flow-totaleto.ts, cash-flow-drill.ts);
+// procurement does not, and nobody could say what the column means on PO lines.
+// This exists so that can be read off a real job from Admin > Data Management
+// without querying Total ETO by hand. Read-only; delete it with the probe card.
+// The Extra Costs branch has no PO line, so nothing is filtered there.
+// A second statement over the same template picks up the archived PO lines that were
+// left out (the Extra Costs branch is switched off with `1 = 0`), so the card can say
+// how many lines and how many dollars the filter removed.
+export type JobPartsCostNonArchived = JobPartsCost & {
+  archived: { count: number; purchased: number; paid: number };
+};
+
+export async function getJobPartsCostNonArchived(jobId: string): Promise<JobPartsCostNonArchived> {
+  const none = { count: 0, purchased: 0, paid: 0 };
+  if (devFakeEtoEnabled()) return { ...fakeJobPartsCost(jobId), archived: none };
+  const numericJob = Number(jobId);
+  if (!Number.isFinite(numericJob)) return { purchased: 0, paid: 0, actual: 0, leftToPay: 0, lines: [], archived: none };
+  const kept = partsDetailSql({ pod: "POD.ProjectID = @job AND ISNULL(POD.Archived, 0) = 0", ec: "EC.ProjectID = @job" });
+  const dropped = partsDetailSql({ pod: "POD.ProjectID = @job AND ISNULL(POD.Archived, 0) = 1", ec: "1 = 0" });
+  const read = (rows: Record<string, unknown>[]) => meaningfulLines(rows.map(toPartsCostLine).map(applyRefundSign));
+  return withTotalEto(async (pool) => {
+    const [keptResult, droppedResult] = await Promise.all([
+      pool.request().input("job", sql.Int, numericJob).query(kept),
+      pool.request().input("job", sql.Int, numericJob).query(dropped),
+    ]);
+    const meaningful = read(keptResult.recordset);
+    const archivedLines = read(droppedResult.recordset);
+    const purchased = meaningful.reduce((s, l) => s + l.totalPrice, 0);
+    const paid = meaningful.reduce((s, l) => s + l.invoicedAmount, 0);
+    const actual = meaningful.reduce((s, l) => s + l.actualAmount, 0);
+    return {
+      purchased, paid, actual, leftToPay: purchased - paid, lines: meaningful,
+      archived: {
+        count: archivedLines.length,
+        purchased: archivedLines.reduce((s, l) => s + l.totalPrice, 0),
+        paid: archivedLines.reduce((s, l) => s + l.invoicedAmount, 0),
+      },
+    };
+  }, { requestTimeout: 120_000, feed: "parts_cost.job_detail_non_archived" });
+}
+
 // Credentials come from the environment, same as every other integration in
 // this app (Power BI, Auth, Standard Sheet password) — this was previously
 // the one exception, with a live username/password hardcoded in this file.
