@@ -30,6 +30,9 @@
 //     draws on that job's own receipt, whose invoice the app already counts
 //   - the two costs must be of the same order (within 2x), else it is not the same movement
 //   - the nearest date wins; ties go to the lowest pull id, so it is deterministic
+//   - a transfer booked in PIECES (8 units out, 1 + 7 in) is matched in a second pass, only
+//     when the pieces sum exactly to the single pull on the other side, on ONE other job;
+//     if more than one job could complete the sum it is ambiguous and nothing is applied
 //   - the from-job is reduced by the negative pull's cost, the to-job increased by
 //     the positive pull's own cost (each side's own booked value, as Total ETO does)
 //   - only transfers from TRANSFER_NETTING_FROM onward; nothing earlier moves
@@ -74,20 +77,34 @@ export type Transfer = {
   fromJob: string;
   toJob: string;
   itemId: number;
+  /** Total units moved. */
   qty: number;
-  /** Dollars leaving `fromJob` (positive number). */
+  /** Dollars leaving `fromJob` (positive number), summed over every leaving pull. */
   costOut: number;
-  /** Dollars arriving at `toJob` (positive number). */
+  /** Dollars arriving at `toJob` (positive number), summed over every arriving pull. */
   costIn: number;
-  /** The later of the two fulfilment days. A transfer counts "as of" a day once both halves are done. */
+  /** The latest fulfilment day of any pull in it. A transfer counts "as of" a day once every half is done. */
   day: string;
-  negPullId: number;
-  posPullId: number;
+  /** The leaving pulls (one, or several when the departure was booked in pieces). */
+  negPullIds: number[];
+  /** The arriving pulls (one, or several when the arrival was booked in pieces). */
+  posPullIds: number[];
 };
 
 const MS_DAY = 86_400_000;
 const dayMs = (day: string) => Date.parse(`${day}T00:00:00Z`);
 const cents = (n: number) => Math.round(n * 100) / 100;
+const gapDays = (a: string, b: string) => Math.abs(dayMs(a) - dayMs(b)) / MS_DAY;
+const QTY_EPS = 1e-6;
+
+/**
+ * A transfer booked in pieces (8 units out, 1 + 7 in) is matched when the pieces on the
+ * short side add up EXACTLY to the one pull on the other, never more than this many pieces.
+ * Fewer pieces means fewer chances that unrelated pulls happen to sum to the same number.
+ */
+export const TRANSFER_MAX_PIECES = 6;
+/** At most this many candidate pulls per (item, other job) are searched for a sum. */
+const SPLIT_CANDIDATE_CAP = 14;
 
 function costsAgree(costOut: number, costIn: number): boolean {
   if (Math.abs(costOut - costIn) <= TRANSFER_COST_SLACK) return true;
@@ -102,12 +119,50 @@ export type MatchResult = {
   unmatched: PullRow[];
 };
 
+const byDayThenId = (a: PullRow, b: PullRow) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.id - b.id);
+
+/**
+ * The first set of 2..TRANSFER_MAX_PIECES pulls (searched in the order given, which the caller
+ * sorts nearest-date first, so the result is deterministic) whose quantities add up to `target`
+ * exactly and whose summed cost agrees with `cost`. `dir` 1: the pieces are the arriving side;
+ * -1: they are the leaving side.
+ */
+function findPieces(cands: readonly PullRow[], target: number, cost: number, dir: 1 | -1): PullRow[] | null {
+  const pool = cands.slice(0, SPLIT_CANDIDATE_CAP);
+  const pick: PullRow[] = [];
+  const dfs = (start: number, qtyLeft: number): boolean => {
+    if (Math.abs(qtyLeft) <= QTY_EPS) {
+      if (pick.length < 2) return false;
+      const sum = pick.reduce((s, r) => s + Math.abs(r.cost), 0);
+      return dir === 1 ? costsAgree(cost, sum) : costsAgree(sum, cost);
+    }
+    if (pick.length >= TRANSFER_MAX_PIECES) return false;
+    for (let i = start; i < pool.length; i++) {
+      const q = Math.abs(pool[i].qty);
+      if (q > qtyLeft + QTY_EPS) continue;
+      pick.push(pool[i]);
+      if (dfs(i + 1, qtyLeft - q)) return true;
+      pick.pop();
+    }
+    return false;
+  };
+  return dfs(0, target) ? [...pick] : null;
+}
+
 /**
  * Pairs transfers out of a set of fulfilled pulls. Pure: no I/O, no clock.
  *
+ * Two passes, in this order, so the safest match always wins:
+ *   1. one leaving pull to one arriving pull of the same quantity;
+ *   2. what is left, where one side was booked in pieces — 1155 -> 1160 item 2744 left as one
+ *      pull of 8 and arrived as 1 + 7. The pieces must sum EXACTLY to the single pull on the
+ *      other side, all on ONE other job, same item, inside the window, with costs of the same
+ *      order. If pieces would complete the sum on more than one candidate job it is ambiguous
+ *      and nothing is applied; it stays in `unmatched` for a person.
+ *
  * `rows` must include positive pulls up to TRANSFER_WINDOW_DAYS BEFORE `from`, since the
  * arriving half of a transfer is sometimes booked a few days ahead of the leaving half.
- * `asOf` (YYYY-MM-DD) keeps only transfers whose both halves are done by that day.
+ * `asOf` (YYYY-MM-DD) keeps only transfers whose halves are all done by that day.
  */
 export function matchTransfers(
   rows: readonly PullRow[],
@@ -119,29 +174,47 @@ export function matchTransfers(
   const usable = rows.filter(
     (r) => r.jobId !== STOCK_BIN_JOB_ID && Number.isFinite(r.cost) && Number.isFinite(r.qty) && r.qty !== 0,
   );
-  const byItem = new Map<number, PullRow[]>();
+  // Arriving pulls that can be half of a transfer, by item.
+  const posByItem = new Map<number, PullRow[]>();
   for (const r of usable) {
     if (r.qty <= 0 || r.poLinked) continue;
-    const list = byItem.get(r.itemId) ?? [];
+    const list = posByItem.get(r.itemId) ?? [];
     list.push(r);
-    byItem.set(r.itemId, list);
+    posByItem.set(r.itemId, list);
+  }
+  const negatives = usable.filter((r) => r.qty < 0 && r.day >= from).sort(byDayThenId);
+  const negByItem = new Map<number, PullRow[]>();
+  for (const r of negatives) {
+    const list = negByItem.get(r.itemId) ?? [];
+    list.push(r);
+    negByItem.set(r.itemId, list);
   }
 
-  const negatives = usable
-    .filter((r) => r.qty < 0 && r.day >= from)
-    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.id - b.id));
-
   const used = new Set<number>();
-  const matchedNeg = new Set<number>();
   const transfers: Transfer[] = [];
+  const record = (negs: PullRow[], poss: PullRow[]) => {
+    for (const r of [...negs, ...poss]) used.add(r.id);
+    transfers.push({
+      fromJob: String(negs[0].jobId),
+      toJob: String(poss[0].jobId),
+      itemId: negs[0].itemId,
+      qty: negs.reduce((s, r) => s + Math.abs(r.qty), 0),
+      costOut: negs.reduce((s, r) => s + Math.abs(r.cost), 0),
+      costIn: poss.reduce((s, r) => s + r.cost, 0),
+      day: [...negs, ...poss].reduce((d, r) => (r.day > d ? r.day : d), ""),
+      negPullIds: negs.map((r) => r.id),
+      posPullIds: poss.map((r) => r.id),
+    });
+  };
 
+  // Pass 1 — one to one.
   for (const n of negatives) {
     let best: PullRow | null = null;
     let bestGap = Infinity;
-    for (const p of byItem.get(n.itemId) ?? []) {
+    for (const p of posByItem.get(n.itemId) ?? []) {
       if (used.has(p.id) || p.jobId === n.jobId) continue;
-      if (Math.abs(p.qty + n.qty) > 1e-6) continue;
-      const gap = Math.abs(dayMs(p.day) - dayMs(n.day)) / MS_DAY;
+      if (Math.abs(p.qty + n.qty) > QTY_EPS) continue;
+      const gap = gapDays(p.day, n.day);
       if (gap > TRANSFER_WINDOW_DAYS) continue;
       if (!costsAgree(Math.abs(n.cost), p.cost)) continue;
       if (gap < bestGap || (gap === bestGap && best && p.id < best.id)) {
@@ -149,24 +222,54 @@ export function matchTransfers(
         bestGap = gap;
       }
     }
-    if (!best) continue;
-    used.add(best.id);
-    matchedNeg.add(n.id);
-    transfers.push({
-      fromJob: String(n.jobId),
-      toJob: String(best.jobId),
-      itemId: n.itemId,
-      qty: Math.abs(n.qty),
-      costOut: Math.abs(n.cost),
-      costIn: best.cost,
-      day: n.day > best.day ? n.day : best.day,
-      negPullId: n.id,
-      posPullId: best.id,
-    });
+    if (best) record([n], [best]);
+  }
+
+  // Pass 2a — one leaving pull, arriving in pieces on a single other job.
+  for (const n of negatives) {
+    if (used.has(n.id)) continue;
+    const need = Math.abs(n.qty);
+    const byJob = new Map<number, PullRow[]>();
+    for (const p of posByItem.get(n.itemId) ?? []) {
+      if (used.has(p.id) || p.jobId === n.jobId || Math.abs(p.qty) >= need - QTY_EPS) continue;
+      if (gapDays(p.day, n.day) > TRANSFER_WINDOW_DAYS) continue;
+      const list = byJob.get(p.jobId) ?? [];
+      list.push(p);
+      byJob.set(p.jobId, list);
+    }
+    const found: PullRow[][] = [];
+    for (const list of byJob.values()) {
+      list.sort((a, b) => gapDays(a.day, n.day) - gapDays(b.day, n.day) || a.id - b.id);
+      const pieces = findPieces(list, need, Math.abs(n.cost), 1);
+      if (pieces) found.push(pieces);
+    }
+    if (found.length === 1) record([n], found[0]);
+  }
+
+  // Pass 2b — one arriving pull, leaving in pieces from a single other job.
+  const leftoverPos = [...posByItem.values()].flat().filter((p) => !used.has(p.id)).sort(byDayThenId);
+  for (const p of leftoverPos) {
+    if (used.has(p.id)) continue;
+    const need = Math.abs(p.qty);
+    const byJob = new Map<number, PullRow[]>();
+    for (const n of negByItem.get(p.itemId) ?? []) {
+      if (used.has(n.id) || n.jobId === p.jobId || Math.abs(n.qty) >= need - QTY_EPS) continue;
+      if (gapDays(p.day, n.day) > TRANSFER_WINDOW_DAYS) continue;
+      const list = byJob.get(n.jobId) ?? [];
+      list.push(n);
+      byJob.set(n.jobId, list);
+    }
+    const found: PullRow[][] = [];
+    for (const list of byJob.values()) {
+      list.sort((a, b) => gapDays(a.day, p.day) - gapDays(b.day, p.day) || a.id - b.id);
+      const pieces = findPieces(list, need, p.cost, -1);
+      if (pieces) found.push(pieces);
+    }
+    if (found.length === 1) record(found[0], [p]);
   }
 
   const kept = asOf ? transfers.filter((t) => t.day <= asOf) : transfers;
-  const unmatched = usable.filter((r) => r.day >= from && !matchedNeg.has(r.id) && !used.has(r.id));
+  const unmatched = usable.filter((r) => r.day >= from && !used.has(r.id));
   return { transfers: kept, unmatched };
 }
 

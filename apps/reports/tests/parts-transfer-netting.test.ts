@@ -120,7 +120,7 @@ test("each arriving pull is used once, nearest date first, lowest id on a tie", 
   const in1 = pull({ jobId: 1160, itemId: 1, qty: 1, cost: 10, day: "2026-08-10" });
   const { transfers } = matchTransfers([out1, out2, in1]);
   assert.equal(transfers.length, 1, "one arrival can balance only one departure");
-  assert.equal(transfers[0].negPullId, out1.id, "the lower id goes first");
+  assert.equal(transfers[0].negPullIds[0], out1.id, "the lower id goes first");
   const far = pull({ jobId: 1162, itemId: 8, qty: 1, cost: 10, day: "2026-08-16" });
   const near = pull({ jobId: 1161, itemId: 8, qty: 1, cost: 10, day: "2026-08-11" });
   const o = pull({ jobId: 1155, itemId: 8, qty: -1, cost: -10, day: "2026-08-10" });
@@ -158,6 +158,100 @@ test("applyNetting never creates a job — absence means 'no Total ETO data' (ma
   applyNetting(actual, new Map([["4242", 50], ["1160", 5]]));
   assert.equal(actual.has("4242"), false);
   assert.equal(actual.get("1160"), 105);
+});
+
+// ── Transfers booked in pieces (1155 -> 1160, 2026-08-24) ────────────────────
+
+const out = (jobId: number, itemId: number, qty: number, cost: number, day: string, o: Partial<PullRow> = {}) =>
+  pull({ jobId, itemId, qty: -qty, cost: -cost, day, ...o });
+const into = (jobId: number, itemId: number, qty: number, cost: number, day: string, o: Partial<PullRow> = {}) =>
+  pull({ jobId, itemId, qty, cost, day, ...o });
+
+test("one leaving pull that arrived in pieces is matched (item 2744: 8 out, 1 + 7 in)", () => {
+  const rows = [out(1155, 2744, 8, 101.6, "2026-08-24"), into(1160, 2744, 1, 12.7, "2026-08-24"), into(1160, 2744, 7, 88.9, "2026-08-24")];
+  const { transfers, unmatched } = matchTransfers(rows);
+  assert.equal(transfers.length, 1);
+  assert.equal(transfers[0].qty, 8);
+  assert.equal(transfers[0].posPullIds.length, 2);
+  assert.equal(unmatched.length, 0);
+  const net = netTransfersByJob(transfers);
+  assert.equal(net.get("1155"), -101.6);
+  assert.equal(net.get("1160"), 101.6);
+});
+
+test("the four real split items from 1155 -> 1160 all match", () => {
+  const rows = [
+    out(1155, 2655, 3, 86.4, "2026-08-24"), into(1160, 2655, 1, 28.8, "2026-08-24"), into(1160, 2655, 2, 57.6, "2026-08-24"),
+    out(1155, 2764, 20, 20, "2026-08-24"), into(1160, 2764, 18, 18, "2026-08-24"), into(1160, 2764, 2, 2, "2026-08-24"),
+    out(1155, 2775, 3, 8.64, "2026-08-24"), into(1160, 2775, 2, 5.76, "2026-08-24"), into(1160, 2775, 1, 2.88, "2026-08-24"),
+  ];
+  const { transfers, unmatched } = matchTransfers(rows);
+  assert.equal(transfers.length, 3);
+  assert.equal(unmatched.length, 0);
+  assert.equal(netTransfersByJob(transfers).get("1155"), -115.04);
+});
+
+test("several leaving pulls that arrived as one are matched too", () => {
+  const rows = [out(1155, 5, 1, 10, "2026-08-24"), out(1155, 5, 2, 20, "2026-08-24"), into(1160, 5, 3, 30, "2026-08-24")];
+  const { transfers } = matchTransfers(rows);
+  assert.equal(transfers.length, 1);
+  assert.equal(transfers[0].negPullIds.length, 2);
+});
+
+test("pieces that do not add up exactly are NOT matched (item 2738: 2 out, only 1 in)", () => {
+  const rows = [out(1155, 2738, 2, 138.8, "2026-08-24"), into(1160, 2738, 1, 69.4, "2026-08-24")];
+  const { transfers, unmatched } = matchTransfers(rows);
+  assert.equal(transfers.length, 0);
+  assert.equal(unmatched.length, 2, "left for review");
+});
+
+test("pieces split across two different arriving jobs are ambiguous and not applied", () => {
+  const rows = [
+    out(1155, 7, 4, 40, "2026-08-24"),
+    into(1160, 7, 1, 10, "2026-08-24"), into(1160, 7, 3, 30, "2026-08-24"),
+    into(1162, 7, 2, 20, "2026-08-24"), into(1162, 7, 2, 20, "2026-08-24"),
+  ];
+  assert.equal(matchTransfers(rows).transfers.length, 0);
+});
+
+test("a piece that is PO-linked, on the stock bin, outside the window, or another item is never used", () => {
+  const base = out(1155, 9, 4, 40, "2026-08-24");
+  assert.equal(matchTransfers([base, into(1160, 9, 1, 10, "2026-08-24", { poLinked: true }), into(1160, 9, 3, 30, "2026-08-24")]).transfers.length, 0);
+  assert.equal(matchTransfers([base, into(99999, 9, 1, 10, "2026-08-24"), into(99999, 9, 3, 30, "2026-08-24")]).transfers.length, 0);
+  assert.equal(matchTransfers([base, into(1160, 9, 1, 10, "2026-08-24"), into(1160, 9, 3, 30, "2026-09-20")]).transfers.length, 0);
+  assert.equal(matchTransfers([base, into(1160, 9, 1, 10, "2026-08-24"), into(1160, 10, 3, 30, "2026-08-24")]).transfers.length, 0);
+});
+
+test("pieces whose cost is unrelated to the leaving cost are rejected", () => {
+  const rows = [out(1155, 11, 4, 400, "2026-08-24"), into(1160, 11, 1, 1, "2026-08-24"), into(1160, 11, 3, 2, "2026-08-24")];
+  assert.equal(matchTransfers(rows).transfers.length, 0);
+});
+
+test("a one-to-one match always wins over a split that could reuse the same pulls", () => {
+  const rows = [out(1155, 12, 3, 30, "2026-08-24"), into(1160, 12, 3, 30, "2026-08-24"), into(1160, 12, 1, 10, "2026-08-24"), into(1160, 12, 2, 20, "2026-08-24")];
+  const { transfers, unmatched } = matchTransfers(rows);
+  assert.equal(transfers.length, 1);
+  assert.equal(transfers[0].posPullIds.length, 1, "the exact pull was taken, not the two pieces");
+  assert.equal(unmatched.length, 2, "the two pieces are left, not double counted");
+});
+
+test("no pull is ever used twice, and results do not depend on row order", () => {
+  const rows = [
+    out(1155, 2744, 8, 101.6, "2026-08-24"), into(1160, 2744, 1, 12.7, "2026-08-24"), into(1160, 2744, 7, 88.9, "2026-08-24"),
+    out(1155, 2764, 20, 20, "2026-08-24"), into(1160, 2764, 18, 18, "2026-08-24"), into(1160, 2764, 2, 2, "2026-08-24"),
+    out(1155, 13, 1, 5, "2026-08-24"), into(1160, 13, 1, 5, "2026-08-24"),
+  ];
+  const a = matchTransfers(rows);
+  const ids = a.transfers.flatMap((t) => [...t.negPullIds, ...t.posPullIds]);
+  assert.equal(new Set(ids).size, ids.length);
+  const b = matchTransfers([...rows].reverse());
+  assert.deepEqual([...netTransfersByJob(a.transfers)].sort(), [...netTransfersByJob(b.transfers)].sort());
+});
+
+test("a split transfer respects asOf once its LAST piece is booked", () => {
+  const rows = [out(1155, 14, 8, 80, "2026-08-24"), into(1160, 14, 1, 10, "2026-08-24"), into(1160, 14, 7, 70, "2026-09-02")];
+  assert.equal(matchTransfers(rows, { asOf: "2026-08-31" }).transfers.length, 0);
+  assert.equal(matchTransfers(rows, { asOf: "2026-09-02" }).transfers.length, 1);
 });
 
 // ── Wiring: structural guards, like the sibling parts tests (no Total ETO in CI) ──
