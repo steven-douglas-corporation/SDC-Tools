@@ -14,20 +14,25 @@ export async function copyText(text: string): Promise<boolean> {
     /* permission denied / blocked — try the legacy path */
   }
   if (typeof document === "undefined") return false;
+  const prev = document.activeElement as HTMLElement | null;
+  // Mount inside the open modal (if any) so a focus trap or inert backdrop on
+  // <body> can't stop the selection; fall back to <body>.
+  const host = prev?.closest<HTMLElement>('[role="dialog"], dialog') ?? document.body;
   const ta = document.createElement("textarea");
   ta.value = text;
-  ta.setAttribute("readonly", "");
-  ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
-  const prev = document.activeElement as HTMLElement | null;
-  document.body.appendChild(ta);
+  ta.setAttribute("aria-hidden", "true");
+  ta.tabIndex = -1;
+  ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;font-size:16px";
+  host.appendChild(ta);
   try {
+    ta.focus({ preventScroll: true });
     ta.select();
     ta.setSelectionRange(0, text.length);
     return document.execCommand("copy");
   } catch {
     return false;
   } finally {
-    document.body.removeChild(ta);
-    prev?.focus?.();
+    host.removeChild(ta);
+    prev?.focus?.({ preventScroll: true });
   }
 }
