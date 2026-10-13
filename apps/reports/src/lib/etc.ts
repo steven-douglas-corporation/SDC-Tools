@@ -861,6 +861,26 @@ export function priorEtcForMonth(opts: { startsThisMonth: boolean; carried: numb
   return round2(!opts.startsThisMonth && opts.carried !== undefined ? opts.carried : opts.quoted);
 }
 
+// Per-section ETC "as it stood going into `month`": the sum of each entry's Prior
+// ETC, which is the previous month's New ETC carried forward (or the quote for a
+// job starting this month, per priorEtcForMonth). Job Details compares this to
+// what was actually worked in `month`. The month's OWN New ETC is the manager's
+// still-being-decided estimate for after it, so it is not the figure to judge
+// that month's hours against. Rows for other months and `skipSection` (Parts
+// Cost, which is dollars) are ignored.
+export function priorEtcBySection(
+  entries: { month: string; section: string; priorEtc: unknown }[],
+  month: string,
+  skipSection: string,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const e of entries) {
+    if (e.month !== month || e.section === skipSection) continue;
+    out.set(e.section, (out.get(e.section) ?? 0) + Number(e.priorEtc));
+  }
+  return out;
+}
+
 // "Which ETC month does this Start Date fall in?" — the other half of
 // priorEtcForMonth, and the half that was being hand-inlined at every call site
 // (seedMonth, derivePriorEtcForMonth, syncPartsCost, syncHoursWorked) as four
