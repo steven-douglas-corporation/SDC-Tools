@@ -126,7 +126,7 @@ test("normalizeTravel reproduces the report's two replacements", () => {
   assert.equal(normalizeTravel("Concord"), "Concord");
 });
 
-test("normalizeTravel keeps an unrecognised site rather than bucketing it", () => {
+test("normalizeTravel keeps an unrecognized site rather than bucketing it", () => {
   // Inventing a bucket for an unknown site would hide a real one; it is passed
   // through, counts as "known", and simply is not travel.
   assert.equal(normalizeTravel("Toronto"), "Toronto");

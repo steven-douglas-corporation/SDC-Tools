@@ -173,7 +173,7 @@ async function main() {
     for (const n of notInEtc) console.log(`  ${n}`);
   }
   if (unknownDept.size) {
-    console.log(`\nUNRECOGNISED DEPARTMENTS (${unknownDept.size}) — add to the map or NON_BOARD_DEPTS:`);
+    console.log(`\nUNRECOGNIZED DEPARTMENTS (${unknownDept.size}) — add to the map or NON_BOARD_DEPTS:`);
     for (const d of unknownDept) console.log(`  ${d}`);
   }
   console.log(`\nAlready in the right bucket: ${correct.length}`);

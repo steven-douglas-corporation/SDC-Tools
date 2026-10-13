@@ -108,7 +108,7 @@ export function confirmedNewEtc(entry: { needsReview: boolean; submittedAt: Date
 // closed then, and it is deterministic, so re-running the sync converges on the
 // same rows instead of rewriting a timestamp every pass.
 //
-// It is also recognisable. The sync's ownership rule treats "any row with a
+// It is also recognizable. The sync's ownership rule treats "any row with a
 // submittedAt" as an APP-OWNED month it must never overwrite — exactly the rows
 // the sync itself writes, if it stamped them with a wall-clock time. A history
 // stamp equal to this instant is the sync's own signature and does NOT make a

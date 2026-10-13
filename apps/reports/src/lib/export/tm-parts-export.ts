@@ -46,7 +46,7 @@ function amountKeyFor(key: TmPartsDrillKey): "totalPrice" | "invoicedAmount" {
 
 // Headers match the panel's own column labels exactly ("Job ID", "Job /
 // Machine", "Job Cost", "Invoiced $"), not the underlying field names — the
-// file has to be recognisable as the table it came from.
+// file has to be recognizable as the table it came from.
 const COLUMNS: SheetColumn[] = [
   { header: "Purchase Date", type: "date", width: 12 },
   { header: "Invoiced Date", type: "date", width: 12 },

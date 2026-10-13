@@ -23,7 +23,7 @@
 // historyConfirmedAt(month): the last millisecond of the row's month, UTC. The same
 // instant sync-etc-history.ts stamps on the rows it writes now, chosen so that:
 //   * it is deterministic — a re-run of the sync converges on identical rows;
-//   * the sync can recognise it. The sync's ownership rule treats a real submittedAt
+//   * the sync can recognize it. The sync's ownership rule treats a real submittedAt
 //     as "this month was closed in the app, never overwrite it"; this instant is
 //     excluded from that rule (isHistoryConfirmedAt), so stamping a PBI-owned month
 //     here does NOT stop the sync refreshing it later. Ownership is unchanged by

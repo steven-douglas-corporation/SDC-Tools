@@ -106,7 +106,7 @@ test("a change from somewhere else IS adopted — Back, a saved view, Show all",
   assert.equal(shouldAdoptCommitted('[["departments",[]]]', []), true, "nothing pushed yet");
 });
 
-test("an answer arriving out of order is still recognised as ours", () => {
+test("an answer arriving out of order is still recognized as ours", () => {
   // Two pushes in flight; the older answer lands last. Comparing against only
   // the newest key would treat it as external and clobber the draft.
   const pushed = ['[["departments",["A"]]]', '[["departments",["A","B"]]]'];

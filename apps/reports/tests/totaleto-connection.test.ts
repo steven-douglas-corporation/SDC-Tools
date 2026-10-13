@@ -143,7 +143,7 @@ test("a bug in OUR query is NOT excused as an infrastructure blip", () => {
     /Retrying cannot help/,
   );
   // And with NO driver code, Total ETO is not named at all (2026-09-09): an
-  // unrecognised error inside a step that happens to own a Total ETO source used
+  // unrecognized error inside a step that happens to own a Total ETO source used
   // to print "Total ETO query failed against SERVER-APP1", which sends whoever
   // reads it to check a server that may be perfectly healthy.
   const bare = describeTotalEtoFailure(new Error("Cannot read properties of undefined"));

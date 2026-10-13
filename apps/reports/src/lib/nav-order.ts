@@ -3,7 +3,7 @@
 // Stored as hrefs rather than indexes: an index-based order silently points at
 // the wrong link the moment a nav item is added or removed, and this list does
 // change (Audit Log appears for admins, the Scheduler link depends on config).
-// Hrefs are stable, and anything unrecognised is simply ignored.
+// Hrefs are stable, and anything unrecognized is simply ignored.
 //
 // Reordering is WITHIN a group. The group headings — Overview, Work, Planning,
 // Admin — are claims about what the links are, so moving "Projects" under "Work"

@@ -163,7 +163,7 @@ export function DataQualityDrill({ rows, showCompleted }: { rows: PunchIssue[]; 
   );
 }
 
-// The unrecognised-ID table, drillable the same way. There is no job on these
+// The unrecognized-ID table, drillable the same way. There is no job on these
 // rows — the finding IS the employee — so a click goes straight to the employee
 // drill rather than offering a menu with one useful item in it.
 type EmployeeIdRow = { employeeId: string; rows: number; hours: number };

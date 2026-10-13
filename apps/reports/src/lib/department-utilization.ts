@@ -433,7 +433,7 @@ export type UtilizationInputs = {
 
 // The department a punch is filed under when its employeeId has no Employee row at
 // all — the same `#id` naming job-hours-detail.ts and hours-explorer.ts use for an
-// unmatched id, so the person is recognisable across pages. Not an ETC card key, so
+// unmatched id, so the person is recognizable across pages. Not an ETC card key, so
 // it never renders as a department row on the card; it exists so the HOURS are kept.
 export const UNASSIGNED_DEPARTMENT_KEY = "unassigned";
 export const UNASSIGNED_DEPARTMENT_TITLE = "Unassigned";

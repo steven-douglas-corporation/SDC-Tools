@@ -107,7 +107,7 @@ describe('Input sanitisation', () => {
     db.db.prepare("DELETE FROM assemblies WHERE partno = 'TST-SEC-SANITISE'").run();
   });
 
-  it('POST: strips unrecognised body fields (no extra keys in response)', async () => {
+  it('POST: strips unrecognized body fields (no extra keys in response)', async () => {
     const res = await request.post('/api/assemblies').send({
       partno: 'TST-SEC-SANITISE',
       description: 'Sanitise test',

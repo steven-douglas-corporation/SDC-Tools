@@ -862,7 +862,7 @@ export async function saveAllNewEtcDrafts(
       // job+section before that. Two browsers can legitimately be holding
       // different ones for the SAME cell, depending on whether the row existed
       // when each page last rendered — so a change announces both, and a receiving
-      // cell recognises whichever is its own. Without this the incremental update
+      // cell recognizes whichever is its own. Without this the incremental update
       // would silently miss the ~half of the grid that is unquoted sections, and
       // those tabs would fall back to a full refetch.
       const keysFor = (entryId: number, jobPk: number, section: string) => ({

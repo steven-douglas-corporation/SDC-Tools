@@ -128,7 +128,7 @@ export async function recordUndefinedHours(
   // Rounding once, up front, and deriving BOTH from the same rounded numbers is what
   // makes `KPI = sum of drill rows` exact rather than approximate. It is the same
   // aggregate-then-round vs round-then-aggregate trap that made a settled-month
-  // comparison look like a history rewrite earlier the same day; worth recognising on
+  // comparison look like a history rewrite earlier the same day; worth recognizing on
   // sight, because it always presents as "nearly right".
   const rounded = rejected.map((r) => ({ ...r, hours: round2(r.hours) }));
 

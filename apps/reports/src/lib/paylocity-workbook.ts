@@ -100,7 +100,7 @@ export const OPTIONAL_HEADERS = ["Travel"] as const;
 // (expressions.tmdl: ReplaceValue "Not Defined"->"Concord", then "TRAVEL"->"Travel").
 // Reproduced here so the app's Travel hours and the report's agree by construction
 // rather than by coincidence. Anything else is passed through as-is: the column is
-// a free-text site name and inventing a bucket for an unrecognised one would hide it.
+// a free-text site name and inventing a bucket for an unrecognized one would hide it.
 export function normalizeTravel(raw: string): string {
   const v = raw.trim();
   if (v === "") return "";

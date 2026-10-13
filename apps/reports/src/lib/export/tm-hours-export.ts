@@ -65,7 +65,7 @@ const COLUMNS: SheetColumn[] = [
   { header: "Department", type: "text", width: 20 },
   // Headers match the panel's own column labels exactly ("Job ID", "Job /
   // Machine", "Function Name"), not the underlying field names — the file has to
-  // be recognisable as the table it came from.
+  // be recognizable as the table it came from.
   { header: "Job ID", type: "text", width: 14 },
   { header: "Job / Machine", type: "text", width: 34 },
   { header: "Section", type: "text", width: 12 },

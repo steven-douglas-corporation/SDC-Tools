@@ -48,7 +48,7 @@ const UPSTREAM_LABEL: Record<DrillUpstream, string> = {
 /**
  * True for the failure shapes that mean "the upstream did not answer or refused
  * us", as opposed to a bug in our own query. Kept deliberately narrow — anything
- * unrecognised gets the generic message, because guessing "it's just the network"
+ * unrecognized gets the generic message, because guessing "it's just the network"
  * about a real defect is how a defect stays hidden.
  */
 function isUpstreamUnreachable(error: unknown): boolean {

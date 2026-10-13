@@ -69,7 +69,7 @@ export type EtcViewParams = { dept?: string; jobname?: string; parts?: string };
  * seeds the grid from it, and the round-trip test pins it against the writer below.
  *
  *   dept     "Engineering" / "Shop" / both, comma-separated — the groups SHOWN; "none" for
- *            neither; absent, empty or unrecognised means both.
+ *            neither; absent, empty or unrecognized means both.
  *   parts    "0" hides Parts Cost.
  *   jobname  "0" hides the Job Name column.
  *

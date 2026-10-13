@@ -87,7 +87,7 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
   // validation and the export read — holds for history exactly as it does for a
   // month closed in the app. Read naively, that stamp would make every PBI-owned
   // month app-owned on the NEXT run and the sync would never converge again. So a
-  // submittedAt equal to the month's own history instant is recognised as this
+  // submittedAt equal to the month's own history instant is recognized as this
   // function's signature and ignored here; any other submittedAt is what it always
   // was — a real in-app freeze — and still owns the month.
   const [ownedRows, stampedRows] = await Promise.all([
@@ -296,7 +296,7 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
         // for each one and the freeze re-derived the zero-hour cells at priorEtc.
         // The freeze stamps the instant it ran; history is stamped with the instant
         // its period closed. Deterministic, so re-running converges, and
-        // recognisable, so it does not make the month app-owned (see the ownership
+        // recognizable, so it does not make the month app-owned (see the ownership
         // read above). Existing rows: scripts/backfill-etc-submitted-at.ts.
         submittedAt: historyConfirmedAt(period.month),
       });

@@ -25,7 +25,7 @@
 // rhythm, so the result reads as one list rather than two. ChangeNotifications'
 // own cap (3) and dedup (by cell) are unchanged; this file's are new, in
 // lib/notification-stack.ts, deliberately shaped the same way so the two halves
-// stay recognisable as one system without being the same code.
+// stay recognizable as one system without being the same code.
 //
 // Two independent, hand-rolled notification-like elements were found in the same
 // audit and deliberately left alone rather than folded in here:

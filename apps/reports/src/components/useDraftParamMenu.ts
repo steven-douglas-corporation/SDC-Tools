@@ -164,7 +164,7 @@ export function useDraftParamsMenu<K extends string>({
   // sometimes does not select" and "checkmarks out of sync with the applied
   // filter" in the report, and it got worse the faster you clicked.
   //
-  // So: a `committed` we recognise as the echo of one of our own pushes is NOT
+  // So: a `committed` we recognize as the echo of one of our own pushes is NOT
   // adopted — the draft is already at least as new as it, and may be newer. The
   // auto-apply effect below then sends whatever is still un-pushed, so the
   // fifth tick reaches the server on the trailing edge instead of vanishing.

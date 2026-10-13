@@ -75,7 +75,7 @@ export function resolveFilterChoice(value: string | null | undefined, options: r
  * themselves keep showing, because they are never filtered on a sentinel.
  *
  * Blank and whitespace-only values are dropped for the same reason they are not
- * filters: there is nothing for a user to recognise in an empty dropdown row.
+ * filters: there is nothing for a user to recognize in an empty dropdown row.
  */
 export function filterOptionValues(values: Iterable<string | null | undefined>): string[] {
   const set = new Set<string>();
