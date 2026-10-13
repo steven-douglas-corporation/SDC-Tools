@@ -4,7 +4,6 @@ import { TOTALETO_TIMEOUT, withTotalEto } from "@/lib/totaleto-connection";
 import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES } from "@/lib/job-filters";
 import { applyRefundSign, sqlRefundSigned } from "@/lib/parts-refund";
-import { isSdcVendor } from "@/lib/vendor-normalize";
 import { splitActualBySdc, isSdcBilling, type PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
 import { matchTransfers, netTransfersByJob, applyNetting, TRANSFER_NETTING_FROM, TRANSFER_WINDOW_DAYS, STOCK_BIN_JOB_ID, type PullRow } from "@/lib/parts-transfer-netting";
 
