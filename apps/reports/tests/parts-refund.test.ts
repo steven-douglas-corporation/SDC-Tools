@@ -172,9 +172,7 @@ test("the canonical AP-line amount carries the rule, so every aggregate inherits
 test("both line builders apply the rule before they total anything", () => {
   const sync = codeOf(read("lib", "sync-totaleto.ts"));
   const applied = sync.match(/\.map\(applyRefundSign\)/g) ?? [];
-  // 3 while the temporary getJobPartsCostNonArchived probe exists (Admin > Data Management);
-  // back to 2 when it is removed.
-  assert.equal(applied.length, 3, "getJobPartsCost, getJobPartsInvoicedInMonth and the non-archived probe must all sign their lines");
+  assert.equal(applied.length, 2, "getJobPartsCost and getJobPartsInvoicedInMonth must both sign their lines");
   // The reduces that build purchased/paid/actual must come AFTER the map, so the
   // totals are built from signed lines rather than raw ones.
   for (const marker of ["const meaningful = lines.filter", "const paid = meaningful.reduce"]) {
