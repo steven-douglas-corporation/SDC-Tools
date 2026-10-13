@@ -2,7 +2,6 @@ import { PageTitle } from "@/components/ui/Typography";
 import { PAGE_SHELL } from "@/components/ui/classnames";
 import { requirePagePermission } from "@/lib/require-permission";
 import { ReconcileRosterButton } from "@/components/ReconcileRosterButton";
-import { ArchivedProbeCard } from "@/components/ArchivedProbeCard";
 
 // ── Roster maintenance, moved off the Employees page (2026-08-24) ────────────
 //
@@ -71,15 +70,6 @@ export default async function AdminDataManagementPage() {
             inactive, and sets each person&apos;s team from their position family and reporting line — see the Org
             Chart view on the Employees page.
           </p>
-        </section>
-
-        <section className="rounded-xl border border-sdc-border bg-white p-5">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-sdc-navy">PO lines without archived (temporary)</h2>
-          <p className="mt-1.5 text-sm text-sdc-gray-600">
-            One job&apos;s Parts List lines from Total ETO with archived PO lines left out. Read-only. Compare the
-            total with Job Details &gt; Procurement to see whether archived lines are inflating it.
-          </p>
-          <ArchivedProbeCard />
         </section>
       </div>
     </div>
