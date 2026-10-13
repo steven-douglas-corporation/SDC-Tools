@@ -5,7 +5,11 @@ import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES } from "@/lib/job-filters";
 import { applyRefundSign, sqlRefundSigned } from "@/lib/parts-refund";
 import { splitActualBySdc, isSdcBilling, type PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
-import { matchTransfers, netTransfersByJob, applyNetting, TRANSFER_NETTING_FROM, TRANSFER_WINDOW_DAYS, STOCK_BIN_JOB_ID, type PullRow } from "@/lib/parts-transfer-netting";
+import {
+  matchTransfers, netTransfersByJob, applyNetting, summarizeTransfersForJobs, EMPTY_TRANSFER_SUMMARY,
+  TRANSFER_NETTING_FROM, TRANSFER_WINDOW_DAYS, STOCK_BIN_JOB_ID,
+  type PullRow, type Transfer, type JobTransferSummary,
+} from "@/lib/parts-transfer-netting";
 
 // The exact query Power BI's 'Part Purchase' table runs against this same
 // SQL server (extracted verbatim from the semantic model's TMDL). Verified
@@ -726,7 +730,15 @@ export async function getPartsActualByJob(): Promise<Map<string, number>> {
 // as-of mode. Reads pulls from TRANSFER_WINDOW_DAYS before the cutoff so a transfer whose
 // arriving half was booked a few days ahead of its leaving half still pairs.
 export async function getTransferNettingByJob(asOf: string | null = null): Promise<Map<string, number>> {
+  return netTransfersByJob(await loadTransfers(asOf));
+}
+
+// The matched transfers themselves, for callers that need more than the per-job net — the
+// Job Details Parts Cost card names the other job and the dollars of each. One query, shared
+// with getTransferNettingByJob, so the card and Parts Actual cannot read different pulls.
+async function loadTransfers(asOf: string | null): Promise<Transfer[]> {
   if (asOf !== null && !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error(`asOf must be YYYY-MM-DD (got "${asOf}").`);
+  if (devFakeEtoEnabled()) return [];
   const lookback = new Date(Date.parse(`${TRANSFER_NETTING_FROM}T00:00:00Z`) - TRANSFER_WINDOW_DAYS * 86_400_000);
   return withTotalEto(async (pool) => {
     const result = await pool
@@ -753,8 +765,21 @@ export async function getTransferNettingByJob(asOf: string | null = null): Promi
       day: String(r.Day),
       poLinked: Number(r.PoLinked) === 1,
     }));
-    return netTransfersByJob(matchTransfers(rows, { asOf }).transfers);
+    return matchTransfers(rows, { asOf }).transfers;
   }, { requestTimeout: 60_000, feed: "parts_actual.transfer_netting" });
+}
+
+/**
+ * The transfers touching a set of jobs, as the Job Details Parts Cost card shows them.
+ * Read-only. `net` is added to BOTH the card's Invoiced and its Purchased, so
+ * "Purchased − Invoiced = Left to invoice" still holds and Left to invoice itself — which
+ * is built line by line from open POs — does not move. Throws on failure; the card turns
+ * that into a visible "transfers unavailable" note rather than quietly showing un-netted
+ * figures as if they were complete.
+ */
+export async function getTransfersForJobs(jobNumbers: readonly string[], asOf: string | null = null): Promise<JobTransferSummary> {
+  if (jobNumbers.length === 0) return EMPTY_TRANSFER_SUMMARY;
+  return summarizeTransfersForJobs(await loadTransfers(asOf), jobNumbers);
 }
 
 // ── Lifetime Parts Actual split into "SDC billed" and the rest (2026-10-02) ───

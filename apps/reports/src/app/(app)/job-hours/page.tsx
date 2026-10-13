@@ -394,7 +394,16 @@ async function ProcurementBody({
       />
     );
   }
-  if (bom.roots.length) return <JobProcurement bom={bom} partsLines={parts?.lines ?? []} />;
+  if (bom.roots.length) {
+    return (
+      <JobProcurement
+        bom={bom}
+        partsLines={parts?.lines ?? []}
+        // Parts moved between jobs, so the list can say how the Parts Cost card gets to its total.
+        transfers={parts ? { net: parts.transfersNet, entries: parts.transfers, unavailable: parts.transfersUnavailable } : undefined}
+      />
+    );
+  }
   return <EmptyState title="No BOM found for this job" message="This job has no assembly/part records in Total ETO." />;
 }
 

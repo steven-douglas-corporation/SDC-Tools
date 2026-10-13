@@ -6,6 +6,7 @@ import { card } from "@/components/ui/classnames";
 // explains why it is no longer used here, and the unused binding was the file's only
 // lint warning.
 import { sharedBarMax, scaleToPct, type PartsCostFinancials } from "@/lib/parts-cost-financials-shared";
+import { describeTransfers } from "@/lib/parts-transfer-netting";
 import type { PartsDrillMode } from "@/components/PartsCostDrill";
 
 // Fixed palette (2026-08-11, by request) — no longer the SDC-blue ramp, but
@@ -507,6 +508,26 @@ export function PartsCostSummary({
       value: invoicedDisplay,
       kind: "segment",
     },
+    // ── Parts moved between jobs (2026-10-13) ───────────────────────────────
+    //
+    // Already INSIDE the Purchased and Invoiced rows — it is named, not added. Total ETO
+    // cannot re-code an invoice to another job, so a transfer is booked as inventory pulls
+    // and the original invoices stay on the job that bought the parts; the card nets them in
+    // so it agrees with the Projects grid. Shown whenever there is one, signed, with the other
+    // job named, so the extra (or missing) dollars never arrive unexplained. It touches
+    // neither Left to invoice nor the ETC: the parts that moved were already received.
+    ...(Math.abs(financials.transfersNet) >= 1
+      ? [
+          {
+            key: "transfers",
+            swatch: null,
+            label: "· transferred between jobs",
+            derivation: `${describeTransfers(financials.transfers)} — already inside Purchased and Invoiced above, not added again`,
+            value: Math.round(financials.transfersNet),
+            kind: "reference" as const,
+          },
+        ]
+      : []),
     {
       key: "left",
       swatch: hasAdditional ? BAR_UNCOVERED : null,
@@ -1042,6 +1063,18 @@ export function PartsCostSummary({
             })}
           </tbody>
         </table>
+        {/* The transfers could not be read, so Invoiced and Purchased are the invoices alone.
+            Said outright: an un-netted figure on a budget card must not pass for "nothing
+            moved". Gone on the next successful load. */}
+        {financials.transfersUnavailable && (
+          <p
+            role="status"
+            className="mt-2 rounded bg-sdc-yellow-bg/60 px-2 py-1 text-[0.68rem] leading-snug text-sdc-gray-600"
+          >
+            Parts moved between jobs couldn&apos;t be loaded right now, so Invoiced and Purchased here are
+            invoices only and may not match the Projects grid. Reload to try again.
+          </p>
+        )}
       </div>
 
       {/* The spacer now comes BEFORE "Total Parts Cost Spent" (2026-08-11c,
