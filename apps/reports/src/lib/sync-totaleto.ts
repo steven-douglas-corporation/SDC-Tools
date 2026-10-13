@@ -6,6 +6,7 @@ import { VALID_JOB_TYPES } from "@/lib/job-filters";
 import { applyRefundSign, sqlRefundSigned } from "@/lib/parts-refund";
 import { isSdcVendor } from "@/lib/vendor-normalize";
 import { splitActualBySdc, isSdcBilling, type PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
+import { matchTransfers, netTransfersByJob, applyNetting, TRANSFER_NETTING_FROM, TRANSFER_WINDOW_DAYS, STOCK_BIN_JOB_ID, type PullRow } from "@/lib/parts-transfer-netting";
 
 // The exact query Power BI's 'Part Purchase' table runs against this same
 // SQL server (extracted verbatim from the semantic model's TMDL). Verified
@@ -676,7 +677,7 @@ export async function getPartsInvoicedByJob(monthStart: Date, monthEndExclusive:
 // entered by hand (see syncPartsCostActual).
 export async function getPartsActualByJob(): Promise<Map<string, number>> {
   if (devFakeEtoEnabled()) return fakePartsActualByJob();
-  return withTotalEto(async (pool) => {
+  const map = await withTotalEto(async (pool) => {
     const result = await pool.request().query(
       `SELECT JobId, SUM(Actual) AS Actual FROM (
          SELECT APDD.ProjectID AS JobId, SUM(${AP_LINE_AMOUNT}) AS Actual
@@ -710,6 +711,51 @@ export async function getPartsActualByJob(): Promise<Map<string, number>> {
     }
     return map;
   }, { requestTimeout: 180_000, feed: "parts_actual.by_job" });
+  // Job-to-job transfers booked as inventory pulls (2026-10-13) — see
+  // lib/parts-transfer-netting.ts. Deliberately NOT caught: if the pull read fails the
+  // whole figure fails, because falling back to AP-only would silently put a transferred
+  // job's old cost back into Job.costActualHistorical until the next good run.
+  applyNetting(map, await getTransferNettingByJob());
+  return map;
+}
+
+// The per-job dollars to add to Parts Actual for part transfers between jobs — negative on
+// the job the parts left, positive on the job they reached. Only transfers from
+// TRANSFER_NETTING_FROM; earlier ones are never touched. Read-only.
+//
+// `asOf` (YYYY-MM-DD) keeps transfers completed by that day, for the Projects export's
+// as-of mode. Reads pulls from TRANSFER_WINDOW_DAYS before the cutoff so a transfer whose
+// arriving half was booked a few days ahead of its leaving half still pairs.
+export async function getTransferNettingByJob(asOf: string | null = null): Promise<Map<string, number>> {
+  if (asOf !== null && !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error(`asOf must be YYYY-MM-DD (got "${asOf}").`);
+  const lookback = new Date(Date.parse(`${TRANSFER_NETTING_FROM}T00:00:00Z`) - TRANSFER_WINDOW_DAYS * 86_400_000);
+  return withTotalEto(async (pool) => {
+    const result = await pool
+      .request()
+      .input("since", sql.DateTime, lookback)
+      .input("bin", sql.Int, STOCK_BIN_JOB_ID)
+      .query(
+        `SELECT PullDetailID AS Id, ProjectID AS JobId, ItemID AS ItemId,
+                CAST(PullQty AS float) AS Qty, CAST(CostingValue AS float) AS Cost,
+                CONVERT(varchar(10), FulfilledDate, 23) AS Day,
+                CASE WHEN PurchaseDetailID IS NULL THEN 0 ELSE 1 END AS PoLinked
+           FROM tblInventoryPullDetails WITH(NOLOCK)
+          WHERE FulfilledStatus = 1
+            AND FulfilledDate IS NOT NULL AND FulfilledDate >= @since
+            AND ProjectID IS NOT NULL AND ProjectID <> @bin
+            AND ItemID IS NOT NULL AND PullQty <> 0`,
+      );
+    const rows: PullRow[] = result.recordset.map((r: Record<string, unknown>) => ({
+      id: Number(r.Id),
+      jobId: Number(r.JobId),
+      itemId: Number(r.ItemId),
+      qty: Number(r.Qty),
+      cost: Number(r.Cost),
+      day: String(r.Day),
+      poLinked: Number(r.PoLinked) === 1,
+    }));
+    return netTransfersByJob(matchTransfers(rows, { asOf }).transfers);
+  }, { requestTimeout: 60_000, feed: "parts_actual.transfer_netting" });
 }
 
 // ── Lifetime Parts Actual split into "SDC billed" and the rest (2026-10-02) ───
@@ -744,7 +790,7 @@ export async function getPartsActualByJob(): Promise<Map<string, number>> {
 // day's midnight" keeps every timestamp on the cutoff day.
 export async function getPartsActualSdcSplitByJob(asOf: string | null = null): Promise<Map<string, PartsActualSdcSplit>> {
   if (asOf !== null && !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error(`asOf must be YYYY-MM-DD (got "${asOf}").`);
-  return withTotalEto(async (pool) => {
+  const split = await withTotalEto(async (pool) => {
     const result = await pool
       .request()
       .input("asOf", sql.VarChar(10), asOf)
@@ -768,6 +814,15 @@ export async function getPartsActualSdcSplitByJob(asOf: string | null = null): P
       })),
     );
   }, { requestTimeout: 40_000, attempts: 1, feed: "parts_actual.sdc_split_by_job" });
+  // `actual` must keep equalling getPartsActualByJob's figure, so it takes the same transfer
+  // netting (as of the same day). The SDC share is untouched: a transfer moves cost between
+  // jobs, it is not a supplier invoice. A failure here fails the split, and the caller already
+  // degrades that to blank columns rather than a figure that disagrees with the grid.
+  for (const [job, delta] of await getTransferNettingByJob(asOf)) {
+    const cur = split.get(job);
+    if (cur) cur.actual = Math.round((cur.actual + delta) * 100) / 100;
+  }
+  return split;
 }
 
 // Parts COMMITMENT (not actual) per job, straight from TotalETO — SUM(Total
