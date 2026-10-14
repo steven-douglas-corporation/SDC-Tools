@@ -1,6 +1,7 @@
 import { usd } from "@/components/ui/format";
 import type { TransferRow } from "@/lib/parts-list-transfer-rows";
 import type { ColKey } from "@/components/procurement/PoDetailPanel";
+import { NO_DESTINATION } from "@/lib/parts-transfer-netting";
 
 // One "parts moved between jobs" row of the Parts List, laid across the table's OWN visible
 // columns so each figure sits under the header that names it — the same arrangement as
@@ -25,7 +26,7 @@ export function TransferRowCells({
     switch (key) {
       case "pn":
         return (
-          <span className="block truncate font-mono text-note font-bold text-sdc-blue-dark" title={`Job ${row.otherJob}`}>
+          <span className="block truncate font-mono text-note font-bold text-sdc-blue-dark" title={row.otherJob === NO_DESTINATION ? "Removed — no matching arrival" : `Job ${row.otherJob}`}>
             TRANSFER
           </span>
         );

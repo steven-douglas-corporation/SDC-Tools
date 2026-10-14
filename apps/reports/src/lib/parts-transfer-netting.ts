@@ -41,6 +41,8 @@
 // Unmatched pulls are never applied. See `matchTransfers`' `unmatched` for the list
 // that is left for a person to review.
 
+import { REMOVED_PULLS } from "@/lib/parts-transfer-removals";
+
 /** First day (inclusive, YYYY-MM-DD) a transfer is netted. Earlier ones stay as signed off. */
 export const TRANSFER_NETTING_FROM = "2026-08-01";
 
@@ -49,6 +51,17 @@ export const TRANSFER_WINDOW_DAYS = 14;
 
 /** The inventory/stock-bin pseudo-job. Pulls on it are stock movement, not job cost. */
 export const STOCK_BIN_JOB_ID = 99999;
+
+/**
+ * The "job" a removal arrives at: none. A part booked out of a job with no matching arrival
+ * (parts-transfer-removals.ts) comes off the job it left and is added to nothing.
+ */
+export const NO_DESTINATION = "none";
+
+/** How a screen names the other side of a movement: "job 1160", or "no matching arrival". */
+export function jobLabel(job: string): string {
+  return job === NO_DESTINATION ? "no matching arrival" : `job ${job}`;
+}
 
 /**
  * The two costs of one transfer may differ by up to this much (absolute), or the arriving cost
@@ -167,10 +180,19 @@ function findPieces(cands: readonly PullRow[], target: number, cost: number, dir
  */
 export function matchTransfers(
   rows: readonly PullRow[],
-  opts: { from?: string; asOf?: string | null } = {},
+  opts: {
+    from?: string;
+    asOf?: string | null;
+    /**
+     * Pulls named as having taken a part out of a job for good, by pull id (see
+     * parts-transfer-removals.ts). Defaults to the app's list; a test passes its own.
+     */
+    removed?: ReadonlyMap<number, { jobId: number; itemId: number }>;
+  } = {},
 ): MatchResult {
   const from = opts.from ?? TRANSFER_NETTING_FROM;
   const asOf = opts.asOf ?? null;
+  const removed = opts.removed ?? REMOVED_PULLS;
 
   const usable = rows.filter(
     (r) => r.jobId !== STOCK_BIN_JOB_ID && Number.isFinite(r.cost) && Number.isFinite(r.qty) && r.qty !== 0,
@@ -311,6 +333,28 @@ export function matchTransfers(
     if (found.length === 1) record(found[0], [p]);
   }
 
+  // Pulls NAMED as having left a job for good (parts-transfer-removals.ts) and still unmatched.
+  // Each comes off the job it left and onto no job: Total ETO's own material-cost report subtracts
+  // every pull out of a job, and these are the ones the pairing rule cannot see an arrival for.
+  // The pull must still belong to the job and item it was listed under, or it is ignored.
+  for (const n of negatives) {
+    if (used.has(n.id)) continue;
+    const r = removed.get(n.id);
+    if (!r || r.jobId !== n.jobId || r.itemId !== n.itemId) continue;
+    used.add(n.id);
+    transfers.push({
+      fromJob: String(n.jobId),
+      toJob: NO_DESTINATION,
+      itemId: n.itemId,
+      qty: Math.abs(n.qty),
+      costOut: Math.abs(n.cost),
+      costIn: 0,
+      day: n.day,
+      negPullIds: [n.id],
+      posPullIds: [],
+    });
+  }
+
   const kept = asOf ? transfers.filter((t) => t.day <= asOf) : transfers;
   const unmatched = usable.filter((r) => r.day >= from && !used.has(r.id));
   return { transfers: kept, unmatched };
@@ -325,7 +369,7 @@ export function netTransfersByJob(transfers: readonly Transfer[]): Map<string, n
   const out = new Map<string, number>();
   for (const t of transfers) {
     out.set(t.fromJob, (out.get(t.fromJob) ?? 0) - t.costOut);
-    out.set(t.toJob, (out.get(t.toJob) ?? 0) + t.costIn);
+    if (t.toJob !== NO_DESTINATION) out.set(t.toJob, (out.get(t.toJob) ?? 0) + t.costIn);
   }
   for (const [job, v] of out) {
     const r = cents(v);
@@ -524,8 +568,10 @@ export function describeTransfers(entries: readonly JobTransferEntry[], max = 3)
   if (entries.length === 0) return "no transfers";
   const one = (e: JobTransferEntry) =>
     e.direction === "out"
-      ? `moved to job ${e.otherJob} (−${wholeDollars(e.amount)})`
-      : `moved in from job ${e.otherJob} (+${wholeDollars(e.amount)})`;
+      ? e.otherJob === NO_DESTINATION
+        ? `removed, ${jobLabel(e.otherJob)} (−${wholeDollars(e.amount)})`
+        : `moved to ${jobLabel(e.otherJob)} (−${wholeDollars(e.amount)})`
+      : `moved in from ${jobLabel(e.otherJob)} (+${wholeDollars(e.amount)})`;
   const shown = entries.slice(0, max).map(one);
   const more = entries.length - shown.length;
   return more > 0 ? `${shown.join(", ")}, +${more} more` : shown.join(", ");
