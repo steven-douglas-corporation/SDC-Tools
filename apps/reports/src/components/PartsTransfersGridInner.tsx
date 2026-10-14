@@ -5,6 +5,7 @@ import { AgGridReact } from "ag-grid-react";
 import type { ColDef, ValueFormatterParams } from "ag-grid-community";
 import { sdcTheme, GRID_HEIGHT } from "@/components/ui/ag-grid-theme";
 import type { AppliedTransferRow, ReviewPullRow } from "@/lib/sync-totaleto";
+import { NO_DESTINATION } from "@/lib/parts-transfer-netting";
 
 const money = (p: ValueFormatterParams) =>
   typeof p.value === "number"
@@ -29,7 +30,7 @@ const REVIEW_COLS: ColDef<ReviewPullRow>[] = [
 const APPLIED_COLS: ColDef<AppliedTransferRow>[] = [
   { field: "day", headerName: "Completed", width: 115, sort: "desc" },
   { field: "fromJob", headerName: "From job", width: 105, cellClass: "font-mono" },
-  { field: "toJob", headerName: "To job", width: 100, cellClass: "font-mono" },
+  { field: "toJob", headerName: "To job", width: 100, cellClass: "font-mono", valueFormatter: (p: ValueFormatterParams) => (p.value === NO_DESTINATION ? "— removed" : p.value) },
   { field: "partNumber", headerName: "Part No", width: 160, cellClass: "font-mono" },
   { field: "description", headerName: "Description", flex: 1, minWidth: 240 },
   { field: "qty", headerName: "Qty", width: 85, type: "rightAligned" },

@@ -47,7 +47,7 @@
 // range or a rewound month, where each row has been re-summed and "fully moved" no longer
 // means what it was measured as.
 
-import type { JobTransferEntry, JobTransferItem } from "@/lib/parts-transfer-netting";
+import { NO_DESTINATION, type JobTransferEntry, type JobTransferItem } from "@/lib/parts-transfer-netting";
 
 export type TransferRow = {
   /** Stable React key. */
@@ -154,9 +154,12 @@ export function buildTransferRows(
         hiddenParts++;
       }
     }
+    const removal = e.otherJob === NO_DESTINATION;
     const description =
-      `Parts moved ${e.direction === "out" ? "to" : "in from"} job ${e.otherJob} — ` +
-      `${e.transfers} item movement${e.transfers === 1 ? "" : "s"} (inventory pulls)` +
+      (removal
+        ? "Parts removed from the job — "
+        : `Parts moved ${e.direction === "out" ? "to" : "in from"} job ${e.otherJob} — `) +
+      `${e.transfers} item movement${e.transfers === 1 ? "" : "s"} (inventory pulls${removal ? ", no matching arrival" : ""})` +
       (hiddenParts > 0
         ? `; ${hiddenParts} fully moved part${hiddenParts === 1 ? " is" : "s are"} hidden above, this is the rest`
         : "");
@@ -231,6 +234,12 @@ export function hiddenTransfersNote(rows: readonly TransferRow[]): string {
 /** The strip line while the hide toggle is removing rows, or null when it removed none. */
 export function hiddenMovedNote(hiddenRowCount: number, destinations: readonly string[]): string | null {
   if (hiddenRowCount <= 0) return null;
-  const where = destinations.length === 0 ? "other jobs" : destinations.length === 1 ? `job ${destinations[0]}` : `jobs ${destinations.join(", ")}`;
-  return `${hiddenRowCount} part${hiddenRowCount === 1 ? "" : "s"} moved to ${where} ${hiddenRowCount === 1 ? "is" : "are"} hidden`;
+  const real = destinations.filter((d) => d !== NO_DESTINATION);
+  const removed = destinations.includes(NO_DESTINATION);
+  const jobs = real.length === 0 ? "" : real.length === 1 ? `job ${real[0]}` : `jobs ${real.join(", ")}`;
+  const is = hiddenRowCount === 1 ? "is" : "are";
+  const n = `${hiddenRowCount} part${hiddenRowCount === 1 ? "" : "s"}`;
+  if (removed && jobs) return `${n} moved to ${jobs} or removed with no matching arrival ${is} hidden`;
+  if (removed) return `${n} removed with no matching arrival ${is} hidden`;
+  return `${n} moved to ${jobs || "other jobs"} ${is} hidden`;
 }

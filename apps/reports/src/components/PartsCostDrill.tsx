@@ -8,7 +8,7 @@ import { DrillPanel, DrillControls, DrillEmpty, DRILL_NUM, DRILL_TOTAL_LABEL } f
 import { usd, usd2 } from "@/components/ui/format";
 import { loadPartsEtcHistory, type PartsEtcMonth } from "@/lib/parts-etc-history-actions";
 import type { PartsCostFinancials } from "@/lib/parts-cost-financials-shared";
-import { describeTransfers, type JobTransferItem } from "@/lib/parts-transfer-netting";
+import { describeTransfers, NO_DESTINATION, type JobTransferItem } from "@/lib/parts-transfer-netting";
 import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { normalizeVendor } from "@/lib/vendor-normalize";
 
@@ -95,7 +95,7 @@ function transferRows(items: readonly JobTransferItem[]): Row[] {
       itemId: t.itemId,
       purchaseDate: null,
       invoicedDate: t.day || null,
-      supplier: t.direction === "out" ? `To job ${t.otherJob}` : `From job ${t.otherJob}`,
+      supplier: t.direction === "out" ? (t.otherJob === NO_DESTINATION ? "Removed — no matching arrival" : `To job ${t.otherJob}`) : `From job ${t.otherJob}`,
       manufacturer: null,
       category: null,
       poNumber: "TRANSFER",
