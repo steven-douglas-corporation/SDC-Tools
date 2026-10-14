@@ -6,6 +6,11 @@ import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bo
 import { isUncoveredPart, quantityReadiness } from "@/lib/job-bom-rules";
 import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { describeTransfers, type JobTransferEntry } from "@/lib/parts-transfer-netting";
+import {
+  buildTransferRows, transferRowsShown, transferFooterAdd, transferExportValue, hiddenTransfersNote,
+  type TransferRow,
+} from "@/lib/parts-list-transfer-rows";
+import { TransferRowCells } from "@/components/procurement/TransferRowCells";
 import { usd, safePct } from "@/components/ui/format";
 import { useToast } from "@/components/ui/Toast";
 import { DragScroll } from "@/components/DragScroll";
@@ -1611,6 +1616,17 @@ function PartsListTab({
     onlyLeftToInvoice ||
     rewind !== "";
 
+  // ── Parts moved between jobs, as rows (2026-10-14) ────────────────────────
+  //
+  // Built from the same entries the Parts Cost card nets, so the footer ties to the card.
+  // Shown only in the plain whole-job view: a transfer has no supplier, status, category,
+  // invoice date or BOM membership, so it cannot honestly satisfy a filter, and it hides the
+  // moment anything narrows the table. `transfersHiddenNote` is what the strip says then.
+  const allTransferRows = useMemo(() => buildTransferRows(reconcile.transferEntries), [reconcile.transferEntries]);
+  const transfersShown = transferRowsShown({ filtersActive, scope, hasTransfers: allTransferRows.length > 0 });
+  const transferRows = useMemo(() => (transfersShown ? allTransferRows : []), [transfersShown, allTransferRows]);
+  const transfersHiddenNote = allTransferRows.length > 0 && !transfersShown ? hiddenTransfersNote(allTransferRows) : null;
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     // ── The date range scopes each row to the POs inside it (2026-10-06) ────────────
@@ -1801,6 +1817,9 @@ function PartsListTab({
         return v === undefined ? null : v;
       }),
     );
+    // Parts moved between jobs ride along exactly as they show on screen — present only in the
+    // plain whole-job view, absent the moment a filter is on — so the file matches the table.
+    for (const t of transferRows) rows.push(visibleCols.map((c) => transferExportValue(c.key, t)));
 
     // Mirrors PartsTableView's own footer totals (`tot`/`totPct`) — same columns,
     // same rule of skipping a windowed leftToSpend rather than summing nulls as
@@ -1816,6 +1835,11 @@ function PartsListTab({
       },
       { qty: 0, total: 0, invoiced: 0, left: 0 },
     );
+    // The same additions the on-screen footer makes (transferFooterAdd): equal to Total $ and
+    // Invoiced $, nothing to Left to Invoice.
+    const tAdd = transferFooterAdd(transferRows);
+    tot.total += tAdd.total;
+    tot.invoiced += tAdd.invoiced; // tAdd.left is 0: Left to Invoice is untouched
     const totPct = windowStatus.active ? null : tot.total > 0 ? Math.round((tot.invoiced / tot.total) * 100) : tot.invoiced > 0 ? 100 : 0;
     const totals = visibleCols.map((c) => {
       switch (c.key) {
@@ -1848,7 +1872,7 @@ function PartsListTab({
     ].filter((s): s is string => Boolean(s));
 
     return { jobId, tab: "parts" as const, columns, rows, totals, filters };
-  }, [visibleCols, sortColumns, filtered, windowStatus.active, statusIsDefault, status, scope, allParts, effCategory, effManufacturer, effSupplier, onlyLeftToInvoice, rewind, windowStatus.requested, from, to, dateType, query, jobId]);
+  }, [visibleCols, sortColumns, filtered, transferRows, windowStatus.active, statusIsDefault, status, scope, allParts, effCategory, effManufacturer, effSupplier, onlyLeftToInvoice, rewind, windowStatus.requested, from, to, dateType, query, jobId]);
 
   async function runExport(format: "xlsx" | "csv") {
     if (exportBusy) return; // one click, one export
@@ -2145,7 +2169,7 @@ function PartsListTab({
           No parts match the current filters.
         </p>
       ) : view === "list" ? (
-        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} scope={scope} setScope={setScope} drillKey={drill.key} expanded={expanded} toggleExpanded={toggleExpanded} onlyLeftToInvoice={onlyLeftToInvoice} filteredCol={from || to ? DATE_FILTER_COL[dateType] : null} />
+        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} transferRows={transferRows} transfersHiddenNote={transfersHiddenNote} scope={scope} setScope={setScope} drillKey={drill.key} expanded={expanded} toggleExpanded={toggleExpanded} onlyLeftToInvoice={onlyLeftToInvoice} filteredCol={from || to ? DATE_FILTER_COL[dateType] : null} />
       ) : (
         <PartsCardView parts={filtered} vendors={vendors} onCopy={onCopy} onOpenPo={onOpenPo} />
       )}
@@ -2260,6 +2284,8 @@ function PartsTableView({
   windowStatus,
   rangeLabel,
   reconcile,
+  transferRows,
+  transfersHiddenNote,
   scope,
   setScope,
   drillKey,
@@ -2297,6 +2323,10 @@ function PartsTableView({
   rangeLabel: string;
   /** Job-lifetime totals and the part of them that is not a BOM part. */
   reconcile: JobReconcile;
+  /** Parts moved between jobs, drawn under the rows and added to the footer. Empty whenever a filter is on. */
+  transferRows: TransferRow[];
+  /** What the strip says when transfers exist but a filter is hiding their rows; null otherwise. */
+  transfersHiddenNote: string | null;
   scope: "all" | "bom" | "nonbom";
   setScope: (s: "all" | "bom" | "nonbom") => void;
   /**
@@ -2498,14 +2528,22 @@ function PartsTableView({
     },
     { qty: 0, total: 0, invoiced: 0, left: 0, estimate: 0 },
   );
-  const totPct = windowStatus.active ? null : tot.total > 0 ? Math.round((tot.invoiced / tot.total) * 100) : tot.invoiced > 0 ? 100 : 0;
+  // Parts moved between jobs add the same figure to Total $ and Invoiced $ and nothing to Left to
+  // Invoice (transferFooterAdd) — empty whenever a filter is on, so a filtered footer is the
+  // filtered rows and nothing else. With the whole job showing, the footer ties to the Parts
+  // Cost card.
+  const tAdd = transferFooterAdd(transferRows);
+  const footTotal = tot.total + tAdd.total;
+  const footInvoiced = tot.invoiced + tAdd.invoiced;
+  const totPct = windowStatus.active ? null : footTotal > 0 ? Math.round((footInvoiced / footTotal) * 100) : footInvoiced > 0 ? 100 : 0;
   const footCell = (key: ColKey, idx: number): string => {
     switch (key) {
       case "qty": return num(tot.qty);
       case "unit": return "—";
-      case "total": return usd(tot.total);
-      case "invoiced": return usd(tot.invoiced);
+      case "total": return usd(footTotal);
+      case "invoiced": return usd(footInvoiced);
       case "pctinv": return totPct === null ? "—" : `${totPct}%`;
+      // Left to Invoice is `tot.left`, exactly as before: a transfer adds nothing to it (tAdd.left is 0).
       case "leftspend": return windowStatus.active ? "—" : usd(tot.left);
       default: return idx === 0 ? "Total" : "";
     }
@@ -2637,6 +2675,13 @@ function PartsTableView({
                 <td colSpan={cols.length} className="p-0" />
               </tr>
             )}
+            {/* Parts moved between jobs — pinned after the last part row, outside the windowing
+                (there are only ever a handful). Absent whenever a filter is on. */}
+            {transferRows.map((t) => (
+              <tr key={t.key} data-transfer-row={t.key} style={{ height: ROW_H }} className="bg-sdc-blue-light/30">
+                <TransferRowCells row={t} cols={cols} />
+              </tr>
+            ))}
           </tbody>
           {/* ── One row high, always (2026-09-02) ────────────────────────────
               `whitespace-nowrap` and a fixed `h-7` on the totals row, because a
@@ -2649,7 +2694,14 @@ function PartsTableView({
               {cols.map((c, idx) => (
                 <td
                   key={c.key}
-                  title={c.key === "total" && tot.estimate !== 0 ? `Leaves out ${usd(tot.estimate)} of BOM estimates for parts not bought yet, so Total − Invoiced = Left to Invoice.` : undefined}
+                  title={
+                    c.key === "total"
+                      ? [
+                          tot.estimate !== 0 ? `Leaves out ${usd(tot.estimate)} of BOM estimates for parts not bought yet, so Total − Invoiced = Left to Invoice.` : null,
+                          tAdd.total !== 0 ? `Includes ${usd(tAdd.total)} of parts moved between jobs (the TRANSFER row), so it matches the Parts Cost card.` : null,
+                        ].filter(Boolean).join(" ") || undefined
+                      : undefined
+                  }
                   className={`overflow-hidden whitespace-nowrap border-r border-white/15 px-2 py-1 align-middle font-mono font-bold tabular-nums ${c.align === "right" ? "text-right" : ""}`}
                 >
                   {footCell(c.key, idx)}
@@ -2844,15 +2896,14 @@ function PartsTableView({
                         card gets from this total to its own. */}
                     {Math.abs(reconcile.transfersNet) >= 1 && (
                       <span className="text-white/45">
-                        {reconcile.transfersNet < 0 ? "less" : "plus"}{" "}
-                        <span className="font-mono tabular-nums text-white/70">{usd(Math.abs(reconcile.transfersNet))}</span>{" "}
-                        of parts {describeTransfers(reconcile.transferEntries)} (inventory pulls, not purchase lines) ={" "}
+                        net of parts {describeTransfers(reconcile.transferEntries)} (inventory pulls, not purchase lines) ={" "}
                         <span className="font-mono tabular-nums text-white/70">
                           {usd(reconcile.jobTotal + reconcile.transfersNet)}
                         </span>{" "}
                         purchased on the Parts Cost card
                       </span>
                     )}
+                    {transfersHiddenNote && <span className="text-white/45">{transfersHiddenNote}</span>}
                     {reconcile.transfersUnavailable && (
                       <span className="text-white/45">
                         parts moved between jobs couldn&apos;t be loaded, so the Parts Cost card may differ from this list
