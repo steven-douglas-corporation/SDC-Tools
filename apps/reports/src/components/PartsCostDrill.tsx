@@ -8,7 +8,7 @@ import { DrillPanel, DrillControls, DrillEmpty, DRILL_NUM, DRILL_TOTAL_LABEL } f
 import { usd, usd2 } from "@/components/ui/format";
 import { loadPartsEtcHistory, type PartsEtcMonth } from "@/lib/parts-etc-history-actions";
 import type { PartsCostFinancials } from "@/lib/parts-cost-financials-shared";
-import { describeTransfers, type JobTransferEntry } from "@/lib/parts-transfer-netting";
+import { describeTransfers, type JobTransferItem } from "@/lib/parts-transfer-netting";
 import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { normalizeVendor } from "@/lib/vendor-normalize";
 
@@ -62,50 +62,55 @@ import { normalizeVendor } from "@/lib/vendor-normalize";
 // panel cannot afford.
 const money = usd2;
 
-export type PartsDrillMode = "projection" | "invoiced" | "left" | "etc";
+export type PartsDrillMode = "projection" | "invoiced" | "left" | "etc" | "transfers";
 
 const MODE_TITLE: Record<PartsDrillMode, string> = {
   projection: "Parts Cost Detail — Actual / Projection",
   invoiced: "Parts Cost Detail — Invoiced",
   left: "Parts Cost Detail — Yet to invoice",
   etc: "Parts Cost Detail — ETC",
+  transfers: "Parts Cost Detail — Transferred between jobs",
 };
 
 type Row = PartsCostLine & {
   leftToInvoice: number;
   /** A parts transfer between jobs, shown as a row so the footer ties to the card. Not a purchase line. */
   isTransfer?: boolean;
+  /** The inventory pulls a transfer row was matched from. */
+  pullIds?: number[];
 };
 
 /**
- * One display row per transfer entry. Purchased and Invoiced are the same amount, so Left to
- * invoice is 0 and the row only ever appears in the modes about money already spent. Built
- * from `financials.transfers` — the SAME figures the card added to Invoiced and Purchased —
- * so the rows can never sum to anything but the card.
+ * One display row per item moved between jobs. Purchased and Invoiced are the same amount, so
+ * Left to invoice is 0 and the row only appears in the modes about money already spent. Built
+ * from `financials.transferItems` — the item movements behind the figure the card added to
+ * Invoiced and Purchased — so the rows sum to the card. Quantity is signed like the money:
+ * negative for parts that left.
  */
-function transferRows(entries: readonly JobTransferEntry[]): Row[] {
-  return entries.map((e) => ({
-    lineId: `transfer:${e.direction}:${e.otherJob}`,
-    itemId: null,
-    purchaseDate: null,
-    invoicedDate: e.lastDay || null,
-    supplier: null,
-    manufacturer: null,
-    category: null,
-    poNumber: "TRANSFER",
-    partNumber: null,
-    description:
-      e.direction === "out"
-        ? `Parts moved to job ${e.otherJob} — ${e.transfers} item movement${e.transfers === 1 ? "" : "s"} (inventory pulls)`
-        : `Parts moved in from job ${e.otherJob} — ${e.transfers} item movement${e.transfers === 1 ? "" : "s"} (inventory pulls)`,
-    quantity: 0,
-    unitPrice: 0,
-    totalPrice: e.amount,
-    invoicedAmount: e.amount,
-    actualAmount: e.amount,
-    leftToInvoice: 0,
-    isTransfer: true,
-  }));
+function transferRows(items: readonly JobTransferItem[]): Row[] {
+  return items.map((t) => {
+    const qty = t.direction === "out" ? -t.qty : t.qty;
+    return {
+      lineId: `transfer:${t.pullIds.join("-")}`,
+      itemId: t.itemId,
+      purchaseDate: null,
+      invoicedDate: t.day || null,
+      supplier: t.direction === "out" ? `To job ${t.otherJob}` : `From job ${t.otherJob}`,
+      manufacturer: null,
+      category: null,
+      poNumber: "TRANSFER",
+      partNumber: t.partNumber,
+      description: t.description ?? `Item ${t.itemId}`,
+      quantity: qty,
+      unitPrice: qty !== 0 ? t.amount / qty : 0,
+      totalPrice: t.amount,
+      invoicedAmount: t.amount,
+      actualAmount: t.amount,
+      leftToInvoice: 0,
+      isTransfer: true,
+      pullIds: t.pullIds,
+    };
+  });
 }
 
 type ColKey =
@@ -153,6 +158,7 @@ const SORT_COLUMNS: SortColumns<Row, ColKey> = {
 function rowsForMode(rows: Row[], mode: PartsDrillMode): Row[] {
   if (mode === "invoiced") return rows.filter((r) => r.actualAmount !== 0);
   if (mode === "left") return rows.filter((r) => r.leftToInvoice !== 0);
+  if (mode === "transfers") return rows.filter((r) => r.isTransfer);
   return rows; // projection — every line behind the bar
 }
 
@@ -231,9 +237,9 @@ export function PartsCostDrill({
         leftToInvoice: l.totalPrice - l.actualAmount,
       })),
       // Parts moved between jobs, so these rows sum to the card's Invoiced and Purchased.
-      ...transferRows(financials.transfers),
+      ...transferRows(financials.transferItems),
     ],
-    [financials.lines, financials.transfers],
+    [financials.lines, financials.transferItems],
   );
 
   const scoped = useMemo(() => rowsForMode(rows, mode), [rows, mode]);
@@ -390,6 +396,7 @@ export function PartsCostDrill({
     { key: "invoiced", label: "Invoiced" },
     { key: "left", label: "Yet to invoice" },
     { key: "etc", label: "ETC" },
+    ...(financials.transferItems.length > 0 ? [{ key: "transfers" as const, label: "Transfers" }] : []),
   ];
 
   return (
@@ -615,12 +622,17 @@ export function PartsCostDrill({
           <tbody>
             {sorted.map((r, i) => (
               <tr key={`${r.poNumber}-${r.partNumber}-${i}`} className="border-b border-sdc-border-soft hover:bg-sdc-blue-light/40">
-                <td className="px-2 py-1 font-mono">{dash(r.poNumber)}</td>
+                <td
+                  className={`px-2 py-1 font-mono ${r.isTransfer ? "text-sdc-blue-dark" : ""}`}
+                  title={r.pullIds ? `Inventory pulls ${r.pullIds.join(", ")}` : undefined}
+                >
+                  {dash(r.poNumber)}
+                </td>
                 <td className="px-2 py-1 font-mono">{dash(r.partNumber)}</td>
                 <td className="max-w-[22rem] truncate px-2 py-1" title={r.description ?? undefined}>{dash(r.description)}</td>
                 <td className="max-w-[12rem] truncate px-2 py-1" title={r.supplier ?? undefined}>{dash(r.supplier)}</td>
-                <td className={`px-2 py-1 ${DRILL_NUM}`}>{r.isTransfer ? "—" : r.quantity}</td>
-                <td className={`px-2 py-1 ${DRILL_NUM}`}>{r.isTransfer ? "—" : money(r.unitPrice)}</td>
+                <td className={`px-2 py-1 ${DRILL_NUM}`}>{r.quantity}</td>
+                <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.unitPrice)}</td>
                 <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.totalPrice)}</td>
                 <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.actualAmount)}</td>
                 <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.leftToInvoice)}</td>

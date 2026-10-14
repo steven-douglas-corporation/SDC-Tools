@@ -107,7 +107,7 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
       inHouseExcluded: 0, inHouseRows: 0, additionalExposure: 0, coverageLine: null,
       etcUnknown: true, etcMonth: null,
       variance: null, variancePct: null, failedJobs: 0, lineCount: 0, lines: [],
-      transfersNet: 0, transfers: [], transfersUnavailable: false,
+      transfersNet: 0, transfers: [], transferItems: [], transfersUnavailable: false,
     };
   }
 
@@ -258,6 +258,7 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
     lines,
     transfersNet: transfers.net,
     transfers: transfers.entries,
+    transferItems: transfers.items,
     transfersUnavailable,
   };
 }

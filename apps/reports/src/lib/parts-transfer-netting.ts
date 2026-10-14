@@ -351,6 +351,79 @@ export function applyNetting(actual: Map<string, number>, adjustments: ReadonlyM
   }
 }
 
+// ── Unmatched pulls, sorted for a person to review (2026-10-14) ──────────────
+//
+// `matchTransfers` never applies a pull it is unsure of, which is right for the numbers but
+// means a real transfer booked unusually is silently left on the wrong job. This sorts the
+// unmatched pulls into the ones that LOOK like half of a transfer — the same item went the
+// other way on another job around the same time, and is itself unmatched — and says which
+// rule stopped the match, so someone can confirm it or correct the booking in Total ETO.
+// Everything else is ordinary stock issue/return and is only counted. Nothing here changes
+// any figure.
+
+/** How far apart two halves may be and still be shown as a possible transfer (review only). */
+export const REVIEW_WINDOW_DAYS = 60;
+
+export type UnmatchedReview = {
+  pull: PullRow;
+  /** Unmatched pulls of the same item, the other way, on another job, nearest date first. */
+  counterparts: PullRow[];
+  /** Why the nearest counterpart was not matched, in words. Empty when there is none. */
+  reasons: string[];
+};
+
+const usd2 = (n: number) => `$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function whyNotMatched(pull: PullRow, other: PullRow, counterpartCount: number): string[] {
+  const out = pull.qty < 0 ? pull : other;
+  const inn = pull.qty < 0 ? other : pull;
+  const reasons: string[] = [];
+  if (Math.abs(out.qty + inn.qty) > QTY_EPS) reasons.push(`quantity differs (${Math.abs(out.qty)} left, ${inn.qty} arrived)`);
+  const gap = gapDays(out.day, inn.day);
+  if (gap > TRANSFER_WINDOW_DAYS) reasons.push(`booked ${Math.round(gap)} days apart (limit ${TRANSFER_WINDOW_DAYS})`);
+  if (inn.poLinked) reasons.push("arriving pull is linked to a PO, so it reads as that job's own receipt");
+  if (!costsAgree(Math.abs(out.cost), inn.cost)) reasons.push(`costs too far apart (${usd2(out.cost)} left, ${usd2(inn.cost)} arrived)`);
+  if (reasons.length === 0) {
+    reasons.push(
+      counterpartCount > 1
+        ? "ambiguous: several pulls could pair with it, so none was applied"
+        : "split booking that did not add up exactly on one job",
+    );
+  }
+  return reasons;
+}
+
+/**
+ * Splits `unmatched` into possible transfers (with the reason each was not matched) and the
+ * rest. Pure. `unmatched` is `matchTransfers(...).unmatched` for the same rows; counterparts
+ * are drawn from it too, since a pull already in a matched transfer is accounted for.
+ * Possible transfers come back newest first.
+ */
+export function reviewUnmatched(unmatched: readonly PullRow[]): { possible: UnmatchedReview[]; ordinary: PullRow[] } {
+  const byItem = new Map<number, PullRow[]>();
+  for (const r of unmatched) {
+    const list = byItem.get(r.itemId) ?? [];
+    list.push(r);
+    byItem.set(r.itemId, list);
+  }
+  const possible: UnmatchedReview[] = [];
+  const ordinary: PullRow[] = [];
+  for (const pull of unmatched) {
+    const counterparts = (byItem.get(pull.itemId) ?? [])
+      .filter(
+        (c) =>
+          c.jobId !== pull.jobId &&
+          Math.sign(c.qty) === -Math.sign(pull.qty) &&
+          gapDays(c.day, pull.day) <= REVIEW_WINDOW_DAYS,
+      )
+      .sort((a, b) => gapDays(a.day, pull.day) - gapDays(b.day, pull.day) || a.id - b.id);
+    if (counterparts.length === 0) ordinary.push(pull);
+    else possible.push({ pull, counterparts, reasons: whyNotMatched(pull, counterparts[0], counterparts.length) });
+  }
+  possible.sort((a, b) => (a.pull.day < b.pull.day ? 1 : a.pull.day > b.pull.day ? -1 : a.pull.id - b.pull.id));
+  return { possible, ordinary };
+}
+
 // ── What a Parts Cost card shows for a set of jobs (2026-10-13) ──────────────
 //
 // The Job Details Parts Cost card covers one job — or several at once. A transfer
@@ -370,13 +443,31 @@ export type JobTransferEntry = {
   lastDay: string;
 };
 
+/** One matched item movement, for the history behind a `JobTransferEntry`. */
+export type JobTransferItem = {
+  direction: "in" | "out";
+  otherJob: string;
+  itemId: number;
+  /** Filled in from Total ETO's item master by the caller; null until then or when unknown. */
+  partNumber: string | null;
+  description: string | null;
+  qty: number;
+  /** Signed like `JobTransferEntry.amount`. Unrounded, so the items sum to their entry. */
+  amount: number;
+  day: string;
+  /** The inventory pulls it was matched from, leaving side then arriving side. */
+  pullIds: number[];
+};
+
 export type JobTransferSummary = {
   /** Sum of `entries` — what the card adds to both Invoiced and Purchased. */
   net: number;
   entries: JobTransferEntry[];
+  /** Every item movement behind `entries`, newest first. Sums to `net` (before rounding). */
+  items: JobTransferItem[];
 };
 
-export const EMPTY_TRANSFER_SUMMARY: JobTransferSummary = { net: 0, entries: [] };
+export const EMPTY_TRANSFER_SUMMARY: JobTransferSummary = { net: 0, entries: [], items: [] };
 
 export function summarizeTransfersForJobs(
   transfers: readonly Transfer[],
@@ -384,24 +475,42 @@ export function summarizeTransfersForJobs(
 ): JobTransferSummary {
   const set = new Set(jobs);
   const byKey = new Map<string, JobTransferEntry>();
+  const items: JobTransferItem[] = [];
   for (const t of transfers) {
     const fromIn = set.has(t.fromJob);
     const toIn = set.has(t.toJob);
     if (fromIn === toIn) continue; // outside the selection entirely, or wholly inside it
     const direction = toIn ? "in" : "out";
     const otherJob = toIn ? t.fromJob : t.toJob;
+    const amount = toIn ? t.costIn : -t.costOut;
     const key = `${direction}:${otherJob}`;
     const e = byKey.get(key) ?? { direction, otherJob, amount: 0, transfers: 0, lastDay: "" };
-    e.amount += toIn ? t.costIn : -t.costOut;
+    e.amount += amount;
     e.transfers++;
     if (t.day > e.lastDay) e.lastDay = t.day;
     byKey.set(key, e);
+    items.push({
+      direction,
+      otherJob,
+      itemId: t.itemId,
+      partNumber: null,
+      description: null,
+      qty: t.qty,
+      amount,
+      day: t.day,
+      pullIds: [...t.negPullIds, ...t.posPullIds],
+    });
   }
   const entries = [...byKey.values()]
     .map((e) => ({ ...e, amount: cents(e.amount) }))
     .filter((e) => e.amount !== 0)
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || a.otherJob.localeCompare(b.otherJob));
-  return { net: cents(entries.reduce((s, e) => s + e.amount, 0)), entries };
+  // Same population as `entries`: a counterpart that nets to $0 is dropped from both.
+  const kept = new Set(entries.map((e) => `${e.direction}:${e.otherJob}`));
+  const keptItems = items
+    .filter((i) => kept.has(`${i.direction}:${i.otherJob}`))
+    .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : a.otherJob.localeCompare(b.otherJob) || a.itemId - b.itemId));
+  return { net: cents(entries.reduce((s, e) => s + e.amount, 0)), entries, items: keptItems };
 }
 
 const wholeDollars = (n: number) => `$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;

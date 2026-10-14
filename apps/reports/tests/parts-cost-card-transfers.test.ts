@@ -66,9 +66,37 @@ test("a transfer between two jobs INSIDE the selection never left it, so it is n
 });
 
 test("jobs the selection does not contain, and an empty selection, contribute nothing", () => {
-  assert.deepEqual(summarizeTransfersForJobs([T(1155, 1160, 100)], ["1999"]), { net: 0, entries: [] });
-  assert.deepEqual(summarizeTransfersForJobs([T(1155, 1160, 100)], []), { net: 0, entries: [] });
-  assert.deepEqual(summarizeTransfersForJobs([], ["1155"]), { net: 0, entries: [] });
+  assert.deepEqual(summarizeTransfersForJobs([T(1155, 1160, 100)], ["1999"]), { net: 0, entries: [], items: [] });
+  assert.deepEqual(summarizeTransfersForJobs([T(1155, 1160, 100)], []), { net: 0, entries: [], items: [] });
+  assert.deepEqual(summarizeTransfersForJobs([], ["1155"]), { net: 0, entries: [], items: [] });
+});
+
+test("items list every movement behind the entries, newest first, and sum to the net", () => {
+  const s = summarizeTransfersForJobs(
+    [
+      T(1155, 1160, 10, 10, "2026-08-24", 7),
+      T(1170, 1160, 500, 480, "2026-09-02", 8),
+      T(1155, 1160, 5.25, 5.5, "2026-09-10", 9),
+      T(1160, 1180, 40, 40, "2026-09-05", 10),
+    ],
+    ["1160"],
+  );
+  assert.deepEqual(
+    s.items.map((i) => [i.direction, i.otherJob, i.itemId, i.amount, i.day]),
+    [
+      ["in", "1155", 9, 5.5, "2026-09-10"],
+      ["out", "1180", 10, -40, "2026-09-05"],
+      ["in", "1170", 8, 480, "2026-09-02"],
+      ["in", "1155", 7, 10, "2026-08-24"],
+    ],
+  );
+  assert.ok(Math.abs(s.items.reduce((a, i) => a + i.amount, 0) - s.net) < 0.005);
+  assert.deepEqual(s.items[0].pullIds, [1, 2]);
+});
+
+test("a counterpart that nets to $0 is dropped from items as well as entries", () => {
+  const s = summarizeTransfersForJobs([T(1155, 1160, 0, 0)], ["1160"]);
+  assert.deepEqual(s, { net: 0, entries: [], items: [] });
 });
 
 test("entries are one per direction and counterpart, largest first, with the latest day", () => {
@@ -173,11 +201,12 @@ test("only the Parts Cost card's own server module reads transfers for display",
   assert.deepEqual(offenders.sort(), ["src/lib/parts-cost-financials.ts", "src/lib/sync-totaleto.ts"]);
 });
 
-test("the drill adds transfer ROWS from the same entries, so its footer sums to the card", () => {
+test("the drill adds one transfer ROW per item moved, so its footer sums to the card", () => {
   const src = noComments(read("src", "components", "PartsCostDrill.tsx"));
-  assert.match(src, /\.\.\.transferRows\(financials\.transfers\)/);
+  assert.match(src, /\.\.\.transferRows\(financials\.transferItems\)/);
   assert.match(src, /const invoiceBasis = financials\.invoiced - financials\.transfersNet;/, "the months-vs-lifetime note compares invoices with invoices");
-  assert.match(src, /isTransfer \? "—"/, "a transfer row has no quantity or unit price");
+  assert.match(src, /if \(mode === "transfers"\) return rows\.filter\(\(r\) => r\.isTransfer\);/);
+  assert.match(src, /leftToInvoice: 0,/, "a transfer never touches Left to invoice");
 });
 
 test("the Parts List only DESCRIBES the transfer — its rows, totals and reconciliation are untouched", () => {
