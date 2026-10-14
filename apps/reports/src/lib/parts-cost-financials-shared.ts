@@ -1,5 +1,5 @@
 import type { PartsCostLine } from "@/lib/sync-totaleto";
-import type { JobTransferEntry } from "@/lib/parts-transfer-netting";
+import type { JobTransferEntry, JobTransferItem } from "@/lib/parts-transfer-netting";
 import { reconcileRounding } from "@/lib/rounding";
 
 // Split out of parts-cost-financials.ts (2026-08-15): that file starts with
@@ -125,6 +125,8 @@ export type PartsCostFinancials = {
   transfersNet: number;
   /** The other job and the dollars, one entry per direction and counterpart, largest first. */
   transfers: JobTransferEntry[];
+  /** The item movements behind `transfers`, newest first — the history the drill lists. */
+  transferItems: JobTransferItem[];
   /**
    * True when the transfers could not be read. `invoiced` and `purchased` then exclude them,
    * and the card must say so — an un-netted figure is not the same as "no transfers".

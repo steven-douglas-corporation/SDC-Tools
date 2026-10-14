@@ -229,6 +229,17 @@ const GROUPS: NavGroup[] = [
         ),
       },
       {
+        href: "/parts-transfers",
+        label: "Parts Transfers",
+        isActive: (p) => p === "/parts-transfers",
+        icon: (
+          <Icon>
+            <path d="M2 5.5 H12.5 M10 3 L12.5 5.5 L10 8" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M14 10.5 H3.5 M6 8 L3.5 10.5 L6 13" strokeLinecap="round" strokeLinejoin="round" />
+          </Icon>
+        ),
+      },
+      {
         href: "/build-readiness",
         label: "Build Readiness",
         isActive: (p) => p === "/build-readiness",

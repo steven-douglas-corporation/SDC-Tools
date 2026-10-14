@@ -522,7 +522,7 @@ export function PartsCostSummary({
             key: "transfers",
             swatch: null,
             label: "· transferred between jobs",
-            derivation: `${describeTransfers(financials.transfers)} — already inside Purchased and Invoiced above, not added again`,
+            derivation: `${describeTransfers(financials.transfers)} — already inside Purchased and Invoiced above, not added again${onDrill ? ". Click for the parts" : ""}`,
             value: Math.round(financials.transfersNet),
             kind: "reference" as const,
           },
@@ -1046,7 +1046,20 @@ export function PartsCostSummary({
                     )}
                   </td>
                   <td className="py-1">
-                    <span className={isTotal ? "text-sdc-navy" : "text-sdc-gray-600"}>{r.label}</span>
+                    {r.key === "transfers" && onDrill ? (
+                      <button
+                        type="button"
+                        onClick={() => onDrill("transfers")}
+                        title="Show every part moved between jobs"
+                        className={`motion-interactive text-left underline decoration-dotted underline-offset-2 ${
+                          drillMode === "transfers" ? "text-sdc-blue-dark" : "text-sdc-gray-600 hover:text-sdc-navy"
+                        }`}
+                      >
+                        {r.label}
+                      </button>
+                    ) : (
+                      <span className={isTotal ? "text-sdc-navy" : "text-sdc-gray-600"}>{r.label}</span>
+                    )}
                     {/* The arithmetic, one size down and muted: it is there to be
                         checked, not to compete with the figure it explains. */}
                     <span className="block text-[0.62rem] leading-snug text-sdc-gray-400">{r.derivation}</span>
