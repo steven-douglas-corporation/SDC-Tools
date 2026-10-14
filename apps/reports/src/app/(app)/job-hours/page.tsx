@@ -400,7 +400,7 @@ async function ProcurementBody({
         bom={bom}
         partsLines={parts?.lines ?? []}
         // Parts moved between jobs, so the list can say how the Parts Cost card gets to its total.
-        transfers={parts ? { net: parts.transfersNet, entries: parts.transfers, unavailable: parts.transfersUnavailable } : undefined}
+        transfers={parts ? { net: parts.transfersNet, entries: parts.transfers, items: parts.transferItems, unavailable: parts.transfersUnavailable } : undefined}
       />
     );
   }

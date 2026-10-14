@@ -5,9 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type 
 import type { BomNode, BomPart, JobBom, PoLineGroup, Vendor } from "@/lib/job-bom";
 import { isUncoveredPart, quantityReadiness } from "@/lib/job-bom-rules";
 import type { PartsCostLine } from "@/lib/sync-totaleto";
-import { describeTransfers, type JobTransferEntry } from "@/lib/parts-transfer-netting";
+import { describeTransfers, type JobTransferEntry, type JobTransferItem } from "@/lib/parts-transfer-netting";
 import {
   buildTransferRows, transferRowsShown, transferFooterAdd, transferExportValue, hiddenTransfersNote,
+  indexMovedOut, isFullyMoved, hiddenMovedNote,
   type TransferRow,
 } from "@/lib/parts-list-transfer-rows";
 import { TransferRowCells } from "@/components/procurement/TransferRowCells";
@@ -180,6 +181,8 @@ type PersistedState = {
   onlyLeftToInvoice?: boolean;
   /** "Rewind to": a `YYYY-MM` month, or "" for today (see left-to-invoice.ts rewindLines). */
   rewind?: string;
+  /** Hide the rows of parts that were moved to other jobs. Absent = on (the default). */
+  hideMoved?: boolean;
   hiddenPartCols: ColKey[];
   /** One-shot marker: the Left to Invoice column has been revealed once (see below). */
   leftToInvoiceShown?: boolean;
@@ -210,7 +213,7 @@ export function JobProcurement({
   bom: JobBom;
   partsLines: PartsCostLine[];
   /** Parts moved between jobs, as the Parts Cost card nets them. Absent = the caller has none to show. */
-  transfers?: { net: number; entries: JobTransferEntry[]; unavailable: boolean };
+  transfers?: { net: number; entries: JobTransferEntry[]; items: JobTransferItem[]; unavailable: boolean };
 }) {
   const { toast } = useToast();
   const saved = useMemo(() => loadPersisted(), []);
@@ -243,6 +246,9 @@ export function JobProcurement({
   const [from, setFrom] = useState(() => saved.from ?? "");
   const [to, setTo] = useState(() => saved.to ?? "");
   const [onlyLeftToInvoice, setOnlyLeftToInvoice] = useState<boolean>(() => saved.onlyLeftToInvoice ?? false);
+  // On by default (2026-10-14): once a part has moved to another job its row says little about
+  // this one. A preference, not a filter - see lib/parts-list-transfer-rows.ts.
+  const [hideMoved, setHideMoved] = useState<boolean>(() => saved.hideMoved ?? true);
   const [rewind, setRewind] = useState(() => (monthEndCutoff(saved.rewind) ? (saved.rewind ?? "") : ""));
   // Default hidden columns (fresh users; anyone with a stored set keeps theirs).
   // ── Why a stored set gets one forced correction (2026-09-02) ──────────────
@@ -278,13 +284,13 @@ export function JobProcurement({
   // Persist everything under one key.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const data: PersistedState = { tab, view, query, status: [...status], category, manufacturer, supplier, dateType, from, to, upcomingWeek, onlyLeftToInvoice, rewind, hiddenPartCols: [...hidden], leftToInvoiceShown: true, colWidths };
+    const data: PersistedState = { tab, view, query, status: [...status], category, manufacturer, supplier, dateType, from, to, upcomingWeek, onlyLeftToInvoice, rewind, hideMoved, hiddenPartCols: [...hidden], leftToInvoiceShown: true, colWidths };
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch {
       /* quota / disabled — non-fatal */
     }
-  }, [tab, view, query, status, category, manufacturer, supplier, dateType, from, to, upcomingWeek, onlyLeftToInvoice, rewind, hidden, colWidths]);
+  }, [tab, view, query, status, category, manufacturer, supplier, dateType, from, to, upcomingWeek, onlyLeftToInvoice, rewind, hideMoved, hidden, colWidths]);
 
   // Drill target — key = String(part.id). `nonce` bumps on every drill so the
   // Parts List effect re-fires even when the same row is targeted twice.
@@ -365,7 +371,7 @@ export function JobProcurement({
     setRewind("");
   }, []);
 
-  const partsState = { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, rewind, setRewind, hidden, setHidden, upcomingWeek, setUpcomingWeek, colWidths, setColWidths, clearFilters } as const;
+  const partsState = { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, rewind, setRewind, hideMoved, setHideMoved, hidden, setHidden, upcomingWeek, setUpcomingWeek, colWidths, setColWidths, clearFilters } as const;
 
   // Every normalized part number in the CURRENT BOM tree — independent of
   // partsLines (which comes from TotalETO's purchasing data, not the
@@ -555,6 +561,7 @@ export function JobProcurement({
       ...reconcile,
       transfersNet: transfers?.net ?? 0,
       transferEntries: transfers?.entries ?? [],
+      transferItems: transfers?.items ?? [],
       transfersUnavailable: transfers?.unavailable ?? false,
     }),
     [reconcile, transfers],
@@ -1362,6 +1369,8 @@ type JobReconcile = {
   /** Net parts moved between jobs (signed). Outside the rows and outside `unexplained`. */
   transfersNet: number;
   transferEntries: JobTransferEntry[];
+  /** The item movements behind `transferEntries` - which parts left, for how much, to where. */
+  transferItems: JobTransferItem[];
   /** The transfers could not be read, so the Parts Cost card may differ from this list. */
   transfersUnavailable: boolean;
 };
@@ -1398,6 +1407,8 @@ type PartsListState = {
   setOnlyLeftToInvoice: (v: boolean) => void;
   rewind: string;
   setRewind: (v: string) => void;
+  hideMoved: boolean;
+  setHideMoved: (v: boolean) => void;
   hidden: Set<ColKey>;
   setHidden: (updater: (prev: Set<ColKey>) => Set<ColKey>) => void;
   upcomingWeek: number;
@@ -1492,7 +1503,7 @@ function PartsListTab({
   /** The human job number (JobBom.jobId) — for the Export menu's filename and audit trail. */
   jobId: string;
 }) {
-  const { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, rewind, setRewind, hidden, setHidden, colWidths, setColWidths, clearFilters } = state;
+  const { view, setView, query, setQuery, status, setStatus, category, setCategory, manufacturer, setManufacturer, supplier, setSupplier, dateType, setDateType, from, setFrom, to, setTo, onlyLeftToInvoice, setOnlyLeftToInvoice, rewind, setRewind, hideMoved, setHideMoved, hidden, setHidden, colWidths, setColWidths, clearFilters } = state;
   const { toast } = useToast();
   const now = useStableNow();
   // "Active" for status means the selection differs from the default (every
@@ -1616,18 +1627,7 @@ function PartsListTab({
     onlyLeftToInvoice ||
     rewind !== "";
 
-  // ── Parts moved between jobs, as rows (2026-10-14) ────────────────────────
-  //
-  // Built from the same entries the Parts Cost card nets, so the footer ties to the card.
-  // Shown only in the plain whole-job view: a transfer has no supplier, status, category,
-  // invoice date or BOM membership, so it cannot honestly satisfy a filter, and it hides the
-  // moment anything narrows the table. `transfersHiddenNote` is what the strip says then.
-  const allTransferRows = useMemo(() => buildTransferRows(reconcile.transferEntries), [reconcile.transferEntries]);
-  const transfersShown = transferRowsShown({ filtersActive, scope, hasTransfers: allTransferRows.length > 0 });
-  const transferRows = useMemo(() => (transfersShown ? allTransferRows : []), [transfersShown, allTransferRows]);
-  const transfersHiddenNote = allTransferRows.length > 0 && !transfersShown ? hiddenTransfersNote(allTransferRows) : null;
-
-  const filtered = useMemo(() => {
+  const filteredBase = useMemo(() => {
     const q = query.trim().toLowerCase();
     // ── The date range scopes each row to the POs inside it (2026-10-06) ────────────
     //
@@ -1721,6 +1721,57 @@ function PartsListTab({
       return true;
     });
   }, [parts, status, effCategory, effManufacturer, effSupplier, from, to, dateType, query, onlyLeftToInvoice, windowStatus.active]);
+
+  // ── Hide parts that were moved to other jobs (2026-10-14) ─────────────────
+  //
+  // A part that left this job for at least its whole cost says little about the job as it
+  // stands; its row is still the only record of the PO, supplier and invoice, so it is hidden
+  // by a toggle (on by default) and never removed. Only BOM rows fully moved qualify
+  // (isFullyMoved) - a partly moved part, freight, fees and card charges always stay.
+  //
+  // Applies to the lifetime view only: a date range or a rewound month has re-summed each row,
+  // so "fully moved" is no longer the thing that was measured. There the toggle stands down.
+  //
+  // Hiding takes a row's Total $ and Invoiced $ out of the footer, so the TRANSFER rows below
+  // are built from what was ACTUALLY hidden and carry only the residual - the footer is then the
+  // same with the toggle on or off, and always equals the Parts Cost card.
+  const movedIndex = useMemo(() => indexMovedOut(reconcile.transferItems), [reconcile.transferItems]);
+  const lifetimeView = from === "" && to === "" && rewind === "" && !windowStatus.requested;
+  const hideMovedActive = hideMoved && lifetimeView && movedIndex.size > 0;
+  const hiddenMovedRows = useMemo(
+    () => (hideMovedActive ? filteredBase.filter((p) => isFullyMoved(p, movedIndex)) : []),
+    [hideMovedActive, filteredBase, movedIndex],
+  );
+  const filtered = useMemo(() => {
+    if (hiddenMovedRows.length === 0) return filteredBase;
+    const hide = new Set(hiddenMovedRows.map((p) => p.id));
+    return filteredBase.filter((p) => !hide.has(p.id));
+  }, [filteredBase, hiddenMovedRows]);
+  // How many parts in the whole job the toggle would hide, so the button can say so before it is pressed.
+  const movedPartCount = useMemo(
+    () => (movedIndex.size > 0 ? parts.filter((p) => isFullyMoved(p, movedIndex)).length : 0),
+    [parts, movedIndex],
+  );
+  const movedDestinations = useMemo(() => {
+    const jobs = new Set<string>();
+    for (const p of hiddenMovedRows) for (const j of movedIndex.get(p.id)?.byJob.keys() ?? []) jobs.add(j);
+    return [...jobs].sort();
+  }, [hiddenMovedRows, movedIndex]);
+  const hiddenMovedLine = hiddenMovedNote(hiddenMovedRows.length, movedDestinations);
+
+  // ── Parts moved between jobs, as rows (2026-10-14) ────────────────────────
+  //
+  // Built from the same entries the Parts Cost card nets, so the footer ties to the card.
+  // Shown only in the plain whole-job view: a transfer has no supplier, status, category,
+  // invoice date or BOM membership, so it cannot honestly satisfy a filter, and it hides the
+  // moment anything narrows the table. `transfersHiddenNote` is what the strip says then.
+  const allTransferRows = useMemo(
+    () => buildTransferRows(reconcile.transferEntries, { rows: hiddenMovedRows, moved: movedIndex }),
+    [reconcile.transferEntries, hiddenMovedRows, movedIndex],
+  );
+  const transfersShown = transferRowsShown({ filtersActive, scope, hasTransfers: allTransferRows.length > 0 });
+  const transferRows = useMemo(() => (transfersShown ? allTransferRows : []), [transfersShown, allTransferRows]);
+  const transfersHiddenNote = allTransferRows.length > 0 && !transfersShown ? hiddenTransfersNote(allTransferRows) : null;
 
   // ── Expanded rows: a part's POs unfolded beneath it, in the table (2026-09-13) ──
   //
@@ -1839,7 +1890,8 @@ function PartsListTab({
     // Invoiced $, nothing to Left to Invoice.
     const tAdd = transferFooterAdd(transferRows);
     tot.total += tAdd.total;
-    tot.invoiced += tAdd.invoiced; // tAdd.left is 0: Left to Invoice is untouched
+    tot.invoiced += tAdd.invoiced;
+    tot.left += tAdd.left; // the open balance of any rows the hide toggle removed
     const totPct = windowStatus.active ? null : tot.total > 0 ? Math.round((tot.invoiced / tot.total) * 100) : tot.invoiced > 0 ? 100 : 0;
     const totals = visibleCols.map((c) => {
       switch (c.key) {
@@ -1866,13 +1918,14 @@ function PartsListTab({
       effManufacturer !== FILTER_ALL ? `Mfr: ${effManufacturer}` : null,
       effSupplier !== FILTER_ALL ? `Supplier: ${effSupplier}` : null,
       onlyLeftToInvoice ? "Left to invoice only" : null,
+      hiddenMovedLine,
       rewind && !windowStatus.requested ? `Rewound to ${monthEndLabel(rewind)}` : null,
       from || to ? `${dateTypeLabel}: ${from || "…"} to ${to || "…"}` : null,
       query ? `Search: "${query}"` : null,
     ].filter((s): s is string => Boolean(s));
 
     return { jobId, tab: "parts" as const, columns, rows, totals, filters };
-  }, [visibleCols, sortColumns, filtered, transferRows, windowStatus.active, statusIsDefault, status, scope, allParts, effCategory, effManufacturer, effSupplier, onlyLeftToInvoice, rewind, windowStatus.requested, from, to, dateType, query, jobId]);
+  }, [visibleCols, sortColumns, filtered, transferRows, hiddenMovedLine, windowStatus.active, statusIsDefault, status, scope, allParts, effCategory, effManufacturer, effSupplier, onlyLeftToInvoice, rewind, windowStatus.requested, from, to, dateType, query, jobId]);
 
   async function runExport(format: "xlsx" | "csv") {
     if (exportBusy) return; // one click, one export
@@ -2010,6 +2063,30 @@ function PartsListTab({
         >
           Left to invoice
         </button>
+
+        {/* Hide parts that were moved to other jobs (2026-10-14). Only offered on a job where a
+            transfer took a whole part away. A preference, not a filter: on by default, remembered,
+            and stood down in a date range or a rewound month where each row has been re-summed. */}
+        {movedPartCount > 0 && (
+          <button
+            type="button"
+            aria-pressed={hideMoved}
+            disabled={!lifetimeView}
+            onClick={() => setHideMoved(!hideMoved)}
+            title={
+              !lifetimeView
+                ? "Not applied to a date range or a rewound month"
+                : hideMoved
+                  ? `Showing the job without the ${movedPartCount} part${movedPartCount === 1 ? "" : "s"} that moved to other jobs. Their rows are the record of the PO and invoice - click to show them`
+                  : `Hide the ${movedPartCount} part${movedPartCount === 1 ? "" : "s"} that moved completely to other jobs. The totals do not change`
+            }
+            className={`flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+              hideMoved && lifetimeView ? "border-sdc-blue bg-sdc-blue-light text-sdc-blue-dark" : "border-sdc-border bg-white text-sdc-navy hover:bg-sdc-blue-light"
+            }`}
+          >
+            Hide moved parts ({movedPartCount})
+          </button>
+        )}
 
         {/* Rewind to: the list as it stood at the end of a month — the same position Monthly
             ETC reports for that month. The hover text spells out what changes. Off (blank)
@@ -2169,7 +2246,7 @@ function PartsListTab({
           No parts match the current filters.
         </p>
       ) : view === "list" ? (
-        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} transferRows={transferRows} transfersHiddenNote={transfersHiddenNote} scope={scope} setScope={setScope} drillKey={drill.key} expanded={expanded} toggleExpanded={toggleExpanded} onlyLeftToInvoice={onlyLeftToInvoice} filteredCol={from || to ? DATE_FILTER_COL[dateType] : null} />
+        <PartsTableView parts={filtered} cols={visibleCols} onCopy={onCopy} onOpenPart={onOpenPart} onOpenPo={onOpenPo} now={now} colWidths={colWidths} setColWidths={setColWidths} windowStatus={windowStatus} rangeLabel={windowedRangeLabel} reconcile={reconcile} transferRows={transferRows} transfersHiddenNote={transfersHiddenNote} hiddenMovedLine={hiddenMovedLine} onShowMoved={() => setHideMoved(false)} scope={scope} setScope={setScope} drillKey={drill.key} expanded={expanded} toggleExpanded={toggleExpanded} onlyLeftToInvoice={onlyLeftToInvoice} filteredCol={from || to ? DATE_FILTER_COL[dateType] : null} />
       ) : (
         <PartsCardView parts={filtered} vendors={vendors} onCopy={onCopy} onOpenPo={onOpenPo} />
       )}
@@ -2286,6 +2363,8 @@ function PartsTableView({
   reconcile,
   transferRows,
   transfersHiddenNote,
+  hiddenMovedLine,
+  onShowMoved,
   scope,
   setScope,
   drillKey,
@@ -2327,6 +2406,10 @@ function PartsTableView({
   transferRows: TransferRow[];
   /** What the strip says when transfers exist but a filter is hiding their rows; null otherwise. */
   transfersHiddenNote: string | null;
+  /** What the strip says while "Hide moved parts" is removing rows; null when it removed none. */
+  hiddenMovedLine: string | null;
+  /** Turns "Hide moved parts" off, from the strip. */
+  onShowMoved: () => void;
   scope: "all" | "bom" | "nonbom";
   setScope: (s: "all" | "bom" | "nonbom") => void;
   /**
@@ -2535,6 +2618,9 @@ function PartsTableView({
   const tAdd = transferFooterAdd(transferRows);
   const footTotal = tot.total + tAdd.total;
   const footInvoiced = tot.invoiced + tAdd.invoiced;
+  // Left to Invoice: nothing from a transfer itself, but the open balance of any rows "Hide moved
+  // parts" removed rides on the TRANSFER row, so the footer is the same with the toggle on or off.
+  tot.left += tAdd.left;
   const totPct = windowStatus.active ? null : footTotal > 0 ? Math.round((footInvoiced / footTotal) * 100) : footInvoiced > 0 ? 100 : 0;
   const footCell = (key: ColKey, idx: number): string => {
     switch (key) {
@@ -2543,7 +2629,6 @@ function PartsTableView({
       case "total": return usd(footTotal);
       case "invoiced": return usd(footInvoiced);
       case "pctinv": return totPct === null ? "—" : `${totPct}%`;
-      // Left to Invoice is `tot.left`, exactly as before: a transfer adds nothing to it (tAdd.left is 0).
       case "leftspend": return windowStatus.active ? "—" : usd(tot.left);
       default: return idx === 0 ? "Total" : "";
     }
@@ -2901,6 +2986,19 @@ function PartsTableView({
                           {usd(reconcile.jobTotal + reconcile.transfersNet)}
                         </span>{" "}
                         purchased on the Parts Cost card
+                      </span>
+                    )}
+                    {hiddenMovedLine && (
+                      <span className="text-white/45">
+                        {hiddenMovedLine} -{" "}
+                        <button
+                          type="button"
+                          onClick={onShowMoved}
+                          className="motion-interactive rounded px-1 underline decoration-dotted underline-offset-2 hover:bg-white/10 hover:text-white"
+                          title="Show the rows of parts that moved to other jobs again. The totals do not change"
+                        >
+                          show them
+                        </button>
                       </span>
                     )}
                     {transfersHiddenNote && <span className="text-white/45">{transfersHiddenNote}</span>}

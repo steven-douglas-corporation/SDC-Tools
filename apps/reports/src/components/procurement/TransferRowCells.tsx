@@ -42,13 +42,24 @@ export function TransferRowCells({
         return (
           <span
             className={`${money} text-sdc-navy`}
-            title="Inventory pulls, not a purchase line. Included in the Parts Cost card's Purchased and Invoiced"
+            title={
+              row.hiddenParts > 0
+                ? "Inventory pulls, not a purchase line - what is left after the fully moved parts hidden above. With the rows above it equals the whole transfer in the Parts Cost card"
+                : "Inventory pulls, not a purchase line. Included in the Parts Cost card's Purchased and Invoiced"
+            }
           >
-            {usd(row.amount)}
+            {usd(key === "total" ? row.total : row.invoiced)}
           </span>
         );
       case "leftspend":
-        return <span className={`${money} text-sdc-muted`}>{usd(0)}</span>;
+        return (
+          <span
+            className={`${money} ${row.left !== 0 ? "text-sdc-navy" : "text-sdc-muted"}`}
+            title={row.left !== 0 ? "The open PO balance of the fully moved parts hidden above" : undefined}
+          >
+            {usd(row.left)}
+          </span>
+        );
       case "status":
         return <span className="text-note font-bold text-sdc-blue-dark">TRANSFER</span>;
       default:

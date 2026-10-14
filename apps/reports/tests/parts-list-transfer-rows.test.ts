@@ -118,7 +118,7 @@ const noComments = (s: string) => s.replace(/^\s*\/\/.*$/gm, "");
 
 test("the rows come from the card's own entries and show only via transferRowsShown", () => {
   const src = noComments(PROC);
-  assert.match(src, /buildTransferRows\(reconcile\.transferEntries\)/);
+  assert.match(src, /buildTransferRows\(reconcile\.transferEntries, \{ rows: hiddenMovedRows, moved: movedIndex \}\)/, "from the card's entries, less whatever the hide toggle removed");
   assert.match(src, /transferRowsShown\(\{ filtersActive, scope, hasTransfers: allTransferRows\.length > 0 \}\)/);
   assert.match(src, /const transferRows = useMemo\(\(\) => \(transfersShown \? allTransferRows : \[\]\), \[transfersShown, allTransferRows\]\);/);
 });
@@ -130,8 +130,9 @@ test("the part rows, their sort and the footer's own sum are untouched — trans
   assert.match(src, /const tAdd = transferFooterAdd\(transferRows\);/);
   assert.match(src, /const footTotal = tot\.total \+ tAdd\.total;/);
   assert.match(src, /const footInvoiced = tot\.invoiced \+ tAdd\.invoiced;/);
-  assert.match(src, /case "leftspend": return windowStatus\.active \? "—" : usd\(tot\.left\);/, "Left to Invoice is exactly what it was");
-  assert.doesNotMatch(src, /footLeft/, "no transfer amount ever reaches the Left to Invoice column");
+  assert.match(src, /case "leftspend": return windowStatus\.active \? "—" : usd\(tot\.left\);/, "the Left to Invoice cell itself is exactly what it was");
+  assert.match(src, /tot\.left \+= tAdd\.left;/, "only the open balance of rows the hide toggle removed rides on the TRANSFER row");
+  assert.doesNotMatch(src, /footLeft/);
   assert.doesNotMatch(src, /parts\.push|parts\.concat|\[\.\.\.parts, \.\.\.transfer/, "no transfer is ever put into the part rows");
 });
 
@@ -149,7 +150,7 @@ test("the export appends the same rows and the same footer additions as the scre
   const src = noComments(PROC);
   assert.match(src, /for \(const t of transferRows\) rows\.push\(visibleCols\.map\(\(c\) => transferExportValue\(c\.key, t\)\)\);/);
   assert.match(src, /const tAdd = transferFooterAdd\(transferRows\);\s*\n\s*tot\.total \+= tAdd\.total;\s*\n\s*tot\.invoiced \+= tAdd\.invoiced;/);
-  assert.doesNotMatch(src, /tot\.left \+= tAdd/, "the export's Left to Invoice total is untouched too");
+  assert.equal((src.match(/tot\.left \+= tAdd\.left/g) ?? []).length, 2, "the footer and the export both carry the hidden rows' open balance");
 });
 
 test("when a filter hides the rows, the strip says so", () => {
