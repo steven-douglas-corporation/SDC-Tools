@@ -11,6 +11,8 @@ import type { PositionFamilyQuality } from "@/lib/position-families-sync";
 import type { FamilyFinding } from "@/lib/position-families-parse";
 import { DataQualityExplorer } from "@/components/DataQualityExplorer";
 import { DataQualityDrill, EmployeeIdDrill } from "@/components/DataQualityDrill";
+import { UndefinedHoursDrill } from "@/components/UndefinedHoursDrill";
+import type { UndefinedKpiFigures } from "@/lib/unattributed-hours";
 import { hours as fmtHours } from "@/components/ui/format";
 
 // The Power BI report's "Data Quality" page. Its rules — which punches count as
@@ -43,6 +45,9 @@ type Check = {
   unit: string;
   hours?: number;
   body: React.ReactNode;
+  /** The body brings its own titled shell and Close (an existing drill panel), so the board
+   *  renders it as-is instead of wrapping it in a second card. Receives the board's close. */
+  bare?: (close: () => void) => React.ReactNode;
 };
 
 // Status is never colour alone: an icon and a word ride with the colour.
@@ -110,6 +115,7 @@ function CheckTile({ check, selected, onSelect }: { check: Check; selected: bool
 
 const GRID_COLS: Record<number, string> = {
   3: "grid-cols-1 sm:grid-cols-3",
+  4: "grid-cols-2 xl:grid-cols-4",
   5: "grid-cols-2 sm:grid-cols-3 xl:grid-cols-5",
 };
 
@@ -135,7 +141,8 @@ function CheckBoard({
           />
         ))}
       </div>
-      {open && (
+      {open?.bare && <div className="mt-3">{open.bare(() => onSelect(null))}</div>}
+      {open && !open.bare && (
         <div className={`mt-3 ${card("p-5")}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -317,7 +324,17 @@ function CustomerNamingFinding({ data }: { data: DataQuality["customerNaming"] }
 
 // ── Job punches ───────────────────────────────────────────────────
 
-function PunchesSection({ dq, explorer }: { dq: DataQuality; explorer: PunchExplorer | null }) {
+function PunchesSection({
+  dq,
+  explorer,
+  month,
+  undefinedHours,
+}: {
+  dq: DataQuality;
+  explorer: PunchExplorer | null;
+  month: string;
+  undefinedHours: UndefinedKpiFigures;
+}) {
   const checks: Check[] = [
     {
       key: "future",
@@ -347,6 +364,16 @@ function PunchesSection({ dq, explorer }: { dq: DataQuality; explorer: PunchExpl
       // Drillable: an unrecognized ID is only actionable once you can see what
       // it has been booking to.
       body: <EmployeeIdDrill ids={dq.undefinedEmployees.ids} />,
+    },
+    {
+      key: "undefinedHours",
+      title: "Undefined Hours",
+      rule: "Time booked to something that isn't a usable job number. It reaches no figure on the Monthly ETC page. Scoped to the month selected above — the same figures and detail as the Monthly ETC page's Data Quality — Undefined Hours card.",
+      count: undefinedHours.entries,
+      hours: undefinedHours.hours,
+      unit: "entries",
+      body: null,
+      bare: (close) => <UndefinedHoursDrill month={month} onClose={close} />,
     },
   ];
   const [selected, setSelected] = useState<string | null>(() => firstWithIssues(checks));
@@ -386,12 +413,11 @@ function PunchesSection({ dq, explorer }: { dq: DataQuality; explorer: PunchExpl
       <div className="grid gap-3 md:grid-cols-2">
         <p className="rounded-lg border border-sdc-border bg-sdc-gray-50 px-4 py-3 text-xs leading-relaxed text-sdc-gray-600">
           Hours booked to something that isn&apos;t a usable job number (the report&apos;s &quot;Job Id Not
-          Defined&quot; case) are tracked on the{" "}
+          Defined&quot; case) are the <strong>Undefined Hours</strong> check above — the same figures as the{" "}
           <Link href="/etc" className="font-semibold text-sdc-blue hover:underline">
             ETC page
           </Link>
-          &apos;s <strong>Data Quality — Undefined Hours</strong> card, one month at a time, rather than duplicated
-          here.
+          &apos;s <strong>Data Quality — Undefined Hours</strong> card, for the month selected at the top.
         </p>
         <p className="rounded-lg border border-sdc-border bg-sdc-gray-50 px-4 py-3 text-xs leading-relaxed text-sdc-gray-600">
           <strong>One check from the report is missing.</strong> Its &quot;Section-Function Exception&quot; case flags
@@ -801,15 +827,19 @@ export function DataQualityPanel({
   explorer,
   roster,
   families,
+  month,
+  undefinedHours,
 }: {
   dq: DataQuality;
   explorer: PunchExplorer | null;
   roster: RosterQuality | null;
   families: PositionFamilyQuality | null;
+  month: string;
+  undefinedHours: UndefinedKpiFigures;
 }) {
   return (
     <div className="space-y-10">
-      <PunchesSection dq={dq} explorer={explorer} />
+      <PunchesSection dq={dq} explorer={explorer} month={month} undefinedHours={undefinedHours} />
 
       {roster && <RosterSection roster={roster} />}
 

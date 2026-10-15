@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getDataQuality, getPunchExplorer } from "@/lib/data-quality";
+import { getUndefinedHoursTotals } from "@/lib/unattributed-hours";
 import { getRosterQuality } from "@/lib/paylocity-roster-sync";
 import { getPositionFamilyQuality } from "@/lib/position-families-sync";
 import { DashboardTabs } from "@/components/DashboardTabs";
@@ -66,7 +67,7 @@ export async function DashboardView({ params }: { params: {
   // client state alone.
   const onQualityTab = sp.tab === "quality";
 
-  const [overview, dataQuality, explorer, roster, families, freshnessRows, refreshRuns, liveRefresh] = await Promise.all([
+  const [overview, dataQuality, explorer, roster, families, freshnessRows, refreshRuns, liveRefresh, undefinedHours] = await Promise.all([
     getDashboardOverview(month),
     // The Power BI report's Data Quality page, rebuilt locally — see
     // lib/data-quality.ts for where each rule comes from.
@@ -94,6 +95,9 @@ export async function DashboardView({ params }: { params: {
     // So a source being worked on right now reads as refreshing rather than as
     // whatever it was on the last completed pass.
     currentRefresh(),
+    // The Monthly ETC card's own figure for this month (same function), so the tile's
+    // headline and the detail it opens cannot disagree with that page.
+    getUndefinedHoursTotals(month),
     // Which jobs actually have a Scheduler project, so a FAT row is never a dead
     // link. Fail-soft: an unreachable Scheduler yields an empty set (no links).
   ]);
@@ -127,7 +131,16 @@ export async function DashboardView({ params }: { params: {
 
       <DashboardTabs
         issueCount={dataQuality.future.count + dataQuality.afterCompletion.count + dataQuality.undefinedEmployees.count}
-        dataQuality={<DataQualityPanel dq={dataQuality} explorer={explorer} roster={roster} families={families} />}
+        dataQuality={
+          <DataQualityPanel
+            dq={dataQuality}
+            explorer={explorer}
+            roster={roster}
+            families={families}
+            month={month}
+            undefinedHours={undefinedHours}
+          />
+        }
         overview={
           // Four labelled bands, not five equal blocks in a stack. The KPI
           // strip and the first two bands live inside DashboardOverviewPanel;
