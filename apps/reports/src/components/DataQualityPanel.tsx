@@ -46,8 +46,8 @@ type Check = {
   hours?: number;
   body: React.ReactNode;
   /** The body brings its own titled shell and Close (an existing drill panel), so the board
-   *  renders it as-is instead of wrapping it in a second card. */
-  bare?: boolean;
+   *  renders it as-is instead of wrapping it in a second card. Receives the board's close. */
+  bare?: (close: () => void) => React.ReactNode;
 };
 
 // Status is never colour alone: an icon and a word ride with the colour.
@@ -141,7 +141,7 @@ function CheckBoard({
           />
         ))}
       </div>
-      {open?.bare && <div className="mt-3">{open.body}</div>}
+      {open?.bare && <div className="mt-3">{open.bare(() => onSelect(null))}</div>}
       {open && !open.bare && (
         <div className={`mt-3 ${card("p-5")}`}>
           <div className="flex items-start justify-between gap-4">
@@ -372,8 +372,8 @@ function PunchesSection({
       count: undefinedHours.entries,
       hours: undefinedHours.hours,
       unit: "entries",
-      body: <UndefinedHoursDrill month={month} onClose={() => setSelected(null)} />,
-      bare: true,
+      body: null,
+      bare: (close) => <UndefinedHoursDrill month={month} onClose={close} />,
     },
   ];
   const [selected, setSelected] = useState<string | null>(() => firstWithIssues(checks));
