@@ -6,7 +6,7 @@ import { VALID_JOB_TYPES } from "@/lib/job-filters";
 import { applyRefundSign, sqlRefundSigned } from "@/lib/parts-refund";
 import { splitActualBySdc, isSdcBilling, type PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
 import {
-  matchTransfers, netTransfersByJob, applyNetting, summarizeTransfersForJobs, reviewUnmatched, EMPTY_TRANSFER_SUMMARY,
+  matchTransfers, netTransfersByJob, applyNetting, summarizeTransfersForJobs, EMPTY_TRANSFER_SUMMARY,
   TRANSFER_NETTING_FROM, TRANSFER_WINDOW_DAYS, STOCK_BIN_JOB_ID,
   type PullRow, type Transfer, type JobTransferSummary,
 } from "@/lib/parts-transfer-netting";
@@ -819,102 +819,6 @@ async function getItemNames(
     }
     return out;
   }, { requestTimeout: 30_000, feed: "parts_actual.transfer_items" });
-}
-
-export type AppliedTransferRow = {
-  day: string;
-  fromJob: string;
-  toJob: string;
-  partNumber: string | null;
-  description: string;
-  qty: number;
-  costOut: number;
-  costIn: number;
-  pullIds: string;
-};
-
-export type ReviewPullRow = {
-  pullId: number;
-  day: string;
-  job: string;
-  direction: "Left job" | "Arrived on job";
-  partNumber: string | null;
-  description: string;
-  qty: number;
-  cost: number;
-  /** The other job(s) the same item went the other way on, nearest first, e.g. "1160 (2026-08-24, qty 5)". */
-  possibleOtherJobs: string;
-  reasons: string;
-};
-
-export type TransferReview = {
-  /** First day transfers are netted (YYYY-MM-DD); nothing before it is listed. */
-  since: string;
-  applied: AppliedTransferRow[];
-  needsReview: ReviewPullRow[];
-  /** Unmatched pulls with no counterpart anywhere: ordinary stock issues and returns. */
-  ordinaryCount: number;
-  ordinaryAmount: number;
-};
-
-/**
- * Every transfer applied since TRANSFER_NETTING_FROM, and the unmatched pulls that look like
- * half of one, with the rule that stopped each. Read-only, and changes no figure: it reads
- * the same pulls through the same matcher as the netting.
- */
-export async function getTransferReview(): Promise<TransferReview> {
-  const pulls = await loadPulls();
-  const { transfers, unmatched } = matchTransfers(pulls);
-  const { possible, ordinary } = reviewUnmatched(unmatched);
-  const names = await getItemNames([
-    ...transfers.map((t) => t.itemId),
-    ...possible.map((p) => p.pull.itemId),
-  ]).catch((e) => {
-    console.error("getTransferReview: item name lookup failed:", e);
-    return new Map<number, { partNumber: string | null; description: string | null }>();
-  });
-  const name = (itemId: number) => ({
-    partNumber: names.get(itemId)?.partNumber ?? null,
-    description: names.get(itemId)?.description ?? `Item ${itemId}`,
-  });
-  const round2 = (n: number) => Math.round(n * 100) / 100;
-
-  const applied = transfers
-    .map((t) => ({
-      day: t.day,
-      fromJob: t.fromJob,
-      toJob: t.toJob,
-      ...name(t.itemId),
-      qty: t.qty,
-      costOut: round2(t.costOut),
-      costIn: round2(t.costIn),
-      pullIds: [...t.negPullIds, ...t.posPullIds].join(", "),
-    }))
-    .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
-
-  const needsReview: ReviewPullRow[] = possible.map((p) => ({
-    pullId: p.pull.id,
-    day: p.pull.day,
-    job: String(p.pull.jobId),
-    direction: p.pull.qty < 0 ? "Left job" : "Arrived on job",
-    ...name(p.pull.itemId),
-    qty: p.pull.qty,
-    cost: round2(p.pull.cost),
-    possibleOtherJobs: p.counterparts
-      .slice(0, 3)
-      .map((c) => `${c.jobId} (${c.day}, qty ${c.qty})`)
-      .concat(p.counterparts.length > 3 ? [`+${p.counterparts.length - 3} more`] : [])
-      .join("; "),
-    reasons: p.reasons.join("; "),
-  }));
-
-  return {
-    since: TRANSFER_NETTING_FROM,
-    applied,
-    needsReview,
-    ordinaryCount: ordinary.length,
-    ordinaryAmount: round2(ordinary.reduce((s, r) => s + r.cost, 0)),
-  };
 }
 
 // ── Lifetime Parts Actual split into "SDC billed" and the rest (2026-10-02) ───
