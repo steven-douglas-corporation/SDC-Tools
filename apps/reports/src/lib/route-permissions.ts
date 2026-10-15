@@ -49,8 +49,6 @@ export const ROUTE_PERMISSIONS: readonly { path: string; permission: Permission 
   // because job-hour-details:view is matched first for every real role.
   // tests/permissions.test.ts pins this.
   { path: "/feedback", permission: "feedback:view" },
-  // Shows the same parts cost the Projects grid nets, so it takes the same permission.
-  { path: "/parts-transfers", permission: "projects:view" },
   { path: "/admin/users", permission: "users:manage" },
   // Roster maintenance moved off the Employees page (2026-08-24). Gated on the
   // permission its writing half needs, not the read-only half.
