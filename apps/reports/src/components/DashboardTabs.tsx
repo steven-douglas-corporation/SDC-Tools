@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { startTransition, useOptimistic, type ReactNode } from "react";
 import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 
@@ -28,9 +28,17 @@ export function DashboardTabs({
   // whole-window punch scan when it isn't.
   // Pane-aware (2026-09-14): the Dashboard tab's own params, wherever it is rendered.
   const url = usePaneUrl();
-  const tab = url.searchParams.get("tab") === "quality" ? "quality" : "overview";
+  const urlTab = url.searchParams.get("tab") === "quality" ? "quality" : "overview";
+  // The tab switch is a server round trip (the Data Quality queries only run once the URL
+  // says so), and the URL does not change until it lands. Until then the click used to look
+  // like it did nothing, so people clicked again. The optimistic value flips the tab at once
+  // and snaps back to the URL's own when the navigation settles — no state to go stale.
+  const [tab, setOptimisticTab] = useOptimistic<"overview" | "quality", "overview" | "quality">(urlTab, (_, next) => next);
+  const loading = tab === "quality" && urlTab !== "quality";
 
   function setTab(next: "overview" | "quality") {
+    // A repeat click on the tab already shown (or already loading) has nothing to add.
+    if (next === tab) return;
     // See lib/url-params.ts: useSearchParams still reports the pre-navigation
     // value while a change is in flight, so building straight from it can
     // silently revert whatever was set a moment ago.
@@ -40,7 +48,10 @@ export function DashboardTabs({
     else for (const k of ["tab", "dqFrom", "dqTo", "dqEmp", "dqFn", "dqMtd"]) qs.delete(k);
     const q = qs.toString();
     notePendingParams(currentQs, q);
-    url.push(qs, { scroll: false });
+    startTransition(() => {
+      setOptimisticTab(next);
+      url.push(qs, { scroll: false });
+    });
   }
 
   const tabClass = (active: boolean) =>
@@ -69,7 +80,13 @@ export function DashboardTabs({
         {overview}
       </div>
       <div role="tabpanel" hidden={tab !== "quality"}>
-        {dataQuality}
+        {loading ? (
+          <p role="status" className="py-10 text-center text-sm text-sdc-muted">
+            Loading Data Quality…
+          </p>
+        ) : (
+          dataQuality
+        )}
       </div>
     </>
   );
