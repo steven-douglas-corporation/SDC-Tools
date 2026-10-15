@@ -142,6 +142,12 @@ test("the list is the 10 pulls on job 1155 that reconcile it to Total ETO's repo
   assert.ok(REMOVED_FROM_JOB_PULLS.every((r) => r.note.length > 20), "each says why it is listed");
 });
 
+test("the netting and the card read their pulls through the one loadPulls", () => {
+  const sync = readFileSync(join(import.meta.dirname, "..", "src", "lib", "sync-totaleto.ts"), "utf8");
+  assert.match(sync, /return matchTransfers\(await loadPulls\(\), \{ asOf \}\)\.transfers;/, "loadTransfers uses the one read");
+  assert.equal((sync.match(/await loadPulls\(\)/g) ?? []).length, 1, "nothing else reads pulls separately");
+});
+
 test("matchTransfers reads the list by default, and nothing else passes ids in", () => {
   const src = readFileSync(join(import.meta.dirname, "..", "src", "lib", "parts-transfer-netting.ts"), "utf8");
   assert.match(src, /const removed = opts\.removed \?\? REMOVED_PULLS;/);
