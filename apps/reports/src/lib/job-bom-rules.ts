@@ -188,7 +188,21 @@ export type BomContext = {
   poIndex: Map<number, PoLine[]>;
   pulls: Map<number, PullInfo>;
   processItems: Set<number>; // ItemIDs with an active ETO process schedule on this job
+  // ItemIDs with at least one BOM line NOT on hold, anywhere in the project. See
+  // buildReleasedItems — ItemHold is per parent→child line, a part is one buy.
+  releasedItems?: Set<number>;
 };
+
+// ItemHold lives on each parent→child BOM line, but the buy list shows a part once
+// (first line wins). Job 1163 DST503-ET: held under section 10, released and
+// ordered (PO 106836) under section 40 — the section 10 line came first, so the part
+// read ON HOLD with a live PO. A part is only genuinely paused when EVERY line it
+// sits on is held; one released line means engineering released it.
+export function buildReleasedItems(rows: readonly Pick<BomRow, "ChildID" | "ItemHold">[]): Set<number> {
+  const released = new Set<number>();
+  for (const r of rows) if (!r.ItemHold) released.add(r.ChildID);
+  return released;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -508,7 +522,7 @@ export function makePart(r: BomRow, t: SpecTree, ctx: BomContext): BomPart {
     poDate: line?.orderedDate ?? null,
     receivedDate: iso(r.LastReceivedDate) ?? iso(pull?.fulfilledDate ?? null),
     status: statusFor(r, ctx),
-    hold: !!r.ItemHold,
+    hold: !!r.ItemHold && !ctx.releasedItems?.has(r.ChildID),
     supplier: line?.supplier ?? null,
     poId: line?.poId ?? null,
     packetId: packet?.key ?? null,

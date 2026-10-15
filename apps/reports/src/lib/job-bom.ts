@@ -15,6 +15,7 @@ import {
   type PoLine,
   type PullInfo,
   buildAssembly,
+  buildReleasedItems,
   buildSpecTree,
   clean,
   iso,
@@ -495,6 +496,7 @@ export async function getJobBomResult(jobId: string): Promise<JobBomResult> {
     poIndex: buildPoIndex(poRows),
     pulls: buildPullIndex(pullRows),
     processItems: new Set(processRows.map((r) => r.ItemID)),
+    releasedItems: buildReleasedItems(bomRows),
   };
   const vendors = buildVendors(poRows); // fail-soft: [] on any error
 

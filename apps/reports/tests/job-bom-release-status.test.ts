@@ -5,6 +5,7 @@ import {
   type BomRow,
   type PullInfo,
   buildAssembly,
+  buildReleasedItems,
   buildSpecTree,
   explodes,
   getRequirementRows,
@@ -354,6 +355,22 @@ test("isUncoveredPart: genuinely uncovered but on hold is false — hold gets it
   assert.equal(part.status, "noPO");
   assert.equal(part.hold, true);
   assert.equal(isUncoveredPart(part), false);
+});
+
+test("hold is per part, not per line: held on one BOM line but released on another is NOT on hold", () => {
+  // Job 1163 DST503-ET — held in section 10, released + ordered (PO 106836) in section 40.
+  const held = row("A", "B", { ItemHold: true, SpecID: 10 });
+  const released = row("C", "B", { ItemHold: false, SpecID: 40, POQty: 1 });
+  const ctx = { ...emptyCtx(), releasedItems: buildReleasedItems([held, released]) };
+  assert.equal(makePart(held, buildSpecTree([held]), ctx).hold, false);
+  assert.equal(makePart(released, buildSpecTree([released]), ctx).hold, false);
+});
+
+test("hold is per part: held on every line stays on hold", () => {
+  const a = row("A", "B", { ItemHold: true, SpecID: 10 });
+  const b = row("C", "B", { ItemHold: true, SpecID: 40 });
+  const ctx = { ...emptyCtx(), releasedItems: buildReleasedItems([a, b]) };
+  assert.equal(makePart(a, buildSpecTree([a]), ctx).hold, true);
 });
 
 test("isUncoveredPart: last cost alone still does not cover a part", () => {
