@@ -138,10 +138,20 @@ export function laborForType(
   }
   const hby = row.hoursByYear ?? {};
   const years = Object.keys(hby);
-  if (years.length) {
-    return years.reduce((sum, y) => sum + (hby[y][type] || 0) * rateForYear(y, def, overrides)[rateKey], 0);
-  }
   const total = type === "eng" ? row.engineeringHours : row.shopHours;
+  if (years.length) {
+    const byYearHours = years.reduce((sum, y) => sum + (hby[y][type] || 0), 0);
+    const byYearCost = years.reduce((sum, y) => sum + (hby[y][type] || 0) * rateForYear(y, def, overrides)[rateKey], 0);
+    // Hours in the flat total but in no year are the migration snapshot (work
+    // through 2025-01-31, which carries no month — see loadJobHoursAndYears).
+    // They were costed at $0 whenever a job also had per-year hours, which
+    // understated labour on every job spanning both eras (measured 2026-10-16:
+    // 66 jobs, ~120k hours, ~$21.6M at default rates; job 1058 showed 63%
+    // margin instead of ~7%). They have no year to rate, so they take the
+    // default rate — exactly what a job with no per-year data at all already got.
+    const untimed = Math.max((total || 0) - byYearHours, 0);
+    return byYearCost + (untimed > 0.005 ? untimed : 0) * def[rateKey];
+  }
   return (total || 0) * def[rateKey];
 }
 
