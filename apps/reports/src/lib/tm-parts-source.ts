@@ -139,7 +139,16 @@ const isSdcManufacturedLine = (l: PartsCostLine): boolean => isSdcBillingLine(l)
 // the name, a text-matched subset of purchase lines whose AP vendor contains
 // "expense reports", not the model's separate Travel Expenses table. Named for the
 // same reason as isSdcManufacturedLine: partInvoicedAmount excludes it too now.
-const isExpenseReportLine = (l: PartsCostLine): boolean => (l.supplier ?? "").toLowerCase().includes("expense reports");
+//
+// "SDC Credit Card - Travel" counts as one of these too: it is employee travel spend
+// put on the card, the same kind of thing the expense reports carry, and it was
+// landing in Part Invoiced Amount instead. Matched on the whole name, not on "Credit
+// Card" alone — plain "SDC Credit Card" is real outside spend and stays where it is.
+const TRAVEL_CARD_SUPPLIER = /sdc\s+credit\s+card\s*-\s*travel/i;
+const isExpenseReportLine = (l: PartsCostLine): boolean => {
+  const supplier = l.supplier ?? "";
+  return supplier.toLowerCase().includes("expense reports") || TRAVEL_CARD_SUPPLIER.test(supplier);
+};
 
 const CARD_RULES: Record<
   TmPartsDrillKey,
