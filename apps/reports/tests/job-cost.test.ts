@@ -68,6 +68,26 @@ test("laborForType costs each year's hours at that year's rate when hoursByYear 
   assert.equal(cost, 20 * 100 + 40 * DEFAULT_RATES.engRate);
 });
 
+test("laborForType costs hours that belong to no year (migration snapshot) at the default rate, on top of the per-year hours", () => {
+  const row = baseRow({ engineeringHours: 100, hoursByYear: { "2025": { eng: 20, shop: 0 }, "2026": { eng: 40, shop: 0 } } });
+  const overrides = { "2025": { engRate: 100 } };
+  const cost = laborForType(row, DEFAULT_RATES, overrides, undefined, "eng");
+  assert.equal(cost, 20 * 100 + 40 * DEFAULT_RATES.engRate + 40 * DEFAULT_RATES.engRate);
+});
+
+test("laborForType: per-year hours that already sum to the total add nothing extra, and a float-noise gap is ignored", () => {
+  const exact = baseRow({ engineeringHours: 60, hoursByYear: { "2026": { eng: 60, shop: 0 } } });
+  assert.equal(laborForType(exact, DEFAULT_RATES, {}, undefined, "eng"), 60 * DEFAULT_RATES.engRate);
+  const noisy = baseRow({ shopHours: 100.000000001, hoursByYear: { "2026": { eng: 0, shop: 100 } } });
+  assert.equal(laborForType(noisy, DEFAULT_RATES, {}, undefined, "shop"), 100 * DEFAULT_RATES.shopRate);
+});
+
+test("laborForType: untimed hours are costed per hour type, so Eng and Shop do not borrow each other's", () => {
+  const row = baseRow({ engineeringHours: 50, shopHours: 10, hoursByYear: { "2026": { eng: 50, shop: 0 } } });
+  assert.equal(laborForType(row, DEFAULT_RATES, {}, undefined, "eng"), 50 * DEFAULT_RATES.engRate);
+  assert.equal(laborForType(row, DEFAULT_RATES, {}, undefined, "shop"), 10 * DEFAULT_RATES.shopRate);
+});
+
 test("laborForType prefers a manual allocation over the automatic year breakdown", () => {
   const row = baseRow({ hoursByYear: { "2025": { eng: 999, shop: 0 } } });
   const allocation = { eng: [{ hours: 30, year: "2025" }], shop: [] };
