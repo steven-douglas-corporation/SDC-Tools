@@ -349,3 +349,12 @@ test("every category fill is distinguishable from the unfilled track", () => {
     assert.ok(c >= 1.08, `${t} (${typeHex(t)}) is only ${c.toFixed(2)}:1 against the track ${trackHex}`);
   }
 });
+
+test("the donut ring stroke is the same brand colour as the bar fill", () => {
+  // The ring is stroked rather than filled, so it carries its own class — which
+  // is a second place a colour could drift. Both derive from one brand entry.
+  for (const t of VALID_JOB_TYPES) {
+    const c = jobTypeColor(t);
+    assert.equal(c.stroke, c.bar.replace(/^bg-/, "stroke-"), `${t}: ring ${c.stroke} != bar ${c.bar}`);
+  }
+});

@@ -87,9 +87,27 @@ export const BRAND_PALETTE = {
 
 export type BrandColorName = keyof typeof BRAND_PALETTE;
 
+/**
+ * The same palette as SVG stroke classes, for the donut: an SVG ring is stroked,
+ * not filled, and a `bg-*` class does nothing on it. Keyed by BRAND_PALETTE name
+ * so a type's ring and its bar are one brand entry, never two choices — written
+ * out literally for the same reason BRAND_PALETTE is.
+ */
+const STROKE_BY_BRAND: Record<BrandColorName, string> = {
+  blue: "stroke-sdc-blue",
+  navy: "stroke-sdc-navy",
+  blueLight: "stroke-sdc-blue-100",
+  yellow: "stroke-sdc-yellow",
+  green: "stroke-sdc-green",
+  lime: "stroke-sdc-lime",
+  black: "stroke-sdc-gray-700",
+};
+
 export type JobTypeColor = {
   /** Bar / segment fill. */
   bar: string;
+  /** The same colour as an SVG stroke class — the donut ring. */
+  stroke: string;
   /** Legend swatch. The SAME string as `bar`, by construction — see BUILT. */
   swatch: string;
   /** A small solid dot, for a table cell or chip that names the type in text. */
@@ -113,6 +131,7 @@ export const TRACK_CLASS = "bg-sdc-gray-100";
 // as a legitimate one. `bg-sdc-gray-400` is #3D3D3D despite the name.
 const FALLBACK: JobTypeColor = {
   bar: "bg-sdc-gray-400",
+  stroke: "stroke-sdc-gray-400",
   swatch: "bg-sdc-gray-400",
   dot: "bg-sdc-gray-400",
   brand: "black",
@@ -146,7 +165,7 @@ const BY_TYPE: Record<string, BrandColorName> = {
 const BUILT: Record<string, JobTypeColor> = Object.fromEntries(
   Object.entries(BY_TYPE).map(([type, brand]) => {
     const fill = BRAND_PALETTE[brand];
-    return [type, { bar: fill, swatch: fill, dot: fill, brand } satisfies JobTypeColor];
+    return [type, { bar: fill, stroke: STROKE_BY_BRAND[brand], swatch: fill, dot: fill, brand } satisfies JobTypeColor];
   }),
 );
 
