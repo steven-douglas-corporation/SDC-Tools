@@ -1033,6 +1033,17 @@ table[data-grid] textarea:disabled {
   transition-duration: var(--motion-press);
 }
 
+/* ── A readout that fades in and out, and nothing else (§36.15) ────────────── */
+/* Opacity ONLY, where .motion-interactive also lists `transform`. The donut's hover
+ * readout has its position and translate written every animation frame by script
+ * (it trails the pointer around the ring); a transform transition on top would
+ * smooth that a second time and make it lag behind its own easing. */
+.motion-fade-state {
+  transition-property: opacity;
+  transition-duration: var(--motion-menu);
+  transition-timing-function: var(--ease-out);
+}
+
 /* ── The two panels whose WIDTH is the thing changing (§36.12, §36.15) ────── */
 /* §36.15 says not to animate width, and it is right about the general case: width
  * is a layout property, so every frame reflows whatever sits beside it. These two

@@ -4,7 +4,9 @@ import Link from "next/link";
 import { SectionTitle } from "@/components/ui/Typography";
 import { CustomerBars } from "@/components/dashboard/CustomerBars";
 import { JobDrillPanel, useJobDrill } from "@/components/dashboard/JobDrillPanel";
-import { jobTypeColor, rankByCount, TRACK_CLASS } from "@/lib/job-type-colors";
+import { CustomerConcentration } from "@/components/dashboard/CustomerConcentration";
+import { DonutChart } from "@/components/ui/DonutChart";
+import { jobTypeColor, rankByCount } from "@/lib/job-type-colors";
 import type { CustomerSummary, JobTypeBreakdown } from "@/lib/dashboard-overview";
 
 // ── The two Active Jobs charts and the drill they share (2026-08-28) ────────
@@ -25,14 +27,14 @@ import type { CustomerSummary, JobTypeBreakdown } from "@/lib/dashboard-overview
 // strip, the FAT list and the workforce cards stay server-rendered. Everything
 // this needs arrives as plain serializable props.
 
+// A legend row for the donut: swatch, name, count, share. The colour comes from
+// the same jobTypeColor() the ring slice uses, so the two cannot disagree.
 function TypeRow({
   row,
-  max,
   onOpen,
   open,
 }: {
   row: JobTypeBreakdown;
-  max: number;
   onOpen: () => void;
   open: boolean;
 }) {
@@ -52,13 +54,8 @@ function TypeRow({
         empty ? "cursor-default bg-white opacity-40" : `motion-interactive ${open ? "bg-sdc-blue-light" : "bg-white hover:bg-sdc-blue-light/25"}`
       }`}
     >
-      <span className="w-20 shrink-0 truncate text-sm font-medium text-sdc-navy">{row.type}</span>
-      <span className={`h-3.5 min-w-0 flex-1 overflow-hidden rounded-sm ${TRACK_CLASS}`}>
-        <span
-          className={`block h-full rounded-sm ${color.bar}`}
-          style={{ width: `${max === 0 ? 0 : (row.count / max) * 100}%` }}
-        />
-      </span>
+      <span className={`h-3 w-3 shrink-0 rounded-sm ${color.swatch}`} aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-sdc-navy">{row.type}</span>
       <span className="w-7 shrink-0 text-right font-heading text-sm font-bold tabular-nums text-sdc-navy">{row.count}</span>
       <span className="w-11 shrink-0 text-right text-label tabular-nums text-sdc-gray-400">{row.pct}%</span>
     </button>
@@ -84,7 +81,10 @@ function TypeRow({
 function Frame({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div
-      className={`flex flex-col gap-px overflow-hidden rounded-xl border border-sdc-border bg-sdc-border-soft shadow-sm ${className}`}
+      // No overflow-hidden: the donut's hover readout hangs outside the ring and
+      // must not be cut off by this card's edge. The rounded corners are done by
+      // the first and last child instead, below.
+      className={`flex flex-col gap-px rounded-xl border border-sdc-border bg-sdc-border-soft shadow-sm [&>:first-child]:rounded-t-[0.7rem] [&>:last-child]:rounded-b-[0.7rem] ${className}`}
     >
       {children}
     </div>
@@ -117,9 +117,11 @@ export function ActiveJobsSection({
   // table rather than opening a second one.
   const drill = useJobDrill();
 
-  // The longest bar in the type chart. Computed once here rather than inside the
-  // row so every bar shares one scale.
-  const typeMax = Math.max(0, ...byType.map((t) => t.count));
+  // Ranked by count, with the declared type order as a stable tiebreak
+  // (rankByCount). The donut and its legend share this one order.
+  const ranked = rankByCount(byType);
+  const openType = drill.filter?.kind === "type" ? drill.filter.value : null;
+  const openCustomerId = drill.filter?.kind === "customer" ? drill.filter.value : null;
 
   return (
     <>
@@ -141,16 +143,27 @@ export function ActiveJobsSection({
             }
           />
           <Frame>
-            {/* Ranked by count, with the declared type order as a stable tiebreak
-                (rankByCount). Zero-count types stay in the list, sorted last and
-                dimmed, rather than disappearing — "no Service work right now" is
-                a fact worth seeing, and a row that vanishes is one a reader has
-                to notice is missing. */}
-            {rankByCount(byType).map((row) => (
+            {/* The ring has no slice for a zero-count type, so the legend is where
+                "no Service work right now" stays visible: those rows sort last and
+                dimmed rather than disappearing. */}
+            <div className="bg-white px-4 py-5">
+              <DonutChart
+                slices={ranked.map((row) => ({
+                  key: row.type,
+                  label: row.type,
+                  value: row.count,
+                  stroke: jobTypeColor(row.type).stroke,
+                }))}
+                centerValue={String(activeTotal)}
+                centerLabel={`active job${activeTotal === 1 ? "" : "s"}`}
+                selectedKey={openType}
+                onSelect={(type) => drill.toggle({ kind: "type", value: type })}
+              />
+            </div>
+            {ranked.map((row) => (
               <TypeRow
                 key={row.type}
                 row={row}
-                max={typeMax}
                 open={drill.isOpen({ kind: "type", value: row.type })}
                 onOpen={() => drill.toggle({ kind: "type", value: row.type })}
               />
@@ -176,6 +189,16 @@ export function ActiveJobsSection({
             title="Active Jobs by Customer"
             note={`${customers.length} customers with active work · one row per customer, spelling variants combined`}
           />
+          {/* The concentration donut sits above the bars and shares their drill:
+              a named customer opens the same panel its bar does. */}
+          <div className="mb-3">
+            <CustomerConcentration
+              customers={customers}
+              activeTotal={activeTotal}
+              openCustomerId={openCustomerId}
+              onOpen={(id) => drill.toggle({ kind: "customer", value: id })}
+            />
+          </div>
           {/* No wrapper height: the card carries its own ceiling
               (.customer-chart-cap) and scrolls inside it. */}
           <CustomerBars
