@@ -7,6 +7,8 @@ import { EmployeePunchDrillPanel, useEmployeePunchDrill } from "@/components/das
 import { SortableTh } from "@/components/ui/SortableHeader";
 import { cycleSortState, sortRows, type SortColumns, type SortState } from "@/lib/table-sort";
 import { departmentCardOrderRank } from "@/lib/employee-workforce-groups";
+import { teamFor } from "@/lib/employee-teams";
+import { isEmptyMeasure } from "@/lib/utilization-columns";
 import type {
   DepartmentUtilizationResult,
   DepartmentUtilizationRow,
@@ -82,12 +84,25 @@ const DEPT_COLUMNS: SortColumns<DepartmentUtilizationRow, DeptSortKey> = {
 // shade lighter and follows to the right. Same table, same data, one visual
 // tier of difference: the requirement is to make the important columns easier
 // to scan, not to hide the rest behind a toggle.
-const DEPT_HEADERS: { key: DeptSortKey; label: string; core?: boolean }[] = [
+//
+// The two ratios carry plain-language labels, with the report's own name kept in
+// the hover text so somebody matching this against the Power BI page can find it.
+const DEPT_HEADERS: { key: DeptSortKey; label: string; core?: boolean; title?: string }[] = [
   { key: "employees", label: "Employees", core: true },
   { key: "theoreticalHours", label: "Theoretical", core: true },
   { key: "actualHours", label: "Actual", core: true },
-  { key: "availablePct", label: "Available %", core: true },
-  { key: "utilizationPct", label: "Utilization %", core: true },
+  {
+    key: "availablePct",
+    label: "Hours vs capacity",
+    core: true,
+    title: "Available % — hours worked ÷ theoretical hours (headcount × working days × 8h)",
+  },
+  {
+    key: "utilizationPct",
+    label: "Billable share",
+    core: true,
+    title: "Utilization % — billable hours ÷ hours worked",
+  },
   { key: "billableTotal", label: "Billable" },
   { key: "billableActive", label: "Active" },
   { key: "warranty", label: "Warranty" },
@@ -139,6 +154,22 @@ function DepartmentTable({
   result: DepartmentUtilizationResult;
   drill: ReturnType<typeof useEmployeePunchDrill>;
 }) {
+  // ── Columns with nothing in them are not drawn (2026-10-15) ───────────────
+  //
+  // Bellco, Spare Parts and friends are zero for every department in most months,
+  // and five all-zero columns push the ones with something to say off screen. The
+  // test is the TOTAL row: it is the sum of the rows above it, so it is non-zero
+  // exactly when some row is. Core columns and Billable always stay, and what was
+  // left out is NAMED under the table rather than silently dropped — a column
+  // that vanishes with no explanation reads as a bug.
+  const { headers, hiddenLabels } = useMemo(() => {
+    const keep = (h: (typeof DEPT_HEADERS)[number]) =>
+      h.core || h.key === "billableTotal" || !isEmptyMeasure(result.total, h.key as keyof UtilizationMeasures);
+    return {
+      headers: DEPT_HEADERS.filter(keep),
+      hiddenLabels: DEPT_HEADERS.filter((h) => !keep(h)).map((h) => h.label),
+    };
+  }, [result.total]);
   // ── null, not { utilizationPct, desc } (2026-08-31) ──────────────────────
   //
   // null means "the order the server already put them in", which sortRows()
@@ -185,16 +216,22 @@ function DepartmentTable({
     }
   };
 
+  // The scroller, not the page, takes the overflow — a fifteen-column table must
+  // never make the whole Dashboard scroll sideways on a laptop, and a
+  // twelve-department list must not push the rest of the page off the bottom.
+  // Both axes are capped here, and the header row sticks so a scrolled table
+  // still says which column is which.
   return (
-    // The scroller, not the page, takes the overflow — a fifteen-column table must
-    // never make the whole Dashboard scroll sideways on a laptop, and a
-    // twelve-department list must not push the rest of the page off the bottom.
-    // Both axes are capped here, and the header row sticks so a scrolled table
-    // still says which column is which.
+    <>
     <div className="styled-scrollbar max-h-[27rem] overflow-auto">
       <table className="w-full min-w-[62rem] border-collapse text-sm">
         <thead>
-          <tr className="border-b border-sdc-border bg-white text-xs uppercase tracking-wide text-sdc-muted">
+          {/* A light brand-blue band, not a dark one: the cells are sticky and the
+              page is white, and a navy bar here would be the heaviest thing on the
+              Dashboard. The five core columns read navy and the breakdown a shade
+              quieter, which is the same two-tier split the body already has. The
+              band is OPAQUE for the same reason every sticky cell is. */}
+          <tr className="border-b border-sdc-blue/30 bg-sdc-blue-light text-xs uppercase tracking-wide text-sdc-navy">
             <SortableTh
               label="Department"
               sortKey="title"
@@ -203,18 +240,19 @@ function DepartmentTable({
               onSort={onSort}
               // z-30: this one corner cell is sticky on BOTH axes, so it has to
               // sit above the sticky row (z-20) and the sticky column (z-10).
-              className={`${DEPT_CELL} sticky top-0 z-30 bg-white py-2 pl-3 pr-3 font-semibold`}
+              className={`${DEPT_CELL} sticky top-0 z-30 bg-sdc-blue-light py-2 pl-3 pr-3 font-semibold`}
             />
-            {DEPT_HEADERS.map((h) => (
+            {headers.map((h) => (
               <SortableTh
                 key={h.key}
                 label={h.label}
+                title={h.title}
                 sortKey={h.key}
                 type={h.key.endsWith("Pct") || h.key === "employees" ? "number" : "hours"}
                 sort={sort}
                 onSort={onSort}
-                className={`sticky top-0 z-20 bg-white py-2 px-2 font-semibold whitespace-nowrap ${
-                  h.core ? "" : "text-sdc-gray-400"
+                className={`sticky top-0 z-20 bg-sdc-blue-light py-2 px-2 font-semibold whitespace-nowrap ${
+                  h.core ? "" : "text-sdc-gray-600"
                 }`}
               />
             ))}
@@ -246,6 +284,14 @@ function DepartmentTable({
                       >
                         ▶
                       </span>
+                      {/* The team's own colour from the Employees page, so a
+                          department is the same colour in both places. The hairline
+                          ring is for the light brand colours (Yellow, Light Blue),
+                          which would otherwise melt into a white row. */}
+                      <span
+                        className={`h-4 w-1 shrink-0 rounded-full ring-1 ring-inset ring-black/10 ${teamFor({ team: row.key })?.theme.band ?? "bg-sdc-border"}`}
+                        aria-hidden
+                      />
                       {/* Non-scope departments are muted rather than badged. The "—" this
                           row already shows under Utilization % says the same thing, and a
                           pill here was wrapping the longer names onto three lines and
@@ -258,7 +304,7 @@ function DepartmentTable({
                       )}
                     </button>
                   </th>
-                  {DEPT_HEADERS.map((h) => (
+                  {headers.map((h) => (
                     <td
                       key={h.key}
                       className={`py-1.5 px-2 text-right tabular-nums whitespace-nowrap ${
@@ -307,7 +353,7 @@ function DepartmentTable({
                           </span>
                         )}
                       </th>
-                      {DEPT_HEADERS.map((h) => (
+                      {headers.map((h) => (
                         <td key={h.key} className="py-1 px-2 text-right tabular-nums whitespace-nowrap text-sdc-gray-700">
                           {h.key === "employees" ? "" : h.key === "utilizationPct" ? <UtilCell pct={e.utilizationPct} muted /> : numeric(e, h.key)}
                         </td>
@@ -319,8 +365,8 @@ function DepartmentTable({
           })}
         </tbody>
         <tfoot>
-          <tr className="border-t-2 border-sdc-border bg-white font-semibold text-sdc-navy">
-            <th scope="row" className={`${DEPT_CELL} bg-white py-2 pl-3 pr-3 text-left`}>
+          <tr className="border-t-2 border-sdc-blue/30 bg-sdc-blue-light font-semibold text-sdc-navy">
+            <th scope="row" className={`${DEPT_CELL} bg-sdc-blue-light py-2 pl-3 pr-3 text-left`}>
               Total
               {/* NOT "billable departments" any more: this foots the ETC
                   Engineering + Shop departments the card shows, which differ from
@@ -330,7 +376,7 @@ function DepartmentTable({
                   to say which one it is. */}
               <span className="ml-1.5 text-xs font-normal text-sdc-muted">Engineering &amp; Shop</span>
             </th>
-            {DEPT_HEADERS.map((h) => (
+            {headers.map((h) => (
               <td
                 key={h.key}
                 className="py-2 px-2 text-right tabular-nums whitespace-nowrap"
@@ -354,6 +400,12 @@ function DepartmentTable({
         </tfoot>
       </table>
     </div>
+    {hiddenLabels.length > 0 && (
+      <p className="border-t border-sdc-border-soft px-4 py-1.5 text-label text-sdc-gray-400">
+        Not shown because they are zero or blank for every department this month: {hiddenLabels.join(", ")}.
+      </p>
+    )}
+    </>
   );
 }
 
