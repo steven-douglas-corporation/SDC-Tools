@@ -26,7 +26,6 @@
  *   pm2 start ecosystem.config.js --only sdc-updater
  */
 
-const https        = require('https');
 const fs           = require('fs');
 const path         = require('path');
 const { execSync } = require('child_process');
@@ -65,34 +64,25 @@ function getLocalHead() {
   catch { return null; }
 }
 
-function fetchJson(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, {
-      headers: {
-        'User-Agent': 'SDC-Tools-MainUpdater/2.0',
-        'Accept':     'application/vnd.github.v3+json',
-      },
-    }, (res) => {
-      if (res.statusCode === 301 || res.statusCode === 302)
-        return fetchJson(res.headers.location).then(resolve).catch(reject);
-      let data = '';
-      res.on('data', d => data += d);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch (e) { reject(new Error(`JSON parse failed: ${e.message}`)); }
-      });
-    }).on('error', reject);
+// Change detection goes through `git ls-remote`, not the GitHub REST API, so it
+// uses the SAME credential as `git fetch origin` below. The REST call this
+// replaces was anonymous: it works while the repository is public and returns
+// 404 the moment it goes private, at which point the updater would quietly stop
+// deploying. GIT_TERMINAL_PROMPT=0 makes a missing credential fail fast instead
+// of waiting on a prompt nobody can answer under PM2.
+function getRemoteSha() {
+  const out = run(`git ls-remote origin refs/heads/${GITHUB_BRANCH}`, {
+    env:     { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    timeout: 60 * 1000,
   });
+  const sha = out.split(/\s+/)[0];
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
 }
 
-function fetchJsonWithRetry(url, retries = 3, delayMs = 10000) {
-  return fetchJson(url).catch(err => {
-    if (retries <= 0) throw err;
-    log(`Network error (${err.message}) — retrying in ${delayMs / 1000}s… (${retries} left)`);
-    return new Promise(res => setTimeout(res, delayMs))
-      .then(() => fetchJsonWithRetry(url, retries - 1, delayMs));
-  });
-}
+// Consecutive failed checks. Surfaced in the log so an expired or missing
+// credential is visible instead of being a silent stop to deploys.
+let consecutiveFailures = 0;
+const ALERT_AFTER_FAILURES = 3;   // ~15 minutes at CHECK_INTERVAL_MS
 
 function isProtected(file) {
   return PROTECTED.some(p => file === p || file.startsWith(p));
@@ -110,16 +100,24 @@ async function checkAndUpdate() {
 
   let remoteSha;
   try {
-    const data = await fetchJsonWithRetry(
-      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/commits/${GITHUB_BRANCH}`
-    );
-    remoteSha = data.sha;
+    remoteSha = getRemoteSha();
   } catch (e) {
-    log(`GitHub API error: ${e.message}`);
+    consecutiveFailures++;
+    const detail = String(e.stderr || e.message).trim().split(/\r?\n/)[0];
+    log(`git ls-remote failed (${consecutiveFailures} in a row): ${detail}`);
+    if (consecutiveFailures === ALERT_AFTER_FAILURES) {
+      log('ALERT: cannot reach origin, so deploys are NOT happening. Check the GitHub ' +
+          'credential for the account PM2 runs as (token expired or revoked?) and the network.');
+    }
     return;
   }
 
-  if (!remoteSha) { log('Could not read remote SHA.'); return; }
+  if (!remoteSha) {
+    consecutiveFailures++;
+    log(`Could not read remote SHA (${consecutiveFailures} in a row).`);
+    return;
+  }
+  consecutiveFailures = 0;
   log(`Remote HEAD: ${remoteSha.slice(0, 7)}`);
 
   if (localSha === remoteSha) { log('Already up to date.'); return; }
