@@ -23,7 +23,7 @@ const BAR_PROJECTED = "#FFDE51"; // remaining exposure the ETC covers
 // Remaining exposure the ETC does NOT cover (2026-09-03). The app's own --sdc-red,
 // not a new tone: this is the same "needs attention" signal the rest of the card
 // uses, and a second red would imply a second kind of problem.
-const BAR_UNCOVERED = "#C0392B";
+const BAR_OPEN = "#9CB8D6"; // Not yet invoiced — ordered, on open POs (2026-10-19; replaces the red "uncovered" band)
 
 // Height taller than before (2026-08-10, by request) so the second bar's
 // three segments have room to read as distinct shapes rather than thin stripes.
@@ -140,8 +140,8 @@ const CAPTION_H = "2rem";
  * not exist.
  */
 function segmentDrillMode(key: string): PartsDrillMode {
-  if (key === "etc") return "etc";
-  if (key === "uncovered") return "left";
+  if (key === "stp") return "etc";
+  if (key === "open") return "left";
   return "invoiced";
 }
 
@@ -296,9 +296,6 @@ export function PartsCostSummary({
   // made exactly it.
   const openBalanceAmount = financials.openBalance;
   const adjustedEtcAmount = financials.adjustedEtc;
-  const additionalAmount = financials.additionalExposure;
-  const coverageLineAmount = financials.coverageLine;
-  const hasAdditional = additionalAmount > 0.5 && coverageLineAmount != null;
   const etcUnknown = financials.etcUnknown;
 
   // ── Rounding that can't visibly contradict itself (audit finding) ─────────
@@ -345,9 +342,30 @@ export function PartsCostSummary({
   // reconcilePartsCostRounding is no longer used here: it distributes a residue
   // across a set, which is the wrong shape for this. What is needed is one named
   // absorber, chosen because it can afford it.
-  const adjustedEtcDisplay = Math.round(adjustedEtcAmount);
-  const additionalDisplay = Math.round(additionalAmount);
-  const invoicedDisplay = projTotalDisplay - adjustedEtcDisplay - additionalDisplay;
+  // ── "Purchased to date" + "Still to purchase" (2026-10-19) ────────────────
+  //
+  // The projection is, and has always been, Invoiced + the larger of (Adjusted ETC, open POs). The
+  // ETC means "all cost still to come", so it already CONTAINS the open POs; taking them out leaves
+  // what has not been ordered yet. The same total, grouped so each piece says what it is
+  // (lib/still-to-purchase.ts has the proof and the second route to the same figure):
+  //
+  //     Projected total = Invoiced + Not yet invoiced (open POs) + Still to purchase
+  //                     = Purchased to date                    + Still to purchase
+  //
+  // INVOICED still absorbs the rounding residue (see the note above): it is the largest term, and
+  // a term that is genuinely zero must print as zero.
+  const stillToPurchaseAmount = Math.max(0, adjustedEtcAmount - openBalanceAmount);
+  const openDisplay = Math.round(openBalanceAmount);
+  const stillToPurchaseDisplay = Math.round(stillToPurchaseAmount);
+  const invoicedDisplay = projTotalDisplay - openDisplay - stillToPurchaseDisplay;
+  // Purchased is Invoiced + Not yet invoiced on all but a handful of jobs. Where invoices run ABOVE
+  // what was ordered (credits, over-billing: 3 of 48 jobs measured) the two no longer sum to
+  // Purchased, and a reconciling line is shown so the column still adds up on screen.
+  const purchasedRounded = Math.round(financials.purchased);
+  const aboveOrderedDisplay = purchasedRounded - invoicedDisplay - openDisplay;
+  const showAboveOrdered = Math.abs(aboveOrderedDisplay) > 1;
+  const purchasedDisplay = showAboveOrdered ? purchasedRounded : invoicedDisplay + openDisplay;
+  const stpFloored = !etcUnknown && adjustedEtcAmount < openBalanceAmount;
 
   // ── ONE shared scale for both bars (2026-08-10c, by request) ──────────────
   //
@@ -406,26 +424,26 @@ export function PartsCostSummary({
   // remaining exposure actually exceeds the adjusted forecast, so an on-plan job
   // carries no red at all.
   const segments: { key: string; label: string; note?: string; value: number; color: string; heightPct: number }[] = [
-    { key: "invoiced", label: "Invoiced actual", value: invoicedDisplay, color: BAR_INVOICED, heightPct: pct(invoiced) },
+    { key: "invoiced", label: "Invoiced and posted", value: invoicedDisplay, color: BAR_INVOICED, heightPct: pct(invoiced) },
   ];
-  if (adjustedEtcAmount > 0.5) {
+  if (openBalanceAmount > 0.5) {
     segments.push({
-      key: "etc",
-      label: "Adjusted ETC remaining",
-      note: etcUnknown ? undefined : "prior-month ETC less this month's spend",
-      value: adjustedEtcDisplay,
-      color: BAR_PROJECTED,
-      heightPct: pct(adjustedEtcAmount),
+      key: "open",
+      label: "Not yet invoiced (open POs)",
+      note: "ordered, waiting for an invoice",
+      value: openDisplay,
+      color: BAR_OPEN,
+      heightPct: pct(openBalanceAmount),
     });
   }
-  if (hasAdditional) {
+  if (stillToPurchaseAmount > 0.5) {
     segments.push({
-      key: "uncovered",
-      label: "Uncovered invoice exposure",
-      note: "beyond the adjusted ETC",
-      value: additionalDisplay,
-      color: BAR_UNCOVERED,
-      heightPct: pct(additionalAmount),
+      key: "stp",
+      label: "Still to purchase",
+      note: etcUnknown ? undefined : "estimate: the forecast less what is already ordered",
+      value: stillToPurchaseDisplay,
+      color: BAR_PROJECTED,
+      heightPct: pct(stillToPurchaseAmount),
     });
   }
 
@@ -495,27 +513,26 @@ export function PartsCostSummary({
     {
       key: "purchased",
       swatch: null,
-      label: "Purchased",
-      derivation: "every parts line's total cost on this job",
-      value: Math.round(financials.purchased),
+      label: "Purchased to date",
+      derivation: "every parts line ordered on this job, invoiced or not",
+      value: purchasedDisplay,
       kind: "reference",
     },
     {
       key: "invoiced",
       swatch: BAR_INVOICED,
-      label: "Invoiced",
+      label: "· Invoiced and posted",
       derivation: "GL-posted parts spend, all POs, lifetime",
       value: invoicedDisplay,
       kind: "segment",
     },
     // ── Parts moved between jobs (2026-10-13) ───────────────────────────────
     //
-    // Already INSIDE the Purchased and Invoiced rows — it is named, not added. Total ETO
-    // cannot re-code an invoice to another job, so a transfer is booked as inventory pulls
-    // and the original invoices stay on the job that bought the parts; the card nets them in
-    // so it agrees with the Projects grid. Shown whenever there is one, signed, with the other
-    // job named, so the extra (or missing) dollars never arrive unexplained. It touches
-    // neither Left to invoice nor the ETC: the parts that moved were already received.
+    // Already INSIDE Purchased and Invoiced — named, not added. Total ETO cannot re-code an invoice
+    // to another job, so a transfer is booked as inventory pulls and the original invoices stay on
+    // the job that bought the parts; the card nets them in so it agrees with the Projects grid.
+    // Shown whenever there is one, signed, with the other job named, so the extra (or missing)
+    // dollars never arrive unexplained. It touches neither Not yet invoiced nor the ETC.
     ...(Math.abs(financials.transfersNet) >= 1
       ? [
           {
@@ -529,27 +546,24 @@ export function PartsCostSummary({
         ]
       : []),
     {
-      key: "left",
-      swatch: hasAdditional ? BAR_UNCOVERED : null,
-      label: "Left to invoice",
-      // The WHOLE open balance now, so this row is exactly Purchased − Invoiced and
-      // the column ties without a caveat. The in-house split is reported alongside
-      // rather than subtracted out — it is committed cost either way, and removing it
-      // from the total was the bug this replaced.
-      derivation: `${usd(Math.round(financials.purchased))} purchased − ${usd(invoicedDisplay)} invoiced${inHouseNote}`,
-      value: Math.round(openBalanceAmount),
-      kind: hasAdditional ? "segment" : "reference",
+      key: "open",
+      swatch: openBalanceAmount > 0.5 ? BAR_OPEN : null,
+      label: "· Not yet invoiced (open POs)",
+      // The WHOLE open balance, in-house SDC included: it is committed cost either way, it simply
+      // will not arrive as a supplier invoice. Reported alongside rather than subtracted out.
+      derivation: showAboveOrdered
+        ? `ordered, waiting for an invoice${inHouseNote}`
+        : `${usd(purchasedDisplay)} purchased − ${usd(invoicedDisplay)} invoiced${inHouseNote}`,
+      value: openDisplay,
+      kind: openBalanceAmount > 0.5 ? "segment" : "reference",
     },
     // ── Billed, not posted (2026-09-04) ─────────────────────────────────────
     //
-    // A COMPONENT of the row above, indented under it, never an addend — adding it
-    // anywhere would double-count. Shown only when it is non-zero, which on most jobs
-    // it is: a job with no Sage-first-but-unclassified spend should not carry a row
-    // explaining that it has none.
-    //
-    // It exists because this figure was invisible until somebody compared eight jobs by
-    // hand (docs/PARTS-COST-VARIANCE-2026-09.md). Job 1106 carries $253,015 of it, all
-    // five of them ETO-side corrections rather than anything awaiting an invoice.
+    // A COMPONENT of the row above, indented under it, never an addend — adding it anywhere would
+    // double-count. Shown only when it is non-zero. It exists because this figure was invisible
+    // until somebody compared eight jobs by hand (docs/PARTS-COST-VARIANCE-2026-09.md): job 1106
+    // carries $253,015 of it, all five of them ETO-side corrections rather than anything awaiting
+    // an invoice.
     ...(Math.abs(financials.billedNotPosted) >= 1
       ? [
           {
@@ -557,39 +571,51 @@ export function PartsCostSummary({
             swatch: null,
             label: "· billed, not GL-posted",
             derivation:
-              "already invoiced on a document flagged never-to-export, so it stays in Left to invoice — see docs/PARTS-COST-VARIANCE-2026-09.md",
+              "already invoiced on a document flagged never-to-export, so it stays in Not yet invoiced — see docs/PARTS-COST-VARIANCE-2026-09.md",
             value: Math.round(financials.billedNotPosted),
             kind: "reference" as const,
           },
         ]
       : []),
+    // Only where invoices run above what was ordered, so the lines under Purchased still add up.
+    ...(showAboveOrdered
+      ? [
+          {
+            key: "aboveordered",
+            swatch: null,
+            label: "· invoiced above the PO total",
+            derivation: "invoices and credits on these POs exceed what was ordered, so Invoiced + Not yet invoiced is more than Purchased",
+            value: aboveOrderedDisplay,
+            kind: "reference" as const,
+          },
+        ]
+      : []),
     {
-      key: "etc",
-      swatch: adjustedEtcAmount > 0.5 ? BAR_PROJECTED : null,
-      label: "ETC adjusted",
-      derivation:
-        priorEtcAmount == null
-          ? "no prior-month ETC on file for this job"
-          : `${usd(Math.round(priorEtcAmount))} prior-month ETC − ${usd(Math.round(spentThisMonth))} spent this month`,
-      value: adjustedEtcDisplay,
-      kind: adjustedEtcAmount > 0.5 ? "segment" : "reference",
+      key: "stp",
+      swatch: stillToPurchaseAmount > 0.5 ? BAR_PROJECTED : null,
+      label: "Still to purchase (estimate)",
+      // The ETC is "all cost still to come" — the open POs AND what has not been ordered — so the
+      // open POs come back out to leave the second part. Same arithmetic the projection has always
+      // used, written so each step names what it is.
+      derivation: etcUnknown
+        ? "no prior-month ETC on file for this job, so nothing is forecast beyond what is already ordered"
+        : stpFloored
+          ? `${usd(Math.round(adjustedEtcAmount))} forecast (${usd(Math.round(priorEtcAmount ?? 0))} prior-month ETC − ${usd(Math.round(spentThisMonth))} invoiced this month) is below the ${usd(openDisplay)} already ordered, so nothing more is expected to be purchased`
+          : `${usd(Math.round(priorEtcAmount ?? 0))} prior-month ETC − ${usd(Math.round(spentThisMonth))} invoiced this month − ${usd(openDisplay)} not yet invoiced`,
+      value: stillToPurchaseDisplay,
+      kind: stillToPurchaseAmount > 0.5 ? "segment" : "reference",
     },
     {
       key: "total",
       swatch: null,
-      label: "Total projection",
-      // Spelling out WHICH of the two rides on top of Invoiced, rather than printing
-      // `max(...)` at someone. The red band, when there is one, is named here too —
-      // it has no row of its own now, and an unexplained colour in the bar would be
-      // worse than a longer sentence.
-      derivation: hasAdditional
-        ? `${usd(invoicedDisplay)} invoiced + ${usd(adjustedEtcDisplay)} ETC adjusted + ${usd(additionalDisplay)} beyond it (red)`
-        : `${usd(invoicedDisplay)} invoiced + ${usd(adjustedEtcDisplay)} ETC adjusted`,
+      label: "Projected total",
+      derivation: showAboveOrdered
+        ? `${usd(invoicedDisplay)} invoiced + ${usd(openDisplay)} not yet invoiced + ${usd(stillToPurchaseDisplay)} still to purchase`
+        : `${usd(purchasedDisplay)} purchased + ${usd(stillToPurchaseDisplay)} still to purchase`,
       value: projTotalDisplay,
       kind: "total",
     },
   ];
-
 
   // ── A thin segment still has to be seeable (2026-09-03, by request) ───────
   //
@@ -633,19 +659,6 @@ export function PartsCostSummary({
     }
   }
 
-  // Where the dotted line sits, in RENDERED pixels rather than true share: it marks
-  // the top of the yellow cap, so it has to move with the cap when the cap is
-  // floored — otherwise the line would cut through the middle of the segment it is
-  // supposed to bound. The figure it REPORTS is still the true `coverageLine`.
-  const coverageLinePx = (() => {
-    let px = 0;
-    for (let i = 0; i < segments.length; i++) {
-      px += renderPx[i];
-      if (segments[i].key === "etc") return px;
-    }
-    // No covered segment (an ETC of 0): the boundary is the top of Invoiced.
-    return renderPx[0] ?? 0;
-  })();
 
 
   // ONE meter: where the job is HEADING against what it was sold for.
@@ -858,32 +871,6 @@ export function PartsCostSummary({
                 `relative` so the coverage line can sit at its own height inside the
                 same frame the fills are measured in. */}
             <div className="relative flex flex-col items-center justify-end" style={{ width: BAR_W, height: BAR_H }}>
-              {/* ── The ETC coverage boundary (2026-09-03, spec §4) ──────────
-                  A red dotted line at `invoiced + etcCovered` — the top of the
-                  portion the current ETC covers, and therefore the bottom of the
-                  red. Drawn ONLY when something is uncovered: §5 says no line when
-                  the ETC covers the whole exposure, because there is then no
-                  boundary to mark.
-
-                  Positioned from the BOTTOM in the same barPx units the segments
-                  use, so it lands exactly on the seam between yellow and red rather
-                  than being placed by eye.
-
-                  Extended past the bar on both sides (-left-5/-right-5): the bar is
-                  1.25rem wide and a dotted rule that narrow does not read as a
-                  reference line. `pointer-events-none` so it cannot steal a click
-                  from the drill-through segments underneath. */}
-              {hasAdditional && (
-                <div
-                  className="pointer-events-none absolute -left-5 -right-5 z-10 border-t border-dashed"
-                  style={{ bottom: coverageLinePx, borderColor: BAR_UNCOVERED }}
-                  title={
-                    "ETC coverage ends here. The red section above this line is remaining invoice exposure not " +
-                    `covered by the adjusted ETC. Adjusted ETC ${usd(Math.round(adjustedEtcAmount))} against ` +
-                    `${usd(Math.round(openBalanceAmount))} still to invoice; ${usd(additionalDisplay)} uncovered.`
-                  }
-                />
-              )}
               {/* §10: the figure above the bar is `invoiced + toComplete`, whatever
                   the ETC says. It stays navy even when part of the exposure is
                   uncovered: the total is not itself an overspend, and colouring it
@@ -892,10 +879,9 @@ export function PartsCostSummary({
               <span
                 className="mb-0.5 whitespace-nowrap font-mono text-xs font-bold leading-none tabular-nums text-sdc-navy"
                 title={
-                  `Total projection ${usd(projTotalDisplay)} = invoiced ${usd(invoicedDisplay)} + adjusted ETC ` +
-                  `${usd(adjustedEtcDisplay)}` +
-                  (hasAdditional ? ` + uncovered exposure ${usd(additionalDisplay)}` : "") +
-                  "."
+                  showAboveOrdered
+                    ? `Projected total ${usd(projTotalDisplay)} = invoiced ${usd(invoicedDisplay)} + not yet invoiced ${usd(openDisplay)} + still to purchase ${usd(stillToPurchaseDisplay)}.`
+                    : `Projected total ${usd(projTotalDisplay)} = purchased ${usd(purchasedDisplay)} + still to purchase ${usd(stillToPurchaseDisplay)}.`
                 }
               >
                 {usd(projTotalDisplay)}
@@ -959,7 +945,7 @@ export function PartsCostSummary({
                 type="button"
                 onClick={() => onDrill("projection")}
                 aria-label="Projected total — show every row behind this bar"
-                title="Projected total = Invoiced + total remaining exposure. Click for the full parts-cost detail behind this bar"
+                title="Projected total = Purchased to date + Still to purchase. Click for the full parts-cost detail behind this bar"
                 className={`motion-interactive flex h-8 flex-col items-center justify-start rounded text-center leading-tight ${
                   drillMode === "projection" ? "text-sdc-blue-dark" : "text-sdc-gray-600 hover:text-sdc-navy"
                 }`}
