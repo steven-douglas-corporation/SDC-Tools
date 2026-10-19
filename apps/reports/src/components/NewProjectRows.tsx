@@ -128,6 +128,21 @@ export function NewProjectRows({
               <input {...dateCellProps({ name: `newRow__${tempId}__completeDate`, defaultValue: "", ariaLabel: "New project Complete Date" })} />
             </td>
           )}
+          {(["salesPrice", "changeQuote", "totalPrice"] as const).map((field) =>
+            show(field) ? (
+              <td key={field} className="overflow-hidden whitespace-nowrap px-1 py-1.5 text-left align-middle text-label text-sdc-muted">
+                <span className="inline-flex items-center gap-0.5">
+                  <span>$</span>
+                  <MoneyCell
+                    name={`newRow__${tempId}__${field}`}
+                    defaultValue=""
+                    ariaLabel={`New project ${field === "salesPrice" ? "Sales Price" : field === "changeQuote" ? "Change Quote" : "Total"}`}
+                    className="w-[5.5rem] min-w-0 border-none bg-transparent text-left tabular-nums outline-none"
+                  />
+                </span>
+              </td>
+            ) : null
+          )}
           {phaseGroups.map((g) =>
             g.sections.length ? (
               <Fragment key={g.phase}>

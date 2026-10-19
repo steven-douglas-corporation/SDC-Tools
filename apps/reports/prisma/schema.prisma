@@ -206,7 +206,11 @@ model Job {
   // Quoted delivery date. The Projects grid derives "Weeks to Delivery" from startDate and this
   // (lib/delivery-weeks.ts) — only the date is stored, so the two cannot drift.
   quotedDeliveryDate       DateTime?
-  includeInTypeCalc        Boolean   @default(false)
+  // Manually entered contract figures (Projects grid, after Complete Date). NULL = not entered.
+  salesPrice               Decimal?  @db.Decimal(12, 2)
+  changeQuote              Decimal?  @db.Decimal(12, 2)
+  totalPrice               Decimal?  @db.Decimal(12, 2)
+  includeInTypeCalc       Boolean   @default(false)
   billable                 Boolean   @default(true) // Billable vs. Non-Billable — manager-set, no upstream sync touches this
   // Drops the job from the Standard Fees allocation (Total ETC pool share)
   // without hiding it from the ETC grid — the sheet's job list was manually
