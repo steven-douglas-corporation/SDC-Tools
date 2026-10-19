@@ -139,120 +139,103 @@ test("the audit script flags a projection that reads below total spent", () => {
   assert.match(audit, /PROJECTION BELOW SPENT/, "the check must be a named, reportable flag, not a silent condition");
 });
 
-test("the Parts Cost bar stacks Invoiced, Adjusted ETC and only the uncovered excess", () => {
+test("the Parts Cost bar stacks Invoiced, Not yet invoiced and Still to purchase — the open POs are never counted twice", () => {
   const src = code("src", "components", "PartsCostSummary.tsx");
-  // ── Rebuilt 2026-09-03 to Dan's model ────────────────────────────────────
+  // ── Rebuilt 2026-10-19 ───────────────────────────────────────────────────
   //
-  // The invariant these guards have always protected is unchanged: Invoiced is the
-  // base segment, and the open PO balance is never stacked on top of the forecast as
-  // a third addend — that double-counts the part the forecast already covers.
-  //
-  // What changed is the middle segment. It has been, in order: the residual (the
-  // larger of ETC and the open balance), then a coverage split of the open balance by
-  // the CURRENT month's submitted ETC, and now the PRIOR month's ETC drawn down by
-  // this month's spend. Only the last is Dan's model, and §20 is explicit that the
-  // current month's New ETC must not be substituted for it.
-  assert.match(src, /key: "invoiced", label: "Invoiced actual"/, "Invoiced is still the base segment");
-  assert.match(src, /key: "etc",[\s\S]{0,300}label: "Adjusted ETC remaining"/);
-  assert.match(src, /key: "uncovered",[\s\S]{0,300}label: "Uncovered invoice exposure"/);
+  // The invariant these guards have always protected is unchanged: Invoiced is the base segment,
+  // and the open PO balance is never stacked on top of a forecast that ALREADY CONTAINS it — that
+  // double-counts. What changed is the grouping. The forecast (the ETC) means "all cost still to
+  // come", so the open POs come OUT of it and are shown as their own segment; what is left is
+  // "still to purchase". Same projection, written as  Invoiced + open + max(0, ETC − open)  instead
+  // of  Invoiced + max(ETC, open)  — one identity, checked on 48 of 48 jobs with parts activity.
+  assert.match(src, /key: "invoiced", label: "Invoiced and posted"/, "Invoiced is still the base segment");
+  assert.match(src, /key: "open",[\s\S]{0,200}label: "Not yet invoiced \(open POs\)"/);
+  assert.match(src, /key: "stp",[\s\S]{0,200}label: "Still to purchase"/);
   assert.doesNotMatch(
     src,
     /key: "left-to-invoice"/,
-    "the open balance must never be its own bar segment on top of the forecast",
+    "the open balance must never be a second, separate segment on top of the forecast",
   );
 
-  // ── §16: only the UNCOVERED difference is added ──────────────────────────
-  //
-  // The red band is `additionalExposure`, which the shared library floors at
-  // `yetToInvoice - adjustedEtc`. The card must draw THAT, not the whole exposure —
-  // stacking the full `yetToInvoice` on top of `adjustedEtc` is the double-count the
-  // spec forbids by name.
-  assert.match(src, /heightPct: pct\(additionalAmount\)/);
+  // The open balance is SUBTRACTED from the forecast, never added on top of it. The segment drawn for
+  // the forecast is only its excess over the open POs.
+  assert.match(src, /const stillToPurchaseAmount = Math\.max\(0, adjustedEtcAmount - openBalanceAmount\);/);
+  assert.match(src, /heightPct: pct\(stillToPurchaseAmount\)/);
   assert.doesNotMatch(
     src,
-    /heightPct: pct\(yetToInvoiceAmount\)/,
-    "the whole exposure must never be a segment height — only the uncovered excess",
+    /heightPct: pct\(adjustedEtcAmount\)/,
+    "the whole forecast must never be a segment height — it contains the open POs",
   );
-  // And the three printed figures must reconcile against the printed total.
+
   // ── The residue absorber, and why it is Invoiced (fixed 2026-09-03) ──────
   //
-  // It used to be the ETC-adjusted figure, derived by subtraction so the three
-  // printed segments would sum to the printed total. That produced a reported bug on
-  // job 1101: prior ETC $5,621.59 against $10,795.96 spent leaves a NEGATIVE adjusted
-  // ETC, floored to exactly $0 — no yellow segment — and yet the row printed "$1",
-  // sitting directly under its own subtraction that gives a negative.
-  //
-  // So the two remainder terms are now rounded from their own values, and INVOICED
-  // absorbs the difference: it is larger by orders of magnitude, so ±$1 is invisible
-  // in it, and a term that is genuinely zero prints as zero.
-  assert.match(src, /const adjustedEtcDisplay = Math\.round\(adjustedEtcAmount\)/);
-  assert.match(src, /const additionalDisplay = Math\.round\(additionalAmount\)/);
+  // The two smaller terms are rounded from their own values and INVOICED absorbs the difference: it
+  // is larger by orders of magnitude, so ±$1 is invisible in it, and a term that is genuinely zero
+  // (job 1101's forecast, floored) prints as zero rather than as "$1".
+  assert.match(src, /const openDisplay = Math\.round\(openBalanceAmount\)/);
+  assert.match(src, /const stillToPurchaseDisplay = Math\.round\(stillToPurchaseAmount\)/);
   assert.match(
     src,
-    /const invoicedDisplay = projTotalDisplay - adjustedEtcDisplay - additionalDisplay/,
-    "Invoiced must absorb the residue, so a zero adjusted ETC cannot print as $1",
+    /const invoicedDisplay = projTotalDisplay - openDisplay - stillToPurchaseDisplay/,
+    "Invoiced must absorb the residue, so a zero still-to-purchase cannot print as $1",
   );
 });
 
 test("the open balance is stated, and never added on top of the forecast", () => {
   const src = code("src", "components", "PartsCostSummary.tsx");
-  // The table was cut to five rows by request (2026-09-03): Purchased, Invoiced,
-  // Left to invoice, ETC adjusted, Total projection. The figures that had their own
-  // rows before — prior-month ETC, in-house excluded, uncovered exposure — now live
-  // inside the derivation of the row they feed.
+  // The table (2026-10-19): Purchased to date, with Invoiced and Not yet invoiced under it, then Still
+  // to purchase, then Projected total. Each row carries the arithmetic that produced it.
   //
-  // The invariant is unchanged: the open balance is COMPARED against the forecast,
-  // never stacked on top of it (§16). What proves that here is the total's own
-  // derivation, which adds Invoiced + ETC adjusted (+ only the excess beyond it),
-  // and never Invoiced + ETC + the whole balance.
-  assert.match(src, /label: "Left to invoice"/);
-  assert.match(src, /label: "Total projection"/);
+  // The invariant is unchanged: the open balance is COMPARED against the forecast and taken out of
+  // it, never stacked on top of it (§16). What proves it here is the total's own derivation, which is
+  // Purchased + Still to purchase (the open POs are already inside Purchased), and never
+  // Purchased + the whole forecast.
+  assert.match(src, /label: "· Not yet invoiced \(open POs\)"/);
+  assert.match(src, /label: "Projected total"/);
   assert.match(
     src,
-    /invoiced \+ \$\{usd\(adjustedEtcDisplay\)\} ETC adjusted \+ \$\{usd\(additionalDisplay\)\} beyond it/,
-    "the total must add only the excess beyond the forecast, not the whole open balance",
+    /\$\{usd\(purchasedDisplay\)\} purchased \+ \$\{usd\(stillToPurchaseDisplay\)\} still to purchase/,
+    "the total must add only what is still to purchase, not the whole forecast",
   );
   assert.ok(!/label="Left to be invoiced"/.test(src), "unexplained duplicate wording");
   assert.ok(!/label: "To complete"/.test(src), "the bare phrase the spec rules out");
 
-  // CORRECTED 2026-09-03. "Left to invoice" is now the WHOLE open balance, so the row
-  // IS exactly Purchased − Invoiced and ties without a caveat. The in-house figure is
-  // reported beside it rather than subtracted from it — it is committed cost either
-  // way, and taking it out of the total made the projection fall below Purchased on 7
-  // of 10 audited jobs.
-  assert.match(src, /value: Math\.round\(openBalanceAmount\)/, "the row is the whole open balance");
+  // "Not yet invoiced" is the WHOLE open balance, in-house SDC included, reported beside it rather than
+  // subtracted from it — it is committed cost either way, and taking it out of the total made the
+  // projection fall below Purchased on 7 of 10 audited jobs.
+  assert.match(src, /key: "open",[\s\S]{0,700}value: openDisplay/, "the row is the whole open balance");
   assert.match(src, /in-house \(no supplier invoice\)/, "the in-house split is reported, not subtracted");
 });
 
-test("the ETC row is the PRIOR month's, drawn down by this month's spend", () => {
+test("the Still to purchase row starts from the PRIOR month's ETC, drawn down by this month's invoices and the open POs", () => {
   const src = code("src", "components", "PartsCostSummary.tsx");
-  // §20, as a guard: substituting the current month's New ETC is the specific mistake
-  // the spec calls out, and an earlier version of this card made it. The prior-month
-  // figure no longer has its own row — it is the first term of this row's derivation,
-  // which is a stronger statement than a bare row was, because it shows the drawdown.
-  assert.match(src, /label: "ETC adjusted"/);
+  // §20, as a guard: substituting the current month's New ETC is the specific mistake the spec calls
+  // out, and an earlier version of this card made it. The prior-month figure is the first term of
+  // this row's derivation, which shows the whole drawdown rather than a bare result.
+  assert.match(src, /label: "Still to purchase \(estimate\)"/);
   assert.match(
     src,
-    /prior-month ETC − \$\{usd\(Math\.round\(spentThisMonth\)\)\} spent this month/,
-    "the row must show prior ETC minus this month's spend, not just the result",
+    /prior-month ETC − \$\{usd\(Math\.round\(spentThisMonth\)\)\} invoiced this month − \$\{usd\(openDisplay\)\} not yet invoiced/,
+    "the row must show prior ETC, less this month's invoices, less the open POs — not just the result",
   );
   assert.ok(!/label="Current Parts ETC"/.test(src), "the current month's entry is not the forecast the bar draws");
   assert.ok(!/etcIsDriving/.test(src), "nothing competes with the forecast for the segment any more");
 });
 
-test("Invoiced + the open balance is still stated, now as the table's Purchased row", () => {
-  // This sum was never the bug; only Projection (which also added ETC) was. It stood
-  // as its own "Total Parts Cost Spent" line until 2026-09-03, when the breakdown
-  // table replaced the legend and that line was what the table collided with.
-  //
-  // Folding it in was not a loss: the row states the same figure WITH its arithmetic,
-  // which the line never did. And it no longer sits a foot below a different total —
-  // under Dan's model the projection excludes in-house SDC while this figure includes
-  // it ($780,324 against $821,469 on job 1104), so leaving the two as unexplained
-  // neighbours was itself the confusion.
+test("Invoiced + the open balance is still stated, now as the table's Purchased to date row", () => {
+  // This sum was never the bug; only the projection (which also adds the forecast) was. It stood as
+  // its own "Total Parts Cost Spent" line until 2026-09-03, then as the "Purchased" row, and since
+  // 2026-10-19 as "Purchased to date" with Invoiced and Not yet invoiced listed under it — so the row
+  // states the same figure WITH its parts, and the lines under it add up to it on screen.
   const src = code("src", "components", "PartsCostSummary.tsx");
-  assert.match(src, /label: "Purchased"/);
-  assert.match(src, /value: Math\.round\(financials\.purchased\)/);
+  assert.match(src, /label: "Purchased to date"/);
+  assert.match(src, /const purchasedRounded = Math\.round\(financials\.purchased\)/);
+  assert.match(
+    src,
+    /const purchasedDisplay = showAboveOrdered \? purchasedRounded : invoicedDisplay \+ openDisplay/,
+    "Purchased is Invoiced + Not yet invoiced, except where invoices exceed what was ordered",
+  );
   assert.ok(!/Total Parts Cost Spent:/.test(src), "the standalone line is gone, not duplicated");
 });
 
@@ -356,47 +339,20 @@ test("Job Cost Explorer's actual column uses the shared definition", () => {
 });
 
 test("the Parts Cost card's base bar segment comes from `financials.invoiced`, never `paid` or `purchased`", () => {
-  // 2026-08-15 (audit "Audit Parts Cost Projection Formula Across All
-  // Projects"): PartsCostSummary stopped taking `purchased`/`actual` as
-  // separate props and now reads them off one shared `PartsCostFinancials`
-  // object (src/lib/parts-cost-financials.ts) — so this guard now pins that
-  // `invoiced` traces to `financials.invoiced`, one hop from the same
-  // GL-posted-only source (`actualTotal`, see the test below) it always did.
+  // 2026-08-15 (audit "Audit Parts Cost Projection Formula Across All Projects"): PartsCostSummary
+  // stopped taking `purchased`/`actual` as separate props and now reads them off one shared
+  // `PartsCostFinancials` object (src/lib/parts-cost-financials.ts) — so this guard pins that
+  // `invoiced` traces to `financials.invoiced`, one hop from the same GL-posted-only source
+  // (`actualTotal`, see the test below) it always did.
   const src = code("src", "components", "PartsCostSummary.tsx");
   assert.match(src, /const invoiced = financials\.invoiced/, "the base segment is Parts Actual, not `paid` or `purchased`");
-  // "Total Parts Cost Spent" was GL-posted-only (`invoiced`) from 2026-08-10
-  // through 2026-08-11a — the original assertion here pinned that value. A
-  // later, deliberate, by-request redesign (2026-08-11c, see that caption's
-  // own comment in PartsCostSummary.tsx) intentionally moved it to
-  // Invoiced + Left-to-invoice so the caption reconciles with the two bar
-  // segments actually on screen instead of with the external ledger. That is
-  // NOT a resurgence of the original bug: `financials.invoiced` itself — the
-  // figure every OTHER test in this file guards — is untouched, still
-  // GL-posted, and still what the bar's base segment and the legend's
-  // "Invoiced" value show. `leftToInvoice` is an explicitly labelled, visibly
-  // separate "Left to be invoiced" segment, not commitment silently relabelled
-  // as spend.
-  //
-  // 2026-08-15: the caption now reads a pre-reconciled `totalSpentDisplay`
-  // (largest-remainder rounding of [invoiced, leftToInvoice], see
-  // reconcilePartsCostRounding) rather than the raw `invoiced + spentIncrement`
-  // sum directly — a fix for a real, if usually sub-dollar, display artifact
-  // where three independently-rounded segments didn't always sum to a
-  // separately-rounded total. `totalSpentDisplay` is BY CONSTRUCTION
-  // `invoicedDisplay + leftToInvoiceDisplay`, so this still guards the same
-  // invariant: the caption is the bar's own two segments, not the GL-posted
-  // figure alone.
-  // `totalSpentDisplay` is gone (2026-09-03): the "Total Parts Cost Spent" line it
-  // fed is folded into the breakdown table's "Purchased / committed" row, which
-  // states the same figure WITH its derivation. The guard's intent — that the figure
-  // is the sum of what is displayed rather than re-derived from another source —
-  // moves to that row's own arithmetic, asserted above.
-  // The table was cut to five rows, and "Purchased / committed" became simply
-  // "Purchased" as the first of them. Its own derivation is now plain English rather
-  // than a sum, because the row directly beneath it (Left to invoice) is what shows
-  // the split.
-  assert.match(src, /label: "Purchased"/);
-  assert.match(src, /value: Math\.round\(financials\.purchased\)/);
+  // "Total Parts Cost Spent" was a separate caption through 2026-09-03; it became the "Purchased" row
+  // and, from 2026-10-19, "Purchased to date" — the sum of the figures displayed beneath it
+  // (Invoiced and Not yet invoiced), not a number re-derived from another source. `financials.invoiced`
+  // itself — the figure every other test in this file guards — is untouched: still GL-posted, and
+  // still what the bar's base segment and its "Invoiced and posted" row show.
+  assert.match(src, /label: "Purchased to date"/);
+  assert.match(src, /const purchasedRounded = Math\.round\(financials\.purchased\)/);
   assert.ok(!/Total Parts Cost Spent:/.test(src), "the standalone line is gone, not duplicated");
 });
 

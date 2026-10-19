@@ -7,6 +7,7 @@ import { SortableTh } from "@/components/ui/SortableHeader";
 import { DrillPanel, DrillControls, DrillEmpty, DRILL_NUM, DRILL_TOTAL_LABEL } from "@/components/ui/Drill";
 import { usd, usd2 } from "@/components/ui/format";
 import { loadPartsEtcHistory, type PartsEtcMonth } from "@/lib/parts-etc-history-actions";
+import { StillToPurchasePanel } from "@/components/StillToPurchasePanel";
 import type { PartsCostFinancials } from "@/lib/parts-cost-financials-shared";
 import { describeTransfers, NO_DESTINATION, type JobTransferItem } from "@/lib/parts-transfer-netting";
 import type { PartsCostLine } from "@/lib/sync-totaleto";
@@ -65,10 +66,10 @@ const money = usd2;
 export type PartsDrillMode = "projection" | "invoiced" | "left" | "etc" | "transfers";
 
 const MODE_TITLE: Record<PartsDrillMode, string> = {
-  projection: "Parts Cost Detail — Actual / Projection",
-  invoiced: "Parts Cost Detail — Invoiced",
-  left: "Parts Cost Detail — Yet to invoice",
-  etc: "Parts Cost Detail — ETC",
+  projection: "Parts Cost Detail — Projected total",
+  invoiced: "Parts Cost Detail — Invoiced and posted",
+  left: "Parts Cost Detail — Not yet invoiced (open POs)",
+  etc: "Parts Cost Detail — Still to purchase",
   transfers: "Parts Cost Detail — Transferred between jobs",
 };
 
@@ -304,7 +305,7 @@ export function PartsCostDrill({
   const totals: { label: string; value: string; hint?: string }[] = [
     { label: "Budget", value: financials.budget == null ? "—" : usd(financials.budget) },
     {
-      label: "Purchased / committed",
+      label: "Purchased to date",
       value: usd(financials.purchased),
       hint:
         Math.abs(financials.transfersNet) >= 1
@@ -335,19 +336,19 @@ export function PartsCostDrill({
         ]
       : []),
     {
-      label: "Left to invoice",
+      label: "Not yet invoiced (open POs)",
       value: usd(financials.openBalance),
       hint:
         financials.inHouseRows > 0
-          ? `External remaining exposure. Excludes ${usd(financials.inHouseExcluded)} on ${financials.inHouseRows} in-house (SDC) row${financials.inHouseRows === 1 ? "" : "s"}, which produce no supplier invoice`
-          : "External remaining exposure — purchased less GL-posted, on rows that will produce a supplier invoice",
+          ? `Ordered but not yet invoiced: purchased less GL-posted. Includes ${usd(financials.inHouseExcluded)} on ${financials.inHouseRows} in-house (SDC) row${financials.inHouseRows === 1 ? "" : "s"}, which will never arrive as a supplier invoice`
+          : "Ordered but not yet invoiced: purchased less GL-posted",
     },
     ...(financials.inHouseRows > 0
       ? [
           {
             label: "In-house (SDC) excluded",
             value: usd(financials.inHouseExcluded),
-            hint: `Remaining exposure on ${financials.inHouseRows} row${financials.inHouseRows === 1 ? "" : "s"} SDC builds itself. Reported so 'Yet to invoice' reconciles against the ${usd(financials.openBalance)} whole open balance`,
+            hint: `The part of Not yet invoiced on ${financials.inHouseRows} row${financials.inHouseRows === 1 ? "" : "s"} SDC builds itself — committed cost that produces no supplier invoice. Reported, not subtracted`,
           },
         ]
       : []),
@@ -360,7 +361,7 @@ export function PartsCostDrill({
           : `The previous month's confirmed New ETC, carried forward${financials.etcMonth ? ` into ${financials.etcMonth}` : ""}. NOT this month's New ETC entry`,
     },
     {
-      label: "Parts spent this month",
+      label: "Invoiced this month",
       value: usd(financials.partsSpentThisMonth),
       hint: `The selected month's booked parts cost — the same 'Money Spent Month' the Monthly ETC grid shows${financials.etcMonth ? ` for ${financials.etcMonth}` : ""}`,
     },
@@ -368,34 +369,33 @@ export function PartsCostDrill({
       label: "Adjusted ETC",
       value: usd(financials.adjustedEtc),
       hint: adjustedIsFloored
-        ? `Prior-month ETC − parts spent this month = ${usd(financials.adjustedEtcRaw!)}, shown as $0 because a bar cannot have negative height. The month has already spent past its own forecast`
-        : "Prior-month ETC − parts spent this month. The bar's yellow section",
+        ? `Prior-month ETC − invoiced this month = ${usd(financials.adjustedEtcRaw!)}, shown as $0 because a forecast cannot be negative. The month has already invoiced past its own forecast`
+        : "Prior-month ETC − invoiced this month. Everything still to come: the open POs plus what is not yet ordered",
     },
     {
-      label: "Additional exposure",
-      value: usd(financials.additionalExposure),
-      hint:
-        financials.additionalExposure > 0
-          ? "Yet to invoice − Adjusted ETC. Remaining exposure the adjusted forecast does not cover — the bar's red section"
-          : "Nothing: the adjusted ETC covers the whole remaining exposure, so there is no red section",
+      label: "Still to purchase",
+      value: usd(Math.max(0, financials.adjustedEtc - financials.openBalance)),
+      hint: financials.etcUnknown
+        ? "No prior-month ETC on file, so nothing is forecast beyond what is already ordered"
+        : "Adjusted ETC − Not yet invoiced (open POs), never below $0. What has not been ordered yet. The bar's yellow section",
     },
     {
-      label: "Total projection",
+      label: "Projected total",
       value: usd(financials.projection),
-      hint: "Invoiced + Adjusted ETC + Additional exposure. Equivalently, Invoiced + max(Adjusted ETC, Yet to invoice)",
+      hint: "Purchased to date + Still to purchase. The same figure as Invoiced + the larger of (Adjusted ETC, Not yet invoiced)",
     },
     {
       label: "Projection vs Budget",
       value: financials.variance == null ? "—" : `${financials.variance > 0 ? "+" : "−"}${usd(Math.abs(financials.variance))}`,
-      hint: "Total projection − Budget. Over is positive",
+      hint: "Projected total − Budget. Over is positive",
     },
   ];
 
   const MODES: { key: PartsDrillMode; label: string }[] = [
     { key: "projection", label: "All rows" },
     { key: "invoiced", label: "Invoiced" },
-    { key: "left", label: "Yet to invoice" },
-    { key: "etc", label: "ETC" },
+    { key: "left", label: "Not yet invoiced" },
+    { key: "etc", label: "Still to purchase" },
     ...(financials.transferItems.length > 0 ? [{ key: "transfers" as const, label: "Transfers" }] : []),
   ];
 
@@ -466,49 +466,16 @@ export function PartsCostDrill({
           {/* The explanation stays — it is what stops someone hunting for a
               part-level breakdown that does not exist — but it is now the caption
               above real rows rather than the whole view. */}
-          <div className="space-y-2 border-b border-sdc-border px-4 py-3 text-note leading-relaxed text-sdc-gray-600">
-            <p>
-              Parts ETC is one figure per month, maintained on the{" "}
-              <span className="font-semibold">Monthly ETC</span> grid — not built up from part rows, so there is no
-              part-level breakdown of it. What it IS made of is the drawdown below: each month opens at the previous
-              month&apos;s close, is reduced by the parts booked against the job, and ends where the manager left it.
-            </p>
-            {/* Rewritten 2026-09-03 for Dan's model. Two earlier versions of this
-                paragraph described projections the card no longer draws — first "the
-                larger of ETC and Left to be invoiced", then a coverage split of the
-                open balance. */}
-            <p>
-              The bar starts from the <span className="font-semibold">prior month&apos;s</span> ETC and draws it down by
-              this month&apos;s parts spend
-              {financials.priorEtc != null && (
-                <>
-                  {" "}
-                  — {usd(financials.priorEtc)} less {usd(financials.partsSpentThisMonth)} leaves{" "}
-                  <span className="font-semibold">{usd(financials.adjustedEtc)}</span>
-                </>
-              )}
-              . What is still to be invoiced externally is then compared against that remainder, and only the
-              uncovered difference is added on top.
-              {financials.additionalExposure > 0 ? (
-                <>
-                  {" "}
-                  Here {usd(financials.openBalance)} of exposure exceeds it by{" "}
-                  <span className="font-semibold">{usd(financials.additionalExposure)}</span>, which is the red section.
-                  For the rows behind that exposure, switch to{" "}
-                  <button
-                    type="button"
-                    onClick={() => onModeChange("left")}
-                    className="font-semibold text-sdc-blue-dark underline underline-offset-2"
-                  >
-                    Yet to invoice
-                  </button>
-                  .
-                </>
-              ) : (
-                <> Here the remainder covers the whole {usd(financials.openBalance)} of exposure, so none is red.</>
-              )}
-            </p>
-          </div>
+          {/* The calculation, with this job's own figures in every step (2026-10-19). It replaces two
+              paragraphs that described the old "Adjusted ETC + red uncovered band" picture: the same
+              projection, now read as Purchased to date + Still to purchase. */}
+          <StillToPurchasePanel financials={financials} jobIds={jobIds} onShowOpenPos={() => onModeChange("left")} />
+          <p className="border-b border-sdc-border px-4 py-2 text-note leading-relaxed text-sdc-gray-600">
+            The forecast is one figure per month, kept on the <span className="font-semibold">Monthly ETC</span> grid. It
+            is not built up from part rows, so there is no part-level breakdown of it. Each month opens at the previous
+            month&apos;s close, is reduced by what is invoiced against the job, and ends where the manager left it — that
+            history is below.
+          </p>
           {/* ── The monthly series does NOT sum to lifetime, and says so ──────
               Measured across three jobs: Σ "parts booked" over every ETC month falls
               short of the job's lifetime GL-posted spend — 1101 by $39,842, 1104 by

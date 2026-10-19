@@ -123,19 +123,19 @@ test("the panel proves the bar with every figure the model uses", () => {
   // true is the reason the row existed at all: the panel must state the figures the
   // bar actually DRAWS, plus their inputs, so a reader can tie each segment back.
   //
-  // §14's list, and the three subtractions that make it checkable:
-  //     Prior-month ETC − Parts spent this month  = Adjusted ETC
-  //     Yet to invoice  − Adjusted ETC            = Additional exposure
-  //     Invoiced + Adjusted ETC + Additional      = Total projection
+  // §14's list, and the subtractions that make it checkable (renamed 2026-10-19):
+  //     Prior-month ETC − Invoiced this month        = Adjusted ETC
+  //     Adjusted ETC    − Not yet invoiced (open POs) = Still to purchase
+  //     Purchased to date + Still to purchase         = Projected total
   for (const label of [
-    "Purchased / committed",
+    "Purchased to date",
     "Invoiced actual (lifetime)",
-    "Left to invoice",
+    "Not yet invoiced (open POs)",
     "Prior-month ETC",
-    "Parts spent this month",
+    "Invoiced this month",
     "Adjusted ETC",
-    "Additional exposure",
-    "Total projection",
+    "Still to purchase",
+    "Projected total",
   ]) {
     assert.match(DRILL_CODE, new RegExp(`label: "${label.replace(/[/()]/g, (c) => "\\" + c)}"`), `the panel must show a "${label}" row`);
   }
@@ -148,7 +148,6 @@ test("the panel proves the bar with every figure the model uses", () => {
     "financials.priorEtc",
     "financials.partsSpentThisMonth",
     "financials.adjustedEtc",
-    "financials.additionalExposure",
   ]) {
     assert.ok(DRILL_CODE.includes(field), `${field} must be read from the shared financials`);
   }
@@ -235,9 +234,10 @@ test("the parts drill and the section-hours drill are independent", () => {
 
 test("the panel closes back to the same page, and titles say which mode is open", () => {
   assert.match(DASH, /onClose=\{\(\) => setPartsDrill\(null\)\}/);
-  assert.match(DRILL_CODE, /projection: "Parts Cost Detail — Actual \/ Projection"/);
-  assert.match(DRILL_CODE, /invoiced: "Parts Cost Detail — Invoiced"/);
-  assert.match(DRILL_CODE, /etc: "Parts Cost Detail — ETC"/);
+  assert.match(DRILL_CODE, /projection: "Parts Cost Detail — Projected total"/);
+  assert.match(DRILL_CODE, /invoiced: "Parts Cost Detail — Invoiced and posted"/);
+  assert.match(DRILL_CODE, /left: "Parts Cost Detail — Not yet invoiced \(open POs\)"/);
+  assert.match(DRILL_CODE, /etc: "Parts Cost Detail — Still to purchase"/);
 });
 
 test("nothing here opens a separate report or tab", () => {

@@ -52,5 +52,5 @@ test("the figure itself is untouched: same field, same label, same rounding, sti
 test("the tooltip wording matches what the Parts Cost card actually shows", () => {
   const card = readFileSync(join(import.meta.dirname, "..", "src", "components", "PartsCostSummary.tsx"), "utf8");
   assert.match(card, /GL-posted parts spend, all POs, lifetime/, "the card's Invoiced row is the same measure the tooltip names");
-  assert.match(card, /label: "Left to invoice"/, "and the open POs the tooltip says are left out are the card's Left to invoice row");
+  assert.match(card, /label: "· Not yet invoiced \(open POs\)"/, "and the open POs the tooltip says are left out are the card's Not yet invoiced row");
 });
