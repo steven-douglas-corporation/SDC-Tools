@@ -154,6 +154,17 @@ const MONEY_INPUT_PAIRED = "w-[4.5rem] min-w-0 border-none bg-transparent text-l
 // the switch already flips is the only way the width tracks it live.
 const PARTS_COST_COL_CLASS = "pc-col";
 
+// ── What "Parts Cost Actual" does and does not include (2026-10-19) ─────────
+//
+// Read as "what this job's parts cost", which it is not: it is the parts INVOICED AND POSTED so
+// far (GL-posted spend, net of credits, plus parts transferred between jobs). Open POs that are
+// ordered but not yet invoiced are left out, so on a job with a lot still to invoice it sits
+// well below the real committed cost (job 1160: $199,505 here against $260,090 committed and a
+// $268,751 projection on the Parts Cost card). Said on hover, in both places the figure appears.
+const PARTS_ACTUAL_TIP =
+  "Invoiced and posted to date, including parts transferred between jobs. It leaves out open POs that are ordered but not yet invoiced, so it is not the full or final cost. For committed cost and the projection, see the Parts Cost card on Job Details.";
+const PARTS_COST_HEADER_TIP = `Parts cost: quoted / actual. Actual is the amount invoiced and posted so far, including parts transferred between jobs. It excludes open POs that are not yet invoiced, so it is not the full or final cost. For committed cost and the projection, see the Parts Cost card on Job Details.`;
+
 // Group sub-bands: lighter SDC brand tints, each distinct, all drawn from the
 // brand palette (blue/green/yellow tints + light blue), with one bold brand
 // blue for the large General Engineering block so it reads as its own zone.
@@ -945,7 +956,7 @@ export async function ProjectsView({ params }: { params: {
                   Job.costActualHistorical in the schema, in the TotalETO sync
                   and in the Power BI measures they come from, so don't rename
                   those chasing this merge either. */}
-              <th rowSpan={3} className={`${PARTS_COST_COL_CLASS} border-l border-sdc-border bg-sdc-green-bg px-1 py-2 text-left align-bottom text-sdc-green-text`}>
+              <th rowSpan={3} title={PARTS_COST_HEADER_TIP} className={`${PARTS_COST_COL_CLASS} border-l border-sdc-border bg-sdc-green-bg px-1 py-2 text-left align-bottom text-sdc-green-text`}>
                 PARTS COST
               </th>
             </tr>
@@ -1387,7 +1398,7 @@ export async function ProjectsView({ params }: { params: {
                         className={MONEY_INPUT_PAIRED}
                       />
                     </span>
-                    <span className="actual-suffix inline-flex items-center gap-0.5 text-sdc-green-text">
+                    <span className="actual-suffix inline-flex items-center gap-0.5 text-sdc-green-text" title={PARTS_ACTUAL_TIP}>
                       <span className="actual-sep text-sdc-muted">/</span>
                       <span>$</span>
                       <MoneyCell
