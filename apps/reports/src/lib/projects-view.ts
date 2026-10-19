@@ -28,6 +28,9 @@ export const PROJECTS_INFO_COLUMNS = [
   { key: "quotedDelivery", label: "Quoted Delivery" },
   { key: "deliveryWeeks", label: "FAT Date" },
   { key: "completeDate", label: "Complete Date" },
+  { key: "salesPrice", label: "Sales Price" },
+  { key: "changeQuote", label: "Change Quote" },
+  { key: "totalPrice", label: "Total" },
 ] as const;
 
 /**

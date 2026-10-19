@@ -21,7 +21,7 @@ const NEW_ROW_HOURS_PREFIX = "newRowHours__";
 // beyond "trim, empty string means null".
 const PLAIN_FIELDS = ["jobName", "customer"] as const;
 const DATE_FIELDS = ["startDate", "completeDate", "quotedDeliveryDate"] as const;
-const MONEY_FIELDS = ["costQuoted", "costActualHistorical"] as const;
+const MONEY_FIELDS = ["costQuoted", "costActualHistorical", "salesPrice", "changeQuote", "totalPrice"] as const;
 type PlainField = (typeof PLAIN_FIELDS)[number];
 type DateField = (typeof DATE_FIELDS)[number];
 type MoneyField = (typeof MONEY_FIELDS)[number];
@@ -394,6 +394,9 @@ async function saveJobFields(formData: FormData): Promise<{ written: number; con
       quotedDeliveryDate: true,
       costQuoted: true,
       costActualHistorical: true,
+      salesPrice: true,
+      changeQuote: true,
+      totalPrice: true,
       billable: true,
     },
   });
@@ -577,6 +580,9 @@ const JOB_FIELD_LABELS: Record<string, string> = {
   quotedDeliveryDate: "Quoted Delivery",
   costQuoted: "Cost Quoted",
   costActualHistorical: "Cost Actual (Historical)",
+  salesPrice: "Sales Price",
+  changeQuote: "Change Quote",
+  totalPrice: "Total",
 };
 
 // Stringify a job field the way its CELL displays it, so a `previousValue`/`newValue`
@@ -638,6 +644,9 @@ async function saveNewRows(formData: FormData): Promise<number> {
     quotedDeliveryDate: Date | null;
     costQuoted: number | null;
     costActualHistorical: number | null;
+    salesPrice: number | null;
+    changeQuote: number | null;
+    totalPrice: number | null;
     hours: { section: string; quotedHours: number }[];
   };
 
@@ -697,6 +706,9 @@ async function saveNewRows(formData: FormData): Promise<number> {
     const quotedDeliveryDate = parseDate((fields.get("quotedDeliveryDate") ?? "").trim());
     const costQuoted = parseMoney((fields.get("costQuoted") ?? "").trim(), "Parts Cost Quoted", `new project "${jobId}"`);
     const costActualHistorical = parseMoney((fields.get("costActualHistorical") ?? "").trim(), "Parts Cost Actual", `new project "${jobId}"`);
+    const salesPrice = parseMoney((fields.get("salesPrice") ?? "").trim(), "Sales Price", `new project "${jobId}"`);
+    const changeQuote = parseMoney((fields.get("changeQuote") ?? "").trim(), "Change Quote", `new project "${jobId}"`);
+    const totalPrice = parseMoney((fields.get("totalPrice") ?? "").trim(), "Total", `new project "${jobId}"`);
 
     const hoursMap = hoursByTemp.get(tempId) ?? new Map();
     const hours: { section: string; quotedHours: number }[] = [];
@@ -713,7 +725,7 @@ async function saveNewRows(formData: FormData): Promise<number> {
       if (n !== 0) hours.push({ section, quotedHours: n });
     }
 
-    rows.push({ jobId, jobName, customer, type, billable, status, startDate, completeDate, quotedDeliveryDate, costQuoted, costActualHistorical, hours });
+    rows.push({ jobId, jobName, customer, type, billable, status, startDate, completeDate, quotedDeliveryDate, costQuoted, costActualHistorical, salesPrice, changeQuote, totalPrice, hours });
   }
 
   if (rows.length === 0) return 0;
@@ -738,6 +750,9 @@ async function saveNewRows(formData: FormData): Promise<number> {
           quotedDeliveryDate: r.quotedDeliveryDate,
           costQuoted: r.costQuoted,
           costActualHistorical: r.costActualHistorical,
+          salesPrice: r.salesPrice,
+          changeQuote: r.changeQuote,
+          totalPrice: r.totalPrice,
           source: "manual",
           estimatedHours: r.hours.length
             ? { create: r.hours.map((h) => ({ section: h.section, quotedHours: h.quotedHours, quotedHoursManuallyEdited: true })) }
