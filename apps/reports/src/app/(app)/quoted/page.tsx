@@ -273,6 +273,14 @@ const BILLABLE_OPTIONS = ["Billable", "Non-Billable"];
 // view produces and stop a saved View comparing equal. See lib/projects-view.ts.
 const TOGGLE_COLUMNS = PROJECTS_INFO_COLUMNS;
 
+// Manually entered money columns after Complete Date. `key` is the Columns-menu key,
+// `field` the Job column it edits.
+const PRICE_COLUMNS = [
+  { key: "salesPrice", field: "salesPrice", label: "Sales Price" },
+  { key: "changeQuote", field: "changeQuote", label: "Change Quote" },
+  { key: "totalPrice", field: "totalPrice", label: "Total" },
+] as const;
+
 export async function ProjectsView({ params }: { params: {
     cols?: string;
     sort?: string;
@@ -890,6 +898,23 @@ export async function ProjectsView({ params }: { params: {
                   />
                 </th>
               )}
+              {PRICE_COLUMNS.filter((c) => show(c.key)).map((c) => (
+                <th key={c.key} data-col={c.key}
+                  rowSpan={3}
+                  style={{ width: "var(--price-col-width, 100px)", minWidth: "var(--price-col-width, 100px)" }}
+                  className="relative px-1 py-2 align-bottom"
+                >
+                  {c.label}
+                  <div
+                    className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
+                    data-resize-var="--price-col-width"
+                    data-resize-min="70"
+                    data-resize-max="300"
+                    title="Drag to resize"
+                    style={{ touchAction: "none" }}
+                  />
+                </th>
+              ))}
               {PHASE_GROUPS.map((g) => {
                 const visible = visibleSectionsByPhase.get(g.phase) ?? [];
                 const color = PHASE_HEADER_COLOR[g.phase] ?? "bg-sdc-blue-light";
@@ -1260,6 +1285,22 @@ export async function ProjectsView({ params }: { params: {
                       />
                     </td>
                   )}
+                  {PRICE_COLUMNS.filter((c) => show(c.key)).map((c) => (
+                    <td key={c.key} data-col={c.key}
+                      style={{ width: "var(--price-col-width, 100px)", minWidth: "var(--price-col-width, 100px)", maxWidth: "var(--price-col-width, 100px)" }}
+                      className="overflow-hidden whitespace-nowrap px-1 py-1.5 text-left align-middle text-label text-sdc-muted"
+                    >
+                      <span className="inline-flex items-center gap-0.5">
+                        <span>$</span>
+                        <MoneyCell
+                          name={`jobField__${job.id}__${c.field}`}
+                          defaultValue={job[c.field] != null ? Number(job[c.field]).toString() : ""}
+                          ariaLabel={`${c.label}, ${job.jobName}`}
+                          className="w-[5.5rem] min-w-0 border-none bg-transparent text-left tabular-nums outline-none"
+                        />
+                      </span>
+                    </td>
+                  ))}
                   {PHASE_GROUPS.map((g) => {
                     const visibleSections = visibleSectionsByPhase.get(g.phase) ?? [];
                     // Fully-hidden phase (e.g. Warranty) renders no column.
