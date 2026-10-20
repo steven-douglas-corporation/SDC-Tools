@@ -39,7 +39,7 @@ test("the page renders Reconcile only for employees:edit, and its server action 
   assert.match(fn.slice(0, 200), /await assertActionPermission\("employees:edit"\);/);
 });
 
-test("the Dashboard no longer carries the Data Quality tab or the source-health card", () => {
+test("the Dashboard no longer carries the Data Quality section or the source-health card", () => {
   const page = src("app/(app)/page.tsx");
-  assert.doesNotMatch(page, /DataQualityPanel|RefreshScheduleCard|getDataQuality|DashboardTabs/);
+  assert.doesNotMatch(page, /DataQualityPanel|RefreshScheduleCard|getDataQuality/);
 });

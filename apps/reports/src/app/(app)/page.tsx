@@ -7,6 +7,9 @@ import { DashboardOverviewPanel, monthLabel } from "@/components/dashboard/Dashb
 import { DashboardMonthSelect } from "@/components/dashboard/DashboardMonthSelect";
 import { Band } from "@/components/dashboard/DashboardLayout";
 import { UtilizationPanel } from "@/components/dashboard/UtilizationPanel";
+import { DashboardTabs } from "@/components/DashboardTabs";
+import { FinancesPanel } from "@/components/dashboard/FinancesPanel";
+import { financeCardsFor } from "@/lib/finance-cards";
 
 // ── The Dashboard (redesigned 2026-08-27) ───────────────────────────────────
 //
@@ -39,12 +42,44 @@ import { UtilizationPanel } from "@/components/dashboard/UtilizationPanel";
 // moved to Admin > Data Management on 2026-10-20. They are about whether to
 // trust the data rather than about the work, and the Dashboard is now only the
 // work. The Manage Jobs button stays.
+//
+// ── Two tabs: Executive and Finances (2026-10-20) ──────────────────────────
+//
+// Executive is everything above. Finances is a set of cards, each a window onto a
+// page that already shows the figure and each ending in a "More details" link to it —
+// see lib/finance-cards.ts. A role sees the Finances tab only if it can open at least
+// one of those pages; otherwise the Dashboard is exactly what it was, with no tab
+// strip.
+//
+// Finances is decided and built HERE, on the server, from the role: a role without
+// access never has finance figures in its page, which a hidden-but-mounted panel
+// would not guarantee. And it is only built when the URL says `?tab=finances`, so
+// the landing view does not pay for it.
 
-export async function DashboardView({ params }: { params: { m?: string } }) {
-  await requirePagePermission("dashboard:view");
+export async function DashboardView({ params }: { params: { tab?: string; m?: string } }) {
+  const session = await requirePagePermission("dashboard:view");
   const month = dashboardMonth(params.m);
+  const financeCards = financeCardsFor(session.user.role);
+  const hasFinances = financeCards.length > 0;
+  const financesOpen = hasFinances && params.tab === "finances";
 
   const overview = await getDashboardOverview(month);
+
+  const executive = (
+    // Bands, not equal blocks in a stack. The KPI strip and the first two bands
+    // live inside DashboardOverviewPanel; capacity is a band here because it is a
+    // separate component. See DashboardLayout.tsx.
+    <div className="flex flex-col gap-8">
+      <DashboardOverviewPanel data={overview} />
+
+      {/* The page's most detailed figures — the "and here is the detail"
+          answer to the hours KPIs above. Same `overview` object, same
+          month: no second month state and no second fetch. */}
+      <Band label="Capacity &amp; utilization">
+        <UtilizationPanel result={overview.utilization} monthLabel={monthLabel(month)} />
+      </Band>
+    </div>
+  );
 
   return (
     <div className={PAGE_SHELL}>
@@ -60,7 +95,7 @@ export async function DashboardView({ params }: { params: { m?: string } }) {
         <div className="min-w-0">
           <PageTitle>Dashboard</PageTitle>
           <p className="text-sm text-sdc-gray-600">
-            Active work, execution and capacity — month-scoped figures are for{" "}
+            {hasFinances ? "Work, capacity and finances" : "Active work, execution and capacity"} — month-scoped figures are for{" "}
             <span className="font-semibold text-sdc-navy">{monthLabel(month)}</span>
           </p>
         </div>
@@ -72,19 +107,14 @@ export async function DashboardView({ params }: { params: { m?: string } }) {
         </div>
       </div>
 
-      {/* Bands, not equal blocks in a stack. The KPI strip and the first two
-          bands live inside DashboardOverviewPanel; capacity is a band here
-          because it is a separate component. See DashboardLayout.tsx. */}
-      <div className="flex flex-col gap-8">
-        <DashboardOverviewPanel data={overview} />
-
-        {/* The page's most detailed figures — the "and here is the detail"
-            answer to the hours KPIs above. Same `overview` object, same
-            month: no second month state and no second fetch. */}
-        <Band label="Capacity &amp; utilization">
-          <UtilizationPanel result={overview.utilization} monthLabel={monthLabel(month)} />
-        </Band>
-      </div>
+      {hasFinances ? (
+        <DashboardTabs
+          executive={executive}
+          finances={financesOpen ? <FinancesPanel month={month} cards={financeCards} /> : null}
+        />
+      ) : (
+        executive
+      )}
     </div>
   );
 }
@@ -103,6 +133,6 @@ export async function DashboardView({ params }: { params: { m?: string } }) {
 // Nothing about this route's behaviour changes: same URL, same params, same server
 // render. `searchParams` is still awaited HERE, which is what keeps this route
 // dynamic exactly as before.
-export default async function Home({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
+export default async function Home({ searchParams }: { searchParams: Promise<{ tab?: string; m?: string }> }) {
   return <DashboardView params={await searchParams} />;
 }

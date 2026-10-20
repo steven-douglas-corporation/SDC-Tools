@@ -6831,3 +6831,42 @@ page's gate). The Paylocity note shows to everyone. Pinned by
 `tests/data-management-permissions.test.ts`.
 
 No schema change, no migration.
+
+## 76. Dashboard: Executive and Finances tabs (2026-10-20)
+
+The Dashboard now has two tabs. **Executive** is the overview it has always shown.
+**Finances** is a set of cards, and every card follows one rule: it shows a figure the
+app already shows on another page, computed by that page's own function, and ends in a
+"More details" link to that page. The tab never defines a figure of its own, so a card
+cannot disagree with the page behind it.
+
+First two cards:
+
+* **Parts spent** — the Monthly ETC page's "Parts spent" KPI for the month
+  (`getEtcMonthKpis(...).parts.spent` over `getEtcMonthJobWhere`'s jobs). Links to
+  `/etc?month=`. Says so when the month has no Parts Cost rows yet rather than showing $0.
+* **T&M parts and expenses** — the T&M page's three dollar cards over the month, all
+  jobs (`loadTmPartsLines` + `tmMetricsFrom`). Links to `/tm?start=&end=`.
+
+**Access follows the destination.** Each card declares the permission of the page it links
+to (`lib/finance-cards.ts`), a role is only offered cards it can open, and the tab exists
+only for a role with at least one card. No new permission: widening a card is a click on
+Role Permissions for the page behind it. By default MANAGER and SALES see both cards, PM
+sees Parts spent, ELT sees all; a role with no card sees the Dashboard with no tab strip,
+as before.
+
+**Built on the server, only when asked for.** Finance data is decided from the role and
+built only when the URL says `?tab=finances`, so a role without access never has finance
+figures in its page (a hidden-but-mounted panel would not guarantee that) and the landing
+view pays nothing. Each card loads behind its own Suspense boundary; the T&M card reads
+Total ETO. A card that cannot load says so instead of showing $0.
+
+`tab` is back in the split-view registry's Dashboard entry. New:
+`lib/finance-cards.ts`, `lib/dashboard-finances.ts`,
+`components/dashboard/FinancesPanel.tsx`, `components/DashboardTabs.tsx` (recreated),
+`tests/finance-cards.test.ts`.
+
+**Noticed, not changed:** the T&M page itself does not check `failedJobs`, so a Total ETO
+outage can read as $0.00 there; the card checks it.
+
+No schema change, no migration.
