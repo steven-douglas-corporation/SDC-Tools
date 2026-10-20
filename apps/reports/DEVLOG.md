@@ -6866,6 +6866,25 @@ Total ETO. A card that cannot load says so instead of showing $0.
 `components/dashboard/FinancesPanel.tsx`, `components/DashboardTabs.tsx` (recreated),
 `tests/finance-cards.test.ts`.
 
+**"Help shape this tab."** The Finances tab is a prototype and nobody yet knows everything
+it should hold, so each Dashboard tab (Executive and Finances, same wording) ends in two
+large buttons: **Suggest something to add** and **Something looks wrong**. Both use the
+existing feedback drawer and queue; the first files as an enhancement at the lowest
+urgency ("Minor") with suggestion wording and none of the record/field/urgency questions,
+the second is the ordinary "a number is wrong" form. The report is filed under
+"Dashboard — Executive" or "Dashboard — Finances", with the month and tab in its params,
+so a triager does not decode `tab=finances`. The band is absent for a role without
+`feedback:submit`.
+
+The drawer is rendered by the shell's Flag button, which owned its open state, so a page
+had no handle on it. `FeedbackLauncherProvider` (in `AppShell`) is that handle; the Flag
+button is still the only thing that renders the drawer and its own behavior is unchanged
+(it is deliberately left alone). The buttons pass their own view context instead of the
+shell's, which in split view is the left pane whichever pane was clicked. New:
+`components/FeedbackLauncher.tsx`, `components/dashboard/DashboardFeedbackBand.tsx`,
+`lib/dashboard-feedback.ts`, `tests/dashboard-feedback.test.ts`; `FeedbackDrawer` gains an
+optional `suggestion` prop.
+
 **Noticed, not changed:** the T&M page itself does not check `failedJobs`, so a Total ETO
 outage can read as $0.00 there; the card checks it.
 

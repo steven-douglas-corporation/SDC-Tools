@@ -9,6 +9,7 @@ import { Band } from "@/components/dashboard/DashboardLayout";
 import { UtilizationPanel } from "@/components/dashboard/UtilizationPanel";
 import { DashboardTabs } from "@/components/DashboardTabs";
 import { FinancesPanel } from "@/components/dashboard/FinancesPanel";
+import { DashboardFeedbackBand } from "@/components/dashboard/DashboardFeedbackBand";
 import { financeCardsFor } from "@/lib/finance-cards";
 
 // ── The Dashboard (redesigned 2026-08-27) ───────────────────────────────────
@@ -78,6 +79,8 @@ export async function DashboardView({ params }: { params: { tab?: string; m?: st
       <Band label="Capacity &amp; utilization">
         <UtilizationPanel result={overview.utilization} monthLabel={monthLabel(month)} />
       </Band>
+
+      <DashboardFeedbackBand view="executive" month={month} />
     </div>
   );
 

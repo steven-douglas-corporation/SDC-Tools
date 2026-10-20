@@ -5,6 +5,7 @@ import { monthLabel } from "@/components/dashboard/DashboardOverview";
 import { usd } from "@/components/ui/format";
 import type { FinanceCardDef } from "@/lib/finance-cards";
 import { loadPartsSpent, loadTmDollars } from "@/lib/dashboard-finances";
+import { DashboardFeedbackBand } from "@/components/dashboard/DashboardFeedbackBand";
 
 // ── The Finances tab (2026-10-20) ───────────────────────────────────────────
 //
@@ -119,6 +120,10 @@ export function FinancesPanel({ month, cards }: { month: string; cards: FinanceC
           })}
         </div>
       </Band>
+
+      {/* The tab is a prototype and nobody yet knows everything it should hold — this is
+          how the people who use it say. See DashboardFeedbackBand. */}
+      <DashboardFeedbackBand view="finances" month={month} />
     </div>
   );
 }
