@@ -6823,4 +6823,11 @@ the Paylocity note, unchanged).
 * Text that pointed at "the Data Quality tab" now says Data Management (customer-bar
   tooltip, org-chart empty state).
 
+**Who can see it.** The route moved from `employees:edit` (ELT only by default) to
+`dashboard:view`, so MANAGER, PM and SALES reach the sources and the checks as they did on
+the Dashboard. Reconcile with Scheduler is rendered only for `employees:edit`, and
+`reconcileSchedulerRosterAction` now checks `employees:edit` itself (it had relied on the
+page's gate). The Paylocity note shows to everyone. Pinned by
+`tests/data-management-permissions.test.ts`.
+
 No schema change, no migration.

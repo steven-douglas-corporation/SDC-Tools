@@ -2,6 +2,7 @@ import { PageTitle } from "@/components/ui/Typography";
 import { PAGE_SHELL } from "@/components/ui/classnames";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/require-permission";
+import { hasPermission } from "@/lib/permissions";
 import { ReconcileRosterButton } from "@/components/ReconcileRosterButton";
 import { getDataQuality, getPunchExplorer } from "@/lib/data-quality";
 import { getUndefinedHoursTotals } from "@/lib/unattributed-hours";
@@ -55,9 +56,13 @@ import { Band } from "@/components/dashboard/DashboardLayout";
 // same two components and the same two server actions, mounted here instead.
 // The Employees page now points at this screen.
 //
-// Gated on employees:edit, the stronger of the two: the reconcile is read-only,
-// but the import writes to the roster, and a page that mixes both should ask
-// for the permission the writing half needs.
+// ── Who sees what (2026-10-20) ──────────────────────────────────────────────
+//
+// The page is gated on dashboard:view, because the sources and the checks are what the
+// Dashboard's tab showed to those roles. Reconcile with Scheduler needs employees:edit
+// (it reads the Scheduler's roster) and is only rendered for roles that hold it; its
+// server action checks the same permission, because hiding a button is not a gate. The
+// Paylocity note is plain information and shows to everyone.
 export default async function AdminDataManagementPage({
   searchParams,
 }: {
@@ -70,7 +75,8 @@ export default async function AdminDataManagementPage({
     dqMtd?: string;
   }>;
 }) {
-  await requirePagePermission("employees:edit");
+  const session = await requirePagePermission("dashboard:view");
+  const canReconcile = hasPermission(session.user.role, "employees:edit");
   const sp = await searchParams;
   const month = dashboardMonth(sp.m);
 
@@ -142,22 +148,24 @@ export default async function AdminDataManagementPage({
           </p>
 
           <div className="max-w-3xl space-y-4">
-            <section className="rounded-xl border border-sdc-border bg-white p-5">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-sdc-navy">Reconcile with Scheduler</h2>
-              <p className="mt-1.5 text-sm text-sdc-gray-600">
-                Compares this app&apos;s full roster against SDC Scheduler&apos;s team board and reports where the two
-                disagree on active status or team. <strong>Read-only — it changes nothing.</strong> Useful after adding
-                someone, or when a name looks wrong in one app but not the other.
-              </p>
-              <p className="mt-1.5 text-sm text-sdc-gray-600">
-                It matches people <em>by name</em>, so nicknames and spelling differences can show up as unmatched. For
-                the authoritative comparison, which matches on employee id,
-                run <code className="rounded bg-sdc-gray-50 px-1 py-0.5 text-label">scripts/reconcile-employee-groups.ts</code>.
-              </p>
-              <div className="mt-3">
-                <ReconcileRosterButton />
-              </div>
-            </section>
+            {canReconcile && (
+              <section className="rounded-xl border border-sdc-border bg-white p-5">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-sdc-navy">Reconcile with Scheduler</h2>
+                <p className="mt-1.5 text-sm text-sdc-gray-600">
+                  Compares this app&apos;s full roster against SDC Scheduler&apos;s team board and reports where the two
+                  disagree on active status or team. <strong>Read-only — it changes nothing.</strong> Useful after adding
+                  someone, or when a name looks wrong in one app but not the other.
+                </p>
+                <p className="mt-1.5 text-sm text-sdc-gray-600">
+                  It matches people <em>by name</em>, so nicknames and spelling differences can show up as unmatched. For
+                  the authoritative comparison, which matches on employee id,
+                  run <code className="rounded bg-sdc-gray-50 px-1 py-0.5 text-label">scripts/reconcile-employee-groups.ts</code>.
+                </p>
+                <div className="mt-3">
+                  <ReconcileRosterButton />
+                </div>
+              </section>
+            )}
 
             <section className="rounded-xl border border-sdc-border bg-white p-5">
               <h2 className="text-sm font-bold uppercase tracking-wider text-sdc-navy">Supervisors and job titles come from Paylocity</h2>
