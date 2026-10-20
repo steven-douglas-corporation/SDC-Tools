@@ -120,7 +120,7 @@ test("the drill-through carries the STORED customer value on every row", () => {
   assert.match(PANEL, /"Stored As"/, "and it needs a column header saying what it is");
 });
 
-test("aliasing is reported on the Data Quality tab, not just quietly fixed", () => {
+test("aliasing is reported in the Data Quality panel, not just quietly fixed", () => {
   assert.match(DATA_QUALITY, /customerAliasFindings/);
   assert.match(DATA_QUALITY, /customerNaming/);
   const PANEL_DQ = read("components", "DataQualityPanel.tsx");

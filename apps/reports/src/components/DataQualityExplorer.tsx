@@ -60,18 +60,17 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
 }
 
 export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
-  // Pane-aware (2026-09-14) — the Dashboard tab's own params, wherever it is rendered.
+  // Pane-aware (2026-09-14) — this page's own params, wherever it is rendered.
   const url = usePaneUrl();
   const searchParams = url.searchParams;
-  // Local state, independent of the URL-param-driven slicers above — confirmed safe: the
-  // Data Quality tab stays mounted via `hidden` (DashboardTabs.tsx), never remounted by a
-  // slicer's router.push, so this survives every filter change exactly the way
-  // useDraftParamsMenu's own draft state already relies on elsewhere in the app.
+  // Local state, independent of the URL-param-driven slicers above — a slicer's
+  // router.push re-renders this component rather than remounting it, so the sort
+  // survives every filter change exactly the way useDraftParamsMenu's own draft state
+  // already relies on elsewhere in the app.
   const sort = useColumnSort<PunchRowSortKey>();
   const sortedRows = useMemo(() => sortRows(data.rows, sort.sort, PUNCH_ROW_COLUMNS), [data.rows, sort.sort]);
 
-  // Every slicer writes the same way: set or clear one param, keep the rest, and
-  // keep ?tab=quality so changing a filter doesn't bounce you back to Overview.
+  // Every slicer writes the same way: set or clear one param and keep the rest.
   function setParam(key: string, value: string | null) {
     // nextParams, not searchParams directly — these four slicers sit next to
     // each other and get used in quick succession, and until a change commits
@@ -81,7 +80,6 @@ export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
     const qs = nextParams(currentQs);
     if (value) qs.set(key, value);
     else qs.delete(key);
-    qs.set("tab", "quality");
     const q = qs.toString();
     notePendingParams(currentQs, q);
     url.push(qs, { scroll: false });
@@ -171,7 +169,6 @@ export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
               const currentQs = url.searchKey;
               const qs = nextParams(currentQs);
               for (const k of ["dqFrom", "dqTo", "dqEmp", "dqFn", "dqMtd"]) qs.delete(k);
-              qs.set("tab", "quality");
               const q = qs.toString();
               notePendingParams(currentQs, q);
               url.push(qs, { scroll: false });

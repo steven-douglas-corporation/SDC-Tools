@@ -18,7 +18,7 @@ import * as XLSX from "xlsx";
 //     falls short. An override row REPLACES every Paylocity row for its position
 //     code: it fills a code the report lacks (AII, HRM, …) and can correct one
 //     the report files wrongly. Delete it once Paylocity has the code right;
-//     the Data Quality tab lists the overrides Paylocity now covers.
+//     Data Management lists the overrides Paylocity now covers.
 //
 // Codes are matched ignoring case and surrounding spaces ("Shop" = "SHOP").
 
@@ -162,7 +162,7 @@ export function mergePositionFamilies(rows: PositionFamilyRow[]): Map<string, Po
 
 // ── Data quality ────────────────────────────────────────────────────────────
 //
-// The Data Quality tab's Position families section. Everything here is a gap a
+// Data Management's Position families section. Everything here is a gap a
 // person has to close — in Paylocity, in the overrides file, or on the
 // Employees page — so it lists, it never acts.
 

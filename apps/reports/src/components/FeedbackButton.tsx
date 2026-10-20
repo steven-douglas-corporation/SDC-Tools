@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { FeedbackDrawer } from "@/components/FeedbackDrawer";
+import { useFeedbackLauncher } from "@/components/FeedbackLauncher";
 import { buildFeedbackContext, type FeedbackContext, type PaneLocation } from "@/lib/feedback-context";
 import { decodeSplit, splitRoute } from "@/lib/split-view";
 import { rawParams } from "@/lib/pane-url";
@@ -70,6 +71,11 @@ function useActiveViewContext(): FeedbackContext {
 
 export function FeedbackButton({ canSubmit, canView }: { canSubmit: boolean; canView: boolean }) {
   const [open, setOpen] = useState(false);
+  // The drawer a PAGE asked for (the Dashboard's "Suggest something to add" / "Something
+  // looks wrong" buttons — see FeedbackLauncher). It carries the page's own view context,
+  // not the one resolved below, and this button is still the only thing that renders a
+  // drawer. The Flag pill itself is unchanged.
+  const launcher = useFeedbackLauncher();
   // Hooks must run unconditionally, so the context is resolved even for a role
   // that cannot submit — it is cheap (three reads and a memo) and returning
   // early above it would break the rules of hooks.
@@ -97,6 +103,14 @@ export function FeedbackButton({ canSubmit, canView }: { canSubmit: boolean; can
         Flag
       </button>
       {open && <FeedbackDrawer context={context} canView={canView} onClose={() => setOpen(false)} />}
+      {launcher.launch && (
+        <FeedbackDrawer
+          context={launcher.launch.context}
+          suggestion={launcher.launch.suggestion}
+          canView={canView}
+          onClose={launcher.close}
+        />
+      )}
     </>
   );
 }

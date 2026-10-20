@@ -6798,3 +6798,94 @@ New: `src/lib/data-warehouse.ts` (pool + snapshot reads), `src/lib/paylocity-war
 ### Left for the user
 Set `DATAWAREHOUSE_URL` in `.env` (the `reports_app` password is in Windows Credential
 Manager on SERVER-APP1 under `datawarehouse-postgres`).
+
+## 75. Data Quality and Data source health moved to Data Management (2026-10-20)
+
+The Dashboard's Data Quality tab and its "Data source health" card (the "System" band)
+now live on Admin > Data Management. Both are about whether the data can be trusted, not
+about the work the Dashboard shows, and the tab's red issue badge was the only thing
+pulling people to a screen they otherwise never opened.
+
+Data Management is three bands: **Data sources** (the health card), **Data quality**
+(the same four sections, unchanged) and **Employee roster** (Reconcile with Scheduler and
+the Paylocity note, unchanged).
+
+* The Dashboard is now the overview alone: `DashboardTabs` is deleted, the tab, the
+  issue badge and the `dq*` params are gone, and `DashboardView` takes only `m`. The
+  split-view registry's Dashboard entry lists just `m`.
+* The Data Quality band has a month picker (the Dashboard's own `DashboardMonthSelect`,
+  with a `label` prop for its aria text) because Undefined Hours is the one
+  month-scoped check. It defaults to the current month and uses `?m=`.
+* This page is always the Data Quality page, so the punch explorer, the roster file and
+  the position families are read on every visit; on the Dashboard they only ran when the
+  tab was open. The explorer is capped at 3,000 rows (about 5 MB of page in dev).
+* `DataQualityExplorer` no longer writes `tab=quality` on a slicer change.
+* Text that pointed at "the Data Quality tab" now says Data Management (customer-bar
+  tooltip, org-chart empty state).
+
+**Who can see it.** The route moved from `employees:edit` (ELT only by default) to
+`dashboard:view`, so MANAGER, PM and SALES reach the sources and the checks as they did on
+the Dashboard. Reconcile with Scheduler is rendered only for `employees:edit`, and
+`reconcileSchedulerRosterAction` now checks `employees:edit` itself (it had relied on the
+page's gate). The Paylocity note shows to everyone. Pinned by
+`tests/data-management-permissions.test.ts`.
+
+No schema change, no migration.
+
+## 76. Dashboard: Executive and Finances tabs (2026-10-20)
+
+The Dashboard now has two tabs. **Executive** is the overview it has always shown.
+**Finances** is a set of cards, and every card follows one rule: it shows a figure the
+app already shows on another page, computed by that page's own function, and ends in a
+"More details" link to that page. The tab never defines a figure of its own, so a card
+cannot disagree with the page behind it.
+
+First two cards:
+
+* **Parts spent** — the Monthly ETC page's "Parts spent" KPI for the month
+  (`getEtcMonthKpis(...).parts.spent` over `getEtcMonthJobWhere`'s jobs). Links to
+  `/etc?month=`. Says so when the month has no Parts Cost rows yet rather than showing $0.
+* **T&M parts and expenses** — the T&M page's three dollar cards over the month, all
+  jobs (`loadTmPartsLines` + `tmMetricsFrom`). Links to `/tm?start=&end=`.
+
+**Access follows the destination.** Each card declares the permission of the page it links
+to (`lib/finance-cards.ts`), a role is only offered cards it can open, and the tab exists
+only for a role with at least one card. No new permission: widening a card is a click on
+Role Permissions for the page behind it. By default MANAGER and SALES see both cards, PM
+sees Parts spent, ELT sees all; a role with no card sees the Dashboard with no tab strip,
+as before.
+
+**Built on the server, only when asked for.** Finance data is decided from the role and
+built only when the URL says `?tab=finances`, so a role without access never has finance
+figures in its page (a hidden-but-mounted panel would not guarantee that) and the landing
+view pays nothing. Each card loads behind its own Suspense boundary; the T&M card reads
+Total ETO. A card that cannot load says so instead of showing $0.
+
+`tab` is back in the split-view registry's Dashboard entry. New:
+`lib/finance-cards.ts`, `lib/dashboard-finances.ts`,
+`components/dashboard/FinancesPanel.tsx`, `components/DashboardTabs.tsx` (recreated),
+`tests/finance-cards.test.ts`.
+
+**"Help shape this tab."** The Finances tab is a prototype and nobody yet knows everything
+it should hold, so each Dashboard tab (Executive and Finances, same wording) ends in two
+large buttons: **Suggest something to add** and **Something looks wrong**. Both use the
+existing feedback drawer and queue; the first files as an enhancement at the lowest
+urgency ("Minor") with suggestion wording and none of the record/field/urgency questions,
+the second is the ordinary "a number is wrong" form. The report is filed under
+"Dashboard — Executive" or "Dashboard — Finances", with the month and tab in its params,
+so a triager does not decode `tab=finances`. The band is absent for a role without
+`feedback:submit`.
+
+The drawer is rendered by the shell's Flag button, which owned its open state, so a page
+had no handle on it. `FeedbackLauncherProvider` (in `AppShell`) is that handle; the Flag
+button is still the only thing that renders the drawer and its own behavior is unchanged
+(it is deliberately left alone). The buttons pass their own view context instead of the
+shell's, which in split view is the left pane whichever pane was clicked. New:
+`components/FeedbackLauncher.tsx`, `components/dashboard/DashboardFeedbackBand.tsx`,
+`lib/dashboard-feedback.ts`, `tests/dashboard-feedback.test.ts`; `FeedbackDrawer` gains an
+optional `suggestion` prop.
+
+**Noticed, not changed:** the T&M page itself does not check `failedJobs`, so a Total ETO
+outage can read as $0.00 there; the card checks it.
+
+No schema change, no migration.

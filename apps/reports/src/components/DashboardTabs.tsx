@@ -4,48 +4,45 @@ import { startTransition, useOptimistic, type ReactNode } from "react";
 import { usePaneUrl } from "@/components/PaneUrlProvider";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 
-// Two tabs on the Dashboard: the overview it has always shown, and the Data
-// Quality page ported from the Power BI report.
+// Two tabs on the Dashboard: Executive, the overview it has always shown, and
+// Finances, a set of cards that each link to the page that owns the figure.
 //
-// Both panels are server-rendered and handed in as children — this component
-// only decides which one is on screen, so nothing about the dashboard's queries
-// moves to the browser. The hidden panel stays mounted rather than being
-// unmounted, so switching back is instant and the page doesn't refetch.
+// Only rendered for a role that can see at least one Finances card; everyone else
+// gets the Executive content with no tab strip at all (see (app)/page.tsx).
+//
+// Executive is server output handed in and kept mounted under `hidden`, so switching
+// back to it is instant. Finances is NOT: the server builds it only when the URL says
+// `?tab=finances`, so it costs the landing view nothing and is never in the page for
+// someone who has not opened it. That is also why the tab is a URL param rather than
+// local state.
 export function DashboardTabs({
-  overview,
-  dataQuality,
-  issueCount,
+  executive,
+  finances,
 }: {
-  overview: ReactNode;
-  dataQuality: ReactNode;
-  // Total open data-quality findings — shown as a badge, because the whole
-  // point of a second tab is that nobody visits it unless something says to.
-  issueCount: number;
+  executive: ReactNode;
+  /** Null until the URL says the Finances tab is open — the server renders it on demand. */
+  finances: ReactNode | null;
 }) {
-  // The tab is a URL param, not local state. Two reasons: the Data Quality
-  // panel's own slicers navigate, and they must not knock you back to Overview;
-  // and the server needs to know which tab is open so it can skip the explorer's
-  // whole-window punch scan when it isn't.
   // Pane-aware (2026-09-14): the Dashboard tab's own params, wherever it is rendered.
   const url = usePaneUrl();
-  const urlTab = url.searchParams.get("tab") === "quality" ? "quality" : "overview";
-  // The tab switch is a server round trip (the Data Quality queries only run once the URL
-  // says so), and the URL does not change until it lands. Until then the click used to look
-  // like it did nothing, so people clicked again. The optimistic value flips the tab at once
+  const urlTab = url.searchParams.get("tab") === "finances" ? "finances" : "executive";
+  // The Finances tab is a server round trip (nothing is queried until the URL says so),
+  // and the URL does not change until it lands. Until then the click used to look like
+  // it did nothing, so people clicked again. The optimistic value flips the tab at once
   // and snaps back to the URL's own when the navigation settles — no state to go stale.
-  const [tab, setOptimisticTab] = useOptimistic<"overview" | "quality", "overview" | "quality">(urlTab, (_, next) => next);
-  const loading = tab === "quality" && urlTab !== "quality";
+  const [tab, setOptimisticTab] = useOptimistic<"executive" | "finances", "executive" | "finances">(urlTab, (_, next) => next);
+  const loading = tab === "finances" && urlTab !== "finances";
 
-  function setTab(next: "overview" | "quality") {
+  function setTab(next: "executive" | "finances") {
     // A repeat click on the tab already shown (or already loading) has nothing to add.
     if (next === tab) return;
     // See lib/url-params.ts: useSearchParams still reports the pre-navigation
     // value while a change is in flight, so building straight from it can
-    // silently revert whatever was set a moment ago.
+    // silently revert whatever was set a moment ago (the month, mostly).
     const currentQs = url.searchKey;
     const qs = nextParams(currentQs);
-    if (next === "quality") qs.set("tab", "quality");
-    else for (const k of ["tab", "dqFrom", "dqTo", "dqEmp", "dqFn", "dqMtd"]) qs.delete(k);
+    if (next === "finances") qs.set("tab", "finances");
+    else qs.delete("tab");
     const q = qs.toString();
     notePendingParams(currentQs, q);
     startTransition(() => {
@@ -64,28 +61,23 @@ export function DashboardTabs({
   return (
     <>
       <div className="mb-6 flex items-center gap-1 border-b border-sdc-border" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === "overview"} onClick={() => setTab("overview")} className={tabClass(tab === "overview")}>
-          Overview
+        <button type="button" role="tab" aria-selected={tab === "executive"} onClick={() => setTab("executive")} className={tabClass(tab === "executive")}>
+          Executive
         </button>
-        <button type="button" role="tab" aria-selected={tab === "quality"} onClick={() => setTab("quality")} className={tabClass(tab === "quality")}>
-          Data Quality
-          {issueCount > 0 && (
-            <span className="ml-2 rounded-full bg-sdc-red px-1.5 py-0.5 text-label font-bold text-white tabular-nums">{issueCount}</span>
-          )}
+        <button type="button" role="tab" aria-selected={tab === "finances"} onClick={() => setTab("finances")} className={tabClass(tab === "finances")}>
+          Finances
         </button>
       </div>
-      {/* `hidden` rather than a conditional render: the panels are server output,
-          so keeping both mounted costs nothing and makes the switch instant. */}
-      <div role="tabpanel" hidden={tab !== "overview"}>
-        {overview}
+      <div role="tabpanel" hidden={tab !== "executive"}>
+        {executive}
       </div>
-      <div role="tabpanel" hidden={tab !== "quality"}>
+      <div role="tabpanel" hidden={tab !== "finances"}>
         {loading ? (
           <p role="status" className="py-10 text-center text-sm text-sdc-muted">
-            Loading Data Quality…
+            Loading Finances…
           </p>
         ) : (
-          dataQuality
+          finances
         )}
       </div>
     </>

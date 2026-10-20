@@ -417,7 +417,7 @@ function PunchesSection({
           <Link href="/etc" className="font-semibold text-sdc-blue hover:underline">
             ETC page
           </Link>
-          &apos;s <strong>Data Quality — Undefined Hours</strong> card, for the month selected at the top.
+          &apos;s <strong>Data Quality — Undefined Hours</strong> card, for the month selected above.
         </p>
         <p className="rounded-lg border border-sdc-border bg-sdc-gray-50 px-4 py-3 text-xs leading-relaxed text-sdc-gray-600">
           <strong>One check from the report is missing.</strong> Its &quot;Section-Function Exception&quot; case flags

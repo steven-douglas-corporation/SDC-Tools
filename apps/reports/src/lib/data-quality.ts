@@ -226,9 +226,8 @@ export async function getDataQuality(): Promise<DataQuality> {
 // Is Punch Valid / Reason on every row.
 //
 // Deliberately a SEPARATE call from getDataQuality: it reads every punch in the
-// window to classify it, so it only runs when the Data Quality tab is actually
-// open (see the ?tab= check in the dashboard). The dashboard's landing view must
-// not pay for it.
+// window to classify it, so it only runs on Data Management. The Dashboard's landing
+// view must not pay for it.
 
 export type PunchRow = PunchIssue & { valid: boolean; reason: string };
 

@@ -4,6 +4,7 @@ import ColumnResize from "@/components/ColumnResize";
 import ScrollHandoff from "@/components/ScrollHandoff";
 import { ToastProvider } from "@/components/ui/Toast";
 import { FeedbackButton } from "@/components/FeedbackButton";
+import { FeedbackLauncherProvider } from "@/components/FeedbackLauncher";
 import { DEFAULT_PREFS, sidebarWidthCss, type SidebarPrefs } from "@/lib/sidebar-prefs";
 
 export default function AppShell({
@@ -64,8 +65,14 @@ export default function AppShell({
   // user — has never actually rendered anything. Found auditing this exact
   // guarantee, not reported on its own; fixed here rather than left for whoever
   // next wonders why a "critical" refresh toast never shows.
+  //
+  // ── FeedbackLauncherProvider (2026-10-20) ────────────────────────────────
+  //
+  // Lets a page open the feedback drawer (the Dashboard's two bottom-of-tab buttons) —
+  // the Flag button below is still the only thing that renders it.
   return (
     <ToastProvider>
+      <FeedbackLauncherProvider canSubmit={canSubmitFeedback}>
       <div
         data-app-shell
         className="flex min-h-[var(--app-vh)]"
@@ -99,6 +106,7 @@ export default function AppShell({
             cannot use usePaneUrl() from this position. */}
         <FeedbackButton canSubmit={canSubmitFeedback} canView={canViewFeedback} />
       </div>
+      </FeedbackLauncherProvider>
     </ToastProvider>
   );
 }

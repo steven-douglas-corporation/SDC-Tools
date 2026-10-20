@@ -42,14 +42,24 @@ export function FeedbackDrawer({
   context,
   canView,
   onClose,
+  suggestion = false,
 }: {
   context: FeedbackContext;
   /** Whether this role can open /feedback — decides what the confirmation promises. */
   canView: boolean;
   onClose: () => void;
+  /**
+   * Opened from a "Suggest something to add" button (the Dashboard's, 2026-10-20) rather than
+   * from Flag. The same drawer and the same queue, worded as a suggestion: no "what's wrong"
+   * kind picker, no record/field/urgency questions that have no meaning for a wish, and it
+   * files as an enhancement at the lowest urgency. The Flag button never sets this.
+   */
+  suggestion?: boolean;
 }) {
-  const [category, setCategory] = useState<FeedbackCategory>(DEFAULT_FEEDBACK_CATEGORY);
-  const [severity, setSeverity] = useState<FeedbackSeverity>(DEFAULT_FEEDBACK_SEVERITY);
+  const [category, setCategory] = useState<FeedbackCategory>(suggestion ? "enhancement" : DEFAULT_FEEDBACK_CATEGORY);
+  // "Minor", the lowest of the three: a suggestion is not a wrong number, and the queue's
+  // default ("Wrong number") would file every wish as a defect.
+  const [severity, setSeverity] = useState<FeedbackSeverity>(suggestion ? "cosmetic" : DEFAULT_FEEDBACK_SEVERITY);
   // Prefilled from the captured context, and editable: the params can say the
   // user was filtered to job 1131 without that being the job they're unhappy
   // about. A prefill that cannot be corrected is worse than no prefill.
@@ -71,7 +81,11 @@ export function FeedbackDrawer({
   function submit() {
     setError(null);
     if (!body.trim()) {
-      setError("Add a line saying what's wrong — that's the part a fixer reads first.");
+      setError(
+        suggestion
+          ? "Add a line saying what you'd like to see."
+          : "Add a line saying what's wrong — that's the part a fixer reads first.",
+      );
       return;
     }
     startTransition(async () => {
@@ -124,9 +138,9 @@ export function FeedbackDrawer({
 
   return (
     <BuildReadinessDrawer
-      title="Report a problem"
+      title={suggestion ? "Suggest an addition" : "Report a problem"}
       subtitle={context.viewLabel ?? context.routePath}
-      breadcrumb={["Report a problem"]}
+      breadcrumb={[suggestion ? "Suggest an addition" : "Report a problem"]}
       onBreadcrumbClick={() => {}}
       onClose={onClose}
     >
@@ -149,52 +163,56 @@ export function FeedbackDrawer({
           </div>
         </div>
 
-        <div>
-          <div className={LABEL}>What&apos;s wrong?</div>
-          <div className="mt-1.5 flex flex-wrap gap-2">
-            {FEEDBACK_CATEGORIES.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setCategory(c)}
-                className={`rounded-lg border px-3 py-1.5 text-sm ${
-                  category === c
-                    ? "border-sdc-blue bg-sdc-blue-light font-semibold text-sdc-blue-dark"
-                    : "border-sdc-border bg-white text-sdc-gray-700 hover:border-sdc-blue"
-                }`}
-              >
-                {FEEDBACK_CATEGORY_LABELS[c]}
-              </button>
-            ))}
+        {!suggestion && (
+          <div>
+            <div className={LABEL}>What&apos;s wrong?</div>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {FEEDBACK_CATEGORIES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCategory(c)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm ${
+                    category === c
+                      ? "border-sdc-blue bg-sdc-blue-light font-semibold text-sdc-blue-dark"
+                      : "border-sdc-border bg-white text-sdc-gray-700 hover:border-sdc-blue"
+                  }`}
+                >
+                  {FEEDBACK_CATEGORY_LABELS[c]}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={LABEL} htmlFor="fb-record">
-              Which record
-            </label>
-            <input
-              id="fb-record"
-              className={INPUT}
-              value={recordRef}
-              onChange={(e) => setRecordRef(e.target.value)}
-              placeholder="Job, part or person"
-            />
+        {!suggestion && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={LABEL} htmlFor="fb-record">
+                Which record
+              </label>
+              <input
+                id="fb-record"
+                className={INPUT}
+                value={recordRef}
+                onChange={(e) => setRecordRef(e.target.value)}
+                placeholder="Job, part or person"
+              />
+            </div>
+            <div>
+              <label className={LABEL} htmlFor="fb-field">
+                Which field
+              </label>
+              <input
+                id="fb-field"
+                className={INPUT}
+                value={fieldLabel}
+                onChange={(e) => setFieldLabel(e.target.value)}
+                placeholder="e.g. Left to Invoice"
+              />
+            </div>
           </div>
-          <div>
-            <label className={LABEL} htmlFor="fb-field">
-              Which field
-            </label>
-            <input
-              id="fb-field"
-              className={INPUT}
-              value={fieldLabel}
-              onChange={(e) => setFieldLabel(e.target.value)}
-              placeholder="e.g. Left to Invoice"
-            />
-          </div>
-        </div>
+        )}
 
         {isAccuracy && (
           <div className="grid grid-cols-2 gap-3">
@@ -227,36 +245,42 @@ export function FeedbackDrawer({
 
         <div>
           <label className={LABEL} htmlFor="fb-body">
-            Details
+            {suggestion ? "What would you like to see?" : "Details"}
           </label>
           <textarea
             id="fb-body"
             className="min-h-[90px] w-full rounded-lg border border-sdc-border bg-white p-2.5 text-sm text-sdc-navy outline-none focus:border-sdc-blue"
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="What made you think it's wrong? Anything you already checked?"
+            placeholder={
+              suggestion
+                ? "A number you look up often, a comparison you make by hand, or a page you wish this linked to."
+                : "What made you think it's wrong? Anything you already checked?"
+            }
           />
         </div>
 
-        <div>
-          <div className={LABEL}>How urgent</div>
-          <div className="mt-1.5 flex flex-wrap gap-2">
-            {FEEDBACK_SEVERITIES.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSeverity(s)}
-                className={`rounded-lg border px-3 py-1.5 text-sm ${
-                  severity === s
-                    ? "border-sdc-blue bg-sdc-blue-light font-semibold text-sdc-blue-dark"
-                    : "border-sdc-border bg-white text-sdc-gray-700 hover:border-sdc-blue"
-                }`}
-              >
-                {FEEDBACK_SEVERITY_LABELS[s]}
-              </button>
-            ))}
+        {!suggestion && (
+          <div>
+            <div className={LABEL}>How urgent</div>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {FEEDBACK_SEVERITIES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSeverity(s)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm ${
+                    severity === s
+                      ? "border-sdc-blue bg-sdc-blue-light font-semibold text-sdc-blue-dark"
+                      : "border-sdc-border bg-white text-sdc-gray-700 hover:border-sdc-blue"
+                  }`}
+                >
+                  {FEEDBACK_SEVERITY_LABELS[s]}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {error && (
           <div className="rounded-lg border border-sdc-red-border bg-sdc-red-bg px-3 py-2 text-sm text-sdc-red-text">{error}</div>
@@ -276,7 +300,7 @@ export function FeedbackDrawer({
             disabled={pending}
             className="rounded-lg bg-sdc-blue px-4 py-2 text-sm font-semibold text-white hover:bg-sdc-blue-dark disabled:opacity-60"
           >
-            {pending ? "Sending…" : "Send feedback"}
+            {pending ? "Sending…" : suggestion ? "Send suggestion" : "Send feedback"}
           </button>
         </div>
       </div>

@@ -94,7 +94,7 @@ export type RosterQuality = {
 };
 
 /**
- * The Data Quality tab's roster section. Reads the file live (it is small), so
+ * Data Management's roster section. Reads the file live (it is small), so
  * the findings describe the file as it is now, not as of the last pass. Never
  * throws: a bad file is itself the finding.
  */

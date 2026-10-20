@@ -50,9 +50,12 @@ export const ROUTE_PERMISSIONS: readonly { path: string; permission: Permission 
   // tests/permissions.test.ts pins this.
   { path: "/feedback", permission: "feedback:view" },
   { path: "/admin/users", permission: "users:manage" },
-  // Roster maintenance moved off the Employees page (2026-08-24). Gated on the
-  // permission its writing half needs, not the read-only half.
-  { path: "/admin/data-management", permission: "employees:edit" },
+  // Roster maintenance moved off the Employees page (2026-08-24), gated on employees:edit.
+  // Since 2026-10-20 the page also holds the Dashboard's old Data Quality tab and Data
+  // source health, which anyone with dashboard:view could already see, so the page opens
+  // to dashboard:view and the one roster tool that needs more (Reconcile with Scheduler)
+  // checks employees:edit itself — on the page, and in its server action.
+  { path: "/admin/data-management", permission: "dashboard:view" },
   { path: "/admin/permissions", permission: "permissions:manage" },
 ];
 
