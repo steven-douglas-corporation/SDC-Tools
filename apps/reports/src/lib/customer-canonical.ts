@@ -240,7 +240,7 @@ const CANONICAL: CanonicalEntry[] = [
     note:
       "Reviewed and combined 2026-08-31 by request. There is NO account-id evidence: #1794 has CAccCustomerID NULL and job " +
       "1163 ('Haemonetics') has no TotalETO project, so this is a human decision recorded here rather than something the " +
-      "data proves. Also still reported on the Data Quality tab so the source names can be standardized.",
+      "data proves. Also still reported on Data Management so the source names can be standardized.",
   },
 ];
 
@@ -277,7 +277,7 @@ for (const entry of CANONICAL) {
   BY_ALIAS.set(normalizeCustomerName(entry.name), entry);
 }
 
-/** The registry, for the Data Quality tab and for tests that assert what is merged. */
+/** The registry, for the Data Quality section of Data Management and for tests that assert what is merged. */
 export function canonicalRegistry(): readonly CanonicalEntry[] {
   return CANONICAL;
 }
@@ -437,7 +437,7 @@ export function pickCanonicalName(rawNames: { name: string; count: number }[]): 
 // Grouping fixes the chart. It does NOT fix the data — the Customer field on the
 // Projects page still holds seven spellings of First Solar — and a fix that
 // makes a problem invisible is how the problem becomes permanent. This is what
-// the Data Quality tab reports so the source can eventually be standardized.
+// Data Management's Data Quality section reports so the source can eventually be standardized.
 
 export type CustomerAliasGroup = {
   canonicalCustomerId: string;
@@ -457,7 +457,7 @@ export type CustomerAliasGroup = {
 
 type AliasFindingJob = CanonicalCustomerJob & { jobId: string };
 
-/** Human words for what a match was based on. Used verbatim on the Data Quality tab. */
+/** Human words for what a match was based on. Used verbatim in Data Management's Data Quality section. */
 function evidenceFor(matchedBy: CanonicalMatch, accountId: string | null): string {
   switch (matchedBy) {
     case "account-registry":

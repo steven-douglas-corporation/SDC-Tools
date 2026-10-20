@@ -113,7 +113,7 @@ export type PositionFamilyQuality = {
 };
 
 /**
- * The Data Quality tab's Position families section. Reads the table the last
+ * Data Management's Position families section. Reads the table the last
  * good pass wrote (not the files), because that table is what everything else
  * reads — a file problem shows as the step's failed status instead.
  */

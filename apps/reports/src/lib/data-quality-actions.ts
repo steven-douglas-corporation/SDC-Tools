@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { SECTIONS } from "@/lib/sections";
 import { assertActionPermission } from "@/lib/require-permission";
 
-// Employee drill-through for the Data Quality tab.
+// Employee drill-through for the Data Quality section of Data Management.
 //
 // The Power BI report drills two ways: on Job (its "Job Detail" pages, keyed on
 // Job Id) and on Employee Name (its "Hours Detail" page). The job drill has a
@@ -46,9 +46,10 @@ export async function getEmployeePunches(employeeId: string): Promise<EmployeePu
   // Server Actions are reachable by anyone who can POST to the app, not only by
   // the component that renders the button (see require-permission.ts). This one
   // returns a named person's complete punch history, and until 2026-09-14 it
-  // had no check at all. It is hosted on the Dashboard's Data Quality tab
-  // (DataQualityPanel, rendered by (app)/page.tsx), so it needs exactly what
-  // that page needs: dashboard:view.
+  // had no check at all. It is hosted on Data Management (DataQualityPanel,
+  // rendered by (app)/admin/data-management/page.tsx, which takes dashboard:view
+  // since 2026-10-20 — before that it was the Dashboard's tab), so it needs
+  // exactly what that page needs: dashboard:view.
   await assertActionPermission("dashboard:view");
   const [employee, punches] = await Promise.all([
     prisma.employee.findFirst({ where: { paylocityId: employeeId }, select: { name: true, department: true } }),

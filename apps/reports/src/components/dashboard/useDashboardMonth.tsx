@@ -54,7 +54,7 @@ export function useDashboardMonth(month: string): DashboardMonthNav {
     setTarget(ym);
     // See lib/url-params.ts: useSearchParams still reports the pre-navigation
     // value while a change is in flight, so building straight from it can revert
-    // whatever the Data Quality tab or another control set a moment ago.
+    // whatever another control set a moment ago.
     const currentQs = url.searchKey;
     const qs = nextParams(currentQs);
     qs.set("m", ym);

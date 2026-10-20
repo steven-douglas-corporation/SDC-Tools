@@ -344,7 +344,7 @@ export function isEmptyPlan(p: RosterPlan): boolean {
 
 // ── Data quality: how the roster file and the app disagree ─────────────────
 //
-// The Dashboard's Data Quality tab (DataQualityPanel's roster section). The sync
+// Data Management's Data Quality section (DataQualityPanel's roster section). The sync
 // deliberately leaves `active` alone, so the places where Paylocity and the app
 // disagree about who is current are exactly what a person has to decide — this
 // lists them rather than acting on them.

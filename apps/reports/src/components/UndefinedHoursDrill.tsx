@@ -5,7 +5,7 @@ import { UndefinedHoursPanel } from "@/components/UndefinedHoursPanel";
 import { loadUnattributedDetail } from "@/lib/unattributed-actions";
 import type { UnattributedDetail } from "@/lib/unattributed-hours";
 
-// The Dashboard's Data Quality tab hosting of the Monthly ETC "Data Quality — Undefined
+// Data Management's hosting of the Monthly ETC "Data Quality — Undefined
 // Hours" drill. It is the SAME panel fed by the SAME action (loadUnattributedDetail), so
 // the rows, reason cards, filters, grouping and the KPI reconciliation line are
 // identical by construction rather than by two implementations agreeing.
