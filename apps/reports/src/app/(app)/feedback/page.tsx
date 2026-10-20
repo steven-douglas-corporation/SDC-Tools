@@ -154,7 +154,7 @@ export async function FeedbackView({
         )}
       </p>
 
-      {/* Status tabs as URL params, the DashboardTabs pattern — so a filtered
+      {/* Status tabs as URL params — so a filtered
           queue survives a tab/split move and can be sent to someone. */}
       <div className="mb-4 flex items-center gap-1 border-b border-sdc-border-soft">
         {TABS.filter((t) => t.key !== "mine" || canTriage).map((t) => {

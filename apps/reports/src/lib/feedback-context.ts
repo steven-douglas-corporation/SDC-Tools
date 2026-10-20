@@ -72,8 +72,8 @@ export type FeedbackContext = {
 //            /job-cost-explorer takes `asOf`. All four are listed; the format
 //            guard below is what keeps `asOf` from landing in periodMonth when
 //            it carries a full date rather than a month.
-//   employee /hours takes `employees` (multi-select); the dashboard's Data
-//            Quality tab takes `dqEmp`. There is no singular `employee`
+//   employee /hours takes `employees` (multi-select); Data Management's
+//            Data Quality section takes `dqEmp`. There is no singular `employee`
 //            anywhere, which is why one is not listed.
 //
 // Order matters: the first key present wins, so the more specific single-record

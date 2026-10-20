@@ -6798,3 +6798,29 @@ New: `src/lib/data-warehouse.ts` (pool + snapshot reads), `src/lib/paylocity-war
 ### Left for the user
 Set `DATAWAREHOUSE_URL` in `.env` (the `reports_app` password is in Windows Credential
 Manager on SERVER-APP1 under `datawarehouse-postgres`).
+
+## 75. Data Quality and Data source health moved to Data Management (2026-10-20)
+
+The Dashboard's Data Quality tab and its "Data source health" card (the "System" band)
+now live on Admin > Data Management. Both are about whether the data can be trusted, not
+about the work the Dashboard shows, and the tab's red issue badge was the only thing
+pulling people to a screen they otherwise never opened.
+
+Data Management is three bands: **Data sources** (the health card), **Data quality**
+(the same four sections, unchanged) and **Employee roster** (Reconcile with Scheduler and
+the Paylocity note, unchanged).
+
+* The Dashboard is now the overview alone: `DashboardTabs` is deleted, the tab, the
+  issue badge and the `dq*` params are gone, and `DashboardView` takes only `m`. The
+  split-view registry's Dashboard entry lists just `m`.
+* The Data Quality band has a month picker (the Dashboard's own `DashboardMonthSelect`,
+  with a `label` prop for its aria text) because Undefined Hours is the one
+  month-scoped check. It defaults to the current month and uses `?m=`.
+* This page is always the Data Quality page, so the punch explorer, the roster file and
+  the position families are read on every visit; on the Dashboard they only ran when the
+  tab was open. The explorer is capped at 3,000 rows (about 5 MB of page in dev).
+* `DataQualityExplorer` no longer writes `tab=quality` on a slicer change.
+* Text that pointed at "the Data Quality tab" now says Data Management (customer-bar
+  tooltip, org-chart empty state).
+
+No schema change, no migration.

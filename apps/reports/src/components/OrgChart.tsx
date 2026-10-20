@@ -225,7 +225,7 @@ export function OrgChart({
     return (
       <EmptyState
         title="Position families haven't been imported yet"
-        message="The chart needs Paylocity's Position_Families file. Once the hourly sync has read it (see Data Quality › Position families), this view fills in."
+        message="The chart needs Paylocity's Position_Families file. Once the hourly sync has read it (see Data Management › Position families), this view fills in."
       />
     );
   }

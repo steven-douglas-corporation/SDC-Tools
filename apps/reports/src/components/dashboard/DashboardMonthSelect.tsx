@@ -25,7 +25,11 @@ const MONTH_NAMES = [
 // both of which exist for months the ETC process has never opened, so gating
 // this on ETC months would hide real data. It shares the geometry tokens, which
 // is the part that has to match.
-export function DashboardMonthSelect({ month }: { month: string }) {
+//
+// Also used on Data Management (2026-10-20) for the Undefined Hours check, which is
+// month-scoped like the Dashboard figures; `label` only changes what a screen reader
+// is told the two dropdowns are for.
+export function DashboardMonthSelect({ month, label = "Dashboard" }: { month: string; label?: string }) {
   // The navigation itself lives in useDashboardMonth, shared with the Execution
   // Calendar's ‹ › arrows — one implementation of "go to this month", so the two
   // controls cannot drift apart or end up owning separate months.
@@ -53,7 +57,7 @@ export function DashboardMonthSelect({ month }: { month: string }) {
         onChange={(e) => goTo(`${shownYear}-${e.target.value}`)}
         disabled={pending}
         className={selectClass}
-        aria-label="Dashboard month"
+        aria-label={`${label} month`}
         aria-busy={pending}
       >
         {MONTH_NAMES.map((name, i) => (
@@ -67,7 +71,7 @@ export function DashboardMonthSelect({ month }: { month: string }) {
         onChange={(e) => goTo(`${e.target.value}-${shownMonth}`)}
         disabled={pending}
         className={selectClass}
-        aria-label="Dashboard year"
+        aria-label={`${label} year`}
         aria-busy={pending}
       >
         {years.map((y) => (

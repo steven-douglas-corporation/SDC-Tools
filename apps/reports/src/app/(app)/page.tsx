@@ -1,20 +1,10 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
-import { getDataQuality, getPunchExplorer } from "@/lib/data-quality";
-import { getUndefinedHoursTotals } from "@/lib/unattributed-hours";
-import { getRosterQuality } from "@/lib/paylocity-roster-sync";
-import { getPositionFamilyQuality } from "@/lib/position-families-sync";
-import { DashboardTabs } from "@/components/DashboardTabs";
-import { DataQualityPanel } from "@/components/DataQualityPanel";
-import { recentRefreshRuns, currentRefresh } from "@/lib/refresh-service";
-import { buildSourceHealth } from "@/lib/source-health";
 import { PageTitle } from "@/components/ui/Typography";
 import { BUTTON_PRIMARY, PAGE_SHELL } from "@/components/ui/classnames";
 import { requirePagePermission } from "@/lib/require-permission";
 import { getDashboardOverview, dashboardMonth } from "@/lib/dashboard-overview";
 import { DashboardOverviewPanel, monthLabel } from "@/components/dashboard/DashboardOverview";
 import { DashboardMonthSelect } from "@/components/dashboard/DashboardMonthSelect";
-import { RefreshScheduleCard } from "@/components/dashboard/RefreshScheduleCard";
 import { Band } from "@/components/dashboard/DashboardLayout";
 import { UtilizationPanel } from "@/components/dashboard/UtilizationPanel";
 
@@ -45,62 +35,16 @@ import { UtilizationPanel } from "@/components/dashboard/UtilizationPanel";
 // number about today wearing a label about the past. It says "current status" on
 // the section instead.
 //
-// Preserved from the old page, unchanged in behaviour: the Data Quality tab and
-// its issue badge, the Manage Jobs button, and the refresh-status card (moved to
-// the bottom — it is a caveat on the figures, not one of them).
+// The Data Quality tab (with its issue badge) and the "Data source health" card
+// moved to Admin > Data Management on 2026-10-20. They are about whether to
+// trust the data rather than about the work, and the Dashboard is now only the
+// work. The Manage Jobs button stays.
 
-export async function DashboardView({ params }: { params: {
-    tab?: string;
-    m?: string;
-    dqFrom?: string;
-    dqTo?: string;
-    dqEmp?: string;
-    dqFn?: string;
-    dqMtd?: string;
-  } }) {
+export async function DashboardView({ params }: { params: { m?: string } }) {
   await requirePagePermission("dashboard:view");
-  const sp = params;
-  const month = dashboardMonth(sp.m);
-  // The Data Quality explorer classifies every punch in the window, so it runs
-  // only when that tab is actually open. The dashboard's landing view must not
-  // pay for it — which is also why the tab lives in the URL rather than in
-  // client state alone.
-  const onQualityTab = sp.tab === "quality";
+  const month = dashboardMonth(params.m);
 
-  const [overview, dataQuality, explorer, roster, families, freshnessRows, refreshRuns, liveRefresh, undefinedHours] = await Promise.all([
-    getDashboardOverview(month),
-    // The Power BI report's Data Quality page, rebuilt locally — see
-    // lib/data-quality.ts for where each rule comes from.
-    getDataQuality(),
-    onQualityTab
-      ? getPunchExplorer({ from: sp.dqFrom, to: sp.dqTo, employeeId: sp.dqEmp, functionId: sp.dqFn, monthToDate: sp.dqMtd === "1" })
-      : null,
-    // The Paylocity roster section reads the roster file live — same reason as the
-    // explorer for running only on the Data Quality tab.
-    onQualityTab ? getRosterQuality() : null,
-    // Position families: the table the hourly sync builds, read only on that tab too.
-    onQualityTab ? getPositionFamilyQuality() : null,
-    prisma.powerBiFreshness.findMany(),
-    // The last few passes (§25.11). ONE would answer "who refreshed and when",
-    // which is all the old card asked; the health panel also draws each source's
-    // own recent outcomes from these, which is what makes "failing since 6am"
-    // distinguishable from "failed once just now" — see lib/source-health.ts.
-    // 20, not 6, since 2026-09-09. Six rows is six hours of a quiet day and about
-    // four minutes of a busy one: five manual clicks in a row (which is what people
-    // do when a source keeps failing) pushed every successful hourly pass out of the
-    // window, so "Last success" read "not in recent history" for a source that had
-    // in fact succeeded forty minutes earlier — the one fact that distinguishes
-    // "Total ETO is broken" from "Total ETO is an hour stale".
-    recentRefreshRuns(20),
-    // So a source being worked on right now reads as refreshing rather than as
-    // whatever it was on the last completed pass.
-    currentRefresh(),
-    // The Monthly ETC card's own figure for this month (same function), so the tile's
-    // headline and the detail it opens cannot disagree with that page.
-    getUndefinedHoursTotals(month),
-    // Which jobs actually have a Scheduler project, so a FAT row is never a dead
-    // link. Fail-soft: an unreachable Scheduler yields an empty set (no links).
-  ]);
+  const overview = await getDashboardOverview(month);
 
   return (
     <div className={PAGE_SHELL}>
@@ -110,9 +54,8 @@ export async function DashboardView({ params }: { params: {
           page, and the rule is what says so.
 
           No "Refresh Data" button here on purpose — RefreshDataButton is already
-          in the sidebar on every page (the Refresh card at the bottom points
-          readers there), and a second copy of a global control is a second thing
-          to keep in step, not a convenience. */}
+          in the sidebar on every page, and a second copy of a global control is
+          a second thing to keep in step, not a convenience. */}
       <div className="mb-7 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-sdc-border pb-5">
         <div className="min-w-0">
           <PageTitle>Dashboard</PageTitle>
@@ -129,42 +72,19 @@ export async function DashboardView({ params }: { params: {
         </div>
       </div>
 
-      <DashboardTabs
-        issueCount={dataQuality.future.count + dataQuality.afterCompletion.count + dataQuality.undefinedEmployees.count}
-        dataQuality={
-          <DataQualityPanel
-            dq={dataQuality}
-            explorer={explorer}
-            roster={roster}
-            families={families}
-            month={month}
-            undefinedHours={undefinedHours}
-          />
-        }
-        overview={
-          // Four labelled bands, not five equal blocks in a stack. The KPI
-          // strip and the first two bands live inside DashboardOverviewPanel;
-          // capacity and the system metadata are bands here because they are
-          // separate components. See DashboardLayout.tsx.
-          <div className="flex flex-col gap-8">
-            <DashboardOverviewPanel data={overview} />
+      {/* Bands, not equal blocks in a stack. The KPI strip and the first two
+          bands live inside DashboardOverviewPanel; capacity is a band here
+          because it is a separate component. See DashboardLayout.tsx. */}
+      <div className="flex flex-col gap-8">
+        <DashboardOverviewPanel data={overview} />
 
-            {/* The page's most detailed figures — the "and here is the detail"
-                answer to the hours KPIs above. Same `overview` object, same
-                month: no second month state and no second fetch. */}
-            <Band label="Capacity &amp; utilization">
-              <UtilizationPanel result={overview.utilization} monthLabel={monthLabel(month)} />
-            </Band>
-
-            {/* Operational metadata, deliberately last and deliberately quiet —
-                a muted band label and a lighter container, so it stays findable
-                without competing with a business figure. */}
-            <Band label="System" tone="muted">
-              <RefreshScheduleCard health={buildSourceHealth({ freshness: freshnessRows, runs: refreshRuns, running: liveRefresh })} />
-            </Band>
-          </div>
-        }
-      />
+        {/* The page's most detailed figures — the "and here is the detail"
+            answer to the hours KPIs above. Same `overview` object, same
+            month: no second month state and no second fetch. */}
+        <Band label="Capacity &amp; utilization">
+          <UtilizationPanel result={overview.utilization} monthLabel={monthLabel(month)} />
+        </Band>
+      </div>
     </div>
   );
 }
@@ -183,14 +103,6 @@ export async function DashboardView({ params }: { params: {
 // Nothing about this route's behaviour changes: same URL, same params, same server
 // render. `searchParams` is still awaited HERE, which is what keeps this route
 // dynamic exactly as before.
-export default async function Home({ searchParams }: { searchParams: Promise<{
-    tab?: string;
-    m?: string;
-    dqFrom?: string;
-    dqTo?: string;
-    dqEmp?: string;
-    dqFn?: string;
-    dqMtd?: string;
-  }> }) {
+export default async function Home({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
   return <DashboardView params={await searchParams} />;
 }

@@ -232,7 +232,7 @@ export function CustomerBars({
         {mergedRows > 0 && (
           <>
             {" · "}
-            <span title="Rows that combined more than one stored customer name. The Data Quality tab lists them all.">
+            <span title="Rows that combined more than one stored customer name. Data Management lists them all.">
               {mergedRows} row{mergedRows === 1 ? "" : "s"} combine multiple stored names
             </span>
           </>
