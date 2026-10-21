@@ -26,7 +26,7 @@ export type PunchSortKey = "date" | "jobId" | "project" | "section" | "bucket" |
 
 /**
  * The logical order for "Counts as": Billable → Warranty → Service → Spare
- * Parts → Bellco → Non-Billable.
+ * Parts → Bellco → Non-Billable → Invalid (section 98) → Invalid (after job complete).
  *
  * That is the business order the utilization measures already use — billable
  * work first, the two things that pull utilization down last — and it is why
@@ -54,6 +54,8 @@ const BUCKET_ORDER: Record<PunchBucket, number> = {
   spareParts: 3,
   bellco: 4,
   nonBillable: 5,
+  invalidSection: 6,
+  afterJobComplete: 7,
 };
 
 /** The same order as a lookup, exported for the test that cross-checks it against BUCKET_LABEL. */

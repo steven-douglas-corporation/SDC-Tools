@@ -52,9 +52,14 @@ One punch, one bucket (`classifyUtilizationPunch`):
 
 1. Job `6000` → **Bellco**.
 2. Job `4000` / `1083` / `7000` / `10000` → **Non-Billable**.
-3. Section `98` (Invalid) → **Non-Billable**.
+3. Section `98` (Invalid) → **Invalid: section 98**.
 4. Booked *after* the job's effective close date and not section 70/80/90 →
-   **Non-Billable**.
+   **Invalid: after job complete** (the same punches Data Management lists as
+   "Completed Job and Not Sections 70, 80, 90").
+
+   The report has no measure for 3 or 4, so the department table sums both into
+   Non-Billable and its figures are unchanged. The employee punch drill shows each
+   under its own label, on a red row, with a tooltip saying why.
 5. Section `70` → Warranty, `80` → Service, `90` → Spare Parts, else
    **Billable Active**. All four are billable.
 

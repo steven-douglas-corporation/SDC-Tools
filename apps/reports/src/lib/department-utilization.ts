@@ -243,8 +243,23 @@ function emptyMeasures(): UtilizationMeasures {
  * that happen to partition the data, and any drift between them is invisible there.
  * Here a punch lands in exactly one bucket by construction, so Billable + Non-Billable
  * + Bellco always foots back to Hours Actual.
+ *
+ * The two INVALID buckets exist so the punch drill can say why a punch is invalid:
+ *   - invalidSection   — section 98.
+ *   - afterJobComplete — booked after the job's complete date, outside 70/80/90
+ *                        (Data Management's "Completed Job and Not Sections 70, 80, 90").
+ * The report has no measure for either: both sum into Non-Billable, so `accumulate`
+ * folds them back and the department table is unchanged.
  */
-export type PunchBucket = "billableActive" | "warranty" | "service" | "spareParts" | "bellco" | "nonBillable";
+export type PunchBucket =
+  | "billableActive"
+  | "warranty"
+  | "service"
+  | "spareParts"
+  | "bellco"
+  | "nonBillable"
+  | "invalidSection"
+  | "afterJobComplete";
 
 export function classifyUtilizationPunch(p: {
   jobNumber: string;
@@ -254,11 +269,11 @@ export function classifyUtilizationPunch(p: {
 }): PunchBucket {
   if (p.jobNumber === BELLCO_JOB_ID) return "bellco";
   if (OVERHEAD_JOB_IDS.includes(p.jobNumber)) return "nonBillable";
-  if (p.rawSection === SECTION_INVALID) return "nonBillable";
+  if (p.rawSection === SECTION_INVALID) return "invalidSection";
 
   // Open on the punch date? Blank close date means the job was never closed.
   const closed = p.effectiveCloseDate !== null && p.workDate.getTime() > p.effectiveCloseDate.getTime();
-  if (closed && !CLOSED_JOB_STILL_BILLABLE.has(p.rawSection)) return "nonBillable";
+  if (closed && !CLOSED_JOB_STILL_BILLABLE.has(p.rawSection)) return "afterJobComplete";
 
   if (p.rawSection === SECTION_WARRANTY) return "warranty";
   if (p.rawSection === SECTION_SERVICE) return "service";
@@ -276,6 +291,8 @@ function accumulate(m: UtilizationMeasures, p: PunchRow): void {
       m.bellco += p.hours;
       break;
     case "nonBillable":
+    case "invalidSection":
+    case "afterJobComplete":
       m.nonBillable += p.hours;
       break;
     case "warranty":
