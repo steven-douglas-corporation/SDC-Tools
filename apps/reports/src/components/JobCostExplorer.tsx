@@ -12,7 +12,8 @@ import {
   type JobHourAllocation,
   type YearRateOverrides,
 } from "@/lib/job-cost";
-import { saveDefaultRate, saveYearRateOverride, clearAllYearRateOverrides, saveJobHourAllocation, clearJobHourAllocation } from "@/lib/job-cost-actions";
+import { saveDefaultRate, saveYearRateOverride, saveJobHourAllocation, clearJobHourAllocation } from "@/lib/job-cost-actions";
+import { RATE_KEYS, changedYears } from "@/lib/job-cost-rate-draft";
 import { exportJobCostRows } from "@/lib/export/job-cost-export";
 import {
   BUTTON_COMPACT,
@@ -317,6 +318,10 @@ export function JobCostExplorer({
   }
 
   const [rateMatrixOpen, setRateMatrixOpen] = useState(false);
+  // Read-only until someone turns editing on: the Rate Matrix button stays disabled
+  // until then, so rates (which reprice every job for everyone) are never one
+  // stray click from an edit.
+  const [ratesEditing, setRatesEditing] = useState(false);
   const [allocationJobId, setAllocationJobId] = useState<string | null>(null);
 
   // Columns dropdown — a <details> (same mechanism the Filters menu below
@@ -464,28 +469,30 @@ export function JobCostExplorer({
   // asc/desc indicator instead of only some columns having one.
   const sortState: SortState<SortKey> = { key: sortKey, direction: sortDir === 1 ? "asc" : "desc" };
 
-  async function applyDefaultRate(next: CostRates) {
-    setRates(next);
-    const fd = new FormData();
-    fd.set("engRate", String(next.engRate));
-    fd.set("shopRate", String(next.shopRate));
-    fd.set("pmPct", String(next.pmPct));
-    fd.set("mfgPct", String(next.mfgPct));
-    await saveDefaultRate(fd);
-  }
-  async function applyYearOverride(year: string, partial: Partial<CostRates>) {
-    setOverrides((prev) => ({ ...prev, [year]: partial }));
-    const fd = new FormData();
-    fd.set("year", year);
-    if (partial.engRate != null) fd.set("engRate", String(partial.engRate));
-    if (partial.shopRate != null) fd.set("shopRate", String(partial.shopRate));
-    if (partial.pmPct != null) fd.set("pmPct", String(partial.pmPct));
-    if (partial.mfgPct != null) fd.set("mfgPct", String(partial.mfgPct));
-    await saveYearRateOverride(fd);
-  }
-  async function clearAllOverrides() {
-    setOverrides({});
-    await clearAllYearRateOverrides();
+  // The Rate Matrix's Confirm. Writes only what differs from the saved rates, and
+  // only updates the table once every write has landed — so a failed save leaves
+  // the page on the old rates (and the modal open on the draft) rather than showing
+  // figures the server doesn't have.
+  async function confirmRates(nextDefaults: CostRates, nextOverrides: YearRateOverrides) {
+    const defaultsChanged = RATE_KEYS.some((k) => nextDefaults[k] !== rates[k]);
+    if (defaultsChanged) {
+      const fd = new FormData();
+      for (const k of RATE_KEYS) fd.set(k, String(nextDefaults[k]));
+      await saveDefaultRate(fd);
+    }
+    for (const year of changedYears(overrides, nextOverrides)) {
+      const fd = new FormData();
+      fd.set("year", year);
+      // A year with no override left posts no fields, which deletes its row.
+      for (const k of RATE_KEYS) {
+        const v = nextOverrides[year]?.[k];
+        if (v != null) fd.set(k, String(v));
+      }
+      await saveYearRateOverride(fd);
+    }
+    setRates(nextDefaults);
+    setOverrides(nextOverrides);
+    toast("Rates updated — profitability recalculated.", "success");
   }
   async function applyAllocation(jobId: string, alloc: JobHourAllocation | null) {
     setAllocations((prev) => {
@@ -892,7 +899,26 @@ export function JobCostExplorer({
               </button>
             </div>
           </details>
-          <button className={BUTTON_COMPACT} onClick={() => setRateMatrixOpen(true)}>Rate Matrix</button>
+          <button
+            type="button"
+            onClick={() => setRatesEditing((on) => !on)}
+            aria-pressed={ratesEditing}
+            title={ratesEditing ? "Turn editing off — the Rate Matrix locks again" : "Turn editing on — unlocks the Rate Matrix"}
+            className={`${BUTTON_COMPACT} gap-1.5 ${ratesEditing ? "!border-sdc-yellow !bg-sdc-yellow-bg" : ""}`}
+          >
+            <span aria-hidden className={`relative h-3.5 w-6 shrink-0 rounded-full motion-interactive ${ratesEditing ? "bg-sdc-yellow" : "bg-sdc-gray-100"}`}>
+              <span className={`motion-interactive absolute left-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow ${ratesEditing ? "translate-x-[10px]" : "translate-x-0"}`} />
+            </span>
+            {ratesEditing ? "Editing" : "Read-only"}
+          </button>
+          <button
+            className={BUTTON_COMPACT}
+            disabled={!ratesEditing}
+            title={ratesEditing ? "Edit the rates every job is costed at" : "Turn on editing to change the rates"}
+            onClick={() => setRateMatrixOpen(true)}
+          >
+            Rate Matrix
+          </button>
         </div>
       </div>
 
@@ -1177,9 +1203,7 @@ export function JobCostExplorer({
           overrides={overrides}
           years={[...new Set([...years, ...Object.keys(overrides)])].sort((a, b) => b.localeCompare(a))}
           onClose={() => setRateMatrixOpen(false)}
-          onSaveDefault={applyDefaultRate}
-          onSaveYear={applyYearOverride}
-          onClearAll={clearAllOverrides}
+          onConfirm={confirmRates}
         />
       )}
       {activeJobForAllocation && (
