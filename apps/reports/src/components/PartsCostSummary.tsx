@@ -69,7 +69,7 @@ const BAR_W = "2rem"; // 2026-10-21: wider than the ETC chart's 1.25rem, by requ
 const COL_W = "5rem";
 const SIDE_ROOM = "3.5rem";
 const TOTAL_GAP = "2rem";
-const TOTAL_SIDE = "5rem";
+const TOTAL_SIDE = "6.75rem"; // "Invoiced and posted" + its leader needs ~130px past the bar
 const ROW_GAP = "0.375rem"; // the `gap-1.5` between columns
 // From the Projected bar's left edge to the Total bar's right edge: both bars, the free half-column on
 // each side of the gap, the Projected side room, the row gap and the Total gap.
