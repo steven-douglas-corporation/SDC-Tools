@@ -156,6 +156,10 @@ export const SPLIT_ROUTES: readonly {
   { path: "/cash-flow", label: "Cash Flow", params: ["as", "compare"], instanceParam: "as" },
   { path: "/employees", label: "Employees", params: [] },
   { path: "/audit-log", label: "Audit Log", params: [] },
+  // Back as a pane 2026-10-21. Data Quality was a Dashboard tab, and the Dashboard is
+  // splittable, so moving it here (19798b7) quietly cost the split. `tab` is which of the
+  // three tabs is open; `m` and the dq* slicers belong to the Data quality tab.
+  { path: "/admin/data-management", label: "Data Management", params: ["tab", "m", "dqFrom", "dqTo", "dqEmp", "dqFn", "dqMtd"] },
   // The route most worth splitting: the queue on one side, the disputed report
   // on the other, at the submitter's own job and month. `params` is transcribed
   // from the page's own searchParams type — tests/split-view.test.ts asserts it
