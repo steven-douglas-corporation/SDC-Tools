@@ -23,6 +23,8 @@ const BAR_PROJECTED = "#FFDE51"; // remaining exposure the ETC covers
 // Remaining exposure the ETC does NOT cover (2026-09-03). The app's own --sdc-red,
 // not a new tone: this is the same "needs attention" signal the rest of the card
 // uses, and a second red would imply a second kind of problem.
+// Excess purchased over plan (2026-10-21): the app's --sdc-red, the same "needs attention" signal as above.
+const BAR_EXCESS = "#C0392B";
 const BAR_OPEN = "#9CB8D6"; // Not yet invoiced — ordered, on open POs (2026-10-19; replaces the red "uncovered" band)
 
 // Height taller than before (2026-08-10, by request) so the second bar's
@@ -140,7 +142,7 @@ const CAPTION_H = "2rem";
  * not exist.
  */
 function segmentDrillMode(key: string): PartsDrillMode {
-  if (key === "stp") return "etc";
+  if (key === "stp" || key === "excess") return "etc";
   if (key === "open") return "left";
   return "invoiced";
 }
@@ -295,7 +297,6 @@ export function PartsCostSummary({
   // confusing the two is the mistake to avoid, and an earlier version of this card
   // made exactly it.
   const openBalanceAmount = financials.openBalance;
-  const adjustedEtcAmount = financials.adjustedEtc;
   const etcUnknown = financials.etcUnknown;
 
   // ── Rounding that can't visibly contradict itself (audit finding) ─────────
@@ -354,7 +355,17 @@ export function PartsCostSummary({
   //
   // INVOICED still absorbs the rounding residue (see the note above): it is the largest term, and
   // a term that is genuinely zero must print as zero.
-  const stillToPurchaseAmount = Math.max(0, adjustedEtcAmount - openBalanceAmount);
+  //
+  // 2026-10-21, by request: still to purchase is now LAST MONTH'S Left to Purchase (Monthly ETC tab)
+  // less what was purchased this month — see lib/still-to-purchase.ts. When more was bought than was
+  // left to buy, the result is negative: it is shown as such (−$2,000), the bar paints that amount red
+  // above a dotted line, and the projected total stays at Purchased (the excess is already inside it).
+  const stillToPurchaseAmount = financials.stillToPurchase;
+  const excessAmount = Math.min(financials.excessPurchased, financials.purchased);
+  const hasExcess = excessAmount > 0.5;
+  const excessDisplay = Math.round(excessAmount);
+  const stillToPurchaseSignedDisplay = Math.round(financials.stillToPurchaseSigned);
+  const fromMonthlyEtc = financials.stpJobsFromMonthlyEtc > 0;
   const openDisplay = Math.round(openBalanceAmount);
   const stillToPurchaseDisplay = Math.round(stillToPurchaseAmount);
   const invoicedDisplay = projTotalDisplay - openDisplay - stillToPurchaseDisplay;
@@ -365,7 +376,6 @@ export function PartsCostSummary({
   const aboveOrderedDisplay = purchasedRounded - invoicedDisplay - openDisplay;
   const showAboveOrdered = Math.abs(aboveOrderedDisplay) > 1;
   const purchasedDisplay = showAboveOrdered ? purchasedRounded : invoicedDisplay + openDisplay;
-  const stpFloored = !etcUnknown && adjustedEtcAmount < openBalanceAmount;
 
   // ── ONE shared scale for both bars (2026-08-10c, by request) ──────────────
   //
@@ -423,8 +433,19 @@ export function PartsCostSummary({
   // The red section "may or may not be anything" (§11): it is pushed only when the
   // remaining exposure actually exceeds the adjusted forecast, so an on-plan job
   // carries no red at all.
+  // The excess is money already inside Invoiced / Not yet invoiced, so painting it as a band of its own
+  // takes its height out of the top of the purchased stack (open POs first, then invoiced) — the bar's
+  // total height stays exactly the projected total. The printed figures keep their true values.
+  const openCarve = Math.min(excessAmount, openBalanceAmount);
+  const invoicedCarve = hasExcess ? Math.max(0, excessAmount - openCarve) : 0;
   const segments: { key: string; label: string; note?: string; value: number; color: string; heightPct: number }[] = [
-    { key: "invoiced", label: "Invoiced and posted", value: invoicedDisplay, color: BAR_INVOICED, heightPct: pct(invoiced) },
+    {
+      key: "invoiced",
+      label: "Invoiced and posted",
+      value: invoicedDisplay,
+      color: BAR_INVOICED,
+      heightPct: pct(Math.max(0, invoiced - invoicedCarve)),
+    },
   ];
   if (openBalanceAmount > 0.5) {
     segments.push({
@@ -433,14 +454,24 @@ export function PartsCostSummary({
       note: "ordered, waiting for an invoice",
       value: openDisplay,
       color: BAR_OPEN,
-      heightPct: pct(openBalanceAmount),
+      heightPct: pct(Math.max(0, openBalanceAmount - openCarve)),
+    });
+  }
+  if (hasExcess) {
+    segments.push({
+      key: "excess",
+      label: "Excess purchased over plan",
+      note: "bought this month beyond last month's Left to Purchase",
+      value: excessDisplay,
+      color: BAR_EXCESS,
+      heightPct: pct(excessAmount),
     });
   }
   if (stillToPurchaseAmount > 0.5) {
     segments.push({
       key: "stp",
       label: "Still to purchase",
-      note: etcUnknown ? undefined : "estimate: the forecast less what is already ordered",
+      note: etcUnknown && !fromMonthlyEtc ? undefined : "last month's Left to Purchase less purchased this month",
       value: stillToPurchaseDisplay,
       color: BAR_PROJECTED,
       heightPct: pct(stillToPurchaseAmount),
@@ -590,32 +621,62 @@ export function PartsCostSummary({
           },
         ]
       : []),
+    // ── Excess purchased over plan (2026-10-21) ─────────────────────────────
+    //
+    // Already INSIDE Purchased (a part of Invoiced / Not yet invoiced), so it is named, never added:
+    // adding it would count the same money twice. Painted red in the bar above a dotted line.
+    ...(hasExcess
+      ? [
+          {
+            key: "excess",
+            swatch: BAR_EXCESS,
+            label: "· of which excess over plan",
+            derivation: `${usd(Math.round(financials.purchasedThisMonth))} purchased this month is ${usd(excessDisplay)} more than the ${usd(Math.round(financials.leftToPurchaseLastMonth ?? 0))} that was left to purchase last month — already inside Purchased to date, not added again`,
+            value: excessDisplay,
+            kind: "segment" as const,
+          },
+        ]
+      : []),
     {
       key: "stp",
       swatch: stillToPurchaseAmount > 0.5 ? BAR_PROJECTED : null,
-      label: "Still to purchase (estimate)",
-      // The ETC is "all cost still to come" — the open POs AND what has not been ordered — so the
-      // open POs come back out to leave the second part. Same arithmetic the projection has always
-      // used, written so each step names what it is.
-      derivation: etcUnknown
-        ? "no prior-month ETC on file for this job, so nothing is forecast beyond what is already ordered"
-        : stpFloored
-          ? `${usd(Math.round(adjustedEtcAmount))} forecast (${usd(Math.round(priorEtcAmount ?? 0))} prior-month ETC − ${usd(Math.round(spentThisMonth))} invoiced this month) is below the ${usd(openDisplay)} already ordered, so nothing more is expected to be purchased`
-          : `${usd(Math.round(priorEtcAmount ?? 0))} prior-month ETC − ${usd(Math.round(spentThisMonth))} invoiced this month − ${usd(openDisplay)} not yet invoiced`,
-      value: stillToPurchaseDisplay,
+      label: hasExcess ? "Still to purchase (negative = over plan)" : "Still to purchase",
+      // Last month's Left to Purchase (Monthly ETC tab) less what was bought since. A negative result
+      // is shown as negative; the projection never goes below Purchased, so it is not subtracted.
+      derivation: fromMonthlyEtc
+        ? `${usd(Math.round(financials.leftToPurchaseLastMonth ?? 0))} left to purchase last month (Monthly ETC) − ${usd(Math.round(financials.purchasedThisMonth))} purchased this month${
+            financials.stpJobsFromForecast > 0
+              ? ` · ${financials.stpJobsFromForecast} job${financials.stpJobsFromForecast === 1 ? "" : "s"} with no Left to Purchase last month use the forecast estimate instead`
+              : ""
+          }${hasExcess && stillToPurchaseAmount > 0.5 ? " · jobs are worked one by one, so one job's excess is not netted against another's remainder" : ""}`
+        : etcUnknown
+          ? "no Left to Purchase on last month's Monthly ETC and no prior-month ETC for this job, so nothing is forecast beyond what is already ordered"
+          : `no Left to Purchase entered last month, so estimated from the forecast: ${usd(Math.round(priorEtcAmount ?? 0))} prior-month ETC − ${usd(Math.round(spentThisMonth))} invoiced this month − ${usd(openDisplay)} not yet invoiced, never below $0`,
+      value: hasExcess ? stillToPurchaseSignedDisplay : stillToPurchaseDisplay,
       kind: stillToPurchaseAmount > 0.5 ? "segment" : "reference",
     },
     {
       key: "total",
       swatch: null,
       label: "Projected total",
-      derivation: showAboveOrdered
+      derivation: (showAboveOrdered
         ? `${usd(invoicedDisplay)} invoiced + ${usd(openDisplay)} not yet invoiced + ${usd(stillToPurchaseDisplay)} still to purchase`
-        : `${usd(purchasedDisplay)} purchased + ${usd(stillToPurchaseDisplay)} still to purchase`,
+        : `${usd(purchasedDisplay)} purchased + ${usd(stillToPurchaseDisplay)} still to purchase`) +
+        (hasExcess ? ` (a negative still to purchase counts as $0 — the ${usd(excessDisplay)} excess is already in purchased)` : ""),
       value: projTotalDisplay,
       kind: "total",
     },
   ];
+
+  // ── Table order (2026-10-21, by request) ──────────────────────────────────
+  //
+  // The three rows that answer "where does the projection come from" lead — Purchased to date, Still
+  // to purchase, Projected total — and the supporting rows (Invoiced, transfers, Not yet invoiced,
+  // billed-not-posted, excess…) follow below a gap and a dotted rule. Same rows, same figures, same
+  // derivations; only the order changes.
+  const SUMMARY_KEYS = ["purchased", "stp", "total"];
+  const summaryRows = SUMMARY_KEYS.map((k) => breakdown.find((r) => r.key === k)).filter((r): r is BreakdownRow => !!r);
+  const orderedBreakdown = [...summaryRows, ...breakdown.filter((r) => !SUMMARY_KEYS.includes(r.key))];
 
   // ── A thin segment still has to be seeable (2026-09-03, by request) ───────
   //
@@ -639,6 +700,7 @@ export function PartsCostSummary({
   // legend and the drill-through all still read the true figures; only the rendered
   // pixel heights move. `heightPct` (the true share) is kept alongside so the two
   // can never be confused at the call site.
+  const excessIdx = segments.findIndex((s) => s.key === "excess");
   const MIN_SEG_PX = 10;
   const renderPx: number[] = segments.map((seg) => barPx(seg.heightPct));
   {
@@ -886,6 +948,30 @@ export function PartsCostSummary({
               >
                 {usd(projTotalDisplay)}
               </span>
+              {/* Excess over plan, stated on the chart itself (2026-10-21). Sits with the total because
+                  it is part of it. */}
+              {hasExcess && (
+                <span
+                  className="mb-0.5 -mt-0.5 whitespace-nowrap font-mono text-micro font-bold leading-none tabular-nums text-sdc-red-text"
+                  title={`${usd(excessDisplay)} more was purchased this month than the ${usd(Math.round(financials.leftToPurchaseLastMonth ?? 0))} left to purchase last month. It is already inside the projected total.`}
+                >
+                  incl. {usd(excessDisplay)} excess
+                </span>
+              )}
+              {/* The dotted line between what has been bought (red = the part beyond plan) and what is
+                  still to purchase. It sits at the top of the red band, which is the top of Purchased. */}
+              {hasExcess && excessIdx >= 0 && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute z-10"
+                  style={{
+                    left: "-0.4rem",
+                    right: "-0.4rem",
+                    bottom: renderPx.slice(0, excessIdx + 1).reduce((a, b) => a + b, 0),
+                    borderTop: `2px dotted ${BAR_EXCESS}`,
+                  }}
+                />
+              )}
               {/* The two segments stack bottom-to-top inside their own
                   sub-column (flex-col-reverse: first array item —
                   "Invoiced" — ends up at the bottom, matching before).
@@ -1003,17 +1089,19 @@ export function PartsCostSummary({
             </tr>
           </thead>
           <tbody>
-            {breakdown.map((r, i) => {
+            {orderedBreakdown.map((r, i) => {
               const isTotal = r.kind === "total";
-              const firstReference = r.kind === "reference" && breakdown[i - 1]?.kind !== "reference";
+              const firstReference = r.kind === "reference" && orderedBreakdown[i - 1]?.kind !== "reference";
+              // The first of the supporting rows: a gap and a dotted rule set it apart from the summary.
+              const firstDetail = i === summaryRows.length;
               return (
                 <tr
                   key={r.key}
                   className={`align-top ${isTotal ? "border-t border-sdc-border font-semibold" : ""} ${
                     // A rule above the first reference row separates the bar's own
                     // composition from the inputs it was derived from.
-                    firstReference ? "border-t border-sdc-border" : ""
-                  }`}
+                    firstReference && !firstDetail ? "border-t border-sdc-border" : ""
+                  } ${firstDetail ? "border-t-2 border-dotted border-sdc-gray-300 [&>td]:pt-4" : ""}`}
                 >
                   <td className="py-1 pr-1">
                     {r.swatch ? (

@@ -164,7 +164,7 @@ const noComments = (s: string) => s.replace(/^\s*\/\/.*$/gm, "");
 test("the card adds the transfer to Invoiced and Purchased only — never to the lines, Left to invoice or the ETC", () => {
   const src = noComments(read("src", "lib", "parts-cost-financials.ts"));
   assert.match(src, /const invoiced = actualTotal\(lines\) \+ transfers\.net;/);
-  assert.match(src, /purchased: purchasedTotal\(lines\) \+ transfers\.net,/);
+  assert.match(src, /const purchased = purchasedTotal\(lines\) \+ transfers\.net;/);
   assert.match(src, /const leftToInvoice = projection \? projection\.committedNotPosted : leftToInvoiceForLines\(lines\);/);
   assert.match(src, /const yet = computeYetToInvoice\(lines\);/);
   assert.equal((src.match(/transfers\.net/g) ?? []).length, 3, "added to invoiced and purchased, and reported once");

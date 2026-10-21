@@ -149,7 +149,7 @@ test("the Parts Cost bar stacks Invoiced, Not yet invoiced and Still to purchase
   // come", so the open POs come OUT of it and are shown as their own segment; what is left is
   // "still to purchase". Same projection, written as  Invoiced + open + max(0, ETC − open)  instead
   // of  Invoiced + max(ETC, open)  — one identity, checked on 48 of 48 jobs with parts activity.
-  assert.match(src, /key: "invoiced", label: "Invoiced and posted"/, "Invoiced is still the base segment");
+  assert.match(src, /key: "invoiced",\s*label: "Invoiced and posted"/, "Invoiced is still the base segment");
   assert.match(src, /key: "open",[\s\S]{0,200}label: "Not yet invoiced \(open POs\)"/);
   assert.match(src, /key: "stp",[\s\S]{0,200}label: "Still to purchase"/);
   assert.doesNotMatch(
@@ -160,7 +160,7 @@ test("the Parts Cost bar stacks Invoiced, Not yet invoiced and Still to purchase
 
   // The open balance is SUBTRACTED from the forecast, never added on top of it. The segment drawn for
   // the forecast is only its excess over the open POs.
-  assert.match(src, /const stillToPurchaseAmount = Math\.max\(0, adjustedEtcAmount - openBalanceAmount\);/);
+  assert.match(src, /const stillToPurchaseAmount = financials\.stillToPurchase;/);
   assert.match(src, /heightPct: pct\(stillToPurchaseAmount\)/);
   assert.doesNotMatch(
     src,
@@ -213,11 +213,11 @@ test("the Still to purchase row starts from the PRIOR month's ETC, drawn down by
   // §20, as a guard: substituting the current month's New ETC is the specific mistake the spec calls
   // out, and an earlier version of this card made it. The prior-month figure is the first term of
   // this row's derivation, which shows the whole drawdown rather than a bare result.
-  assert.match(src, /label: "Still to purchase \(estimate\)"/);
+  assert.match(src, /label: hasExcess \? "Still to purchase \(negative = over plan\)" : "Still to purchase"/);
   assert.match(
     src,
-    /prior-month ETC − \$\{usd\(Math\.round\(spentThisMonth\)\)\} invoiced this month − \$\{usd\(openDisplay\)\} not yet invoiced/,
-    "the row must show prior ETC, less this month's invoices, less the open POs — not just the result",
+    /left to purchase last month \(Monthly ETC\) − \$\{usd\(Math\.round\(financials\.purchasedThisMonth\)\)\} purchased this month/,
+    "the row must show last month's Left to Purchase less this month's purchases — not just the result",
   );
   assert.ok(!/label="Current Parts ETC"/.test(src), "the current month's entry is not the forecast the bar draws");
   assert.ok(!/etcIsDriving/.test(src), "nothing competes with the forecast for the segment any more");

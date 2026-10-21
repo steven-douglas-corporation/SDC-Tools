@@ -161,18 +161,18 @@ const ROOT = join(import.meta.dirname, "..");
 const read = (...p: string[]) => readFileSync(join(ROOT, ...p), "utf8").replace(/\r\n/g, "\n");
 const noComments = (s: string) => s.replace(/^\s*\/\/.*$/gm, "");
 
-test("the card and the panel use the same definition: adjusted ETC less open POs, never below $0", () => {
-  assert.match(noComments(read("src", "components", "PartsCostSummary.tsx")), /const stillToPurchaseAmount = Math\.max\(0, adjustedEtcAmount - openBalanceAmount\);/);
+test("the card reads still to purchase from the one reconciliation; the forecast estimate is only the fallback", () => {
+  assert.match(noComments(read("src", "components", "PartsCostSummary.tsx")), /const stillToPurchaseAmount = financials\.stillToPurchase;/);
   assert.match(noComments(read("src", "lib", "still-to-purchase.ts")), /const stillToPurchase = Math\.max\(0, i\.adjustedEtc - i\.openBalance\);/);
-  assert.match(noComments(read("src", "components", "PartsCostDrill.tsx")), /Math\.max\(0, financials\.adjustedEtc - financials\.openBalance\)/);
+  assert.match(noComments(read("src", "components", "PartsCostDrill.tsx")), /financials\.stillToPurchase/);
 });
 
-test("the projection itself is untouched: the new wording is display only", () => {
+test("the projection is Purchased + Still to purchase (2026-10-21); the old model stays as the fallback estimate", () => {
   const projection = noComments(read("src", "lib", "parts-projection.ts"));
   assert.match(projection, /const additionalExposure = Math\.max\(0, openBalance - adjustedEtc\);/);
   assert.match(projection, /const totalProjection = invoiced \+ adjustedEtc \+ additionalExposure;/);
   const financials = noComments(read("src", "lib", "parts-cost-financials.ts"));
-  assert.doesNotMatch(financials, /still-to-purchase|stillToPurchase/, "no figure is recomputed on the server for this");
+  assert.match(financials, /const projectionTotal = purchased \+ stp\.stillToPurchase;/, "projected total = purchased + still to purchase");
 });
 
 test("the card never waits on the BOM: the cross-check loads on demand, in the panel only", () => {
@@ -199,6 +199,58 @@ test("the old red 'uncovered' band and its dotted line are gone, replaced by the
 
 test("the segment drills: Not yet invoiced opens its rows, Still to purchase opens this explanation", () => {
   const card = noComments(read("src", "components", "PartsCostSummary.tsx"));
-  assert.match(card, /if \(key === "stp"\) return "etc";/);
+  assert.match(card, /if \(key === "stp" \|\| key === "excess"\) return "etc";/);
   assert.match(card, /if \(key === "open"\) return "left";/);
+});
+
+// ── Left to Purchase last month − purchased this month (2026-10-21) ──────────
+
+import { jobStillToPurchase, sumStillToPurchase, purchasedSinceMonthStart } from "../src/lib/still-to-purchase";
+
+test("still to purchase = last month's Left to Purchase − purchased this month", () => {
+  const r = jobStillToPurchase({ leftToPurchaseLastMonth: 10000, purchasedThisMonth: 4000, fallback: 999 });
+  assert.equal(r.signed, 6000);
+  assert.equal(r.stillToPurchase, 6000);
+  assert.equal(r.excess, 0);
+  assert.equal(r.source, "monthly-etc");
+});
+
+test("more purchased than was left to purchase is −$2,000, not $0, and is reported as excess", () => {
+  const r = jobStillToPurchase({ leftToPurchaseLastMonth: 10000, purchasedThisMonth: 12000, fallback: 0 });
+  assert.equal(r.signed, -2000);
+  assert.equal(r.stillToPurchase, 0);
+  assert.equal(r.excess, 2000);
+});
+
+test("a job with no Left to Purchase last month uses the forecast estimate", () => {
+  const r = jobStillToPurchase({ leftToPurchaseLastMonth: null, purchasedThisMonth: 5000, fallback: 321 });
+  assert.equal(r.source, "forecast");
+  assert.equal(r.stillToPurchase, 321);
+  assert.equal(r.excess, 0);
+});
+
+test("jobs are summed one by one: an excess is not netted against another job's remainder", () => {
+  const t = sumStillToPurchase([
+    { leftToPurchaseLastMonth: 10000, purchasedThisMonth: 12000, fallback: 0 },
+    { leftToPurchaseLastMonth: 8000, purchasedThisMonth: 3000, fallback: 0 },
+    { leftToPurchaseLastMonth: null, purchasedThisMonth: 100, fallback: 50 },
+  ]);
+  assert.equal(t.stillToPurchase, 5050);
+  assert.equal(t.excess, 2000);
+  assert.equal(t.signed, 3050);
+  assert.equal(t.leftToPurchaseLastMonth, 18000);
+  assert.equal(t.purchasedThisMonth, 15000);
+  assert.equal(t.jobsFromMonthlyEtc, 2);
+  assert.equal(t.jobsFromForecast, 1);
+});
+
+test("purchases count from the first day of the ETC month onward", () => {
+  const lines = [
+    line({ totalPrice: 100, actualAmount: 0, purchaseDate: "2026-09-30" }),
+    line({ totalPrice: 200, actualAmount: 0, purchaseDate: "2026-10-01" }),
+    line({ totalPrice: 300, actualAmount: 0, purchaseDate: "2026-10-20T08:00:00" }),
+    line({ totalPrice: 400, actualAmount: 0, purchaseDate: null }),
+  ];
+  assert.equal(purchasedSinceMonthStart(lines, "2026-10"), 500);
+  assert.equal(purchasedSinceMonthStart(lines, null), 0);
 });

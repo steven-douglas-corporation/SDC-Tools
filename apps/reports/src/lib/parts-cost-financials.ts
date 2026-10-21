@@ -4,6 +4,8 @@ import { getPartsCostForJobs, getTransfersForJobs, type PartsCostLine } from "@/
 import { EMPTY_TRANSFER_SUMMARY } from "@/lib/parts-transfer-netting";
 import { computePartsProjection, computeYetToInvoice } from "@/lib/parts-projection";
 import { readPriorEtcByJob, sumPriorEtc } from "@/lib/parts-prior-etc";
+import { readLeftToPurchaseLastMonth } from "@/lib/parts-left-to-purchase";
+import { purchasedSinceMonthStart, sumStillToPurchase } from "@/lib/still-to-purchase";
 import { computePartsBudgetProjection, purchasedTotal, actualTotal } from "@/lib/parts-budget-projection";
 import { withTimeoutOrNull } from "@/lib/with-timeout";
 // The type and the pure rounding helper live in a sibling module with no
@@ -102,7 +104,9 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
   if (jobIds.length === 0) {
     return {
       budget: null, invoiced: 0, leftToInvoice: 0, etc: null, totalSpent: 0, projection: 0,
-      purchased: 0, billedNotPosted: 0, priorEtc: null, priorEtcSource: "none", partsSpentThisMonth: 0,
+      purchased: 0, stillToPurchase: 0, excessPurchased: 0, stillToPurchaseSigned: 0,
+      leftToPurchaseLastMonth: null, purchasedThisMonth: 0, stpJobsFromMonthlyEtc: 0, stpJobsFromForecast: 0,
+      billedNotPosted: 0, priorEtc: null, priorEtcSource: "none", partsSpentThisMonth: 0,
       adjustedEtcRaw: null, adjustedEtc: 0, openBalance: 0, externalOpen: 0,
       inHouseExcluded: 0, inHouseRows: 0, additionalExposure: 0, coverageLine: null,
       etcUnknown: true, etcMonth: null,
@@ -223,7 +227,30 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
     openBalance: yet.allRows,
   });
   const etc = priorEtc.priorEtc;
-  const projectionTotal = projected.totalProjection;
+
+  // ── Still to purchase, then the projection (2026-10-21) ───────────────────
+  //
+  // Projected total = Purchased to date + Still to purchase, where each job's still to purchase is last
+  // month's Left to Purchase (Monthly ETC tab) less what was bought since. Per job — see
+  // lib/still-to-purchase.ts. The old Adjusted-ETC-less-open-POs figure only stands in for a job with
+  // no Left to Purchase entered last month.
+  const ltpLastMonth = await readLeftToPurchaseLastMonth(jobs.map((j) => j.id), etcMonth).catch(
+    () => new Map<number, number | null>(),
+  );
+  const stp = sumStillToPurchase(
+    jobs.map((j) => {
+      const jobLines = byJob?.get(j.jobId) ?? [];
+      const pr = priorByJob?.get(j.id);
+      const adj = pr && pr.priorEtc != null ? Math.max(0, pr.priorEtc - pr.partsSpentThisMonth) : 0;
+      return {
+        leftToPurchaseLastMonth: ltpLastMonth.get(j.id) ?? null,
+        purchasedThisMonth: purchasedSinceMonthStart(jobLines, etcMonth),
+        fallback: Math.max(0, adj - computeYetToInvoice(jobLines).allRows),
+      };
+    }),
+  );
+  const purchased = purchasedTotal(lines) + transfers.net;
+  const projectionTotal = purchased + stp.stillToPurchase;
 
   // Against the whole projected exposure, never against invoiced alone (spec §11).
   const variance = budget != null ? projectionTotal - budget : null;
@@ -236,7 +263,14 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
     etc,
     totalSpent,
     projection: projectionTotal,
-    purchased: purchasedTotal(lines) + transfers.net,
+    purchased,
+    stillToPurchase: stp.stillToPurchase,
+    excessPurchased: stp.excess,
+    stillToPurchaseSigned: stp.signed,
+    leftToPurchaseLastMonth: stp.leftToPurchaseLastMonth,
+    purchasedThisMonth: stp.purchasedThisMonth,
+    stpJobsFromMonthlyEtc: stp.jobsFromMonthlyEtc,
+    stpJobsFromForecast: stp.jobsFromForecast,
     billedNotPosted,
     priorEtc: projected.priorEtc,
     priorEtcSource: priorEtc.source,
