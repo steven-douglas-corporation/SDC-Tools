@@ -6915,4 +6915,14 @@ New: `lib/data-management-tabs.ts`, `components/DataManagementTabs.tsx`,
 a pane view (a missing one only showed a message at runtime). `workspace.test.ts` no longer
 lists Data Management among the routes a tab cannot host.
 
+**Punch table draws in chunks.** The Data quality tab's punch table used to draw all of its
+up to 3,000 rows at once. It now draws 100 and adds 100 more each time the bottom of its
+scroll box comes into view (an `IntersectionObserver` on a sentinel inside the box), with a
+"Show 100 more" button as the fallback and a "Showing 100 of 3,000" line while there is more.
+This is rendering only: the rows still all come from the server in one go, so sorting covers
+every loaded row, and a sort or a change of slicers goes back to the first chunk at the top
+(a refresh with the same filters keeps your place). The 3,000-row cap and its footnote are
+unchanged; lifting them would mean fetching pages from the server and sorting there. New:
+`lib/lazy-rows.ts`, `tests/lazy-rows.test.ts`.
+
 No schema change, no migration.
