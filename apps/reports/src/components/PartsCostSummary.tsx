@@ -668,6 +668,16 @@ export function PartsCostSummary({
     },
   ];
 
+  // ── Table order (2026-10-21, by request) ──────────────────────────────────
+  //
+  // The three rows that answer "where does the projection come from" lead — Purchased to date, Still
+  // to purchase, Projected total — and the supporting rows (Invoiced, transfers, Not yet invoiced,
+  // billed-not-posted, excess…) follow below a gap and a dotted rule. Same rows, same figures, same
+  // derivations; only the order changes.
+  const SUMMARY_KEYS = ["purchased", "stp", "total"];
+  const summaryRows = SUMMARY_KEYS.map((k) => breakdown.find((r) => r.key === k)).filter((r): r is BreakdownRow => !!r);
+  const orderedBreakdown = [...summaryRows, ...breakdown.filter((r) => !SUMMARY_KEYS.includes(r.key))];
+
   // ── A thin segment still has to be seeable (2026-09-03, by request) ───────
   //
   // Reported: when the ETC is small against Invoiced, the yellow cap is too thin to
@@ -1079,17 +1089,19 @@ export function PartsCostSummary({
             </tr>
           </thead>
           <tbody>
-            {breakdown.map((r, i) => {
+            {orderedBreakdown.map((r, i) => {
               const isTotal = r.kind === "total";
-              const firstReference = r.kind === "reference" && breakdown[i - 1]?.kind !== "reference";
+              const firstReference = r.kind === "reference" && orderedBreakdown[i - 1]?.kind !== "reference";
+              // The first of the supporting rows: a gap and a dotted rule set it apart from the summary.
+              const firstDetail = i === summaryRows.length;
               return (
                 <tr
                   key={r.key}
                   className={`align-top ${isTotal ? "border-t border-sdc-border font-semibold" : ""} ${
                     // A rule above the first reference row separates the bar's own
                     // composition from the inputs it was derived from.
-                    firstReference ? "border-t border-sdc-border" : ""
-                  }`}
+                    firstReference && !firstDetail ? "border-t border-sdc-border" : ""
+                  } ${firstDetail ? "border-t-2 border-dotted border-sdc-gray-300 [&>td]:pt-4" : ""}`}
                 >
                   <td className="py-1 pr-1">
                     {r.swatch ? (
