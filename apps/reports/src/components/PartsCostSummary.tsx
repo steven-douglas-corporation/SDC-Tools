@@ -25,6 +25,8 @@ const BAR_PROJECTED = "#FFDE51"; // remaining exposure the ETC covers
 // uses, and a second red would imply a second kind of problem.
 // Excess purchased over plan (2026-10-21): the app's --sdc-red, the same "needs attention" signal as above.
 const BAR_EXCESS = "#C0392B";
+// Dotted boundary under the yellow band — a deeper amber than the fill so it reads on both white and navy.
+const BAR_PROJECTED_LINE = "#D4A800";
 const BAR_OPEN = "#9CB8D6"; // Not yet invoiced — ordered, on open POs (2026-10-19; replaces the red "uncovered" band)
 
 // Height taller than before (2026-08-10, by request) so the second bar's
@@ -701,6 +703,7 @@ export function PartsCostSummary({
   // pixel heights move. `heightPct` (the true share) is kept alongside so the two
   // can never be confused at the call site.
   const excessIdx = segments.findIndex((s) => s.key === "excess");
+  const stpIdx = segments.findIndex((s) => s.key === "stp");
   const MIN_SEG_PX = 10;
   const renderPx: number[] = segments.map((seg) => barPx(seg.heightPct));
   {
@@ -958,8 +961,33 @@ export function PartsCostSummary({
                   incl. {usd(excessDisplay)} excess
                 </span>
               )}
-              {/* The dotted line between what has been bought (red = the part beyond plan) and what is
-                  still to purchase. It sits at the top of the red band, which is the top of Purchased. */}
+              {/* Still to purchase (2026-10-21, by request): a dotted amber line where the yellow band begins —
+                  the boundary between what is already bought and what is still to buy — and the name and
+                  amount beside the band. The label's centre follows the band's centre but is held clear of
+                  the total above the bar, so a thin band cannot push it into that figure. */}
+              {stpIdx >= 0 && (() => {
+                const below = renderPx.slice(0, stpIdx).reduce((a, b) => a + b, 0);
+                const barTop = renderPx.reduce((a, b) => a + b, 0);
+                const centre = Math.min(below + renderPx[stpIdx] / 2, barTop - 16);
+                return (
+                  <>
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute z-10"
+                      style={{ left: "-0.4rem", right: "-0.4rem", bottom: below, borderTop: `2px dotted ${BAR_PROJECTED_LINE}` }}
+                    />
+                    <div
+                      className="pointer-events-none absolute z-10 flex flex-col whitespace-nowrap border-l-2 pl-1.5 leading-tight"
+                      style={{ left: "calc(100% + 0.5rem)", bottom: centre, transform: "translateY(50%)", borderColor: BAR_PROJECTED_LINE }}
+                    >
+                      <span className="text-micro font-medium text-sdc-gray-600">Still to purchase</span>
+                      <span className="font-mono text-xs font-bold tabular-nums text-sdc-navy">{usd(stillToPurchaseDisplay)}</span>
+                    </div>
+                  </>
+                );
+              })()}
+              {/* The dotted line marks the plan boundary: it sits where the red excess begins, i.e. between the
+                  invoiced / open-PO money below it (within plan) and the red excess above it. */}
               {hasExcess && excessIdx >= 0 && (
                 <div
                   aria-hidden
@@ -967,7 +995,7 @@ export function PartsCostSummary({
                   style={{
                     left: "-0.4rem",
                     right: "-0.4rem",
-                    bottom: renderPx.slice(0, excessIdx + 1).reduce((a, b) => a + b, 0),
+                    bottom: renderPx.slice(0, excessIdx).reduce((a, b) => a + b, 0),
                     borderTop: `2px dotted ${BAR_EXCESS}`,
                   }}
                 />

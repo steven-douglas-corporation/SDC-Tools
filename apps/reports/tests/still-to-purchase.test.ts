@@ -301,5 +301,9 @@ test("the card renders the red excess band, dotted line and label from the figur
   const none = renderToStaticMarkup(React.createElement(PartsCostSummary, {
     financials: { ...f, excessPurchased: 0, stillToPurchase: 3000, stillToPurchaseSigned: 3000, projection: 103000, purchasedThisMonth: 7000 },
   }));
-  assert.doesNotMatch(none, /excess|2px dotted|background:#C0392B/i);
+  assert.doesNotMatch(none, /excess|2px dotted #C0392B|background:#C0392B/i);
+  // …but a positive still to purchase gets its own amber dotted line and a side label with the amount.
+  assert.match(none, /border-top:2px dotted #D4A800/i);
+  assert.match(none, /Still to purchase<\/span><span[^>]*>\$3,000</);
+  assert.doesNotMatch(html, /border-top:2px dotted #D4A800/i, "no yellow band, no yellow line");
 });
