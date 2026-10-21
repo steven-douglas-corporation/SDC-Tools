@@ -14,7 +14,10 @@ import { projectionResidual } from "@/lib/parts-cost-financials-shared";
 
 export type CostRates = { engRate: number; shopRate: number; pmPct: number; mfgPct: number };
 
-export const DEFAULT_RATES: CostRates = { engRate: 200, shopRate: 150, pmPct: 10, mfgPct: 10 };
+// 2025 cost sheet ("Rates based on 80% chargeable hours"): Eng $140/hr, Shop $113/hr,
+// PM factor 3.10%, Mfg factor 3.00%. Was 200 / 150 / 10 / 10 until 2026-10-21. This is
+// only the fallback when JobCostDefaultRate has no row — the live defaults are in that table.
+export const DEFAULT_RATES: CostRates = { engRate: 140, shopRate: 113, pmPct: 3.1, mfgPct: 3 };
 
 /** { [year]: { eng: hours, shop: hours } } — the automatic per-year breakdown. */
 export type HoursByYear = Record<string, { eng: number; shop: number }>;
@@ -138,10 +141,20 @@ export function laborForType(
   }
   const hby = row.hoursByYear ?? {};
   const years = Object.keys(hby);
-  if (years.length) {
-    return years.reduce((sum, y) => sum + (hby[y][type] || 0) * rateForYear(y, def, overrides)[rateKey], 0);
-  }
   const total = type === "eng" ? row.engineeringHours : row.shopHours;
+  if (years.length) {
+    const byYearHours = years.reduce((sum, y) => sum + (hby[y][type] || 0), 0);
+    const byYearCost = years.reduce((sum, y) => sum + (hby[y][type] || 0) * rateForYear(y, def, overrides)[rateKey], 0);
+    // Hours in the flat total but in no year are the migration snapshot (work
+    // through 2025-01-31, which carries no month — see loadJobHoursAndYears).
+    // They were costed at $0 whenever a job also had per-year hours, which
+    // understated labour on every job spanning both eras (measured 2026-10-16:
+    // 66 jobs, ~120k hours, ~$21.6M at default rates; job 1058 showed 63%
+    // margin instead of ~7%). They have no year to rate, so they take the
+    // default rate — exactly what a job with no per-year data at all already got.
+    const untimed = Math.max((total || 0) - byYearHours, 0);
+    return byYearCost + (untimed > 0.005 ? untimed : 0) * def[rateKey];
+  }
   return (total || 0) * def[rateKey];
 }
 

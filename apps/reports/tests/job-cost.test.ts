@@ -43,6 +43,10 @@ function baseRow(overrides: Partial<JobCostRow> = {}): JobCostRow {
   };
 }
 
+// Explicit rates for the arithmetic tests below, so they pin the formula and not whatever the
+// default rates happen to be this year (DEFAULT_RATES moved from 10%/10% to 3.1%/3% on 2026-10-21).
+const TEN_PCT_RATES = { engRate: 200, shopRate: 150, pmPct: 10, mfgPct: 10 };
+
 test("rateForYear falls back to the default for any unset field", () => {
   const r = rateForYear("2025", DEFAULT_RATES, { "2025": { engRate: 250 } });
   assert.equal(r.engRate, 250);
@@ -66,6 +70,26 @@ test("laborForType costs each year's hours at that year's rate when hoursByYear 
   const overrides = { "2025": { engRate: 100 } };
   const cost = laborForType(row, DEFAULT_RATES, overrides, undefined, "eng");
   assert.equal(cost, 20 * 100 + 40 * DEFAULT_RATES.engRate);
+});
+
+test("laborForType costs hours that belong to no year (migration snapshot) at the default rate, on top of the per-year hours", () => {
+  const row = baseRow({ engineeringHours: 100, hoursByYear: { "2025": { eng: 20, shop: 0 }, "2026": { eng: 40, shop: 0 } } });
+  const overrides = { "2025": { engRate: 100 } };
+  const cost = laborForType(row, DEFAULT_RATES, overrides, undefined, "eng");
+  assert.equal(cost, 20 * 100 + 40 * DEFAULT_RATES.engRate + 40 * DEFAULT_RATES.engRate);
+});
+
+test("laborForType: per-year hours that already sum to the total add nothing extra, and a float-noise gap is ignored", () => {
+  const exact = baseRow({ engineeringHours: 60, hoursByYear: { "2026": { eng: 60, shop: 0 } } });
+  assert.equal(laborForType(exact, DEFAULT_RATES, {}, undefined, "eng"), 60 * DEFAULT_RATES.engRate);
+  const noisy = baseRow({ shopHours: 100.000000001, hoursByYear: { "2026": { eng: 0, shop: 100 } } });
+  assert.equal(laborForType(noisy, DEFAULT_RATES, {}, undefined, "shop"), 100 * DEFAULT_RATES.shopRate);
+});
+
+test("laborForType: untimed hours are costed per hour type, so Eng and Shop do not borrow each other's", () => {
+  const row = baseRow({ engineeringHours: 50, shopHours: 10, hoursByYear: { "2026": { eng: 50, shop: 0 } } });
+  assert.equal(laborForType(row, DEFAULT_RATES, {}, undefined, "eng"), 50 * DEFAULT_RATES.engRate);
+  assert.equal(laborForType(row, DEFAULT_RATES, {}, undefined, "shop"), 10 * DEFAULT_RATES.shopRate);
 });
 
 test("laborForType prefers a manual allocation over the automatic year breakdown", () => {
@@ -150,8 +174,8 @@ test("computeJobCost: margin is profit as a percentage of sales", () => {
     partInvoiced: 200, // fully GL-posted, nothing open — so y is simply 200
     completeDate: null,
   });
-  const c = computeJobCost(row, DEFAULT_RATES, {}, undefined);
-  // x = laborCost (0 + PM/Mfg on 1000 at defaults 10%/10% = 200) = 200; y = 200
+  const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
+  // x = laborCost (0 + PM/Mfg on 1000 at 10%/10% = 200) = 200; y = 200
   assert.equal(c.profit, 1000 - 200 - 200);
   assert.equal(c.margin, ((1000 - 200 - 200) / 1000) * 100);
 });
@@ -211,7 +235,7 @@ test("computeJobCost: profit subtracts the projected parts figure and exposes it
     etcPartsCost: 70_000,
     completeDate: null,
   });
-  const c = computeJobCost(row, DEFAULT_RATES, {}, undefined);
+  const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
   assert.equal(c.partsProjected, 170_000);
   // x = PM 10% + Mfg 10% of sales = 200k; y = 170k
   assert.equal(c.profit, 1_000_000 - 200_000 - 170_000);
