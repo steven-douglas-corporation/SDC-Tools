@@ -56,7 +56,7 @@ const BAR_OPEN = "#9CB8D6"; // Not yet invoiced — ordered, on open POs (2026-1
 // under their own (comparatively wide) value labels — nothing here is doing
 // anything that chart doesn't already do with an even bigger size gap.
 const BAR_W = "2rem"; // 2026-10-21: wider than the ETC chart's 1.25rem, by request, now that the card has three bars
-// Room kept to the right of a bar for its side names and leader lines (see sideLabels).
+// Room kept to the right of the Projected bar for its side names and leader lines (see sideLabels).
 const SIDE_ROOM = "5rem";
 // Purchased to date, as ONE band in the Projected bar. The Total bar beside it splits the same money into
 // Invoiced and posted / Not yet invoiced, so this is a neutral steel blue rather than either of those.
@@ -1039,10 +1039,10 @@ export function PartsCostSummary({
           </div>
 
           {/* ── TOTAL: Invoiced and posted + Not yet invoiced (2026-10-21, by request) ──────────────
-              What has been bought to date, in its two parts. Its names sit to its right (SIDE_ROOM is
-              kept free so they never run into the Projected bar). No red here: the excess belongs to
-              the Projected bar. */}
-          <div className="flex flex-col items-center gap-1.5" style={{ marginRight: SIDE_ROOM }}>
+              What has been bought to date, in its two parts (the table below names them by colour). No side
+              names here, so the gap to the Projected bar stays even; the Projected bar names its own
+              bands to its right. No red here: the excess belongs to the Projected bar. */}
+          <div className="flex flex-col items-center gap-1.5">
             <div className="relative flex flex-col items-center justify-end" style={{ width: BAR_W, height: BAR_H }}>
               <span
                 className="mb-0.5 whitespace-nowrap font-mono text-[0.8125rem] font-bold leading-none tabular-nums text-sdc-navy"
@@ -1050,7 +1050,6 @@ export function PartsCostSummary({
               >
                 {usd(totalBarDisplay)}
               </span>
-              {sideLabels(totalSegments, totalPx, { invoiced: "Invoiced and posted", open: "Not yet invoiced" })}
               {renderStack(totalSegments, totalPx)}
             </div>
             <div
@@ -1099,7 +1098,7 @@ export function PartsCostSummary({
                   }}
                 />
               )}
-              {sideLabels(projSegments, projPx, { stp: "Still to purchase" }, { stp: usd(stillToPurchaseDisplay) })}
+              {sideLabels(projSegments, projPx, { purchased: "Purchased to date", stp: "Still to purchase" }, { stp: usd(stillToPurchaseDisplay) })}
               {/* The dotted line marks the plan boundary: it sits where the red excess begins, i.e. between the
                   purchased money within plan below it and the red excess above it. */}
               {hasExcess && excessIdx >= 0 && (
