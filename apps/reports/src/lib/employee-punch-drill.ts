@@ -40,6 +40,8 @@ export const BUCKET_LABEL: Record<PunchBucket, string> = {
   spareParts: "Spare Parts",
   bellco: "Bellco",
   nonBillable: "Non-Billable",
+  invalidSection: "Invalid: section 98",
+  afterJobComplete: "Invalid: after job complete",
 };
 
 export type EmployeeMonthPunch = {
@@ -52,6 +54,8 @@ export type EmployeeMonthPunch = {
   bucket: PunchBucket;
   /** True for everything the utilization maths counts as billable. */
   billable: boolean;
+  /** The job's effective close date (YYYY-MM-DD), so an "after job complete" punch can say which date. */
+  closeDate: string | null;
 };
 
 export type EmployeeMonthPunches = {
@@ -94,15 +98,17 @@ export async function getEmployeeMonthPunches(employeeId: string, month: string)
 
   const rows: EmployeeMonthPunch[] = punches.map((p) => {
     const hours = Number(p.hours);
+    const closeDate = closeDates.get(p.job.jobId) ?? null;
     const bucket = classifyUtilizationPunch({
       jobNumber: p.job.jobId,
       rawSection: p.rawSection,
       workDate: p.workDate,
-      effectiveCloseDate: closeDates.get(p.job.jobId) ?? null,
+      effectiveCloseDate: closeDate,
     });
     // Same partition the department table sums: everything except Bellco and
-    // Non-Billable counts toward Billable.
-    const billable = bucket !== "nonBillable" && bucket !== "bellco";
+    // Non-Billable (and the two Invalid buckets, which the table sums into it) counts toward Billable.
+    const billable =
+      bucket !== "nonBillable" && bucket !== "bellco" && bucket !== "invalidSection" && bucket !== "afterJobComplete";
     totalHours += hours;
     if (billable) billableHours += hours;
     bucketTotals.set(bucket, (bucketTotals.get(bucket) ?? 0) + hours);
@@ -116,6 +122,7 @@ export async function getEmployeeMonthPunches(employeeId: string, month: string)
       hours,
       bucket,
       billable,
+      closeDate: closeDate ? closeDate.toISOString().slice(0, 10) : null,
     };
   });
 

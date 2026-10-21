@@ -48,13 +48,18 @@ test("sections 70/80/90 are their own billable buckets, open or closed", () => {
 });
 
 test("section 98 (Invalid) is never billable, even on an open job", () => {
-  assert.equal(bucket("1130", "98", "2026-07-15"), "nonBillable");
-  assert.equal(bucket("1130", "98", "2026-07-15", day("2026-06-30")), "nonBillable");
+  assert.equal(bucket("1130", "98", "2026-07-15"), "invalidSection");
+  // Section 98 wins over the close-date rule, so it keeps its own reason on a closed job.
+  assert.equal(bucket("1130", "98", "2026-07-15", day("2026-06-30")), "invalidSection");
+  // An overhead job stays Non-Billable whatever the section, so it is not re-labelled.
+  assert.equal(bucket("4000", "98", "2026-07-15"), "nonBillable");
 });
 
 test("ordinary work booked AFTER the job closed falls out of billable", () => {
   const closed = day("2026-06-30");
-  assert.equal(bucket("1130", "10", "2026-07-01", closed), "nonBillable");
+  assert.equal(bucket("1130", "10", "2026-07-01", closed), "afterJobComplete");
+  // An overhead job is Non-Billable by design, not invalid, even after its close date.
+  assert.equal(bucket("4000", "10", "2026-07-01", closed), "nonBillable");
   // The boundary is inclusive on the close date itself: `Date <= Effective Close Date`.
   assert.equal(bucket("1130", "10", "2026-06-30", closed), "billableActive");
   assert.equal(bucket("1130", "10", "2026-06-29", closed), "billableActive");
@@ -80,7 +85,16 @@ test("every punch lands in exactly one bucket — the partition Billable+NonBill
   const jobs = ["1130", BELLCO_JOB_ID, ...OVERHEAD_JOB_IDS];
   const sections = ["1", "10", "40", "50", "70", "80", "90", "98"];
   const closes = [OPEN, day("2026-06-30")];
-  const valid = new Set<PunchBucket>(["billableActive", "warranty", "service", "spareParts", "bellco", "nonBillable"]);
+  const valid = new Set<PunchBucket>([
+    "billableActive",
+    "warranty",
+    "service",
+    "spareParts",
+    "bellco",
+    "nonBillable",
+    "invalidSection",
+    "afterJobComplete",
+  ]);
   for (const j of jobs)
     for (const s of sections)
       for (const c of closes) {

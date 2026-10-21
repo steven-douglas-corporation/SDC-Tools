@@ -17,7 +17,16 @@ import { classifyUtilizationPunch, type PunchBucket } from "../src/lib/departmen
 // two things that would break that quietly.
 
 test("every bucket has a label — none can render as a raw enum", () => {
-  const buckets: PunchBucket[] = ["billableActive", "warranty", "service", "spareParts", "bellco", "nonBillable"];
+  const buckets: PunchBucket[] = [
+    "billableActive",
+    "warranty",
+    "service",
+    "spareParts",
+    "bellco",
+    "nonBillable",
+    "invalidSection",
+    "afterJobComplete",
+  ];
   for (const b of buckets) {
     assert.ok(BUCKET_LABEL[b], `${b} has no label`);
     assert.notEqual(BUCKET_LABEL[b], b, `${b} falls through to the enum name`);
@@ -25,16 +34,18 @@ test("every bucket has a label — none can render as a raw enum", () => {
 });
 
 /** The drill's own rule, mirrored here so both tests state it once. */
-const isBillableBucket = (b: PunchBucket): boolean => b !== "nonBillable" && b !== "bellco";
+const isBillableBucket = (b: PunchBucket): boolean =>
+  b !== "nonBillable" && b !== "bellco" && b !== "invalidSection" && b !== "afterJobComplete";
 
 test("the drill's billable partition matches the department table's", () => {
   // The table sums billableTotal as active + warranty + service + spareParts
   // (department-utilization.ts's accumulate); the drill derives `billable` as
-  // "not nonBillable and not bellco". Those are the same set — stated here so
-  // that adding a seventh bucket cannot silently land on the wrong side of it
-  // in one place and not the other.
+  // "not nonBillable, bellco or either invalid kind" (the table folds the invalid
+  // kinds into Non-Billable). Those are the same set — stated here so that adding
+  // another bucket cannot silently land on the wrong side of it in one place and
+  // not the other.
   const tableBillable: PunchBucket[] = ["billableActive", "warranty", "service", "spareParts"];
-  const all: PunchBucket[] = [...tableBillable, "bellco", "nonBillable"];
+  const all: PunchBucket[] = [...tableBillable, "bellco", "nonBillable", "invalidSection", "afterJobComplete"];
   for (const b of all) {
     assert.equal(isBillableBucket(b), tableBillable.includes(b), `${b} is on different sides of the two definitions`);
   }
@@ -79,6 +90,46 @@ test("an overhead job reads as Non-Billable in the drill", () => {
   });
   assert.equal(bucket, "nonBillable");
   assert.equal(BUCKET_LABEL[bucket], "Non-Billable");
+});
+
+test("a section 98 punch reads as Invalid: section 98, not Non-Billable, and does not count as billable", () => {
+  const bucket = classifyUtilizationPunch({
+    jobNumber: "1130",
+    rawSection: "98",
+    workDate: new Date("2026-08-27T00:00:00Z"),
+    effectiveCloseDate: null,
+  });
+  assert.equal(bucket, "invalidSection");
+  assert.equal(BUCKET_LABEL[bucket], "Invalid: section 98");
+  assert.equal(isBillableBucket("invalidSection"), false);
+});
+
+test("a punch after the job's complete date reads as Invalid: after job complete", () => {
+  const afterClose = classifyUtilizationPunch({
+    jobNumber: "1130",
+    rawSection: "10",
+    workDate: new Date("2026-08-27T00:00:00Z"),
+    effectiveCloseDate: new Date("2026-08-14T00:00:00Z"),
+  });
+  assert.equal(afterClose, "afterJobComplete");
+  assert.equal(BUCKET_LABEL[afterClose], "Invalid: after job complete");
+  assert.equal(isBillableBucket("afterJobComplete"), false);
+
+  // Warranty work after handover is expected (Data Management agrees), so it stays valid and billable.
+  const warranty = classifyUtilizationPunch({
+    jobNumber: "1130",
+    rawSection: "70",
+    workDate: new Date("2026-08-27T00:00:00Z"),
+    effectiveCloseDate: new Date("2026-08-14T00:00:00Z"),
+  });
+  assert.equal(warranty, "warranty");
+});
+
+test("the panel tints both Invalid kinds red and explains each", () => {
+  const src = readFileSync(join(import.meta.dirname, "..", "src", "components", "dashboard", "EmployeePunchDrill.tsx"), "utf8");
+  assert.match(src, /INVALID_BUCKETS\.has\(r\.bucket\) \? "bg-sdc-red-bg/);
+  assert.match(src, /new Set<PunchBucket>\(\["invalidSection", "afterJobComplete"\]\)/);
+  assert.match(src, /invalidWhy\(r\.bucket, r\.closeDate\)/);
 });
 
 test("Bellco is its own bucket and does NOT count as billable", () => {

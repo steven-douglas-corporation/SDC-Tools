@@ -20,15 +20,36 @@ import type { PunchBucket } from "@/lib/department-utilization";
 // Verified across every employee with hours in 2026-08: 48/48 reconcile on both
 // total and billable hours.
 
-/** Bucket tint. Billable shades green, the two that pull utilization DOWN read neutral/red. */
+/**
+ * Bucket tint. Billable shades green, the two that pull utilization DOWN read
+ * neutral/yellow. Red is kept for Invalid punches, which are errors to fix rather
+ * than a way the hours were spent — the whole row is tinted red as well.
+ */
 const BUCKET_TONE: Record<PunchBucket, string> = {
   billableActive: "bg-sdc-green-bg text-sdc-green-text",
   warranty: "bg-sdc-blue-light text-sdc-blue-dark",
   service: "bg-sdc-blue-light text-sdc-blue-dark",
   spareParts: "bg-sdc-blue-light text-sdc-blue-dark",
   bellco: "bg-sdc-gray-100 text-sdc-gray-600",
-  nonBillable: "bg-sdc-red-bg text-sdc-red-text",
+  nonBillable: "bg-sdc-yellow-bg text-sdc-yellow-text",
+  invalidSection: "bg-sdc-red text-white",
+  afterJobComplete: "bg-sdc-red text-white",
 };
+
+/** Buckets that are data errors to fix, not a way the hours were spent. They also get a red row. */
+const INVALID_BUCKETS: ReadonlySet<PunchBucket> = new Set<PunchBucket>(["invalidSection", "afterJobComplete"]);
+
+/** Why a punch is invalid, in plain words — the badge says which kind, this says what that means. */
+function invalidWhy(bucket: PunchBucket, closeDate: string | null): string | undefined {
+  if (bucket === "invalidSection") return "Section 98 is the Invalid section — counted as non-billable";
+  if (bucket === "afterJobComplete") {
+    return (
+      `Booked after the job's complete date${closeDate ? ` (${closeDate})` : ""}, in a section other than 70, 80 or 90 — ` +
+      "counted as non-billable. Also listed in Data Management."
+    );
+  }
+  return undefined;
+}
 
 const DATE = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 function dateLabel(iso: string): string {
@@ -203,7 +224,11 @@ export function EmployeePunchDrillPanel({
               line that actually explains a utilization percentage. */}
           <div className="flex flex-wrap items-center gap-2 border-b border-sdc-border-soft bg-sdc-gray-50 px-4 py-2">
             {result.byBucket.map((b) => (
-              <span key={b.bucket} className={`rounded px-1.5 py-0.5 text-label font-semibold ${BUCKET_TONE[b.bucket]}`}>
+              <span
+                key={b.bucket}
+                className={`rounded px-1.5 py-0.5 text-label font-semibold ${BUCKET_TONE[b.bucket]}`}
+                title={invalidWhy(b.bucket, null)}
+              >
                 {b.label} {hrs(b.hours)}h
               </span>
             ))}
@@ -245,15 +270,18 @@ export function EmployeePunchDrillPanel({
                     align="left"
                     sort={sort}
                     onSort={onSort}
-                    title="Billable, Warranty, Service, Spare Parts, Bellco, Non-Billable"
-                    className={`${TH} w-[7rem]`}
+                    title="Billable, Warranty, Service, Spare Parts, Bellco, Non-Billable, then the two Invalid kinds"
+                    className={`${TH} w-[12rem]`}
                   />
                   <SortableTh label="Hours" sortKey="hours" type="hours" sort={sort} onSort={onSort} className={`${TH} w-[4.5rem]`} />
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <tr key={`${r.date}-${r.jobId}-${r.section}-${i}`} className="border-b border-sdc-border-soft hover:bg-sdc-blue-light/25">
+                  <tr
+                    key={`${r.date}-${r.jobId}-${r.section}-${i}`}
+                    className={`border-b border-sdc-border-soft ${INVALID_BUCKETS.has(r.bucket) ? "bg-sdc-red-bg hover:bg-sdc-red-bg/70" : "hover:bg-sdc-blue-light/25"}`}
+                  >
                     <td className="px-3 py-1.5 whitespace-nowrap tabular-nums text-sdc-gray-700">{dateLabel(r.date)}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap font-medium text-sdc-navy">{r.jobId}</td>
                     <td className="max-w-[18rem] truncate px-3 py-1.5 text-sdc-gray-700" title={r.jobName}>{r.jobName}</td>
@@ -268,7 +296,10 @@ export function EmployeePunchDrillPanel({
                       {r.sectionName !== r.section && ` ${r.sectionName}`}
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
-                      <span className={`rounded px-1.5 py-0.5 text-label font-semibold ${BUCKET_TONE[r.bucket]}`}>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-label font-semibold ${BUCKET_TONE[r.bucket]}`}
+                        title={invalidWhy(r.bucket, r.closeDate)}
+                      >
                         {result.byBucket.find((b) => b.bucket === r.bucket)?.label ?? r.bucket}
                       </span>
                     </td>

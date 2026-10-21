@@ -23,6 +23,7 @@ const punch = (p: Partial<EmployeeMonthPunch>): EmployeeMonthPunch => ({
   hours: 8,
   bucket: "billableActive",
   billable: true,
+  closeDate: null,
   ...p,
 });
 
@@ -181,9 +182,11 @@ test("the bucket rank is derived from BUCKET_LABEL, so a new bucket is ranked au
   for (const bucket of Object.keys(BUCKET_LABEL)) {
     assert.equal(typeof BUCKET_RANK.get(bucket), "number", `${bucket} has no rank`);
   }
-  // Billable first, Non-Billable last — the property the column is for.
+  // Billable first, then Non-Billable, then the two Invalid kinds last — the property the column is for.
   assert.equal(BUCKET_RANK.get("billableActive"), 0);
-  assert.equal(BUCKET_RANK.get("nonBillable"), BUCKET_RANK.size - 1);
+  assert.equal(BUCKET_RANK.get("nonBillable"), BUCKET_RANK.size - 3);
+  assert.equal(BUCKET_RANK.get("invalidSection"), BUCKET_RANK.size - 2);
+  assert.equal(BUCKET_RANK.get("afterJobComplete"), BUCKET_RANK.size - 1);
 });
 
 // ── Hours ──────────────────────────────────────────────────────────────────
