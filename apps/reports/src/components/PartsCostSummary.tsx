@@ -27,7 +27,10 @@ const BAR_PROJECTED = "#FFDE51"; // remaining exposure the ETC covers
 const BAR_EXCESS = "#C0392B";
 // Dotted boundary under the yellow band — a deeper amber than the fill so it reads on both white and navy.
 const BAR_PROJECTED_LINE = "#D4A800";
-const BAR_OPEN = "#9CB8D6"; // Not yet invoiced — ordered, on open POs (2026-10-19; replaces the red "uncovered" band)
+// Not yet invoiced is drawn with a dotted outline: it is ordered, not yet invoiced — still to become cost.
+const BAR_OPEN_LINE = "#5E85B3";
+const BAR_OPEN = "#9CB8D6";
+const OPEN_OUTLINE = { border: `1.5px dotted ${BAR_OPEN_LINE}` } as const; // Not yet invoiced — ordered, on open POs (2026-10-19; replaces the red "uncovered" band)
 
 // Height taller than before (2026-08-10, by request) so the second bar's
 // three segments have room to read as distinct shapes rather than thin stripes.
@@ -56,8 +59,21 @@ const BAR_OPEN = "#9CB8D6"; // Not yet invoiced — ordered, on open POs (2026-1
 // under their own (comparatively wide) value labels — nothing here is doing
 // anything that chart doesn't already do with an even bigger size gap.
 const BAR_W = "2rem"; // 2026-10-21: wider than the ETC chart's 1.25rem, by request, now that the card has three bars
-// Room kept to the right of the Projected bar for its side names and leader lines (see sideLabels).
-const SIDE_ROOM = "5rem";
+// ── Layout (2026-10-21): Budget | Projected ···· Total ──────────────────────────────────────────────
+//
+// Every column is a fixed COL_W wide with its bar centred in it, so the horizontal distances between the
+// bars are KNOWN — which is what lets one dotted line run from the Projected bar to the top of the Total bar
+// (see CONNECTOR_SPAN). SIDE_ROOM is kept to the right of the Projected bar for its side names; TOTAL_GAP
+// is the extra space that sets the Total bar apart from the first two; TOTAL_SIDE is room to the right of
+// the Total bar for its own names.
+const COL_W = "5rem";
+const SIDE_ROOM = "3.5rem";
+const TOTAL_GAP = "2rem";
+const TOTAL_SIDE = "5rem";
+const ROW_GAP = "0.375rem"; // the `gap-1.5` between columns
+// From the Projected bar's left edge to the Total bar's right edge: both bars, the free half-column on
+// each side of the gap, the Projected side room, the row gap and the Total gap.
+const CONNECTOR_SPAN = `calc(${BAR_W} + ${BAR_W} + (${COL_W} - ${BAR_W}) + ${SIDE_ROOM} + ${ROW_GAP} + ${TOTAL_GAP})`;
 // Purchased to date, as ONE band in the Projected bar. The Total bar beside it splits the same money into
 // Invoiced and posted / Not yet invoiced, so this is a neutral steel blue rather than either of those.
 const BAR_PURCHASED = "#34506E";
@@ -156,18 +172,26 @@ function sideLabels(
   const items = segs
     .map((seg, i) => {
       const below = px.slice(0, i).reduce((a, b) => a + b, 0);
-      return { seg, h: amounts[seg.key] ? 30 : 14, band: below + px[i] / 2, centre: below + px[i] / 2, drawn: px[i] > 0 };
+      return { seg, below, h: amounts[seg.key] ? 30 : 14, band: below + px[i] / 2, centre: below + px[i] / 2, drawn: px[i] > 0 };
     })
     .filter((x) => x.seg.key in names && x.drawn);
   const GAP = 4;
   for (let k = 1; k < items.length; k++) {
     items[k].centre = Math.max(items[k].centre, items[k - 1].centre + (items[k - 1].h + items[k].h) / 2 + GAP);
   }
-  if (items.length > 0) items[items.length - 1].centre = Math.min(items[items.length - 1].centre, barTop - 16);
+  // The top name is held clear of the dotted line at the bar's top: below it normally, and — for a name
+  // that carries an amount (Still to purchase, which sits on the line's far side) — wholly above it. Names
+  // sit to the right of the bar, past the total's label above it, so rising above the bar top is clear.
+  if (items.length > 0) {
+    const last = items[items.length - 1];
+    last.centre = amounts[last.seg.key]
+      ? Math.max(last.band, last.below + last.h / 2 + 4)
+      : Math.min(last.centre, barTop - 16);
+  }
   for (let k = items.length - 2; k >= 0; k--) {
     items[k].centre = Math.min(items[k].centre, items[k + 1].centre - (items[k + 1].h + items[k].h) / 2 - GAP);
   }
-  const colourOf = (key: string, fallback: string) => (key === "stp" ? BAR_PROJECTED_LINE : fallback);
+  const colourOf = (key: string, fallback: string) => (key === "stp" ? BAR_PROJECTED_LINE : key === "open" ? BAR_OPEN_LINE : fallback);
   return (
     <>
       <svg aria-hidden className="pointer-events-none absolute z-10 overflow-visible" style={{ left: "100%", top: 0 }} width={LEADER_W} height={BAR_H}>
@@ -850,10 +874,14 @@ export function PartsCostSummary({
             className={`motion-interactive w-full flex-shrink-0 cursor-pointer ${i === segs.length - 1 ? "rounded-t-sm" : ""} ${
               drillMode === segmentDrillMode(s.key) ? "ring-2 ring-sdc-blue" : "hover:opacity-80"
             }`}
-            style={{ height: px[i], background: s.color }}
+            style={{ height: px[i], background: s.color, ...(s.key === "open" ? OPEN_OUTLINE : null) }}
           />
         ) : (
-          <div key={s.key} className={`w-full flex-shrink-0 ${i === segs.length - 1 ? "rounded-t-sm" : ""}`} style={{ height: px[i], background: s.color }} />
+          <div
+            key={s.key}
+            className={`w-full flex-shrink-0 ${i === segs.length - 1 ? "rounded-t-sm" : ""}`}
+            style={{ height: px[i], background: s.color, ...(s.key === "open" ? OPEN_OUTLINE : null) }}
+          />
         ),
       )}
     </div>
@@ -997,7 +1025,7 @@ export function PartsCostSummary({
             it's the column's own content-based minimum doing that, same as
             it always has, independent of whatever the bar itself is doing. */}
         <div className="flex items-end gap-1.5">
-          <div className="flex flex-col items-center gap-1.5">
+          <div className="flex flex-col items-center gap-1.5" style={{ width: COL_W }}>
             {/* ── Value label anchored to the bar's own top, not the frame's
                 (2026-08-14, by request — "not properly anchored... floating
                 too far left/right") ────────────────────────────────────────
@@ -1038,32 +1066,8 @@ export function PartsCostSummary({
             <div className="flex items-start justify-center text-center text-note font-medium leading-tight text-sdc-gray-600" style={{ height: CAPTION_H }}>Budget</div>
           </div>
 
-          {/* ── TOTAL: Invoiced and posted + Not yet invoiced (2026-10-21, by request) ──────────────
-              What has been bought to date, in its two parts (the table below names them by colour). No side
-              names here, so the gap to the Projected bar stays even; the Projected bar names its own
-              bands to its right. No red here: the excess belongs to the Projected bar. */}
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="relative flex flex-col items-center justify-end" style={{ width: BAR_W, height: BAR_H }}>
-              <span
-                className="mb-0.5 whitespace-nowrap font-mono text-[0.8125rem] font-bold leading-none tabular-nums text-sdc-navy"
-                title={`Total ${usd(totalBarDisplay)} = invoiced and posted ${usd(invoicedDisplay)} + not yet invoiced ${usd(openDisplay)}. This is what has been purchased to date.`}
-              >
-                {usd(totalBarDisplay)}
-              </span>
-              {renderStack(totalSegments, totalPx)}
-            </div>
-            <div
-              className="flex flex-col items-center justify-start text-center leading-tight text-sdc-gray-600"
-              style={{ height: CAPTION_H }}
-              title="Total = Invoiced and posted + Not yet invoiced: everything purchased to date"
-            >
-              <span className="text-note font-medium">Total</span>
-              <span className="text-micro text-sdc-gray-400">Purchased to date</span>
-            </div>
-          </div>
-
           {/* ── PROJECTED: Purchased to date + Still to purchase ────────────────────────────────── */}
-          <div className="flex flex-col items-center gap-1.5" style={{ paddingRight: SIDE_ROOM }}>
+          <div className="flex flex-col items-center gap-1.5" style={{ width: `calc(${COL_W} + ${SIDE_ROOM})`, paddingRight: SIDE_ROOM }}>
             <div className="relative flex flex-col items-center justify-end" style={{ width: BAR_W, height: BAR_H }}>
               {/* §10: the figure above the bar is the projected total, whatever the ETC says. It stays
                   navy even when part of it is excess: the total is not itself an overspend, and colouring
@@ -1084,20 +1088,21 @@ export function PartsCostSummary({
                   incl. {usd(excessDisplay)} excess
                 </span>
               )}
-              {/* Still to purchase: a dotted amber line where the yellow band begins — the boundary between
-                  what is already bought and what is still to buy — and its name and amount beside the band. */}
-              {stpIdx >= 0 && (
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute z-10"
-                  style={{
-                    left: "-0.4rem",
-                    right: "-0.4rem",
-                    bottom: projPx.slice(0, stpIdx).reduce((a, b) => a + b, 0),
-                    borderTop: `2px dotted ${BAR_PROJECTED_LINE}`,
-                  }}
-                />
-              )}
+              {/* The purchased boundary, joined to the Total bar (2026-10-21, by request). Purchased to date is
+                  the top of this bar's purchased band (and its red excess) and the top of the Total bar —
+                  the same money — so ONE dotted line runs from here across to the Total bar's top, at the
+                  height both bars share. Amber when there is still to purchase above it (the line is where
+                  the yellow band begins); grey when there is not. */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute z-10"
+                style={{
+                  left: "-0.4rem",
+                  width: `calc(${CONNECTOR_SPAN} + 0.8rem)`,
+                  bottom: projPx.slice(0, stpIdx >= 0 ? stpIdx : projPx.length).reduce((a, b) => a + b, 0),
+                  borderTop: `2px dotted ${stpIdx >= 0 ? BAR_PROJECTED_LINE : "#9AA3AF"}`,
+                }}
+              />
               {sideLabels(projSegments, projPx, { purchased: "Purchased to date", stp: "Still to purchase" }, { stp: usd(stillToPurchaseDisplay) })}
               {/* The dotted line marks the plan boundary: it sits where the red excess begins, i.e. between the
                   purchased money within plan below it and the red excess above it. */}
@@ -1130,15 +1135,43 @@ export function PartsCostSummary({
                 {/* "Actual / Projection" survives one size down and muted: it is the name on the Power BI
                     visual this card recreates, so dropping it would break the tie-back. */}
                 <span className="text-note font-medium underline decoration-dotted underline-offset-2">Projected</span>
-                <span className="text-micro text-sdc-gray-400">Actual / Projection</span>
+                <span className="whitespace-nowrap text-micro text-sdc-gray-400">Actual / Projection</span>
               </button>
             ) : (
               <div className="flex h-8 flex-col items-center justify-start text-center leading-tight text-sdc-gray-600">
                 <span className="text-note font-medium">Projected</span>
-                <span className="text-micro text-sdc-gray-400">Actual / Projection</span>
+                <span className="whitespace-nowrap text-micro text-sdc-gray-400">Actual / Projection</span>
               </div>
             )}
           </div>
+          {/* ── TOTAL: Invoiced and posted + Not yet invoiced (2026-10-21, by request) ──────────────
+              What has been bought to date, in its two parts, named beside the bar. It stands apart from
+              Budget and Projected (TOTAL_GAP), and its top is joined to the Projected bar's purchased
+              boundary by a dotted line — the two are the same money. No red here: the excess belongs to
+              the Projected bar. */}
+          <div
+            className="flex flex-col items-center gap-1.5"
+            style={{ marginLeft: TOTAL_GAP, width: `calc(${COL_W} + ${TOTAL_SIDE})`, paddingRight: TOTAL_SIDE }}
+          >
+            <div className="relative flex flex-col items-center justify-end" style={{ width: BAR_W, height: BAR_H }}>
+              <span
+                className="mb-0.5 whitespace-nowrap font-mono text-[0.8125rem] font-bold leading-none tabular-nums text-sdc-navy"
+                title={`Total ${usd(totalBarDisplay)} = invoiced and posted ${usd(invoicedDisplay)} + not yet invoiced ${usd(openDisplay)}. This is what has been purchased to date.`}
+              >
+                {usd(totalBarDisplay)}
+              </span>
+              {sideLabels(totalSegments, totalPx, { invoiced: "Invoiced and posted", open: "Not yet invoiced" })}
+              {renderStack(totalSegments, totalPx)}
+            </div>
+            <div
+              className="flex flex-col items-center justify-start text-center leading-tight text-sdc-gray-600"
+              style={{ height: CAPTION_H }}
+              title="Total = Invoiced and posted + Not yet invoiced: everything purchased to date"
+            >
+              <span className="text-note font-medium">Total</span>
+            </div>
+          </div>
+
         </div>
       </div>
 
