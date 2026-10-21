@@ -25,6 +25,7 @@ import { jobCostTotals, type JobCostComputed } from "@/lib/job-cost";
 
 const COL_DEFS: Record<string, { header: string; type: SheetColumn["type"] }> = {
   customerName: { header: "Customer", type: "text" },
+  jobType: { header: "Type", type: "text" },
   status: { header: "Status", type: "text" },
   actualHours: { header: "Act Hrs", type: "hours" },
   engineeringHours: { header: "Eng Hrs", type: "hours" },
