@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePaneUrl } from "@/components/PaneUrlProvider";
+import { LAZY_CHUNK, clampVisible, nextVisible } from "@/lib/lazy-rows";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 import type { EChartsOption } from "echarts";
 import { EChart } from "@/components/charts/EChart";
@@ -69,6 +70,48 @@ export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
   // already relies on elsewhere in the app.
   const sort = useColumnSort<PunchRowSortKey>();
   const sortedRows = useMemo(() => sortRows(data.rows, sort.sort, PUNCH_ROW_COLUMNS), [data.rows, sort.sort]);
+
+  // ── Drawing the table in chunks ───────────────────────────────────────────
+  //
+  // Up to 3,000 rows arrive from the server, sorted and filtered as asked; only the first
+  // LAZY_CHUNK are drawn, and a sentinel below the table adds the next chunk as it scrolls
+  // into view. See lib/lazy-rows.ts — it is rendering only, so a sort still covers every row.
+  //
+  // Back to the first chunk, and the top of the box, whenever the rows are a different
+  // list: other slicers or a new sort. The reset is "adjust state during render" on a key,
+  // not an effect. A refresh that re-renders the same filters keeps where you scrolled to.
+  const listKey = `${url.searchKey}|${sort.sort?.key ?? ""}:${sort.sort?.direction ?? ""}`;
+  const [drawn, setDrawn] = useState({ count: LAZY_CHUNK, key: listKey });
+  if (drawn.key !== listKey) setDrawn({ count: LAZY_CHUNK, key: listKey });
+  const visibleCount = clampVisible(drawn.count, sortedRows.length);
+  const visibleRows = useMemo(() => sortedRows.slice(0, visibleCount), [sortedRows, visibleCount]);
+  const moreToDraw = visibleCount < sortedRows.length;
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [listKey]);
+
+  useEffect(() => {
+    if (!moreToDraw) return;
+    const root = scrollRef.current;
+    const sentinel = sentinelRef.current;
+    // No observer (an old browser, a test renderer): the "Show more" button below still works.
+    if (!root || !sentinel || typeof IntersectionObserver === "undefined") return;
+    const total = sortedRows.length;
+    // Created afresh after every chunk, so it reports the sentinel's CURRENT position straight
+    // away and keeps adding chunks until the sentinel is pushed out of view.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setDrawn((d) => ({ ...d, count: nextVisible(d.count, total) }));
+      },
+      { root, rootMargin: "240px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [moreToDraw, visibleCount, sortedRows.length]);
 
   // Every slicer writes the same way: set or clear one param and keep the rest.
   function setParam(key: string, value: string | null) {
@@ -183,7 +226,7 @@ export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
       <div className="grid gap-4 xl:grid-cols-[3fr_2fr]">
         {/* Punch table — the report's main visual, same columns and same order. */}
         <div className={card("p-0")}>
-          <div className="max-h-[26rem] overflow-auto styled-scrollbar rounded-xl">
+          <div ref={scrollRef} className="max-h-[26rem] overflow-auto styled-scrollbar rounded-xl">
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-[1] bg-sdc-navy">
                 <tr>
@@ -201,7 +244,7 @@ export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
                 </tr>
               </thead>
               <tbody>
-                {sortedRows.map((r, i) => (
+                {visibleRows.map((r, i) => (
                   <tr key={`${r.employeeId}-${r.date}-${r.section}-${r.jobId}-${i}`} className={i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}>
                     <td className={`${TD} text-sdc-muted`}>{r.department}</td>
                     <td className={`${TD} font-mono text-label`}>{r.employeeId}</td>
@@ -232,7 +275,24 @@ export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
                 )}
               </tbody>
             </table>
+            {/* Reaching this draws the next chunk. Inside the scroll box, so it is the
+                box's bottom that is watched and not the page's. */}
+            <div ref={sentinelRef} aria-hidden className="h-px" />
           </div>
+          {moreToDraw && (
+            <p className="flex flex-wrap items-center gap-x-3 border-t border-sdc-border px-3 py-2 text-note text-sdc-muted">
+              <span>
+                Showing {visibleCount.toLocaleString()} of {sortedRows.length.toLocaleString()} punches. More load as you scroll.
+              </span>
+              <button
+                type="button"
+                onClick={() => setDrawn((d) => ({ ...d, count: nextVisible(d.count, sortedRows.length) }))}
+                className="font-medium text-sdc-blue hover:underline"
+              >
+                Show {Math.min(LAZY_CHUNK, sortedRows.length - visibleCount).toLocaleString()} more
+              </button>
+            </p>
+          )}
           {data.truncated && (
             <p className="border-t border-sdc-border px-3 py-2 text-note text-sdc-gray-400">
               Showing the most recent 3,000 of {data.kpis.totalPunches.toLocaleString()} punches. The cards and the chart cover the

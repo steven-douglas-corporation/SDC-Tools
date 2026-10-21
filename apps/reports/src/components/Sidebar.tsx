@@ -797,7 +797,8 @@ export default function Sidebar({
                     onContextMenu={(e) => {
                       // Kept as an OPTIONAL shortcut, by request — the ⋮ button beside
                       // this link is now the discoverable route to the same menu. Only
-                      // where tabs are possible: an admin route has no pane view, and a
+                      // where tabs are possible: Users & Roles and Role Permissions have
+                      // no pane view, and a
                       // menu of disabled entries is worse than the browser's own.
                       if (!hostable) return;
                       e.preventDefault();

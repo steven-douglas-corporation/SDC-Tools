@@ -831,10 +831,11 @@ test("clicking the page already on screen is a no-op", () => {
 });
 
 test("a page the sidebar cannot host still navigates normally", () => {
-  // Admin routes (Users & Roles, Role Permissions, Data Management) and the external
-  // Project Scheduler link are not hostable, so openTab refuses them and the click
-  // must fall through to an ordinary navigation rather than doing nothing.
-  for (const href of ["/admin/users", "/admin/permissions", "/admin/data-management"]) {
+  // Admin routes (Users & Roles, Role Permissions) and the external Project Scheduler
+  // link are not hostable, so openTab refuses them and the click must fall through to
+  // an ordinary navigation rather than doing nothing. Data Management is not here: it
+  // is a pane again (2026-10-21), see the test below.
+  for (const href of ["/admin/users", "/admin/permissions"]) {
     assert.equal(openTab(EMPTY_WORKSPACE, href), EMPTY_WORKSPACE, `${href} must not become a tab`);
   }
   assert.ok(sidebarClickHandler.includes("handleNavClick(e);"), "unhostable pages keep the normal navigation");

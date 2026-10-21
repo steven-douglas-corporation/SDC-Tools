@@ -6889,3 +6889,40 @@ optional `suggestion` prop.
 outage can read as $0.00 there; the card checks it.
 
 No schema change, no migration.
+
+## 77. Data Management: a tab per band, and split view again (2026-10-21)
+
+Data Management was three bands stacked on one page, and every visit built all three. They
+are now tabs: **Data quality**, **Data sources** and **Employee roster**. The open tab is
+the `?tab=` param (Data quality is first, the default, and writes none), and the server builds only
+that tab, so the punch explorer, the roster file and the position families are no longer read
+on a visit that never opens Data quality. The month picker for the Undefined Hours check
+moved into the Data quality tab, and a tab keeps its own month and slicers when you switch
+away and back.
+
+**Why split view was gone.** The Dashboard is splittable, and Data Quality was a Dashboard
+tab. Moving it here (19798b7) left it on a route that was never in the split-view registry,
+so the option disappeared with nothing failing. `/admin/data-management` is registered again
+(`SPLIT_ROUTES` and `PaneView`'s `PANE_VIEWS`), its body is `DataManagementView` so a pane
+renders the page itself, and `tab`, `m` and the `dq*` slicers are carried per pane. Two
+Data Management panes can show different tabs; it is not exclusive (it holds no editing
+state). Checked in a browser against the dev database: tab clicks, the default tab dropping
+its param, and a split with the Dashboard on the left where switching the right pane's tab
+changes only `r.tab`.
+
+New: `lib/data-management-tabs.ts`, `components/DataManagementTabs.tsx`,
+`tests/data-management-tabs.test.ts`, which also asserts that every `SPLIT_ROUTES` entry has
+a pane view (a missing one only showed a message at runtime). `workspace.test.ts` no longer
+lists Data Management among the routes a tab cannot host.
+
+**Punch table draws in chunks.** The Data quality tab's punch table used to draw all of its
+up to 3,000 rows at once. It now draws 100 and adds 100 more each time the bottom of its
+scroll box comes into view (an `IntersectionObserver` on a sentinel inside the box), with a
+"Show 100 more" button as the fallback and a "Showing 100 of 3,000" line while there is more.
+This is rendering only: the rows still all come from the server in one go, so sorting covers
+every loaded row, and a sort or a change of slicers goes back to the first chunk at the top
+(a refresh with the same filters keeps your place). The 3,000-row cap and its footnote are
+unchanged; lifting them would mean fetching pages from the server and sorting there. New:
+`lib/lazy-rows.ts`, `tests/lazy-rows.test.ts`.
+
+No schema change, no migration.

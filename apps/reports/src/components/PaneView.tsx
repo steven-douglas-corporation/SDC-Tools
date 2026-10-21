@@ -11,6 +11,7 @@ import { CashFlowView } from "@/app/(app)/cash-flow/page";
 import { EmployeesView } from "@/app/(app)/employees/page";
 import { AuditLogView } from "@/app/(app)/audit-log/page";
 import { FeedbackView } from "@/app/(app)/feedback/page";
+import { DataManagementView } from "@/app/(app)/admin/data-management/page";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PaneUrlProvider } from "@/components/PaneUrlProvider";
 import { auth } from "@/lib/auth";
@@ -72,6 +73,7 @@ const PANE_VIEWS = {
   "/employees": EmployeesView,
   "/audit-log": AuditLogView,
   "/feedback": FeedbackView,
+  "/admin/data-management": DataManagementView,
 } as const;
 
 export function isPaneRoute(path: string): path is keyof typeof PANE_VIEWS {
