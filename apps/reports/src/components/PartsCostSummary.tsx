@@ -436,10 +436,13 @@ export function PartsCostSummary({
   // remaining exposure actually exceeds the adjusted forecast, so an on-plan job
   // carries no red at all.
   // The excess is money already inside Invoiced / Not yet invoiced, so painting it as a band of its own
-  // takes its height out of the top of the purchased stack (open POs first, then invoiced) — the bar's
+  // takes its height out of the purchased stack (shared between Invoiced and Not yet invoiced in proportion) — the bar's
   // total height stays exactly the projected total. The printed figures keep their true values.
-  const openCarve = Math.min(excessAmount, openBalanceAmount);
-  const invoicedCarve = hasExcess ? Math.max(0, excessAmount - openCarve) : 0;
+  // Taken PROPORTIONALLY from both: the excess is a slice of everything bought, and taking it from the open
+  // POs first used to erase a small Not yet invoiced band altogether (job 1125: $727 open, $1,899 excess).
+  const purchasedForCarve = invoiced + openBalanceAmount;
+  const openCarve = hasExcess && purchasedForCarve > 0 ? (excessAmount * openBalanceAmount) / purchasedForCarve : 0;
+  const invoicedCarve = hasExcess && purchasedForCarve > 0 ? (excessAmount * invoiced) / purchasedForCarve : 0;
   const segments: { key: string; label: string; note?: string; value: number; color: string; heightPct: number }[] = [
     {
       key: "invoiced",
@@ -977,22 +980,22 @@ export function PartsCostSummary({
                   }}
                 />
               )}
-              {/* ── Names beside the bar (2026-10-21, by request) ──────────────────────────
-                  Invoiced and posted, Not yet invoiced and Still to purchase are named on the side of
-                  their own band, each tied to it by a left rule in the band's colour; only Still to
-                  purchase also carries its amount (the other two are in the table). Each label sits at
-                  its band's centre, then they are nudged apart (bottom-up, then back down from the top)
-                  so a thin band cannot stack its name on its neighbour's or on the total above the bar. */}
+              {/* ── Names beside the bar, joined to their band by a leader (2026-10-21, by request) ──
+                  Invoiced and posted, Not yet invoiced and Still to purchase are named beside the bar. A
+                  band can be a few pixels tall and its name needs ~14-30px, so the name cannot always sit
+                  level with the band; a thin leader line therefore starts INSIDE the band, at its own
+                  centre, and runs out to wherever the name has been moved to. The names are spread apart
+                  (bottom-up, then back down from the top) so none stacks on another or on the total above
+                  the bar. Only Still to purchase carries its amount; the other two are in the table. */}
               {(() => {
                 const barTop = renderPx.reduce((a, b) => a + b, 0);
                 const sideKeys = ["invoiced", "open", "stp"];
                 const items = segments
-                  .map((seg, i) => ({
-                    seg,
-                    h: seg.key === "stp" ? 30 : 14,
-                    centre: renderPx.slice(0, i).reduce((a, b) => a + b, 0) + renderPx[i] / 2,
-                  }))
-                  .filter((x) => sideKeys.includes(x.seg.key));
+                  .map((seg, i) => {
+                    const below = renderPx.slice(0, i).reduce((a, b) => a + b, 0);
+                    return { seg, h: seg.key === "stp" ? 30 : 14, band: below + renderPx[i] / 2, centre: below + renderPx[i] / 2, drawn: renderPx[i] > 0 };
+                  })
+                  .filter((x) => sideKeys.includes(x.seg.key) && x.drawn);
                 const GAP = 4;
                 for (let k = 1; k < items.length; k++) {
                   items[k].centre = Math.max(items[k].centre, items[k - 1].centre + (items[k - 1].h + items[k].h) / 2 + GAP);
@@ -1001,25 +1004,45 @@ export function PartsCostSummary({
                 for (let k = items.length - 2; k >= 0; k--) {
                   items[k].centre = Math.min(items[k].centre, items[k + 1].centre - (items[k + 1].h + items[k].h) / 2 - GAP);
                 }
-                return items.map(({ seg, centre }) => (
-                  <div
-                    key={seg.key}
-                    className="pointer-events-none absolute z-10 flex flex-col whitespace-nowrap border-l-2 pl-1.5 leading-tight"
-                    style={{
-                      left: "calc(100% + 0.5rem)",
-                      bottom: centre,
-                      transform: "translateY(50%)",
-                      borderColor: seg.key === "stp" ? BAR_PROJECTED_LINE : seg.color,
-                    }}
-                  >
-                    <span className="text-micro font-medium text-sdc-gray-600">
-                      {seg.key === "invoiced" ? "Invoiced and posted" : seg.key === "open" ? "Not yet invoiced" : "Still to purchase"}
-                    </span>
-                    {seg.key === "stp" && (
-                      <span className="font-mono text-xs font-bold tabular-nums text-sdc-navy">{usd(stillToPurchaseDisplay)}</span>
-                    )}
-                  </div>
-                ));
+                const LEADER_W = 30;
+                const colour = (key: string, fallback: string) => (key === "stp" ? BAR_PROJECTED_LINE : key === "invoiced" ? BAR_INVOICED : fallback);
+                return (
+                  <>
+                    <svg
+                      aria-hidden
+                      className="pointer-events-none absolute z-10 overflow-visible"
+                      style={{ left: "100%", top: 0 }}
+                      width={LEADER_W}
+                      height={BAR_H}
+                    >
+                      {items.map(({ seg, band, centre }) => {
+                        const yBand = BAR_H - band;
+                        const yLabel = BAR_H - centre;
+                        const c = colour(seg.key, seg.color);
+                        return (
+                          <g key={seg.key} stroke={c} fill="none" strokeWidth="1.25">
+                            <path d={`M0 ${yBand} H8 L20 ${yLabel} H${LEADER_W}`} />
+                            <circle cx="0" cy={yBand} r="1.75" fill={c} stroke="none" />
+                          </g>
+                        );
+                      })}
+                    </svg>
+                    {items.map(({ seg, centre }) => (
+                      <div
+                        key={seg.key}
+                        className="pointer-events-none absolute z-10 flex flex-col whitespace-nowrap leading-tight"
+                        style={{ left: `calc(100% + ${LEADER_W + 4}px)`, bottom: centre, transform: "translateY(50%)" }}
+                      >
+                        <span className="text-micro font-medium text-sdc-gray-600">
+                          {seg.key === "invoiced" ? "Invoiced and posted" : seg.key === "open" ? "Not yet invoiced" : "Still to purchase"}
+                        </span>
+                        {seg.key === "stp" && (
+                          <span className="font-mono text-xs font-bold tabular-nums text-sdc-navy">{usd(stillToPurchaseDisplay)}</span>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                );
               })()}
               {/* The dotted line marks the plan boundary: it sits where the red excess begins, i.e. between the
                   invoiced / open-PO money below it (within plan) and the red excess above it. */}
