@@ -55,7 +55,12 @@ const BAR_OPEN = "#9CB8D6"; // Not yet invoiced — ordered, on open POs (2026-1
 // wider, the same way SectionHierarchyChart's own narrow bars sit centered
 // under their own (comparatively wide) value labels — nothing here is doing
 // anything that chart doesn't already do with an even bigger size gap.
-const BAR_W = "1.25rem";
+const BAR_W = "2rem"; // 2026-10-21: wider than the ETC chart's 1.25rem, by request, now that the card has three bars
+// Room kept to the right of a bar for its side names and leader lines (see sideLabels).
+const SIDE_ROOM = "5rem";
+// Purchased to date, as ONE band in the Projected bar. The Total bar beside it splits the same money into
+// Invoiced and posted / Not yet invoiced, so this is a neutral steel blue rather than either of those.
+const BAR_PURCHASED = "#34506E";
 
 // ── Height: measured to share ONE baseline with the ETC chart beside it ──────
 //
@@ -133,6 +138,65 @@ const CAPTION_H = "2rem";
 // narrower than the card already needs for its OWN captions ("Actual /
 // Projection"), so this block was never actually the thing forcing the card
 // wide; it only looked that way while wrapping was in the mix.
+// ── Names beside a bar, joined to their band by a leader (2026-10-21) ──────────────────────────
+//
+// A band can be a few pixels tall and its name needs ~14-30px, so the name cannot always sit level with
+// the band. A thin leader therefore starts INSIDE the band, at its own centre, and runs out to wherever the
+// name has been moved to. Names are spread apart (bottom-up, then back down from the top) so none stacks on
+// another or on the figure above the bar. `names` says which bands are named and what they are called;
+// `amounts` adds a figure under a name (only Still to purchase has one).
+const LEADER_W = 24;
+function sideLabels(
+  segs: readonly { key: string; color: string }[],
+  px: readonly number[],
+  names: Record<string, string>,
+  amounts: Record<string, string> = {},
+) {
+  const barTop = px.reduce((a, b) => a + b, 0);
+  const items = segs
+    .map((seg, i) => {
+      const below = px.slice(0, i).reduce((a, b) => a + b, 0);
+      return { seg, h: amounts[seg.key] ? 30 : 14, band: below + px[i] / 2, centre: below + px[i] / 2, drawn: px[i] > 0 };
+    })
+    .filter((x) => x.seg.key in names && x.drawn);
+  const GAP = 4;
+  for (let k = 1; k < items.length; k++) {
+    items[k].centre = Math.max(items[k].centre, items[k - 1].centre + (items[k - 1].h + items[k].h) / 2 + GAP);
+  }
+  if (items.length > 0) items[items.length - 1].centre = Math.min(items[items.length - 1].centre, barTop - 16);
+  for (let k = items.length - 2; k >= 0; k--) {
+    items[k].centre = Math.min(items[k].centre, items[k + 1].centre - (items[k + 1].h + items[k].h) / 2 - GAP);
+  }
+  const colourOf = (key: string, fallback: string) => (key === "stp" ? BAR_PROJECTED_LINE : fallback);
+  return (
+    <>
+      <svg aria-hidden className="pointer-events-none absolute z-10 overflow-visible" style={{ left: "100%", top: 0 }} width={LEADER_W} height={BAR_H}>
+        {items.map(({ seg, band, centre }) => {
+          const yBand = BAR_H - band;
+          const yLabel = BAR_H - centre;
+          const c = colourOf(seg.key, seg.color);
+          return (
+            <g key={seg.key} stroke={c} fill="none" strokeWidth="1.25">
+              <path d={`M0 ${yBand} H6 L${LEADER_W - 8} ${yLabel} H${LEADER_W}`} />
+              <circle cx="0" cy={yBand} r="1.75" fill={c} stroke="none" />
+            </g>
+          );
+        })}
+      </svg>
+      {items.map(({ seg, centre }) => (
+        <div
+          key={seg.key}
+          className="pointer-events-none absolute z-10 flex flex-col whitespace-nowrap leading-tight"
+          style={{ left: `calc(100% + ${LEADER_W + 4}px)`, bottom: centre, transform: "translateY(50%)" }}
+        >
+          <span className="text-micro font-medium text-sdc-gray-600">{names[seg.key]}</span>
+          {amounts[seg.key] && <span className="font-mono text-[0.8125rem] font-bold tabular-nums text-sdc-navy">{amounts[seg.key]}</span>}
+        </div>
+      ))}
+    </>
+  );
+}
+
 /**
  * Which drill view a bar segment opens.
  *
@@ -145,6 +209,7 @@ const CAPTION_H = "2rem";
  */
 function segmentDrillMode(key: string): PartsDrillMode {
   if (key === "stp" || key === "excess") return "etc";
+  if (key === "purchased") return "projection";
   if (key === "open") return "left";
   return "invoiced";
 }
@@ -435,32 +500,28 @@ export function PartsCostSummary({
   // The red section "may or may not be anything" (§11): it is pushed only when the
   // remaining exposure actually exceeds the adjusted forecast, so an on-plan job
   // carries no red at all.
-  // The excess is money already inside Invoiced / Not yet invoiced, so painting it as a band of its own
-  // takes its height out of the top of the purchased stack (open POs first, then invoiced) — the bar's
-  // total height stays exactly the projected total. The printed figures keep their true values.
-  const openCarve = Math.min(excessAmount, openBalanceAmount);
-  const invoicedCarve = hasExcess ? Math.max(0, excessAmount - openCarve) : 0;
-  const segments: { key: string; label: string; note?: string; value: number; color: string; heightPct: number }[] = [
+  // ── Two bars (2026-10-21, by request) ─────────────────────────────────────
+  //
+  //   TOTAL      Invoiced and posted + Not yet invoiced  = what has been bought to date, in its two parts.
+  //   PROJECTED  Purchased to date + Still to purchase   = where the job is heading. The purchased part is
+  //              ONE band here; the red excess (when there is one) is carved out of its top, so the bar's
+  //              total height stays exactly the projected total. The printed figures keep their true values.
+  //
+  // The excess is money already inside Purchased to date, so painting it as a band of its own takes its
+  // height out of the purchased band — the Total bar beside it keeps the true Invoiced / Not yet invoiced
+  // heights and carries no red.
+  type BarSeg = { key: string; label: string; note?: string; value: number; color: string; heightPct: number };
+  const projSegments: BarSeg[] = [
     {
-      key: "invoiced",
-      label: "Invoiced and posted",
-      value: invoicedDisplay,
-      color: BAR_INVOICED,
-      heightPct: pct(Math.max(0, invoiced - invoicedCarve)),
+      key: "purchased",
+      label: "Purchased to date",
+      value: purchasedDisplay,
+      color: BAR_PURCHASED,
+      heightPct: pct(Math.max(0, financials.purchased - (hasExcess ? excessAmount : 0))),
     },
   ];
-  if (openBalanceAmount > 0.5) {
-    segments.push({
-      key: "open",
-      label: "Not yet invoiced (open POs)",
-      note: "ordered, waiting for an invoice",
-      value: openDisplay,
-      color: BAR_OPEN,
-      heightPct: pct(Math.max(0, openBalanceAmount - openCarve)),
-    });
-  }
   if (hasExcess) {
-    segments.push({
+    projSegments.push({
       key: "excess",
       label: "Excess purchased over plan",
       note: "bought this month beyond last month's Left to Purchase",
@@ -470,7 +531,7 @@ export function PartsCostSummary({
     });
   }
   if (stillToPurchaseAmount > 0.5) {
-    segments.push({
+    projSegments.push({
       key: "stp",
       label: "Still to purchase",
       note: etcUnknown && !fromMonthlyEtc ? undefined : "last month's Left to Purchase less purchased this month",
@@ -479,6 +540,22 @@ export function PartsCostSummary({
       heightPct: pct(stillToPurchaseAmount),
     });
   }
+  const totalSegments: BarSeg[] = [
+    { key: "invoiced", label: "Invoiced and posted", value: invoicedDisplay, color: BAR_INVOICED, heightPct: pct(Math.max(0, invoiced)) },
+  ];
+  if (openBalanceAmount > 0.5) {
+    totalSegments.push({
+      key: "open",
+      label: "Not yet invoiced (open POs)",
+      note: "ordered, waiting for an invoice",
+      value: openDisplay,
+      color: BAR_OPEN,
+      heightPct: pct(openBalanceAmount),
+    });
+  }
+  // What the Total bar's label says: its own two bands added up. It equals Purchased to date except on the
+  // rare job whose invoices run above what was ordered (the table's "invoiced above the PO total" row).
+  const totalBarDisplay = invoicedDisplay + openDisplay;
 
   // ── The breakdown table (2026-09-03, by request) ──────────────────────────
   //
@@ -545,7 +622,7 @@ export function PartsCostSummary({
   const breakdown: BreakdownRow[] = [
     {
       key: "purchased",
-      swatch: null,
+      swatch: BAR_PURCHASED,
       label: "Purchased to date",
       derivation: "every parts line ordered on this job, invoiced or not",
       value: purchasedDisplay,
@@ -702,27 +779,31 @@ export function PartsCostSummary({
   // legend and the drill-through all still read the true figures; only the rendered
   // pixel heights move. `heightPct` (the true share) is kept alongside so the two
   // can never be confused at the call site.
-  const excessIdx = segments.findIndex((s) => s.key === "excess");
-  const stpIdx = segments.findIndex((s) => s.key === "stp");
+  const excessIdx = projSegments.findIndex((s) => s.key === "excess");
+  const stpIdx = projSegments.findIndex((s) => s.key === "stp");
   const MIN_SEG_PX = 10;
-  const renderPx: number[] = segments.map((seg) => barPx(seg.heightPct));
-  {
+  // Rendered pixel heights for one bar, with the floor applied inside that bar only.
+  const flooredPx = (segs: BarSeg[]): number[] => {
+    const px: number[] = segs.map((seg) => barPx(seg.heightPct));
     let borrowed = 0;
-    for (let i = 0; i < renderPx.length; i++) {
+    for (let i = 0; i < px.length; i++) {
       // A zero segment is not drawn at all — a floor there would invent a band for
       // money that does not exist.
-      if (segments[i].heightPct <= 0) continue;
-      if (renderPx[i] < MIN_SEG_PX) {
-        borrowed += MIN_SEG_PX - renderPx[i];
-        renderPx[i] = MIN_SEG_PX;
+      if (segs[i].heightPct <= 0) continue;
+      if (px[i] < MIN_SEG_PX) {
+        borrowed += MIN_SEG_PX - px[i];
+        px[i] = MIN_SEG_PX;
       }
     }
     if (borrowed > 0) {
       let tallest = 0;
-      for (let i = 1; i < renderPx.length; i++) if (renderPx[i] > renderPx[tallest]) tallest = i;
-      renderPx[tallest] = Math.max(MIN_SEG_PX, renderPx[tallest] - borrowed);
+      for (let i = 1; i < px.length; i++) if (px[i] > px[tallest]) tallest = i;
+      px[tallest] = Math.max(MIN_SEG_PX, px[tallest] - borrowed);
     }
-  }
+    return px;
+  };
+  const projPx = flooredPx(projSegments);
+  const totalPx = flooredPx(totalSegments);
 
 
 
@@ -751,6 +832,32 @@ export function PartsCostSummary({
           pct: financials.variancePct! / 100,
         }
       : null;
+
+  // One bar's bands, bottom to top. Each band is its own drill target (2026-09-02): a <button> per band
+  // rather than one handler with hit-testing, so the browser's hit-testing is exact and each gets a real
+  // accessible name and keyboard support. `px` is the floored pixel heights, so the stack's total is the
+  // bar's total (see flooredPx).
+  const renderStack = (segs: BarSeg[], px: number[]) => (
+    <div className="flex w-full flex-col-reverse">
+      {segs.map((s, i) =>
+        onDrill ? (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => onDrill(segmentDrillMode(s.key))}
+            aria-label={`${s.label} ${usd(s.value)} — show the detail behind this`}
+            title={`${s.label} — click for detail`}
+            className={`motion-interactive w-full flex-shrink-0 cursor-pointer ${i === segs.length - 1 ? "rounded-t-sm" : ""} ${
+              drillMode === segmentDrillMode(s.key) ? "ring-2 ring-sdc-blue" : "hover:opacity-80"
+            }`}
+            style={{ height: px[i], background: s.color }}
+          />
+        ) : (
+          <div key={s.key} className={`w-full flex-shrink-0 ${i === segs.length - 1 ? "rounded-t-sm" : ""}`} style={{ height: px[i], background: s.color }} />
+        ),
+      )}
+    </div>
+  );
 
   return (
     // The four KPI cards that used to sit beside this chart are gone by
@@ -912,7 +1019,7 @@ export function PartsCostSummary({
                 labels); leading-none + mb-0.5 added to match that chart's
                 label-to-bar gap exactly (SectionHierarchyChart's `Bar`). */}
             <div className="flex flex-col items-center justify-end" style={{ width: BAR_W, height: BAR_H }}>
-              <span className="mb-0.5 whitespace-nowrap font-mono text-xs font-bold leading-none tabular-nums text-sdc-navy">
+              <span className="mb-0.5 whitespace-nowrap font-mono text-[0.8125rem] font-bold leading-none tabular-nums text-sdc-navy">
                 {estimate != null ? usd(estimate) : "—"}
               </span>
               {/* No background — a bg-sdc-gray-100 "track" here used to fill
@@ -931,23 +1038,40 @@ export function PartsCostSummary({
             <div className="flex items-start justify-center text-center text-note font-medium leading-tight text-sdc-gray-600" style={{ height: CAPTION_H }}>Budget</div>
           </div>
 
-          <div className="flex flex-col items-center gap-1.5">
-            {/* Same fix as Budget's frame just above — see its comment.
-                `relative` so the coverage line can sit at its own height inside the
-                same frame the fills are measured in. */}
+          {/* ── TOTAL: Invoiced and posted + Not yet invoiced (2026-10-21, by request) ──────────────
+              What has been bought to date, in its two parts. Its names sit to its right (SIDE_ROOM is
+              kept free so they never run into the Projected bar). No red here: the excess belongs to
+              the Projected bar. */}
+          <div className="flex flex-col items-center gap-1.5" style={{ marginRight: SIDE_ROOM }}>
             <div className="relative flex flex-col items-center justify-end" style={{ width: BAR_W, height: BAR_H }}>
-              {/* §10: the figure above the bar is `invoiced + toComplete`, whatever
-                  the ETC says. It stays navy even when part of the exposure is
-                  uncovered: the total is not itself an overspend, and colouring it
-                  red would say the whole projection was the problem rather than the
-                  gap in coverage. The tooltip carries the split. */}
               <span
-                className="mb-0.5 whitespace-nowrap font-mono text-xs font-bold leading-none tabular-nums text-sdc-navy"
-                title={
-                  showAboveOrdered
-                    ? `Projected total ${usd(projTotalDisplay)} = invoiced ${usd(invoicedDisplay)} + not yet invoiced ${usd(openDisplay)} + still to purchase ${usd(stillToPurchaseDisplay)}.`
-                    : `Projected total ${usd(projTotalDisplay)} = purchased ${usd(purchasedDisplay)} + still to purchase ${usd(stillToPurchaseDisplay)}.`
-                }
+                className="mb-0.5 whitespace-nowrap font-mono text-[0.8125rem] font-bold leading-none tabular-nums text-sdc-navy"
+                title={`Total ${usd(totalBarDisplay)} = invoiced and posted ${usd(invoicedDisplay)} + not yet invoiced ${usd(openDisplay)}. This is what has been purchased to date.`}
+              >
+                {usd(totalBarDisplay)}
+              </span>
+              {sideLabels(totalSegments, totalPx, { invoiced: "Invoiced and posted", open: "Not yet invoiced" })}
+              {renderStack(totalSegments, totalPx)}
+            </div>
+            <div
+              className="flex flex-col items-center justify-start text-center leading-tight text-sdc-gray-600"
+              style={{ height: CAPTION_H }}
+              title="Total = Invoiced and posted + Not yet invoiced: everything purchased to date"
+            >
+              <span className="text-note font-medium">Total</span>
+              <span className="text-micro text-sdc-gray-400">Purchased to date</span>
+            </div>
+          </div>
+
+          {/* ── PROJECTED: Purchased to date + Still to purchase ────────────────────────────────── */}
+          <div className="flex flex-col items-center gap-1.5" style={{ paddingRight: SIDE_ROOM }}>
+            <div className="relative flex flex-col items-center justify-end" style={{ width: BAR_W, height: BAR_H }}>
+              {/* §10: the figure above the bar is the projected total, whatever the ETC says. It stays
+                  navy even when part of it is excess: the total is not itself an overspend, and colouring
+                  it red would say the whole projection was the problem. The tooltip carries the split. */}
+              <span
+                className="mb-0.5 whitespace-nowrap font-mono text-[0.8125rem] font-bold leading-none tabular-nums text-sdc-navy"
+                title={`Projected ${usd(projTotalDisplay)} = purchased ${usd(purchasedDisplay)} + still to purchase ${usd(stillToPurchaseDisplay)}.`}
               >
                 {usd(projTotalDisplay)}
               </span>
@@ -961,10 +1085,8 @@ export function PartsCostSummary({
                   incl. {usd(excessDisplay)} excess
                 </span>
               )}
-              {/* Still to purchase (2026-10-21, by request): a dotted amber line where the yellow band begins —
-                  the boundary between what is already bought and what is still to buy — and the name and
-                  amount beside the band. The label's centre follows the band's centre but is held clear of
-                  the total above the bar, so a thin band cannot push it into that figure. */}
+              {/* Still to purchase: a dotted amber line where the yellow band begins — the boundary between
+                  what is already bought and what is still to buy — and its name and amount beside the band. */}
               {stpIdx >= 0 && (
                 <div
                   aria-hidden
@@ -972,57 +1094,14 @@ export function PartsCostSummary({
                   style={{
                     left: "-0.4rem",
                     right: "-0.4rem",
-                    bottom: renderPx.slice(0, stpIdx).reduce((a, b) => a + b, 0),
+                    bottom: projPx.slice(0, stpIdx).reduce((a, b) => a + b, 0),
                     borderTop: `2px dotted ${BAR_PROJECTED_LINE}`,
                   }}
                 />
               )}
-              {/* ── Names beside the bar (2026-10-21, by request) ──────────────────────────
-                  Invoiced and posted, Not yet invoiced and Still to purchase are named on the side of
-                  their own band, each tied to it by a left rule in the band's colour; only Still to
-                  purchase also carries its amount (the other two are in the table). Each label sits at
-                  its band's centre, then they are nudged apart (bottom-up, then back down from the top)
-                  so a thin band cannot stack its name on its neighbour's or on the total above the bar. */}
-              {(() => {
-                const barTop = renderPx.reduce((a, b) => a + b, 0);
-                const sideKeys = ["invoiced", "open", "stp"];
-                const items = segments
-                  .map((seg, i) => ({
-                    seg,
-                    h: seg.key === "stp" ? 30 : 14,
-                    centre: renderPx.slice(0, i).reduce((a, b) => a + b, 0) + renderPx[i] / 2,
-                  }))
-                  .filter((x) => sideKeys.includes(x.seg.key));
-                const GAP = 4;
-                for (let k = 1; k < items.length; k++) {
-                  items[k].centre = Math.max(items[k].centre, items[k - 1].centre + (items[k - 1].h + items[k].h) / 2 + GAP);
-                }
-                if (items.length > 0) items[items.length - 1].centre = Math.min(items[items.length - 1].centre, barTop - 16);
-                for (let k = items.length - 2; k >= 0; k--) {
-                  items[k].centre = Math.min(items[k].centre, items[k + 1].centre - (items[k + 1].h + items[k].h) / 2 - GAP);
-                }
-                return items.map(({ seg, centre }) => (
-                  <div
-                    key={seg.key}
-                    className="pointer-events-none absolute z-10 flex flex-col whitespace-nowrap border-l-2 pl-1.5 leading-tight"
-                    style={{
-                      left: "calc(100% + 0.5rem)",
-                      bottom: centre,
-                      transform: "translateY(50%)",
-                      borderColor: seg.key === "stp" ? BAR_PROJECTED_LINE : seg.color,
-                    }}
-                  >
-                    <span className="text-micro font-medium text-sdc-gray-600">
-                      {seg.key === "invoiced" ? "Invoiced and posted" : seg.key === "open" ? "Not yet invoiced" : "Still to purchase"}
-                    </span>
-                    {seg.key === "stp" && (
-                      <span className="font-mono text-xs font-bold tabular-nums text-sdc-navy">{usd(stillToPurchaseDisplay)}</span>
-                    )}
-                  </div>
-                ));
-              })()}
+              {sideLabels(projSegments, projPx, { stp: "Still to purchase" }, { stp: usd(stillToPurchaseDisplay) })}
               {/* The dotted line marks the plan boundary: it sits where the red excess begins, i.e. between the
-                  invoiced / open-PO money below it (within plan) and the red excess above it. */}
+                  purchased money within plan below it and the red excess above it. */}
               {hasExcess && excessIdx >= 0 && (
                 <div
                   aria-hidden
@@ -1030,62 +1109,12 @@ export function PartsCostSummary({
                   style={{
                     left: "-0.4rem",
                     right: "-0.4rem",
-                    bottom: renderPx.slice(0, excessIdx).reduce((a, b) => a + b, 0),
+                    bottom: projPx.slice(0, excessIdx).reduce((a, b) => a + b, 0),
                     borderTop: `2px dotted ${BAR_EXCESS}`,
                   }}
                 />
               )}
-              {/* The two segments stack bottom-to-top inside their own
-                  sub-column (flex-col-reverse: first array item —
-                  "Invoiced" — ends up at the bottom, matching before).
-                  Each gets a PIXEL height (barPx), so the stack's rendered
-                  height is exactly Invoiced + ETC with no
-                  percentage-of-an-auto-height-parent ambiguity — it sums to
-                  barPx(pct(projTotal)) exactly (2026-08-17: was Invoiced +
-                  Left to be invoiced + ETC before the double-count fix — see
-                  this file's header). */}
-              {/* ── Each segment is its own drill target (2026-09-02) ──────
-                  A <button> per segment rather than one handler on the stack with
-                  hit-testing by offsetY: the segments are already separate elements,
-                  so the browser's hit-testing is exact, and each gets a real
-                  accessible name, focus and Enter/Space for free. A segment can be a
-                  couple of pixels tall on a lopsided job, which is why the CAPTION
-                  below is a target too — a 2px click target is not a way to reach
-                  anything. */}
-              <div className="flex w-full flex-col-reverse">
-                {segments.map((s, i) =>
-                  onDrill ? (
-                    <button
-                      key={s.key}
-                      type="button"
-                      // ── Where each segment drills (2026-09-03) ─────────────
-                      //
-                      //   invoiced   the GL-posted lines. A real row-level set.
-                      //   etc        the ETC drawdown by month, which is what that
-                      //              figure is actually made of.
-                      //   uncovered  the open-exposure rows. Deliberately NOT a
-                      //              filter of its own: "uncovered" is a job-level
-                      //              subtraction (To complete − ETC), not a property
-                      //              any individual PO line carries, so there is no
-                      //              honest way to list "the uncovered lines". It
-                      //              opens the exposure it is part of, and the
-                      //              panel's own breakdown states the split.
-                      onClick={() => onDrill(segmentDrillMode(s.key))}
-                      aria-label={`${s.label} ${usd(s.value)} — show the detail behind this`}
-                      title={`${s.label} — click for detail`}
-                      className={`motion-interactive w-full flex-shrink-0 cursor-pointer ${i === segments.length - 1 ? "rounded-t-sm" : ""} ${
-                        drillMode === segmentDrillMode(s.key) ? "ring-2 ring-sdc-blue" : "hover:opacity-80"
-                      }`}
-                      // renderPx, not barPx(heightPct): a non-zero segment is floored
-                      // to a visible height with the pixels borrowed from the tallest,
-                      // so the stack's total is unchanged. See MIN_SEG_PX.
-                      style={{ height: renderPx[i], background: s.color }}
-                    />
-                  ) : (
-                    <div key={s.key} className={`w-full flex-shrink-0 ${i === segments.length - 1 ? "rounded-t-sm" : ""}`} style={{ height: renderPx[i], background: s.color }} />
-                  ),
-                )}
-              </div>
+              {renderStack(projSegments, projPx)}
             </div>
             {/* The caption is the whole-bar target — the reliable one, since it stays
                 a fixed 32px however thin the segments above it become. */}
@@ -1093,27 +1122,20 @@ export function PartsCostSummary({
               <button
                 type="button"
                 onClick={() => onDrill("projection")}
-                aria-label="Projected total — show every row behind this bar"
-                title="Projected total = Purchased to date + Still to purchase. Click for the full parts-cost detail behind this bar"
+                aria-label="Projected — show every row behind this bar"
+                title="Projected = Purchased to date + Still to purchase. Click for the full parts-cost detail behind this bar"
                 className={`motion-interactive flex h-8 flex-col items-center justify-start rounded text-center leading-tight ${
                   drillMode === "projection" ? "text-sdc-blue-dark" : "text-sdc-gray-600 hover:text-sdc-navy"
                 }`}
               >
-                {/* ── "Projected total", with the old name kept as helper text ──
-                    (2026-09-03, by request: the captions should read "Budget" and
-                    "Projected total".) "Actual / Projection" survives one size down
-                    and muted rather than being deleted: it is the name on the Power
-                    BI visual this card recreates and the phrase people have been
-                    using for it, so dropping it outright would break the tie-back
-                    for anyone reading the two side by side. */}
-                <span className="text-note font-medium underline decoration-dotted underline-offset-2">
-                  Projected total
-                </span>
+                {/* "Actual / Projection" survives one size down and muted: it is the name on the Power BI
+                    visual this card recreates, so dropping it would break the tie-back. */}
+                <span className="text-note font-medium underline decoration-dotted underline-offset-2">Projected</span>
                 <span className="text-micro text-sdc-gray-400">Actual / Projection</span>
               </button>
             ) : (
               <div className="flex h-8 flex-col items-center justify-start text-center leading-tight text-sdc-gray-600">
-                <span className="text-note font-medium">Projected total</span>
+                <span className="text-note font-medium">Projected</span>
                 <span className="text-micro text-sdc-gray-400">Actual / Projection</span>
               </div>
             )}

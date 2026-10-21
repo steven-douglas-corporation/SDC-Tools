@@ -293,6 +293,10 @@ test("the card renders the red excess band, dotted line and label from the figur
     lineCount: 0, lines: [], transfersNet: 0, transfers: [], transferItems: [], transfersUnavailable: false,
   } as unknown as Parameters<typeof PartsCostSummary>[0]["financials"];
   const html = renderToStaticMarkup(React.createElement(PartsCostSummary, { financials: f }));
+  // Two bars: Total (invoiced + not yet invoiced) and Projected (purchased + still to purchase).
+  assert.match(html, />Total<\/span>/);
+  assert.match(html, />Projected<\/span>/);
+  assert.match(html, /Total \$100,000 = invoiced and posted \$90,000 \+ not yet invoiced \$10,000/);
   assert.match(html, /incl\. \$2,000 excess/);
   assert.match(html, /border-top:2px dotted #C0392B/i);
   assert.match(html, /background:#C0392B/i);
