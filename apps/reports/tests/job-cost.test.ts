@@ -24,6 +24,7 @@ function baseRow(overrides: Partial<JobCostRow> = {}): JobCostRow {
     jobName: "Test Job",
     status: "Active",
     customerName: "Acme",
+    jobType: "Custom",
     machineType: null,
     actualHours: 100,
     engineeringHours: 60,
@@ -291,4 +292,19 @@ test("the export action checks the page's own permission and totals through jobC
   assert.match(src, /rows = validRows\(rows\);/, "the audit row's count is the count of VALIDATED rows");
   assert.match(src, /jobCostTotals\(rows, cols\)/);
   assert.doesNotMatch(src, /const sum = \(k: string\) => rows\.reduce/, "the sum-everything-numeric totals row is gone");
+});
+
+test("Profitability Type: read from Job.type, drawn after Customer, filterable, exported, and never summed in the totals", async () => {
+  const { readFileSync } = await import("node:fs");
+  const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+  // The same column the Projects grid's Type dropdown reads and writes.
+  assert.match(read("src/lib/job-cost-source.ts"), /customer: true, type: true/);
+  assert.match(read("src/lib/job-cost-source.ts"), /jobType: j\.type \?\? null/);
+  const explorer = read("src/components/JobCostExplorer.tsx");
+  // Column order: Customer, then Type, then Status.
+  assert.ok(explorer.indexOf('label="Customer"') < explorer.indexOf('label="Type"'));
+  assert.ok(explorer.indexOf('label="Type"') < explorer.indexOf('label="Status"'));
+  assert.match(explorer, /typeFilter\.size === 0 \|\| \(r\.jobType != null && typeFilter\.has\(r\.jobType\)\)/);
+  assert.match(read("src/lib/export/job-cost-export.ts"), /jobType: \{ header: "Type", type: "text" \}/);
+  assert.equal(jobCostTotals([], ["jobType"]).jobType, null);
 });

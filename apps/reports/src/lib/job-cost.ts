@@ -37,6 +37,8 @@ export type JobCostRow = {
   status: string;
   customerName: string | null;
   machineType: string | null;
+  /** The Projects tab's Type (Job.type): Custom, Duplicate, Hybrid, Service or T&M. */
+  jobType: string | null;
   actualHours: number | null;
   engineeringHours: number | null;
   shopHours: number | null;

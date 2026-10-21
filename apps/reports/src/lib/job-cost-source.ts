@@ -296,7 +296,7 @@ export type JobCostData = {
 export async function loadJobCostRows(asOf: string | null = null): Promise<JobCostData> {
   const jobs = await prisma.job.findMany({
     where: validJobTypeFilter,
-    select: { id: true, jobId: true, jobName: true, status: true, customer: true, startDate: true, completeDate: true },
+    select: { id: true, jobId: true, jobName: true, status: true, customer: true, type: true, startDate: true, completeDate: true },
   });
   const jobPks = jobs.map((j) => j.id);
 
@@ -347,6 +347,8 @@ export async function loadJobCostRows(asOf: string | null = null): Promise<JobCo
       // Current (asOf null) keeps the job's real live status, unchanged.
       status: asOf ? historicalStatus(j, asOf) : j.status,
       customerName: j.customer ?? null,
+      // Job.type: the very column the Projects grid's Type dropdown reads and writes.
+      jobType: j.type ?? null,
       // No source has ever populated this — the original app's own comment
       // notes the Power BI model has no machine-type column on 'Job' either.
       machineType: null,

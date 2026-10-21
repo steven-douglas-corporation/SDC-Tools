@@ -31,11 +31,12 @@ import { useToast } from "@/components/ui/Toast";
 import { MenuStatus, MenuGroup, MenuBulkActions, MenuCheckbox } from "@/components/MenuStatus";
 import { SortableTh } from "@/components/ui/SortableHeader";
 import type { SortState } from "@/lib/table-sort";
+import { VALID_JOB_TYPES } from "@/lib/job-filters";
 import { JobCostRateMatrixModal } from "@/components/JobCostRateMatrixModal";
 import { JobCostHourAllocationModal } from "@/components/JobCostHourAllocationModal";
 
 type ColKey =
-  | "customerName" | "actualHours" | "engineeringHours" | "shopHours" | "otherHours"
+  | "customerName" | "jobType" | "actualHours" | "engineeringHours" | "shopHours" | "otherHours"
   | "pmCost" | "mfgCost" | "laborCost" | "etcEngHours" | "etcShopHours" | "etcPartsCost"
   | "partCost" | "partInvoiced" | "percentComplete" | "salesPrice" | "startDate" | "completeDate"
   | "profit" | "margin";
@@ -97,6 +98,9 @@ type ColMeta = {
 // to be exportable when shown.
 const COLS: ColMeta[] = [
   { key: "customerName", label: "Customer", group: "identity", type: "text", widthClass: "min-w-[9rem]" },
+  // Type is drawn by the identity block too (right after Customer) and lives in this array for
+  // the same reason Customer does: the Columns picker and the export read it.
+  { key: "jobType", label: "Type", group: "identity", type: "text", widthClass: "min-w-[6rem]" },
   { key: "actualHours", label: "Act Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
   { key: "engineeringHours", label: "Eng Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
   { key: "shopHours", label: "Shop Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
@@ -266,6 +270,7 @@ export function JobCostExplorer({
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [yearFilter, setYearFilter] = useState<Set<string>>(new Set());
   const [customerFilter, setCustomerFilter] = useState<Set<string>>(new Set());
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
   const [hideUtility, setHideUtility] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("jobId");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
@@ -402,6 +407,20 @@ export function JobCostExplorer({
     () => [...new Set(computed.map((r) => r.customerName).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b)),
     [computed],
   );
+  // The project types actually on the rows, in the Projects tab's own order
+  // (VALID_JOB_TYPES), then anything else alphabetically.
+  const allTypes = useMemo(() => {
+    const present = [...new Set(computed.map((r) => r.jobType).filter((t): t is string => !!t))];
+    const order = (t: string) => (VALID_JOB_TYPES as readonly string[]).indexOf(t);
+    return present.sort((a, b) => {
+      const ai = order(a);
+      const bi = order(b);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [computed]);
   // Whatever statuses actually exist on real rows — not a hardcoded
   // Active/HeadStart/Complete literal — so a status this app adds later shows
   // up in the picker on its own. STATUS_ORDER (module scope, below) puts
@@ -432,10 +451,12 @@ export function JobCostExplorer({
   const statusNarrowing = statusFilter.size > 0 && statusFilter.size < allStatuses.length;
   const customerNarrowing = customerFilter.size > 0 && customerFilter.size < customers.length;
   const yearNarrowing = yearFilter.size > 0 && yearFilter.size < years.length;
-  const activeFilterCount = (statusNarrowing ? 1 : 0) + (customerNarrowing ? 1 : 0) + (yearNarrowing ? 1 : 0);
+  const typeNarrowing = typeFilter.size > 0 && typeFilter.size < allTypes.length;
+  const activeFilterCount = (statusNarrowing ? 1 : 0) + (customerNarrowing ? 1 : 0) + (yearNarrowing ? 1 : 0) + (typeNarrowing ? 1 : 0);
   function clearAllFilters() {
     setStatusFilter(new Set());
     setCustomerFilter(new Set());
+    setTypeFilter(new Set());
     setYearFilter(new Set());
   }
 
@@ -446,6 +467,7 @@ export function JobCostExplorer({
       .filter((r) => statusFilter.size === 0 || statusFilter.has(r.status))
       .filter((r) => yearFilter.size === 0 || (r.completeDate != null && yearFilter.has(r.completeDate.slice(0, 4))))
       .filter((r) => customerFilter.size === 0 || (r.customerName != null && customerFilter.has(r.customerName)))
+      .filter((r) => typeFilter.size === 0 || (r.jobType != null && typeFilter.has(r.jobType)))
       .filter((r) => !terms.length || terms.some((t) => `${r.jobId} ${r.jobName} ${r.customerName ?? ""} ${r.status}`.toLowerCase().includes(t)));
     out = [...out].sort((a, b) => {
       const av = a[sortKey as keyof JobCostComputed];
@@ -457,7 +479,7 @@ export function JobCostExplorer({
       return String(av).localeCompare(String(bv)) * sortDir;
     });
     return out;
-  }, [computed, search, statusFilter, yearFilter, customerFilter, hideUtility, sortKey, sortDir]);
+  }, [computed, search, statusFilter, yearFilter, customerFilter, typeFilter, hideUtility, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
     setSortDir((d) => (sortKey === key ? ((-d) as 1 | -1) : 1));
@@ -558,9 +580,10 @@ export function JobCostExplorer({
       { key: "jobName", group: "identity", frozen: true },
     ];
     if (!hiddenCols.has("customerName")) slots.push({ key: "customerName", group: "identity", frozen: false });
+    if (!hiddenCols.has("jobType")) slots.push({ key: "jobType", group: "identity", frozen: false });
     slots.push({ key: "status", group: "identity", frozen: false });
     for (const c of COLS) {
-      if (c.key === "customerName" || hiddenCols.has(c.key)) continue;
+      if (c.key === "customerName" || c.key === "jobType" || hiddenCols.has(c.key)) continue;
       slots.push({ key: c.key, group: c.group, frozen: false });
     }
     return slots;
@@ -763,6 +786,27 @@ export function JobCostExplorer({
                   ))}
                 </div>
               </MenuGroup>
+              <MenuGroup label={typeNarrowing ? `Type (${typeFilter.size})` : "Type"}>
+                <MenuBulkActions onAll={() => setTypeFilter(new Set(allTypes))} onNone={() => setTypeFilter(new Set())} />
+                <div className="max-h-40 overflow-y-auto styled-scrollbar">
+                  {allTypes.map((t) => (
+                    <MenuCheckbox
+                      key={t}
+                      label={t}
+                      checked={typeFilter.size === 0 || typeFilter.has(t)}
+                      onChange={() =>
+                        setTypeFilter((prev) => {
+                          // Same "seed the full set on first uncheck" rule as Status and Customer.
+                          const next = prev.size === 0 ? new Set(allTypes) : new Set(prev);
+                          if (next.has(t)) next.delete(t);
+                          else next.add(t);
+                          return next;
+                        })
+                      }
+                    />
+                  ))}
+                </div>
+              </MenuGroup>
               {years.length > 0 && (
                 <MenuGroup label={yearNarrowing ? `Completion Year (${yearFilter.size})` : "Completion Year"}>
                   <MenuBulkActions onAll={() => setYearFilter(new Set(years))} onNone={() => setYearFilter(new Set())} />
@@ -855,9 +899,10 @@ export function JobCostExplorer({
                   <div className="mb-0.5 flex items-center gap-1.5 px-1.5">
                     <span className={`inline-block h-2 w-2 rounded-full ${GROUP_META.identity.band}`} />
                     <span className="text-label font-semibold uppercase tracking-wider text-sdc-gray-400">Job</span>
-                    <span className="ml-auto text-label tabular-nums text-sdc-gray-400">{hiddenCols.has("customerName") ? 0 : 1}/1</span>
+                    <span className="ml-auto text-label tabular-nums text-sdc-gray-400">{(hiddenCols.has("customerName") ? 0 : 1) + (hiddenCols.has("jobType") ? 0 : 1)}/2</span>
                   </div>
                   <MenuCheckbox label="Customer" checked={!hiddenCols.has("customerName")} onChange={() => toggleCol("customerName")} />
+                  <MenuCheckbox label="Type" checked={!hiddenCols.has("jobType")} onChange={() => toggleCol("jobType")} />
                 </div>
               </div>
             </div>
@@ -1048,6 +1093,17 @@ export function JobCostExplorer({
                     className={`min-w-[9rem] px-2 py-1 align-bottom ${vBorder("customerName")}`}
                   />
                 )}
+                {!hiddenCols.has("jobType") && (
+                  <SortableTh
+                    label="Type"
+                    sortKey="jobType"
+                    type="text"
+                    align="left"
+                    sort={sortState}
+                    onSort={toggleSort}
+                    className={`min-w-[6rem] px-2 py-1 align-bottom ${vBorder("jobType")}`}
+                  />
+                )}
                 <SortableTh
                   label="Status"
                   sortKey="status"
@@ -1057,7 +1113,7 @@ export function JobCostExplorer({
                   onSort={toggleSort}
                   className={`min-w-[6.5rem] px-2 py-1 align-bottom ${vBorder("status")}`}
                 />
-                {COLS.filter((c) => c.key !== "customerName" && !hiddenCols.has(c.key)).map((c) => (
+                {COLS.filter((c) => c.key !== "customerName" && c.key !== "jobType" && !hiddenCols.has(c.key)).map((c) => (
                   <SortableTh
                     key={c.key}
                     label={headerLabel(c.key, c.label)}
@@ -1104,6 +1160,9 @@ export function JobCostExplorer({
                     </td>
                     {!hiddenCols.has("customerName") && (
                       <td className={`px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("customerName")} ${zebra}`}>{r.customerName || "—"}</td>
+                    )}
+                    {!hiddenCols.has("jobType") && (
+                      <td className={`px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("jobType")} ${zebra}`}>{r.jobType || "—"}</td>
                     )}
                     <td className={`px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("status")} ${zebra}`}>
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-label font-semibold ${statusTone(r.status)}`}>{r.status}</span>
@@ -1170,6 +1229,7 @@ export function JobCostExplorer({
                   {visibleRows.length} jobs
                 </td>
                 {!hiddenCols.has("customerName") && <td className={`px-2 py-1.5 ${vBorder("customerName")}`} />}
+                {!hiddenCols.has("jobType") && <td className={`px-2 py-1.5 ${vBorder("jobType")}`} />}
                 <td className={`px-2 py-1.5 ${vBorder("status")}`} />
                 {!hiddenCols.has("actualHours") && <td className={`px-2 py-1.5 text-right ${vBorder("actualHours")}`}>{fmtNum(totals.actualHours)}</td>}
                 {!hiddenCols.has("engineeringHours") && <td className={`px-2 py-1.5 text-right ${vBorder("engineeringHours")}`}>{fmtNum(totals.engineeringHours)}</td>}
