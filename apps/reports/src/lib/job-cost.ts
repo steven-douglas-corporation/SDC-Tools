@@ -14,7 +14,10 @@ import { projectionResidual } from "@/lib/parts-cost-financials-shared";
 
 export type CostRates = { engRate: number; shopRate: number; pmPct: number; mfgPct: number };
 
-export const DEFAULT_RATES: CostRates = { engRate: 200, shopRate: 150, pmPct: 10, mfgPct: 10 };
+// 2025 cost sheet ("Rates based on 80% chargeable hours"): Eng $140/hr, Shop $113/hr,
+// PM factor 3.10%, Mfg factor 3.00%. Was 200 / 150 / 10 / 10 until 2026-10-21. This is
+// only the fallback when JobCostDefaultRate has no row — the live defaults are in that table.
+export const DEFAULT_RATES: CostRates = { engRate: 140, shopRate: 113, pmPct: 3.1, mfgPct: 3 };
 
 /** { [year]: { eng: hours, shop: hours } } — the automatic per-year breakdown. */
 export type HoursByYear = Record<string, { eng: number; shop: number }>;

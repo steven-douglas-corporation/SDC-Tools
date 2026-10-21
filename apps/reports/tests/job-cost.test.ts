@@ -43,6 +43,10 @@ function baseRow(overrides: Partial<JobCostRow> = {}): JobCostRow {
   };
 }
 
+// Explicit rates for the arithmetic tests below, so they pin the formula and not whatever the
+// default rates happen to be this year (DEFAULT_RATES moved from 10%/10% to 3.1%/3% on 2026-10-21).
+const TEN_PCT_RATES = { engRate: 200, shopRate: 150, pmPct: 10, mfgPct: 10 };
+
 test("rateForYear falls back to the default for any unset field", () => {
   const r = rateForYear("2025", DEFAULT_RATES, { "2025": { engRate: 250 } });
   assert.equal(r.engRate, 250);
@@ -170,8 +174,8 @@ test("computeJobCost: margin is profit as a percentage of sales", () => {
     partInvoiced: 200, // fully GL-posted, nothing open — so y is simply 200
     completeDate: null,
   });
-  const c = computeJobCost(row, DEFAULT_RATES, {}, undefined);
-  // x = laborCost (0 + PM/Mfg on 1000 at defaults 10%/10% = 200) = 200; y = 200
+  const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
+  // x = laborCost (0 + PM/Mfg on 1000 at 10%/10% = 200) = 200; y = 200
   assert.equal(c.profit, 1000 - 200 - 200);
   assert.equal(c.margin, ((1000 - 200 - 200) / 1000) * 100);
 });
@@ -231,7 +235,7 @@ test("computeJobCost: profit subtracts the projected parts figure and exposes it
     etcPartsCost: 70_000,
     completeDate: null,
   });
-  const c = computeJobCost(row, DEFAULT_RATES, {}, undefined);
+  const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
   assert.equal(c.partsProjected, 170_000);
   // x = PM 10% + Mfg 10% of sales = 200k; y = 170k
   assert.equal(c.profit, 1_000_000 - 200_000 - 170_000);
