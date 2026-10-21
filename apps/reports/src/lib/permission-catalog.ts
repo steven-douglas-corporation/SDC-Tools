@@ -62,6 +62,9 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   { keys: ["employees:edit"], label: "Employees — Edit (Add Member)", section: "Administration" },
   { keys: ["employees:hiring:assign"], label: "Employees — Manage Hiring Positions (Create/Edit/Assign)", section: "Administration" },
   { keys: ["audit-log:view"], label: "Audit Log", section: "Administration" },
+  // The Data quality tab lists every punch by employee, and the roster checks name individuals,
+  // so this is worth a deliberate tick rather than riding on Dashboard.
+  { keys: ["data-management:view"], label: "Data Management", section: "Administration" },
   { keys: ["users:manage"], label: "User Role Assignment", section: "Administration" },
   { keys: ["permissions:manage"], label: "Role Permissions (this page)", section: "Administration" },
 ] as const;

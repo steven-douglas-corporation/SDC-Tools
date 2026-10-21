@@ -72,8 +72,9 @@ import { DashboardMonthSelect } from "@/components/dashboard/DashboardMonthSelec
 //
 // ── Who sees what (2026-10-20) ──────────────────────────────────────────────
 //
-// The page is gated on dashboard:view, because the sources and the checks are what the
-// Dashboard's tab showed to those roles. Reconcile with Scheduler needs employees:edit
+// The page is gated on data-management:view. It was dashboard:view until 2026-10-21, because
+// the sources and the checks are what the Dashboard's tab showed to those roles; the new
+// permission was seeded to match it, and is the one to widen. Reconcile with Scheduler needs employees:edit
 // (it reads the Scheduler's roster) and is only rendered for roles that hold it; its
 // server action checks the same permission, because hiding a button is not a gate. The
 // Paylocity note is plain information and shows to everyone.
@@ -89,7 +90,7 @@ export type DataManagementParams = {
 };
 
 export async function DataManagementView({ params }: { params: DataManagementParams }) {
-  const session = await requirePagePermission("dashboard:view");
+  const session = await requirePagePermission("data-management:view");
   const canReconcile = hasPermission(session.user.role, "employees:edit");
   const tab = dataManagementTab(params.tab);
 

@@ -220,7 +220,8 @@ function employeeFieldText(value: unknown): string | null {
 // comment for why this stays as a second, non-authoritative comparison.
 //
 // Checks employees:edit itself since 2026-10-20: it used to rely on the Data Management
-// page's own gate, and that page now opens to everyone with dashboard:view.
+// page's own gate, and that page now opens to everyone with data-management:view (any role
+// it is ticked for, since 2026-10-21; dashboard:view before that).
 export async function reconcileSchedulerRosterAction(): Promise<RosterReconciliation> {
   await assertActionPermission("employees:edit");
   return reconcileSchedulerRoster();

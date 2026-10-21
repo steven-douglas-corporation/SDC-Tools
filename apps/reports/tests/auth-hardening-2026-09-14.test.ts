@@ -153,10 +153,11 @@ test("the shared-secret guard no longer compares with !==", () => {
   assert.match(s, /timingSafeEqual\(a, b\)/);
 });
 
-test("getEmployeePunches requires the Dashboard's permission", () => {
+test("getEmployeePunches requires Data Management's permission", () => {
   const s = src("lib/data-quality-actions.ts");
   const fn = s.slice(s.indexOf("export async function getEmployeePunches("));
-  assert.match(fn, /^\s*await assertActionPermission\("dashboard:view"\);/m);
-  // It is hosted on the Dashboard, whose route is "/", which resolves to dashboard:view.
-  assert.equal(permissionForPath("/"), "dashboard:view");
+  assert.match(fn, /^\s*await assertActionPermission\("data-management:view"\);/m);
+  // It is hosted on Data Management (it was the Dashboard's tab until 2026-10-20, and the page
+  // rode on dashboard:view until 2026-10-21), so it asks for what that route asks for.
+  assert.equal(permissionForPath("/admin/data-management"), "data-management:view");
 });
