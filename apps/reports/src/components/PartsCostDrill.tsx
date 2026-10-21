@@ -373,16 +373,46 @@ export function PartsCostDrill({
         : "Prior-month ETC − invoiced this month. Everything still to come: the open POs plus what is not yet ordered",
     },
     {
-      label: "Still to purchase",
-      value: usd(Math.max(0, financials.adjustedEtc - financials.openBalance)),
-      hint: financials.etcUnknown
-        ? "No prior-month ETC on file, so nothing is forecast beyond what is already ordered"
-        : "Adjusted ETC − Not yet invoiced (open POs), never below $0. What has not been ordered yet. The bar's yellow section",
+      label: "Left to purchase last month",
+      value: financials.leftToPurchaseLastMonth == null ? "—" : usd(financials.leftToPurchaseLastMonth),
+      hint:
+        financials.stpJobsFromMonthlyEtc > 0
+          ? "The previous month's Left to Purchase from the Monthly ETC tab"
+          : "No Left to Purchase was entered on last month's Monthly ETC, so Still to purchase is estimated from the forecast instead",
     },
+    {
+      label: "Purchased this month",
+      value: usd(financials.purchasedThisMonth),
+      hint: "Parts lines on POs dated this month, taken off last month's Left to Purchase",
+    },
+    {
+      label: "Still to purchase",
+      value:
+        financials.excessPurchased > 0.5
+          ? `${financials.stillToPurchaseSigned < 0 ? "−" : ""}${usd(Math.abs(financials.stillToPurchaseSigned))}`
+          : usd(financials.stillToPurchase),
+      hint:
+        financials.excessPurchased > 0.5
+          ? "Left to purchase last month − purchased this month. Negative: more was bought than was left to buy"
+          : financials.stpJobsFromMonthlyEtc > 0
+            ? "Left to purchase last month − purchased this month. What has not been ordered yet. The bar's yellow section"
+            : financials.etcUnknown
+              ? "No Left to Purchase last month and no prior-month ETC, so nothing is forecast beyond what is already ordered"
+              : "No Left to Purchase last month: Adjusted ETC − Not yet invoiced (open POs), never below $0. The bar's yellow section",
+    },
+    ...(financials.excessPurchased > 0.5
+      ? [
+          {
+            label: "Excess purchased over plan",
+            value: usd(financials.excessPurchased),
+            hint: "Bought this month beyond last month's Left to Purchase. Already inside Purchased to date, so not added to the projected total again. The bar's red section, above the dotted line",
+          },
+        ]
+      : []),
     {
       label: "Projected total",
       value: usd(financials.projection),
-      hint: "Purchased to date + Still to purchase. The same figure as Invoiced + the larger of (Adjusted ETC, Not yet invoiced)",
+      hint: "Purchased to date + Still to purchase (a negative Still to purchase counts as $0: the excess is already in Purchased)",
     },
     {
       label: "Projection vs Budget",

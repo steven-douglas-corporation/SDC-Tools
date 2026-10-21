@@ -72,7 +72,96 @@ export type StillToPurchase = {
   difference: number | null;
 };
 
-function previousMonthKey(month: string): string | null {
+// ── Still to purchase, from the Monthly ETC's own "Left to Purchase" (2026-10-21, by request) ──
+//
+// The card now uses the simple rule a manager works by:
+//
+//     Still to purchase = Left to Purchase at the end of last month   (Monthly ETC tab, last month's row)
+//                       − Purchased this month                         (POs dated this month or later)
+//
+//     Projected total   = Purchased to date + Still to purchase
+//
+// It is worked PER JOB and the jobs are then added up, because a job that has bought more than was left
+// to buy must not quietly eat another job's remaining budget:
+//
+//   - A positive result is "still to purchase" (the yellow band).
+//   - A NEGATIVE result is an excess: more was bought this month than was left to buy. It is kept signed
+//     (job 1101: left 10,000, bought 12,000 → −2,000) instead of being floored to 0, and reported as
+//     `excess`. The money is already inside Purchased to date, so the projected total does not rise a
+//     second time — it simply stops being able to fall below what has been committed.
+//
+// A job whose previous Monthly ETC row has no Left to Purchase entered (blank, or a month from before the
+// breakout existed) falls back to the earlier estimate (Adjusted ETC − open POs, floored at 0) so it is
+// never silently treated as "nothing left to buy". `source` says which was used.
+
+export type JobStillToPurchaseInput = {
+  /** Last month's Left to Purchase from the Monthly ETC tab. Null when none was entered. */
+  leftToPurchaseLastMonth: number | null;
+  /** Lines purchased from the first day of the ETC month on. */
+  purchasedThisMonth: number;
+  /** The older estimate, floored at 0, used only when `leftToPurchaseLastMonth` is null. */
+  fallback: number;
+};
+
+export type JobStillToPurchase = {
+  /** Signed. Negative = excess (bought more than was left to buy). */
+  signed: number;
+  stillToPurchase: number;
+  excess: number;
+  source: "monthly-etc" | "forecast";
+};
+
+export function jobStillToPurchase(i: JobStillToPurchaseInput): JobStillToPurchase {
+  if (i.leftToPurchaseLastMonth == null) {
+    return { signed: i.fallback, stillToPurchase: i.fallback, excess: 0, source: "forecast" };
+  }
+  const signed = i.leftToPurchaseLastMonth - i.purchasedThisMonth;
+  return { signed, stillToPurchase: Math.max(0, signed), excess: Math.max(0, -signed), source: "monthly-etc" };
+}
+
+export type StillToPurchaseTotals = {
+  /** Sum of the jobs' positive results — the yellow band. */
+  stillToPurchase: number;
+  /** Sum of the jobs' excesses — the red band. */
+  excess: number;
+  /** stillToPurchase − excess: what a single job reads as "−$2,000". */
+  signed: number;
+  /** Over the jobs that used the Monthly ETC figure: last month's Left to Purchase, and purchases since. */
+  leftToPurchaseLastMonth: number | null;
+  purchasedThisMonth: number;
+  jobsFromMonthlyEtc: number;
+  jobsFromForecast: number;
+};
+
+export function sumStillToPurchase(jobs: readonly JobStillToPurchaseInput[]): StillToPurchaseTotals {
+  const t: StillToPurchaseTotals = {
+    stillToPurchase: 0, excess: 0, signed: 0, leftToPurchaseLastMonth: null,
+    purchasedThisMonth: 0, jobsFromMonthlyEtc: 0, jobsFromForecast: 0,
+  };
+  for (const j of jobs) {
+    const r = jobStillToPurchase(j);
+    t.stillToPurchase += r.stillToPurchase;
+    t.excess += r.excess;
+    t.signed += r.signed;
+    if (r.source === "monthly-etc") {
+      t.jobsFromMonthlyEtc++;
+      t.leftToPurchaseLastMonth = (t.leftToPurchaseLastMonth ?? 0) + (j.leftToPurchaseLastMonth ?? 0);
+      t.purchasedThisMonth += j.purchasedThisMonth;
+    } else {
+      t.jobsFromForecast++;
+    }
+  }
+  return t;
+}
+
+/** Purchases dated from the first day of `month` (`YYYY-MM`) onward, the ones last month's Left to Purchase did not know about. */
+export function purchasedSinceMonthStart(lines: readonly PartsCostLine[], month: string | null): number {
+  if (!month) return 0;
+  const start = `${month}-01`;
+  return lines.reduce((s, l) => ((l.purchaseDate ?? "").slice(0, 10) >= start ? s + l.totalPrice : s), 0);
+}
+
+export function previousMonthKey(month: string): string | null {
   const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
   if (!m) return null;
   const y = Number(m[1]);

@@ -99,6 +99,27 @@ export type PartsCostFinancials = {
   inHouseRows: number;
   /** Red: `max(0, yetToInvoice − adjustedEtc)`. */
   additionalExposure: number;
+  // ── Still to purchase (2026-10-21) ────────────────────────────────────────
+  //
+  // `projection` = `purchased + stillToPurchase`. Per job: last month's Left to Purchase (Monthly ETC
+  // tab) − purchases dated this month on; a negative result is an EXCESS, kept apart rather than
+  // floored away. lib/still-to-purchase.ts has the rule and why it is worked per job.
+  /** The yellow band: the jobs' positive results, summed. */
+  stillToPurchase: number;
+  /**
+   * The red band: how much more was bought than last month's Left to Purchase allowed, summed over
+   * the jobs that did. ALREADY inside `purchased` — it is not added to `projection` a second time.
+   */
+  excessPurchased: number;
+  /** `stillToPurchase − excessPurchased`: what a single job reads as, e.g. −$2,000. */
+  stillToPurchaseSigned: number;
+  /** Last month's Left to Purchase, over the jobs that had one entered. Null when none did. */
+  leftToPurchaseLastMonth: number | null;
+  /** Purchases dated this ETC month or later, over those same jobs. */
+  purchasedThisMonth: number;
+  /** How many jobs used the Monthly ETC figure, and how many fell back to the older forecast estimate. */
+  stpJobsFromMonthlyEtc: number;
+  stpJobsFromForecast: number;
   /** Where the dotted line goes: `invoiced + adjustedEtc`. Null when there is no red. */
   coverageLine: number | null;
   /** True when no prior ETC could be resolved for the month at all. */
