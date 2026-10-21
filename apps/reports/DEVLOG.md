@@ -6926,3 +6926,38 @@ unchanged; lifting them would mean fetching pages from the server and sorting th
 `lib/lazy-rows.ts`, `tests/lazy-rows.test.ts`.
 
 No schema change, no migration.
+
+## 78. Data Management gets its own permission (2026-10-21)
+
+Admin > Data Management was gated on `dashboard:view`, so the only way to show it to a role
+was to give that role the whole Dashboard (the finance cards, the employee punch drill)
+with it. It now has its own row on Role Permissions, **Data Management**
+(`data-management:view`, Administration), and the route, the page and `getEmployeePunches`
+(the action behind the punch drill on Data quality) all ask for it.
+
+**Nobody gained or lost the page on deploy.** The migration
+(`20261021130000_add_data_management_permission`) copies each role's current
+`dashboard:view` value into the new row, so it starts out equal to who can open the page
+today (in code: MANAGER, PM, SALES; ELT passes every permission). It copies the live table
+rather than hard-coding roles, because ELT can have ticked `dashboard:view` since the defaults
+were written. ELT gets no row, as for every permission; an editable role with no
+`dashboard:view` row gets an explicit OFF; both inserts are no-ops on an existing row, so
+re-running it cannot take back a tick. It first failed on the dev database with MySQL 1052
+(an unqualified `id` in `ON DUPLICATE KEY UPDATE` is ambiguous when the table is also the
+`INSERT ... SELECT` source), so the source is aliased and the target's `id` qualified.
+
+**Widening it** is a tick on Role Permissions, no code change. Checked in a browser against the
+dev database: as ELT, ticking "Data Management for All" gave the base role the page and its
+sidebar entry, while `/` still sent them to Job Details (they did not gain the Dashboard);
+`getEmployeePunches` ran for that role and completed. The route stays late in
+`ROUTE_PERMISSIONS`, like Feedback, so a permission that can be ticked for any role can never
+become the redirect target for a denied one.
+
+**Needs a migration**, applied by the auto-deploy before the build. If the code ever ran
+without it, MANAGER, PM and SALES would lose the page until the rows existed.
+
+**Noticed, not changed:** `loadUnattributedDetail` (the Undefined Hours drill) checks no
+permission at all, so any signed-in caller of the action can read it. And the punch drill's
+right-click menu closes on any window `mousedown` before its item's click, so a mouse click on
+"All punches by ..." did nothing in automated tests, including with a 90 ms press; with the
+keyboard it works. Neither is part of this change.

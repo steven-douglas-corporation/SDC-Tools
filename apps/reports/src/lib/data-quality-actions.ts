@@ -47,10 +47,10 @@ export async function getEmployeePunches(employeeId: string): Promise<EmployeePu
   // the component that renders the button (see require-permission.ts). This one
   // returns a named person's complete punch history, and until 2026-09-14 it
   // had no check at all. It is hosted on Data Management (DataQualityPanel,
-  // rendered by (app)/admin/data-management/page.tsx, which takes dashboard:view
-  // since 2026-10-20 — before that it was the Dashboard's tab), so it needs
-  // exactly what that page needs: dashboard:view.
-  await assertActionPermission("dashboard:view");
+  // rendered by (app)/admin/data-management/page.tsx, which takes
+  // data-management:view since 2026-10-21 — dashboard:view before that, and before
+  // 2026-10-20 it was the Dashboard's tab), so it needs exactly what that page needs.
+  await assertActionPermission("data-management:view");
   const [employee, punches] = await Promise.all([
     prisma.employee.findFirst({ where: { paylocityId: employeeId }, select: { name: true, department: true } }),
     prisma.jobHoursDetail.findMany({

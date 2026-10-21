@@ -57,6 +57,11 @@ export type Permission =
   | "monthly-etc:submit"
   | "hours:view"
   | "dashboard:view"
+  // Admin > Data Management, on its own row since 2026-10-21. Until then the page rode on
+  // dashboard:view, so the only way to show it to a role was to hand that role the whole
+  // Dashboard. Seeded to match dashboard:view exactly (see the migration), so nobody gained or
+  // lost it on deploy; widening it is a tick on /admin/permissions, not a code change.
+  | "data-management:view"
   | "cash-flow:view"
   | "standards:view"
   | "standards:edit"
@@ -141,6 +146,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "hours:view",
     "projects:view",
     "tm:view",
+    "data-management:view",
     "feedback:submit",
     // The role that owns the numbers is the role that sees the queue and
     // answers for them.
@@ -165,6 +171,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "projects:view",
     "dashboard:view",
     "hours:view",
+    "data-management:view",
     "feedback:submit",
   ],
   SALES: [
@@ -180,6 +187,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "projects:view",
     "projects:edit",
     "tm:view",
+    "data-management:view",
     "feedback:submit",
   ],
   // ELT's real answer is "everything", from the wildcard in hasPermission. This
@@ -192,6 +200,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "users:manage",
     "permissions:manage",
     "cash-flow:view",
+    "data-management:view",
     "feedback:view",
     "feedback:triage",
   ],

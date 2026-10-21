@@ -52,10 +52,16 @@ export const ROUTE_PERMISSIONS: readonly { path: string; permission: Permission 
   { path: "/admin/users", permission: "users:manage" },
   // Roster maintenance moved off the Employees page (2026-08-24), gated on employees:edit.
   // Since 2026-10-20 the page also holds the Dashboard's old Data Quality tab and Data
-  // source health, which anyone with dashboard:view could already see, so the page opens
-  // to dashboard:view and the one roster tool that needs more (Reconcile with Scheduler)
-  // checks employees:edit itself — on the page, and in its server action.
-  { path: "/admin/data-management", permission: "dashboard:view" },
+  // source health, which anyone with dashboard:view could already see, so it opened to
+  // dashboard:view. Since 2026-10-21 it has its own permission, seeded to match dashboard:view
+  // so nobody's access moved, which is what lets a role be given this page WITHOUT the whole
+  // Dashboard. The one roster tool that needs more (Reconcile with Scheduler) checks
+  // employees:edit itself — on the page, and in its server action.
+  //
+  // Listed this late on purpose, like feedback above: safeFallbackPath() returns the first
+  // entry a role holds, and this permission can now be ticked for any role, so it must never
+  // be able to become a fallback destination. job-hour-details:view is matched first.
+  { path: "/admin/data-management", permission: "data-management:view" },
   { path: "/admin/permissions", permission: "permissions:manage" },
 ];
 
