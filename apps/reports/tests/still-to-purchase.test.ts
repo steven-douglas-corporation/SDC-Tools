@@ -254,3 +254,52 @@ test("purchases count from the first day of the ETC month onward", () => {
   assert.equal(purchasedSinceMonthStart(lines, "2026-10"), 500);
   assert.equal(purchasedSinceMonthStart(lines, null), 0);
 });
+
+// ── Live behaviour: every purchase moves the figures, the total, and the red excess ──
+
+test("as purchases rise the projected total holds until the Left to Purchase is used up, then climbs as excess", () => {
+  const base = 100000; // purchased to date before this month's buying
+  for (const [bought, expTotal, expStp, expExcess] of [
+    [0, 110000, 10000, 0],
+    [4000, 110000, 6000, 0],
+    [10000, 110000, 0, 0],
+    [12000, 112000, 0, 2000], // job 1101's shape: 10,000 left, 12,000 bought
+    [15000, 115000, 0, 5000],
+  ] as const) {
+    const t = sumStillToPurchase([{ leftToPurchaseLastMonth: 10000, purchasedThisMonth: bought, fallback: 0 }]);
+    assert.equal(t.stillToPurchase, expStp, `bought ${bought}`);
+    assert.equal(t.excess, expExcess, `bought ${bought}`);
+    assert.equal(base + bought + t.stillToPurchase, expTotal, `bought ${bought}`);
+  }
+});
+
+test("a new month reads the PREVIOUS month's row, so next month's Left to Purchase takes over by itself", async () => {
+  const { previousMonthKey } = await import("../src/lib/still-to-purchase");
+  assert.equal(previousMonthKey("2026-11"), "2026-10");
+  assert.equal(previousMonthKey("2027-01"), "2026-12");
+});
+
+test("the card renders the red excess band, dotted line and label from the figures alone", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const React = await import("react");
+  const { PartsCostSummary } = await import("../src/components/PartsCostSummary");
+  const f = {
+    budget: 215565, invoiced: 90000, leftToInvoice: 10000, etc: 0, totalSpent: 100000, projection: 100000,
+    purchased: 100000, stillToPurchase: 0, excessPurchased: 2000, stillToPurchaseSigned: -2000,
+    leftToPurchaseLastMonth: 10000, purchasedThisMonth: 12000, stpJobsFromMonthlyEtc: 1, stpJobsFromForecast: 0,
+    billedNotPosted: 0, priorEtc: 5000, priorEtcSource: "carry-forward", partsSpentThisMonth: 1000, adjustedEtcRaw: 4000,
+    adjustedEtc: 4000, openBalance: 10000, externalOpen: 10000, inHouseExcluded: 0, inHouseRows: 0, additionalExposure: 0,
+    coverageLine: null, etcUnknown: false, etcMonth: "2026-10", variance: -115565, variancePct: -53.6, failedJobs: 0,
+    lineCount: 0, lines: [], transfersNet: 0, transfers: [], transferItems: [], transfersUnavailable: false,
+  } as unknown as Parameters<typeof PartsCostSummary>[0]["financials"];
+  const html = renderToStaticMarkup(React.createElement(PartsCostSummary, { financials: f }));
+  assert.match(html, /incl\. \$2,000 excess/);
+  assert.match(html, /border-top:2px dotted #C0392B/i);
+  assert.match(html, /background:#C0392B/i);
+  assert.match(html, /[-−]\$2,000<\/td>/, "still to purchase reads negative");
+  assert.match(html, /text-sdc-red-text">[-−]\$2,000/, "and in red");
+  const none = renderToStaticMarkup(React.createElement(PartsCostSummary, {
+    financials: { ...f, excessPurchased: 0, stillToPurchase: 3000, stillToPurchaseSigned: 3000, projection: 103000, purchasedThisMonth: 7000 },
+  }));
+  assert.doesNotMatch(none, /excess|2px dotted|background:#C0392B/i);
+});

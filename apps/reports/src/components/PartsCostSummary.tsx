@@ -1140,7 +1140,7 @@ export function PartsCostSummary({
                   </td>
                   <td
                     className={`py-1 pl-2 text-right font-mono tabular-nums ${
-                      isTotal ? "text-sdc-navy" : "font-semibold text-sdc-navy"
+                      isTotal ? "text-sdc-navy" : r.value < 0 || r.key === "excess" ? "font-semibold text-sdc-red-text" : "font-semibold text-sdc-navy"
                     }`}
                   >
                     {usd(r.value)}
