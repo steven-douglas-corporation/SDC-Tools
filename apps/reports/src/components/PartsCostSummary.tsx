@@ -965,26 +965,61 @@ export function PartsCostSummary({
                   the boundary between what is already bought and what is still to buy — and the name and
                   amount beside the band. The label's centre follows the band's centre but is held clear of
                   the total above the bar, so a thin band cannot push it into that figure. */}
-              {stpIdx >= 0 && (() => {
-                const below = renderPx.slice(0, stpIdx).reduce((a, b) => a + b, 0);
+              {stpIdx >= 0 && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute z-10"
+                  style={{
+                    left: "-0.4rem",
+                    right: "-0.4rem",
+                    bottom: renderPx.slice(0, stpIdx).reduce((a, b) => a + b, 0),
+                    borderTop: `2px dotted ${BAR_PROJECTED_LINE}`,
+                  }}
+                />
+              )}
+              {/* ── Names beside the bar (2026-10-21, by request) ──────────────────────────
+                  Invoiced and posted, Not yet invoiced and Still to purchase are named on the side of
+                  their own band, each tied to it by a left rule in the band's colour; only Still to
+                  purchase also carries its amount (the other two are in the table). Each label sits at
+                  its band's centre, then they are nudged apart (bottom-up, then back down from the top)
+                  so a thin band cannot stack its name on its neighbour's or on the total above the bar. */}
+              {(() => {
                 const barTop = renderPx.reduce((a, b) => a + b, 0);
-                const centre = Math.min(below + renderPx[stpIdx] / 2, barTop - 16);
-                return (
-                  <>
-                    <div
-                      aria-hidden
-                      className="pointer-events-none absolute z-10"
-                      style={{ left: "-0.4rem", right: "-0.4rem", bottom: below, borderTop: `2px dotted ${BAR_PROJECTED_LINE}` }}
-                    />
-                    <div
-                      className="pointer-events-none absolute z-10 flex flex-col whitespace-nowrap border-l-2 pl-1.5 leading-tight"
-                      style={{ left: "calc(100% + 0.5rem)", bottom: centre, transform: "translateY(50%)", borderColor: BAR_PROJECTED_LINE }}
-                    >
-                      <span className="text-micro font-medium text-sdc-gray-600">Still to purchase</span>
+                const sideKeys = ["invoiced", "open", "stp"];
+                const items = segments
+                  .map((seg, i) => ({
+                    seg,
+                    h: seg.key === "stp" ? 30 : 14,
+                    centre: renderPx.slice(0, i).reduce((a, b) => a + b, 0) + renderPx[i] / 2,
+                  }))
+                  .filter((x) => sideKeys.includes(x.seg.key));
+                const GAP = 4;
+                for (let k = 1; k < items.length; k++) {
+                  items[k].centre = Math.max(items[k].centre, items[k - 1].centre + (items[k - 1].h + items[k].h) / 2 + GAP);
+                }
+                if (items.length > 0) items[items.length - 1].centre = Math.min(items[items.length - 1].centre, barTop - 16);
+                for (let k = items.length - 2; k >= 0; k--) {
+                  items[k].centre = Math.min(items[k].centre, items[k + 1].centre - (items[k + 1].h + items[k].h) / 2 - GAP);
+                }
+                return items.map(({ seg, centre }) => (
+                  <div
+                    key={seg.key}
+                    className="pointer-events-none absolute z-10 flex flex-col whitespace-nowrap border-l-2 pl-1.5 leading-tight"
+                    style={{
+                      left: "calc(100% + 0.5rem)",
+                      bottom: centre,
+                      transform: "translateY(50%)",
+                      borderColor: seg.key === "stp" ? BAR_PROJECTED_LINE : seg.color,
+                    }}
+                  >
+                    <span className="text-micro font-medium text-sdc-gray-600">
+                      {seg.key === "invoiced" ? "Invoiced and posted" : seg.key === "open" ? "Not yet invoiced" : "Still to purchase"}
+                    </span>
+                    {seg.key === "stp" && (
                       <span className="font-mono text-xs font-bold tabular-nums text-sdc-navy">{usd(stillToPurchaseDisplay)}</span>
-                    </div>
-                  </>
-                );
+                    )}
+                  </div>
+                ));
               })()}
               {/* The dotted line marks the plan boundary: it sits where the red excess begins, i.e. between the
                   invoiced / open-PO money below it (within plan) and the red excess above it. */}

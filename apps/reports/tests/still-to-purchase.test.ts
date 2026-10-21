@@ -306,4 +306,7 @@ test("the card renders the red excess band, dotted line and label from the figur
   assert.match(none, /border-top:2px dotted #D4A800/i);
   assert.match(none, /Still to purchase<\/span><span[^>]*>\$3,000</);
   assert.doesNotMatch(html, /border-top:2px dotted #D4A800/i, "no yellow band, no yellow line");
+  // The bands are named beside the bar; only still to purchase also states its amount.
+  assert.match(none, />Invoiced and posted<\/span><\/div>/);
+  assert.match(none, />Not yet invoiced<\/span><\/div>/);
 });
