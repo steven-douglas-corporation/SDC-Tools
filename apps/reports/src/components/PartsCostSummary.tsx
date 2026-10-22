@@ -234,7 +234,7 @@ function sideLabels(
  */
 function segmentDrillMode(key: string): PartsDrillMode {
   if (key === "stp" || key === "excess") return "etc";
-  if (key === "purchased") return "projection";
+  if (key === "purchased" || key === "actual") return "projection";
   if (key === "open") return "left";
   return "invoiced";
 }
@@ -355,7 +355,15 @@ export function PartsCostSummary({
   // high against the job ledger people check this card against.
   const invoiced = financials.invoiced; // base segment — "Invoiced"
   const spent = financials.totalSpent; // Invoiced + Left to be invoiced — NOT the bar's total (see below)
-  const projTotal = financials.projection; // = invoiced + max(leftToInvoice, etc) as of 2026-08-19 — the bar's own total height
+  // ── A completed job with no live parts data (2026-10-22, by request) ──────
+  //
+  // Nothing is left to purchase or invoice and Total ETO may hold no lines, so every live figure is $0 and
+  // there is no projection to draw. The Projects tab's final Parts Cost Actual stands in: ONE band in the
+  // Projected bar, named "Actual Cost". Only when the selection has no live parts activity at all, so every
+  // other job reads exactly as before.
+  const completedMode = financials.completedActual != null && financials.totalSpent === 0 && financials.projection === 0;
+  const completedActual = completedMode ? (financials.completedActual as number) : 0;
+  const projTotal = completedMode ? completedActual : financials.projection; // = invoiced + max(leftToInvoice, etc) as of 2026-08-19 — the bar's own total height
   // `financials.leftToInvoice` is deliberately NOT read here any more. It is the
   // open balance over ALL rows; the card's "Left to invoice" row shows the EXTERNAL
   // figure (financials.yetToInvoice, in-house SDC excluded), because that is the one
@@ -536,15 +544,17 @@ export function PartsCostSummary({
   // height out of the purchased band — the Total bar beside it keeps the true Invoiced / Not yet invoiced
   // heights and carries no red.
   type BarSeg = { key: string; label: string; note?: string; value: number; color: string; heightPct: number };
-  const projSegments: BarSeg[] = [
-    {
-      key: "purchased",
-      label: "Purchased to date",
-      value: purchasedDisplay,
-      color: BAR_PURCHASED,
-      heightPct: pct(Math.max(0, financials.purchased - (hasExcess ? excessAmount : 0))),
-    },
-  ];
+  const projSegments: BarSeg[] = completedMode
+    ? [{ key: "actual", label: "Actual Cost", value: projTotalDisplay, color: BAR_PURCHASED, heightPct: pct(projTotal) }]
+    : [
+        {
+          key: "purchased",
+          label: "Purchased to date",
+          value: purchasedDisplay,
+          color: BAR_PURCHASED,
+          heightPct: pct(Math.max(0, financials.purchased - (hasExcess ? excessAmount : 0))),
+        },
+      ];
   if (hasExcess) {
     projSegments.push({
       key: "excess",
@@ -565,10 +575,11 @@ export function PartsCostSummary({
       heightPct: pct(stillToPurchaseAmount),
     });
   }
-  const totalSegments: BarSeg[] = [
-    { key: "invoiced", label: "Invoiced and posted", value: invoicedDisplay, color: BAR_INVOICED, heightPct: pct(Math.max(0, invoiced)) },
-  ];
-  if (openBalanceAmount > 0.5) {
+  // A completed job has no purchasing to split, so the Total bar stays empty ($0), as it always was.
+  const totalSegments: BarSeg[] = completedMode
+    ? []
+    : [{ key: "invoiced", label: "Invoiced and posted", value: invoicedDisplay, color: BAR_INVOICED, heightPct: pct(Math.max(0, invoiced)) }];
+  if (!completedMode && openBalanceAmount > 0.5) {
     totalSegments.push({
       key: "open",
       label: "Not yet invoiced (open POs)",
@@ -580,7 +591,7 @@ export function PartsCostSummary({
   }
   // What the Total bar's label says: its own two bands added up. It equals Purchased to date except on the
   // rare job whose invoices run above what was ordered (the table's "invoiced above the PO total" row).
-  const totalBarDisplay = invoicedDisplay + openDisplay;
+  const totalBarDisplay = completedMode ? 0 : invoicedDisplay + openDisplay;
 
   // ── The breakdown table (2026-09-03, by request) ──────────────────────────
   //
@@ -778,9 +789,22 @@ export function PartsCostSummary({
   // to purchase, Projected total — and the supporting rows (Invoiced, transfers, Not yet invoiced,
   // billed-not-posted, excess…) follow below a gap and a dotted rule. Same rows, same figures, same
   // derivations; only the order changes.
-  const SUMMARY_KEYS = ["purchased", "stp", "total"];
+  const SUMMARY_KEYS = ["actual", "purchased", "stp", "total"];
   const summaryRows = SUMMARY_KEYS.map((k) => breakdown.find((r) => r.key === k)).filter((r): r is BreakdownRow => !!r);
-  const orderedBreakdown = [...summaryRows, ...breakdown.filter((r) => !SUMMARY_KEYS.includes(r.key))];
+  // A completed job with no live data has one row: its final actual, with where it comes from.
+  const orderedBreakdown: BreakdownRow[] = completedMode
+    ? [
+        {
+          key: "actual",
+          swatch: BAR_PURCHASED,
+          label: "Actual Cost",
+          derivation:
+            "this job is complete, so nothing is left to purchase or invoice and Total ETO holds no live parts lines for it; this is its final Parts Cost Actual from the Projects tab",
+          value: projTotalDisplay,
+          kind: "total",
+        },
+      ]
+    : [...summaryRows, ...breakdown.filter((r) => !SUMMARY_KEYS.includes(r.key))];
 
   // ── A thin segment still has to be seeable (2026-09-03, by request) ───────
   //
@@ -848,15 +872,19 @@ export function PartsCostSummary({
   // green announces a triumph on a job where the buying simply hasn't started,
   // and that's the reading someone acts on. An absence of data isn't a saving.
   const noPartsActivity = spent === 0 && projTotal === 0;
+  // Over/under for a completed job is its final actual against the budget.
+  const completedVariance = completedMode && estimate != null ? completedActual - estimate : null;
 
   const variance =
-    estimate != null && financials.variance != null && !noPartsActivity
-      ? {
-          estimate,
-          dollars: financials.variance, // + = over
-          pct: financials.variancePct! / 100,
-        }
-      : null;
+    completedVariance != null && estimate != null && estimate !== 0
+      ? { estimate, dollars: completedVariance, pct: completedVariance / estimate }
+      : estimate != null && financials.variance != null && !noPartsActivity && !completedMode
+        ? {
+            estimate,
+            dollars: financials.variance, // + = over
+            pct: financials.variancePct! / 100,
+          }
+        : null;
 
   // One bar's bands, bottom to top. Each band is its own drill target (2026-09-02): a <button> per band
   // rather than one handler with hit-testing, so the browser's hit-testing is exact and each gets a real
@@ -1075,7 +1103,11 @@ export function PartsCostSummary({
                   it red would say the whole projection was the problem. The tooltip carries the split. */}
               <span
                 className="mb-0.5 whitespace-nowrap font-mono text-[0.8125rem] font-bold leading-none tabular-nums text-sdc-navy"
-                title={`Projected ${usd(projTotalDisplay)} = purchased ${usd(purchasedDisplay)} + still to purchase ${usd(stillToPurchaseDisplay)}.`}
+                title={
+                  completedMode
+                    ? `Actual cost ${usd(projTotalDisplay)}: this job is complete, so this is its final Parts Cost Actual from the Projects tab.`
+                    : `Projected ${usd(projTotalDisplay)} = purchased ${usd(purchasedDisplay)} + still to purchase ${usd(stillToPurchaseDisplay)}.`
+                }
               >
                 {usd(projTotalDisplay)}
               </span>
@@ -1094,6 +1126,7 @@ export function PartsCostSummary({
                   the same money — so ONE dotted line runs from here across to the Total bar's top, at the
                   height both bars share. Amber when there is still to purchase above it (the line is where
                   the yellow band begins); grey when there is not. */}
+              {!completedMode && (
               <div
                 aria-hidden
                 className="pointer-events-none absolute z-10"
@@ -1104,7 +1137,10 @@ export function PartsCostSummary({
                   borderTop: `2px dotted ${stpIdx >= 0 ? BAR_PROJECTED_LINE : "#9AA3AF"}`,
                 }}
               />
-              {sideLabels(projSegments, projPx, { purchased: "Purchased to date", stp: "Still to purchase" }, { purchased: usd(purchasedDisplay), stp: usd(stillToPurchaseDisplay) })}
+              )}
+              {completedMode
+                ? sideLabels(projSegments, projPx, { actual: "Actual Cost" }, { actual: usd(projTotalDisplay) })
+                : sideLabels(projSegments, projPx, { purchased: "Purchased to date", stp: "Still to purchase" }, { purchased: usd(purchasedDisplay), stp: usd(stillToPurchaseDisplay) })}
               {/* The dotted line marks the plan boundary: it sits where the red excess begins, i.e. between the
                   purchased money within plan below it and the red excess above it. */}
               {hasExcess && excessIdx >= 0 && (
@@ -1325,7 +1361,7 @@ export function PartsCostSummary({
       {variance != null && (
         <div className="border-t border-sdc-border pt-3">
           <div className="flex items-baseline justify-between gap-2">
-            <p className="text-xs font-semibold text-sdc-gray-600">Projection vs Budget</p>
+            <p className="text-xs font-semibold text-sdc-gray-600">{completedMode ? "Actual vs Budget" : "Projection vs Budget"}</p>
             <p className="font-heading text-sm font-bold tabular-nums">
               {/* Zero handled separately: "0.0% over" reads as a rounding
                   artefact where "on budget" is unambiguous. */}
