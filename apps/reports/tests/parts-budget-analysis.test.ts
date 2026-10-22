@@ -9,6 +9,8 @@ import {
   filterRows,
   roundPct,
   sortRows,
+  focusMatches,
+  FOCUS_SORT,
   summarize,
   DEFAULT_SORT,
   type PartsBudgetRow,
@@ -77,6 +79,23 @@ test("filters: status chip, band, and text search compose; no band shows every j
   assert.ok(!f({ band: "under" }).includes("1107"), "a job with no budget has no band");
 });
 
+test("a summary card lists the jobs behind its figure, sorted by it, so the job it names is first", () => {
+  const f = (focus: "pct" | "dollars" | "excess", status: "both" | "active" | "complete" = "both") =>
+    sortRows(filterRows(ROWS, { status, band: null, q: "", focus }), FOCUS_SORT[focus]).map((r) => r.jobId);
+  // Over-budget jobs only: not the under-budget ones, not the job with no budget.
+  assert.deepEqual(new Set(f("pct")), new Set(["1103", "1104", "1105", "1106", "979"]));
+  assert.equal(f("pct")[0], summarize(ROWS).worstByPct?.jobId, "the card's job is the first row");
+  assert.equal(f("dollars")[0], summarize(ROWS).worstByDollars?.jobId);
+  assert.deepEqual(f("dollars"), ["1106", "1105", "979", "1104", "1103"], "largest $ first");
+  assert.deepEqual(f("pct"), ["1106", "979", "1105", "1104", "1103"], "highest % first");
+  assert.deepEqual(f("excess"), ["979"]);
+  assert.equal(f("excess").length, summarize(ROWS).withExcess, "the list is exactly the count on the card");
+  // The status chip still scopes it.
+  assert.deepEqual(f("pct", "complete"), ["979", "1103"]);
+  assert.equal(focusMatches(ROWS[0], "pct"), false, "an under-budget job is not over");
+  assert.equal(focusMatches(ROWS[6], "pct"), false, "a job with no budget is not over");
+});
+
 test("the summary counts over-budget jobs, adds their overruns, and names the worst by % and by $", () => {
   const s = summarize(ROWS);
   assert.equal(s.jobs, 8);
@@ -123,6 +142,17 @@ test("the export holds exactly the rows the table shows, with totals over the jo
   assert.equal(noBudget[5], null);
   assert.equal(noBudget[7], null);
   assert.equal(noBudget[8], null);
+});
+
+test("the export follows a card's list, and a card wins over a band", () => {
+  const q = parsePartsBudgetQuery({ focus: "excess", band: "b25_50", status: "both" });
+  assert.equal(q.focus, "excess");
+  assert.equal(q.band, null, "a card's list and a band are never combined");
+  const { spec, rowCount } = buildPartsBudgetSheet(ROWS, q, "2026-10-22T10:00:00.000Z", new Date());
+  assert.equal(rowCount, 1);
+  assert.equal(spec.rows[0][0], "979");
+  assert.match(spec.subtitle[0], /Excess bought this month/);
+  assert.equal(parsePartsBudgetQuery({ focus: "nonsense" }).focus, null);
 });
 
 test("an unrecognised export filter falls back to the default instead of failing", () => {

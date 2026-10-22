@@ -78,13 +78,42 @@ export function roundPct(n: number): number {
 
 export type StatusFilter = "both" | "active" | "complete";
 
+/**
+ * A summary card the table can be opened from (2026-10-22). Each lists the jobs behind that card's figure,
+ * sorted by it, so the job the card names is on the first row:
+ *   pct       the over-budget jobs, highest overrun % first
+ *   dollars   the over-budget jobs, largest overrun $ first
+ *   excess    the jobs that bought beyond last month's Left to Purchase, largest excess first
+ */
+export type Focus = "pct" | "dollars" | "excess";
+
+export const FOCUS_LABEL: Record<Focus, string> = {
+  pct: "Over-budget jobs · highest overrun % first",
+  dollars: "Over-budget jobs · largest overrun $ first",
+  excess: "Excess bought this month",
+};
+
+export const FOCUS_SORT: Record<Focus, SortState> = {
+  pct: { key: "pct", dir: "desc" },
+  dollars: { key: "delta", dir: "desc" },
+  excess: { key: "excess", dir: "desc" },
+};
+
 export type ViewFilter = {
   status: StatusFilter;
   /** A band, or null for every job. */
   band: BandKey | null;
   /** Free text over job id, name, customer and type. */
   q: string;
+  /** A summary card's job list, or null/absent for none. Chosen instead of a band, never with one. */
+  focus?: Focus | null;
 };
+
+/** The jobs a card's figure is made of. */
+export function focusMatches(row: PartsBudgetRow, focus: Focus): boolean {
+  if (focus === "excess") return row.excess > 0.5;
+  return row.pct != null && row.pct > 0 && row.delta != null && row.delta > 0;
+}
 
 export function statusMatches(status: RowStatus, filter: StatusFilter): boolean {
   if (filter === "both") return true;
@@ -103,6 +132,7 @@ export function filterRows(rows: readonly PartsBudgetRow[], f: ViewFilter): Part
     (r) =>
       statusMatches(r.status, f.status) &&
       searchMatches(r, f.q) &&
+      (f.focus == null || focusMatches(r, f.focus)) &&
       (f.band == null || (r.pct != null && bandOf(r.pct) === f.band)),
   );
 }

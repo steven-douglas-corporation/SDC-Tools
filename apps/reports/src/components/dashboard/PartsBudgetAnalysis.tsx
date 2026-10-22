@@ -9,6 +9,8 @@ import {
   BANDS,
   BASIS_LABEL,
   DEFAULT_SORT,
+  FOCUS_LABEL,
+  FOCUS_SORT,
   bandOf,
   bandTotals,
   filterRows,
@@ -18,6 +20,7 @@ import {
   statusMatches,
   summarize,
   type BandKey,
+  type Focus,
   type PartsBudgetRow,
   type SortKey,
   type SortState,
@@ -58,16 +61,59 @@ const COLUMNS: { key: SortKey; label: string; align: "left" | "right"; hint?: st
   { key: "excess", label: "Excess", align: "right", hint: "Bought this month beyond last month's Left to Purchase" },
 ];
 
-function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "red" }) {
+function Kpi({
+  label,
+  value,
+  sub,
+  tone,
+  onClick,
+  active = false,
+  hint,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: "red";
+  /** Makes the card a button that opens the jobs behind its figure. */
+  onClick?: () => void;
+  active?: boolean;
+  hint?: string;
+}) {
+  const body = (
+    <div
+      className={`flex h-full flex-col justify-center gap-1 px-4 py-3 text-left ${
+        onClick ? (active ? "bg-sdc-blue-light/50" : "bg-white hover:bg-sdc-blue-light/25") : "bg-white"
+      }`}
+    >
+      <p className="flex items-center justify-between gap-2 text-label font-semibold uppercase tracking-[0.06em] text-sdc-gray-600">
+        <span className="truncate">{label}</span>
+        {onClick && (
+          <span aria-hidden className="shrink-0 normal-case tracking-normal text-sdc-blue">
+            {active ? "Showing ↓" : "View →"}
+          </span>
+        )}
+      </p>
+      <p className={`font-heading text-2xl leading-none font-bold tracking-tight tabular-nums ${tone === "red" ? "text-sdc-red-text" : "text-sdc-navy"}`}>
+        {value}
+      </p>
+      {sub && <p className="truncate text-label leading-tight text-sdc-gray-400">{sub}</p>}
+    </div>
+  );
   return (
     <div className="min-w-0 flex-1 basis-[11rem]">
-      <div className="flex h-full flex-col justify-center gap-1 bg-white px-4 py-3">
-        <p className="truncate text-label font-semibold uppercase tracking-[0.06em] text-sdc-gray-600">{label}</p>
-        <p className={`font-heading text-2xl leading-none font-bold tracking-tight tabular-nums ${tone === "red" ? "text-sdc-red-text" : "text-sdc-navy"}`}>
-          {value}
-        </p>
-        {sub && <p className="truncate text-label leading-tight text-sdc-gray-400">{sub}</p>}
-      </div>
+      {onClick ? (
+        <button
+          type="button"
+          onClick={onClick}
+          aria-pressed={active}
+          title={hint}
+          className={`motion-interactive block h-full w-full ${active ? "ring-2 ring-inset ring-sdc-blue" : ""}`}
+        >
+          {body}
+        </button>
+      ) : (
+        body
+      )}
     </div>
   );
 }
@@ -107,6 +153,7 @@ export function PartsBudgetAnalysis({
 }) {
   const [status, setStatus] = useState<StatusFilter>("both");
   const [band, setBand] = useState<BandKey | null>(null);
+  const [focus, setFocus] = useState<Focus | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
@@ -116,7 +163,7 @@ export function PartsBudgetAnalysis({
   const inStatus = useMemo(() => rows.filter((r) => statusMatches(r.status, status)), [rows, status]);
   const summary = useMemo(() => summarize(inStatus), [inStatus]);
   const totals = useMemo(() => bandTotals(inStatus), [inStatus]);
-  const shown = useMemo(() => sortRows(filterRows(rows, { status, band, q }), sort), [rows, status, band, q, sort]);
+  const shown = useMemo(() => sortRows(filterRows(rows, { status, band, q, focus }), sort), [rows, status, band, q, focus, sort]);
   const counts = useMemo(
     () => ({
       both: rows.length,
@@ -127,12 +174,13 @@ export function PartsBudgetAnalysis({
   );
 
   const maxJobs = Math.max(1, ...totals.map((t) => t.jobs));
-  const tableOpen = band != null || showAll;
+  const tableOpen = band != null || focus != null || showAll;
   const bandDef = band ? BANDS.find((b) => b.key === band)! : null;
 
   const exportHref = (format: "xlsx" | "csv") => {
     const p = new URLSearchParams({ format, status, sort: sort.key, dir: sort.dir });
-    if (band) p.set("band", band);
+    if (focus) p.set("focus", focus);
+    else if (band) p.set("band", band);
     if (q.trim()) p.set("q", q.trim());
     return `/api/export/parts-budget?${p.toString()}`;
   };
@@ -140,9 +188,23 @@ export function PartsBudgetAnalysis({
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "jobId" || key === "jobName" || key === "customer" || key === "type" || key === "status" ? "asc" : "desc" }));
 
+  // One thing is chosen at a time: a band, a card's job list, or the whole list.
   const pickBand = (key: BandKey) => {
     setBand((b) => (b === key ? null : key));
+    setFocus(null);
     setShowAll(false);
+  };
+
+  // A card opens the jobs behind its figure, sorted by it so the job the card names is the first row.
+  const pickFocus = (f: Focus) => {
+    if (focus === f) {
+      setFocus(null);
+      return;
+    }
+    setFocus(f);
+    setBand(null);
+    setShowAll(false);
+    setSort(FOCUS_SORT[f]);
   };
 
   return (
@@ -181,21 +243,30 @@ export function PartsBudgetAnalysis({
         />
         <Kpi label="Total over budget" value={usd(Math.round(summary.totalOver))} sub="overruns, added up" tone={summary.totalOver > 0 ? "red" : undefined} />
         <Kpi
-          label="Worst by %"
+          label="Highest overrun %"
           value={summary.worstByPct ? signedPct(summary.worstByPct.pct as number) : "—"}
           sub={summary.worstByPct ? `Job ${summary.worstByPct.jobId} · ${summary.worstByPct.jobName}` : "nothing over budget"}
           tone={summary.worstByPct ? "red" : undefined}
+          onClick={summary.worstByPct ? () => pickFocus("pct") : undefined}
+          active={focus === "pct"}
+          hint="List the over-budget jobs, highest overrun % first"
         />
         <Kpi
-          label="Worst by $"
+          label="Largest overrun $"
           value={summary.worstByDollars ? signedUsd(summary.worstByDollars.delta as number, usd) : "—"}
           sub={summary.worstByDollars ? `Job ${summary.worstByDollars.jobId} · ${summary.worstByDollars.jobName}` : "nothing over budget"}
           tone={summary.worstByDollars ? "red" : undefined}
+          onClick={summary.worstByDollars ? () => pickFocus("dollars") : undefined}
+          active={focus === "dollars"}
+          hint="List the over-budget jobs, largest overrun $ first"
         />
         <Kpi
           label="Excess this month"
           value={`${summary.withExcess} job${summary.withExcess === 1 ? "" : "s"}`}
           sub="bought beyond last month's plan"
+          onClick={summary.withExcess > 0 ? () => pickFocus("excess") : undefined}
+          active={focus === "excess"}
+          hint="List the jobs that bought more this month than last month's Left to Purchase allowed"
         />
       </KpiStrip>
 
@@ -209,10 +280,11 @@ export function PartsBudgetAnalysis({
               onClick={() => {
                 setShowAll((v) => !v);
                 setBand(null);
+                setFocus(null);
               }}
               className="text-xs font-semibold text-sdc-blue hover:underline"
             >
-              {showAll && band == null ? "Hide job list" : "Show all jobs"}
+              {showAll && band == null && focus == null ? "Hide job list" : "Show all jobs"}
             </button>
           }
         />
@@ -276,7 +348,7 @@ export function PartsBudgetAnalysis({
             <div className="min-w-0">
               <h3 className="flex items-center gap-2 text-sm font-semibold text-sdc-navy">
                 {bandDef && <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: bandDef.color }} />}
-                {bandDef ? bandDef.label : "All jobs"}
+                {focus ? FOCUS_LABEL[focus] : bandDef ? bandDef.label : "All jobs"}
                 <span className="font-normal text-sdc-gray-400">
                   · {shown.length} job{shown.length === 1 ? "" : "s"}
                 </span>
@@ -311,6 +383,7 @@ export function PartsBudgetAnalysis({
                 type="button"
                 onClick={() => {
                   setBand(null);
+                  setFocus(null);
                   setShowAll(false);
                   setQ("");
                 }}
