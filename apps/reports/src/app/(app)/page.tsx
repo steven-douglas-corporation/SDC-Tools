@@ -10,7 +10,7 @@ import { UtilizationPanel } from "@/components/dashboard/UtilizationPanel";
 import { DashboardTabs } from "@/components/DashboardTabs";
 import { FinancesPanel } from "@/components/dashboard/FinancesPanel";
 import { DashboardFeedbackBand } from "@/components/dashboard/DashboardFeedbackBand";
-import { financeCardsFor } from "@/lib/finance-cards";
+import { canSeePartsBudget, financeCardsFor } from "@/lib/finance-cards";
 
 // ── The Dashboard (redesigned 2026-08-27) ───────────────────────────────────
 //
@@ -61,7 +61,8 @@ export async function DashboardView({ params }: { params: { tab?: string; m?: st
   const session = await requirePagePermission("dashboard:view");
   const month = dashboardMonth(params.m);
   const financeCards = financeCardsFor(session.user.role);
-  const hasFinances = financeCards.length > 0;
+  const partsBudget = canSeePartsBudget(session.user.role);
+  const hasFinances = financeCards.length > 0 || partsBudget;
   const financesOpen = hasFinances && params.tab === "finances";
 
   const overview = await getDashboardOverview(month);
@@ -113,7 +114,7 @@ export async function DashboardView({ params }: { params: { tab?: string; m?: st
       {hasFinances ? (
         <DashboardTabs
           executive={executive}
-          finances={financesOpen ? <FinancesPanel month={month} cards={financeCards} /> : null}
+          finances={financesOpen ? <FinancesPanel month={month} cards={financeCards} partsBudget={partsBudget} /> : null}
         />
       ) : (
         executive

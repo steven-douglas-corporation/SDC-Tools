@@ -1,9 +1,9 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { getPartsCostForJobs, getTransfersForJobs, type PartsCostLine } from "@/lib/sync-totaleto";
-import { EMPTY_TRANSFER_SUMMARY } from "@/lib/parts-transfer-netting";
+import { EMPTY_TRANSFER_SUMMARY, type JobTransferSummary } from "@/lib/parts-transfer-netting";
 import { computePartsProjection, computeYetToInvoice } from "@/lib/parts-projection";
-import { readPriorEtcByJob, sumPriorEtc } from "@/lib/parts-prior-etc";
+import { readPriorEtcByJob, sumPriorEtc, type PriorEtcResolution } from "@/lib/parts-prior-etc";
 import { readLeftToPurchaseLastMonth } from "@/lib/parts-left-to-purchase";
 import { purchasedSinceMonthStart, sumStillToPurchase } from "@/lib/still-to-purchase";
 import { computePartsBudgetProjection, purchasedTotal, actualTotal } from "@/lib/parts-budget-projection";
@@ -116,9 +116,6 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
   }
 
   const jobs = await prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, jobId: true, costQuoted: true, status: true, costActualHistorical: true } });
-  const quoted = jobs.reduce((s, j) => s + Number(j.costQuoted ?? 0), 0);
-  const budget = quoted > 0 ? quoted : null;
-
   // ── ONE round trip, not one per job (2026-09-02) ──────────────────────────
   //
   // This fanned out at 6 concurrent calls — a bounded improvement on the 59
@@ -178,6 +175,43 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
   const etcMonth = await resolveEtcMonth(jobs.map((j) => j.id), opts?.asOfDate);
   const projection = await computePartsBudgetProjection(jobs.map((j) => j.id), lines, etcMonth).catch(() => null);
 
+  // Everything below the loads is ONE function (assemblePartsCostFinancials), so the Dashboard's
+  // per-job Projection vs Budget analysis — which loads once for every job and then assembles each job
+  // on its own — cannot compute a job differently from the card on Job Details.
+  const priorByJob = await readPriorEtcByJob(jobs.map((j) => j.id), etcMonth).catch(() => null);
+  const ltpLastMonth = await readLeftToPurchaseLastMonth(jobs.map((j) => j.id), etcMonth).catch(
+    () => new Map<number, number | null>(),
+  );
+  // Both branches are now literally the same function: committedNotPosted IS
+  // leftToInvoiceForLines (see parts-budget-projection.ts). Kept as two branches only
+  // because the projection may fail to resolve, and the figure must still appear.
+  const leftToInvoice = projection ? projection.committedNotPosted : leftToInvoiceForLines(lines);
+  return assemblePartsCostFinancials({
+    jobs, byJob, failedJobs, transfers, transfersUnavailable, etcMonth, priorByJob, ltpLastMonth, leftToInvoice,
+  });
+}
+
+/** What assemblePartsCostFinancials needs: every read already done, for one job or a selection. */
+export type PartsCostInputs = {
+  jobs: { id: number; jobId: string; costQuoted: unknown; status: string | null; costActualHistorical: unknown }[];
+  /** Total ETO lines by job number; null when the read failed. */
+  byJob: Map<string, PartsCostLine[]> | null;
+  failedJobs: number;
+  transfers: JobTransferSummary;
+  transfersUnavailable: boolean;
+  etcMonth: string | null;
+  priorByJob: Map<number, PriorEtcResolution> | null;
+  ltpLastMonth: Map<number, number | null>;
+  leftToInvoice: number;
+};
+
+/** The reconciliation itself — pure, no reads. See the header of this file for what each figure is. */
+export function assemblePartsCostFinancials(i: PartsCostInputs): PartsCostFinancials {
+  const { jobs, byJob, failedJobs, transfers, transfersUnavailable, etcMonth, priorByJob, ltpLastMonth, leftToInvoice } = i;
+  const quoted = jobs.reduce((s, j) => s + Number(j.costQuoted ?? 0), 0);
+  const budget = quoted > 0 ? quoted : null;
+  const lines: PartsCostLine[] = byJob ? jobs.flatMap((j) => byJob.get(j.jobId) ?? []) : [];
+
   const invoiced = actualTotal(lines) + transfers.net;
   // Billed but not GL-posted. Signed on purpose — a flagged refund makes it negative,
   // and clamping would hide exactly the case worth seeing (job 1148's -$31,765
@@ -186,10 +220,6 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
   // `toComplete` in the spec's vocabulary: the remaining open parts exposure, which
   // is the same figure the card has always shown as "Left to be invoiced". One
   // quantity, two names — never two addends (spec §8).
-  // Both branches are now literally the same function: committedNotPosted IS
-  // leftToInvoiceForLines (see parts-budget-projection.ts). Kept as two branches only
-  // because the projection may fail to resolve, and the figure must still appear.
-  const leftToInvoice = projection ? projection.committedNotPosted : leftToInvoiceForLines(lines);
   const totalSpent = invoiced + leftToInvoice;
 
   // ── Dan's projection model (2026-09-03) ───────────────────────────────────
@@ -208,7 +238,6 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
   // `committedNotPosted`, which the card still shows as the whole open balance — but
   // its own `total` now feeds nothing. That figure was the ETC-driven projection
   // this replaces.
-  const priorByJob = await readPriorEtcByJob(jobs.map((j) => j.id), etcMonth).catch(() => null);
   const priorEtc = priorByJob
     ? sumPriorEtc(jobs.map((j) => j.id), priorByJob)
     : { priorEtc: null, partsSpentThisMonth: 0, source: "none" as const, month: null };
@@ -234,9 +263,6 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
   // month's Left to Purchase (Monthly ETC tab) less what was bought since. Per job — see
   // lib/still-to-purchase.ts. The old Adjusted-ETC-less-open-POs figure only stands in for a job with
   // no Left to Purchase entered last month.
-  const ltpLastMonth = await readLeftToPurchaseLastMonth(jobs.map((j) => j.id), etcMonth).catch(
-    () => new Map<number, number | null>(),
-  );
   const stp = sumStillToPurchase(
     jobs.map((j) => {
       const jobLines = byJob?.get(j.jobId) ?? [];

@@ -6,6 +6,9 @@ import { usd } from "@/components/ui/format";
 import type { FinanceCardDef } from "@/lib/finance-cards";
 import { loadPartsSpent, loadTmDollars } from "@/lib/dashboard-finances";
 import { DashboardFeedbackBand } from "@/components/dashboard/DashboardFeedbackBand";
+import { PartsBudgetAnalysis } from "@/components/dashboard/PartsBudgetAnalysis";
+import { PARTS_BUDGET_SECTION } from "@/lib/finance-cards";
+import { loadPartsBudgetAnalysis } from "@/lib/parts-budget-analysis";
 
 // ── The Finances tab (2026-10-20) ───────────────────────────────────────────
 //
@@ -105,7 +108,40 @@ const CARD_BY_KEY: Record<FinanceCardDef["key"], (p: { def: FinanceCardDef; mont
   tm: TmCard,
 };
 
-export function FinancesPanel({ month, cards }: { month: string; cards: FinanceCardDef[] }) {
+// Loads on its own behind its own Suspense boundary: it reads Total ETO for every job, so a slow read
+// holds back this section and nothing else.
+async function PartsBudgetSection() {
+  const r = await loadPartsBudgetAnalysis();
+  if (r.state !== "ok") {
+    return (
+      <Panel>
+        <Quiet>
+          Couldn&apos;t load the projection figures right now. Open Job Details for a single job&apos;s Parts Cost, or try again
+          in a moment.
+        </Quiet>
+      </Panel>
+    );
+  }
+  if (r.rows.length === 0) {
+    return (
+      <Panel>
+        <Quiet>No job has parts cost to report yet.</Quiet>
+      </Panel>
+    );
+  }
+  return <PartsBudgetAnalysis rows={r.rows} notStarted={r.notStarted} asOf={r.asOf} />;
+}
+
+export function FinancesPanel({
+  month,
+  cards,
+  partsBudget = false,
+}: {
+  month: string;
+  cards: FinanceCardDef[];
+  /** The role may open Job Details, so the Parts cost vs budget section is offered. */
+  partsBudget?: boolean;
+}) {
   return (
     <div className="flex flex-col gap-8">
       <Band label="This month">
@@ -120,6 +156,22 @@ export function FinancesPanel({ month, cards }: { month: string; cards: FinanceC
           })}
         </div>
       </Band>
+
+      {partsBudget && (
+        <Band label={PARTS_BUDGET_SECTION.title}>
+          <Suspense
+            fallback={
+              <Panel>
+                <p role="status" className="py-2 text-sm text-sdc-muted">
+                  Loading every job&apos;s projection…
+                </p>
+              </Panel>
+            }
+          >
+            <PartsBudgetSection />
+          </Suspense>
+        </Band>
+      )}
 
       {/* The tab is a prototype and nobody yet knows everything it should hold — this is
           how the people who use it say. See DashboardFeedbackBand. */}
