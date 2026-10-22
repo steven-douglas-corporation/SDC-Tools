@@ -13,16 +13,23 @@ import { recentRefreshRuns, currentRefresh } from "@/lib/refresh-service";
 import { buildSourceHealth } from "@/lib/source-health";
 import { dashboardMonth } from "@/lib/dashboard-overview";
 import { dataManagementTab } from "@/lib/data-management-tabs";
-import { DataQualityPanel } from "@/components/DataQualityPanel";
+import {
+  CustomersSection,
+  FamiliesSection,
+  PunchesSection,
+  RosterSection,
+  TempPunchSection,
+} from "@/components/DataQualityPanel";
 import { DataManagementTabs } from "@/components/DataManagementTabs";
 import { RefreshScheduleCard } from "@/components/dashboard/RefreshScheduleCard";
 import { DashboardMonthSelect } from "@/components/dashboard/DashboardMonthSelect";
 
 // ── Data Management (reshaped 2026-10-20, tabs and split view 2026-10-21) ────
 //
-// Three tabs: is what the app holds clean (Data quality, first and the default), can I
-// trust what it is showing (Data sources), and what do I have to do by hand (Employee
-// roster).
+// Seven tabs: is what the app holds clean (Job punches, first and the default, then Temp
+// punches, Roster sync, Position families and Customers), can I trust what it is showing
+// (Data sources), and what do I have to do by hand (Employee roster). The five checks were
+// one "Data quality" tab until 2026-10-22, when it was split a tab per section.
 //
 // The first two came from the Dashboard, where they were the "System" band and the
 // Data Quality tab. They are about the data, not about the work the Dashboard is for,
@@ -106,8 +113,12 @@ export async function DataManagementView({ params }: { params: DataManagementPar
       </div>
 
       <DataManagementTabs>
+        {tab === "punches" && <PunchesTab params={params} />}
+        {tab === "temp" && <TempPunchesTab />}
+        {tab === "roster-sync" && <RosterSyncTab />}
+        {tab === "families" && <FamiliesTab />}
+        {tab === "customers" && <CustomersTab />}
         {tab === "sources" && <SourcesTab />}
-        {tab === "quality" && <QualityTab params={params} />}
         {tab === "roster" && <RosterTab canReconcile={canReconcile} />}
       </DataManagementTabs>
     </div>
@@ -136,18 +147,14 @@ async function SourcesTab() {
   return <RefreshScheduleCard health={buildSourceHealth({ freshness: freshnessRows, runs: refreshRuns, running: liveRefresh })} />;
 }
 
-async function QualityTab({ params }: { params: DataManagementParams }) {
+async function PunchesTab({ params }: { params: DataManagementParams }) {
   const month = dashboardMonth(params.m);
 
-  const [dataQuality, explorer, roster, families, tempPunches, undefinedHours] = await Promise.all([
+  const [dataQuality, explorer, undefinedHours] = await Promise.all([
     // The Power BI report's Data Quality page, rebuilt locally — see
     // lib/data-quality.ts for where each rule comes from.
     getDataQuality(),
     getPunchExplorer({ from: params.dqFrom, to: params.dqTo, employeeId: params.dqEmp, functionId: params.dqFn, monthToDate: params.dqMtd === "1" }),
-    getRosterQuality(),
-    getPositionFamilyQuality(),
-    // The temp punches the app cannot use, read live from the warehouse (lib/temp-punch-quality.ts).
-    getTempPunchQuality(),
     // The Monthly ETC card's own figure for this month (same function), so the tile's
     // headline and the detail it opens cannot disagree with that page.
     getUndefinedHoursTotals(month),
@@ -159,17 +166,27 @@ async function QualityTab({ params }: { params: DataManagementParams }) {
         <span className="text-label text-sdc-muted">Undefined Hours month</span>
         <DashboardMonthSelect month={month} label="Undefined Hours" />
       </div>
-      <DataQualityPanel
-        dq={dataQuality}
-        explorer={explorer}
-        roster={roster}
-        families={families}
-        tempPunches={tempPunches}
-        month={month}
-        undefinedHours={undefinedHours}
-      />
+      <PunchesSection dq={dataQuality} explorer={explorer} month={month} undefinedHours={undefinedHours} />
     </>
   );
+}
+
+// The temp punches the app cannot use, read live from the warehouse (lib/temp-punch-quality.ts).
+async function TempPunchesTab() {
+  return <TempPunchSection q={await getTempPunchQuality()} />;
+}
+
+async function RosterSyncTab() {
+  return <RosterSection roster={await getRosterQuality()} />;
+}
+
+async function FamiliesTab() {
+  return <FamiliesSection families={await getPositionFamilyQuality()} />;
+}
+
+// Reads the same book as the punch checks (getDataQuality), but only its customer naming is shown.
+async function CustomersTab() {
+  return <CustomersSection dq={await getDataQuality()} />;
 }
 
 function RosterTab({ canReconcile }: { canReconcile: boolean }) {
