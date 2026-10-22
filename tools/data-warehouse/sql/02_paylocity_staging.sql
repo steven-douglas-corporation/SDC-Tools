@@ -36,6 +36,12 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
     SELECT "Integration"."TryTimestamp"(value)::date
 $$;
 
+-- A clock time as text ('08:00 AM', '04:30 PM', '13:05') -> time of day.
+CREATE OR REPLACE FUNCTION "Integration"."TryTime"(value text) RETURNS time
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    SELECT CASE WHEN pg_input_is_valid(btrim(value), 'time') THEN btrim(value)::time END
+$$;
+
 -- 'Yes' / 'No' (any case) -> true / false; anything else -> NULL.
 CREATE OR REPLACE FUNCTION "Integration"."YesNo"(value text) RETURNS boolean
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
@@ -118,6 +124,80 @@ FROM "RawPaylocity"."DataRow" AS d
 JOIN "RawPaylocity"."LatestFile" AS l USING ("FileId")
 WHERE d."ReportKey" = 'position_families_overrides';
 
+-- ── Temp and contractor punches ─────────────────────────────────────────────
+
+-- Paylocity's PunchDetail report for the TEMPS group ("Temp Punches.xls"): four
+-- preamble rows, then the header on sheet row 5. Temps are not in the Job Hours
+-- report, which is why this exists. The loader keys each row by the sheet's own header
+-- text, so a header Paylocity changes is a missing key here, not a shifted column;
+-- checks/temp_punches.sql flags that. Two headers carry a double space in the file
+-- ('Regular Duration  (Hours)', 'Punch Out Time  (Rounded)'); they are matched as written.
+--
+-- The header row is set here, before the first file lands or as a one-off re-assertion.
+-- Changing it for files already loaded needs them reloaded: see the README.
+INSERT INTO "Integration"."SourceReport" ("Source", "ReportKey", "HeaderRow", "Notes")
+VALUES ('paylocity', 'temp_punches', 5, 'PunchDetail, group TEMPS: header on sheet row 5')
+ON CONFLICT ("Source", "ReportKey") DO UPDATE SET "HeaderRow" = EXCLUDED."HeaderRow", "Notes" = EXCLUDED."Notes";
+
+-- Every row of the latest file, typed, as delivered. Source-faithful: no year gate, no
+-- dropping of lunch rows or open punches, so the Data Management checks can list them.
+-- The report has no Employee Id column today. If Paylocity adds one, it arrives here
+-- under either spelling with no change; until then "EmployeeId" is NULL and the reports
+-- app matches the name to its own roster.
+CREATE OR REPLACE VIEW "Paylocity"."TempPunch" AS
+WITH row_ AS (
+    SELECT d."RowJson", d."FileId", d."SheetRow", d."RemoteModifiedUtc"
+    FROM "RawPaylocity"."DataRow" AS d
+    JOIN "RawPaylocity"."LatestFile" AS l USING ("FileId")
+    WHERE d."ReportKey" = 'temp_punches'
+),
+typed AS (
+    SELECT
+        r."FileId", r."SheetRow", r."RemoteModifiedUtc",
+        nullif(btrim(r."RowJson" ->> 'Last Name'), '')                  AS "LastName",
+        nullif(btrim(r."RowJson" ->> 'Preferred / First Name'), '')     AS "FirstName",
+        coalesce(nullif(btrim(r."RowJson" ->> 'Employee Id'), ''),
+                 nullif(btrim(r."RowJson" ->> 'Employee ID'), ''))      AS "EmployeeId",
+        "Integration"."TryDate"(r."RowJson" ->> 'Work Date')            AS "WorkDate",
+        "Integration"."TryTime"(r."RowJson" ->> 'Punch In Time')        AS "PunchIn",
+        "Integration"."TryTime"(r."RowJson" ->> 'Punch Out Time')       AS "PunchOut",
+        "Integration"."TryNumeric"(r."RowJson" ->> 'Regular Duration  (Hours)') AS "RegularHours",
+        "Integration"."TryNumeric"(r."RowJson" ->> 'OT1 Duration (Hours)')      AS "OvertimeHours",
+        nullif(btrim(r."RowJson" ->> 'Jobs'), '')                       AS "JobCode",
+        nullif(btrim(r."RowJson" ->> 'Jobs Name'), '')                  AS "JobName",
+        nullif(btrim(r."RowJson" ->> 'MachineSec'), '')                 AS "SectionCode",
+        nullif(btrim(r."RowJson" ->> 'Function'), '')                   AS "FunctionCode"
+    FROM row_ AS r
+)
+SELECT
+    t."EmployeeId",
+    t."LastName",
+    t."FirstName",
+    nullif(btrim(coalesce(t."FirstName", '') || ' ' || coalesce(t."LastName", '')), '') AS "EmployeeName",
+    t."WorkDate",
+    t."PunchIn",
+    t."PunchOut",
+    (t."PunchIn" IS NOT NULL AND t."PunchOut" IS NULL)                  AS "IsOpen",
+    t."RegularHours",
+    t."OvertimeHours",
+    -- A punch's hours are its regular plus overtime duration. Paylocity reports 0 for
+    -- a lunch gap and for a punch with no Out. No regular duration at all means the column
+    -- was not read (a renamed header), which is "unknown", not "0 hours worked": NULL, so
+    -- checks/temp_punches.sql counts it instead of the hours quietly reading as nothing.
+    CASE WHEN t."RegularHours" IS NULL THEN NULL
+         ELSE t."RegularHours" + coalesce(t."OvertimeHours", 0) END AS "Hours",
+    t."JobCode",
+    "Integration"."JobNumber"(t."JobCode")                              AS "JobNumber",
+    t."JobName",
+    t."SectionCode",
+    "Integration"."CodeNumber"(t."SectionCode")                         AS "SectionNumber",
+    t."FunctionCode",
+    "Integration"."CodeNumber"(t."FunctionCode")                        AS "FunctionNumber",
+    t."FileId",
+    t."SheetRow",
+    t."RemoteModifiedUtc"                                               AS "SnapshotUtc"
+FROM typed AS t;
+
 -- ── Job hours ───────────────────────────────────────────────────────────────
 
 -- Which file is authoritative for which years of punches. The files overlap
@@ -133,14 +213,28 @@ CREATE TABLE IF NOT EXISTS "Paylocity"."JobHoursSource" (
     CHECK ("FromYear" IS NULL OR "ToYear" IS NULL OR "FromYear" <= "ToYear")
 );
 
-INSERT INTO "Paylocity"."JobHoursSource" ("ReportKey", "FromYear", "ToYear", "Notes") VALUES
-    ('current_job_hours', 2026, NULL, 'Live file, replaced daily; owns the current year onward'),
-    ('job_hours_2025',    2025, 2025, 'Closed 2025 archive; its January 2026 rows duplicate current_job_hours and are dropped')
+-- How a report lays its punches out. 'job_hours' is the Job Hours report (one row per
+-- employee, day, job and code, with Total Hours Worked). 'punch_detail' is Paylocity's
+-- PunchDetail report: one row per clock-in/clock-out, durations instead of a total, and
+-- names instead of an Employee Id (see "Paylocity"."TempPunch").
+ALTER TABLE "Paylocity"."JobHoursSource" ADD COLUMN IF NOT EXISTS "Layout" text NOT NULL DEFAULT 'job_hours'
+    CHECK ("Layout" IN ('job_hours', 'punch_detail'));
+
+INSERT INTO "Paylocity"."JobHoursSource" ("ReportKey", "FromYear", "ToYear", "Layout", "Notes") VALUES
+    ('current_job_hours', 2026, NULL, 'job_hours',    'Live file, replaced daily; owns the current year onward'),
+    ('job_hours_2025',    2025, 2025, 'job_hours',    'Closed 2025 archive; its January 2026 rows duplicate current_job_hours and are dropped'),
+    ('temp_punches',      2026, NULL, 'punch_detail', 'Temp and contractor punches (PunchDetail, group TEMPS). Additive: Paylocity''s Job Hours report does not carry these people')
 ON CONFLICT ("ReportKey") DO NOTHING;
 
 -- Every punch from the latest version of each owning file, within its years.
 -- Hours Through 20250131 is not here: it's lifetime totals by job and section,
 -- with no dates or employees, so it isn't punch data.
+--
+-- Two layouts, one shape. The Job Hours files come first; the temp punches
+-- ("Paylocity"."TempPunch") are projected onto the same columns below, minus the
+-- zero-hour rows (lunch gaps, open punches), which add nothing to a total and are
+-- still visible in TempPunch itself. "EmployeeName" is NULL for the Job Hours files,
+-- which carry an Employee Id instead.
 CREATE OR REPLACE VIEW "Paylocity"."JobHours" AS
 WITH punch AS (
     SELECT d."ReportKey", d."FileId", d."RemoteModifiedUtc", d."SheetRow", d."RowJson",
@@ -148,7 +242,7 @@ WITH punch AS (
            s."FromYear", s."ToYear"
     FROM "RawPaylocity"."DataRow" AS d
     JOIN "RawPaylocity"."LatestFile" AS l USING ("FileId")
-    JOIN "Paylocity"."JobHoursSource" AS s ON s."ReportKey" = d."ReportKey"
+    JOIN "Paylocity"."JobHoursSource" AS s ON s."ReportKey" = d."ReportKey" AND s."Layout" = 'job_hours'
 )
 SELECT
     nullif(btrim(p."RowJson" ->> 'Employee Id'), '')            AS "EmployeeId",
@@ -165,10 +259,24 @@ SELECT
     p."ReportKey"                                               AS "SourceReport",
     p."FileId",
     p."SheetRow",
-    p."RemoteModifiedUtc"                                       AS "SnapshotUtc"
+    p."RemoteModifiedUtc"                                       AS "SnapshotUtc",
+    NULL::text                                                  AS "EmployeeName"
 FROM punch AS p
 WHERE extract(year FROM p."WorkDate") >= coalesce(p."FromYear", -1)
-  AND extract(year FROM p."WorkDate") <= coalesce(p."ToYear", 9999);
+  AND extract(year FROM p."WorkDate") <= coalesce(p."ToYear", 9999)
+UNION ALL
+SELECT
+    t."EmployeeId", t."WorkDate", t."JobCode", t."JobNumber", t."JobName",
+    t."SectionCode", t."SectionNumber", t."FunctionCode", t."FunctionNumber",
+    t."Hours",
+    NULL::text                                                  AS "Travel",
+    'temp_punches'                                              AS "SourceReport",
+    t."FileId", t."SheetRow", t."SnapshotUtc", t."EmployeeName"
+FROM "Paylocity"."TempPunch" AS t
+JOIN "Paylocity"."JobHoursSource" AS s ON s."ReportKey" = 'temp_punches' AND s."Layout" = 'punch_detail'
+WHERE t."Hours" IS NOT NULL AND t."Hours" <> 0
+  AND extract(year FROM t."WorkDate") >= coalesce(s."FromYear", -1)
+  AND extract(year FROM t."WorkDate") <= coalesce(s."ToYear", 9999);
 
 -- ── Paid expenses ───────────────────────────────────────────────────────────
 

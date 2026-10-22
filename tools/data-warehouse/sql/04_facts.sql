@@ -49,6 +49,12 @@ CREATE INDEX IF NOT EXISTS "IX_JobHours_WorkYear"    ON "Fact"."JobHours" ("Work
 ALTER TABLE "Fact"."JobHours" ADD COLUMN IF NOT EXISTS "SupersededBySnapshot" boolean NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS "IX_JobHours_SourceReport" ON "Fact"."JobHours" ("SourceReport");
 
+-- The person's name as the source gives it, for punches whose report carries a name and
+-- no Employee Id (the temp punches, SourceReport 'temp_punches'). NULL for every other
+-- source. When such a report gains an Employee Id, "EmployeeId" fills in and this stays
+-- as a convenience.
+ALTER TABLE "Fact"."JobHours" ADD COLUMN IF NOT EXISTS "EmployeeName" text;
+
 -- Replace every year present in staging with what staging holds now.
 -- Each punch gets the employee version in effect on its work date; punches
 -- dated before the employee history starts get the employee's earliest
@@ -61,6 +67,7 @@ DECLARE
     n_inserted  int;
     n_snapshot  int;
     n_flagged   int;
+    n_temp      int;
     years       int[];
 BEGIN
     -- Punches: replace every year present in staging, for the punch sources only.
@@ -76,7 +83,7 @@ BEGIN
     INSERT INTO "Fact"."JobHours"
         ("DateKey", "EmployeeKey", "EmployeeId", "WorkDate", "WorkYear", "JobCode", "JobNumber", "JobName",
          "SectionCode", "SectionNumber", "FunctionCode", "FunctionNumber", "TravelCode", "TravelLocation",
-         "Hours", "SourceReport", "SourceFileId", "SourceSheetRow")
+         "Hours", "SourceReport", "SourceFileId", "SourceSheetRow", "EmployeeName")
     SELECT coalesce(dd."DateKey", -1),
            coalesce(emp."EmployeeKey", -1),
            h."EmployeeId",
@@ -89,7 +96,7 @@ BEGIN
                 WHEN h."Travel" = 'Not Defined'   THEN 'Concord'
                 ELSE h."Travel" END,
            h."Hours",
-           h."SourceReport", h."FileId", h."SheetRow"
+           h."SourceReport", h."FileId", h."SheetRow", h."EmployeeName"
     FROM "Paylocity"."JobHours" AS h
     LEFT JOIN "Dimension"."Date" AS dd ON dd."Date" = h."WorkDate"
     LEFT JOIN LATERAL (
@@ -135,9 +142,11 @@ BEGIN
                                                         WHERE "JobNumber" IS NOT NULL), false)  -- no job number: not superseded
     WHERE f."WorkYear" <= extract(year FROM snapshot_through)::int;
     SELECT count(*) INTO n_flagged FROM "Fact"."JobHours" WHERE "SupersededBySnapshot";
+    SELECT count(*) INTO n_temp FROM "Fact"."JobHours" WHERE "SourceReport" = 'temp_punches';
 
     RETURN jsonb_build_object('years_replaced', years, 'rows_removed', n_deleted, 'rows_loaded', n_inserted,
-                              'snapshot_rows', n_snapshot, 'punches_superseded_by_snapshot', n_flagged);
+                              'snapshot_rows', n_snapshot, 'punches_superseded_by_snapshot', n_flagged,
+                              'temp_punch_rows', n_temp);
 END;
 $$;
 
