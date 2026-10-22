@@ -339,9 +339,11 @@ test("a completed job with no live data draws its Projects-tab actual as one Pro
   assert.match(html, /Actual vs Budget/);
   assert.match(html, /4\.8% under/, "130,600 against a 137,120 budget");
   assert.doesNotMatch(html, /Purchased to date|Still to purchase|No parts activity yet/);
+  assert.doesNotMatch(html, />Total<\/span>/, "no empty Total bar for a completed job");
   // Not a completed job (or one with live activity): the card is exactly as before.
   const live = renderToStaticMarkup(React.createElement(PartsCostSummary, { financials: { ...zero, completedActual: null } }));
   assert.match(live, /No parts activity yet/);
+  assert.match(live, />Total<\/span>/, "every other job keeps the Total bar");
   assert.doesNotMatch(live, /Actual Cost/);
   const active = renderToStaticMarkup(React.createElement(PartsCostSummary, {
     financials: { ...zero, totalSpent: 5000, purchased: 5000, projection: 5000, invoiced: 5000 },

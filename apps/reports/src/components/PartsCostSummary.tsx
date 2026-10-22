@@ -1186,6 +1186,9 @@ export function PartsCostSummary({
               Budget and Projected (TOTAL_GAP), and its top is joined to the Projected bar's purchased
               boundary by a dotted line — the two are the same money. No red here: the excess belongs to
               the Projected bar. */}
+          {/* A completed job with no live data has nothing to split into Invoiced / Not yet invoiced, so the
+              Total bar (an empty "$0") is left out; the Projected bar carries its Actual Cost on its own. */}
+          {!completedMode && (
           <div
             className="flex flex-col items-center gap-1.5"
             style={{ marginLeft: TOTAL_GAP, width: `calc(${COL_W} + ${TOTAL_SIDE})`, paddingRight: TOTAL_SIDE }}
@@ -1208,6 +1211,7 @@ export function PartsCostSummary({
               <span className="text-note font-medium">Total</span>
             </div>
           </div>
+          )}
 
         </div>
       </div>
