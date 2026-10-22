@@ -310,7 +310,10 @@ test("the card renders the red excess band, dotted line and label from the figur
   assert.match(none, /border-top:2px dotted #D4A800/i);
   assert.match(none, /Still to purchase<\/span><span[^>]*>\$3,000</);
   assert.doesNotMatch(html, /border-top:2px dotted #D4A800/i, "no yellow band, no yellow line");
-  // The Projected bar's bands are named beside it; only still to purchase also states its amount.
+  // Bands are named beside their bar, each with its figure under the name.
   // The Projected bar names its own purchased band; the Total bar carries no side names.
-  assert.match(none, />Purchased to date<\/span><\/div>/);
+  // Every side name carries its band's figure underneath.
+  assert.match(none, />Purchased to date<\/span><span[^>]*>\$100,000</);
+  assert.match(none, />Invoiced and posted<\/span><span[^>]*>\$90,000</);
+  assert.match(none, />Not yet invoiced<\/span><span[^>]*>\$10,000</);
 });

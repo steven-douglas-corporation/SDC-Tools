@@ -160,7 +160,7 @@ const CAPTION_H = "2rem";
 // the band. A thin leader therefore starts INSIDE the band, at its own centre, and runs out to wherever the
 // name has been moved to. Names are spread apart (bottom-up, then back down from the top) so none stacks on
 // another or on the figure above the bar. `names` says which bands are named and what they are called;
-// `amounts` adds a figure under a name (only Still to purchase has one).
+// `amounts` adds the band's figure under its name — the same whole-dollar figures the table shows.
 const LEADER_W = 24;
 function sideLabels(
   segs: readonly { key: string; color: string }[],
@@ -184,9 +184,10 @@ function sideLabels(
   // sit to the right of the bar, past the total's label above it, so rising above the bar top is clear.
   if (items.length > 0) {
     const last = items[items.length - 1];
-    last.centre = amounts[last.seg.key]
-      ? Math.max(last.band, last.below + last.h / 2 + 4)
-      : Math.min(last.centre, barTop - 16);
+    last.centre =
+      last.seg.key === "stp"
+        ? Math.max(last.band, last.below + last.h / 2 + 4)
+        : Math.min(last.centre, barTop - Math.max(16, last.h / 2 + 4));
   }
   for (let k = items.length - 2; k >= 0; k--) {
     items[k].centre = Math.min(items[k].centre, items[k + 1].centre - (items[k + 1].h + items[k].h) / 2 - GAP);
@@ -1103,7 +1104,7 @@ export function PartsCostSummary({
                   borderTop: `2px dotted ${stpIdx >= 0 ? BAR_PROJECTED_LINE : "#9AA3AF"}`,
                 }}
               />
-              {sideLabels(projSegments, projPx, { purchased: "Purchased to date", stp: "Still to purchase" }, { stp: usd(stillToPurchaseDisplay) })}
+              {sideLabels(projSegments, projPx, { purchased: "Purchased to date", stp: "Still to purchase" }, { purchased: usd(purchasedDisplay), stp: usd(stillToPurchaseDisplay) })}
               {/* The dotted line marks the plan boundary: it sits where the red excess begins, i.e. between the
                   purchased money within plan below it and the red excess above it. */}
               {hasExcess && excessIdx >= 0 && (
@@ -1160,7 +1161,7 @@ export function PartsCostSummary({
               >
                 {usd(totalBarDisplay)}
               </span>
-              {sideLabels(totalSegments, totalPx, { invoiced: "Invoiced and posted", open: "Not yet invoiced" })}
+              {sideLabels(totalSegments, totalPx, { invoiced: "Invoiced and posted", open: "Not yet invoiced" }, { invoiced: usd(invoicedDisplay), open: usd(openDisplay) })}
               {renderStack(totalSegments, totalPx)}
             </div>
             <div
