@@ -1,10 +1,10 @@
 import "server-only";
 
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { APP_VERSION } from "@/lib/app-version";
 import { round2 } from "@/lib/etc";
-import { readHoursFeed, aggregateUndefined, countsAsUndefined, type HoursFeed } from "@/lib/hours-feed";
+import { readHoursFeed, aggregateUndefined, countsAsUndefined, type HoursFeed, type HoursProvenance } from "@/lib/hours-feed";
 import { undefinedKpiFigures } from "@/lib/unattributed-hours";
 import { WorkbookError, SHEET_NAME, type RejectedPunch } from "@/lib/paylocity-workbook";
 
@@ -20,6 +20,21 @@ import { WorkbookError, SHEET_NAME, type RejectedPunch } from "@/lib/paylocity-w
 // something to know which version WAS processed. That is `sha256`.
 
 export type ImportTrigger = "startup" | "interval" | "manual";
+
+/**
+ * The version of everything the feed read, for the "same file as last time?" test.
+ *
+ * The primary workbook's sha alone used to be enough. The temp punches are a second
+ * file that changes on its own schedule, so a new temp file beside an unchanged workbook
+ * would have been reported as "SAME FILE VERSION, no new data". With a temp file in the feed
+ * the identity is a hash of both; without one it is exactly the workbook's, as before.
+ */
+export function feedVersionSha(p: Pick<HoursProvenance, "workbook" | "temp">): string | null {
+  const main = p.workbook?.sha256 ?? null;
+  const temp = p.temp?.identity?.sha256 ?? null;
+  if (!main) return null;
+  return temp ? createHash("sha256").update(`${main}+${temp}`).digest("hex") : main;
+}
 
 export type ImportContext = {
   importId: string;
@@ -99,7 +114,7 @@ export async function beginPaylocityImport(
     throw err;
   }
 
-  const sha = feed.provenance.workbook?.sha256 ?? null;
+  const sha = feedVersionSha(feed.provenance);
   return { feed, ctx, changed: sha == null || sha !== previousSha, previousSha };
 }
 
@@ -198,7 +213,7 @@ export async function completePaylocityImport(
         filePath: wb?.path ?? "",
         fileSize: wb?.size ?? 0,
         fileModifiedAt: wb?.modifiedAt ?? completedAt,
-        sha256: wb?.sha256 ?? "",
+        sha256: feedVersionSha(feed.provenance) ?? "",
         sheet: SHEET_NAME,
         reportFrom: firstDate(feed),
         reportTo: feed.provenance.lastWorkDate,
