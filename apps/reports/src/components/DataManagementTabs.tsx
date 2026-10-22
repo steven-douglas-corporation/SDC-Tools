@@ -10,11 +10,11 @@ import {
 } from "@/lib/data-management-tabs";
 import { nextParams, notePendingParams } from "@/lib/url-params";
 
-// The tab strip for Data Management: Data quality, Data sources, Employee roster.
+// The tab strip for Data Management (the tabs are listed in lib/data-management-tabs.ts).
 //
 // `children` is ONLY the open tab. The server builds it from `?tab=` (see
 // app/(app)/admin/data-management/page.tsx), so a tab nobody has opened costs nothing — the
-// Data quality tab in particular reads every punch — which is also why a tab switch
+// Job punches tab in particular reads every punch — which is also why a tab switch
 // is a server round trip and the open tab is a URL param rather than local state.
 //
 // The click flips the strip at once and shows a loading line until the navigation

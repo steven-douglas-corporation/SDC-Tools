@@ -20,10 +20,10 @@ import { EMPTY_WORKSPACE, openTab } from "../src/lib/workspace";
 const SRC = join(import.meta.dirname, "..", "src");
 const read = (...p: string[]) => readFileSync(join(SRC, ...p), "utf8");
 
-test("the three tabs are Data quality, Data sources and Employee roster, in that order", () => {
+test("the tabs are the five checks (one each), then Data sources and Employee roster, in that order", () => {
   assert.deepEqual(
     DATA_MANAGEMENT_TABS.map((t) => t.label),
-    ["Data quality", "Data sources", "Employee roster"],
+    ["Job punches", "Temp punches", "Roster sync", "Position families", "Customers", "Data sources", "Employee roster"],
   );
   assert.equal(new Set(DATA_MANAGEMENT_TABS.map((t) => t.id)).size, DATA_MANAGEMENT_TABS.length, "tab ids are unique");
 });
@@ -31,8 +31,9 @@ test("the three tabs are Data quality, Data sources and Employee roster, in that
 test("a known tab id is itself; anything else is the default tab", () => {
   for (const t of DATA_MANAGEMENT_TABS) assert.equal(dataManagementTab(t.id), t.id);
   assert.equal(DEFAULT_DATA_MANAGEMENT_TAB, DATA_MANAGEMENT_TABS[0].id, "the first tab is the default");
-  assert.equal(DEFAULT_DATA_MANAGEMENT_TAB, "quality", "Data quality is the tab the page opens on");
-  for (const junk of [undefined, null, "", "Quality", "finances", "../etc", "quality,roster"]) {
+  assert.equal(DEFAULT_DATA_MANAGEMENT_TAB, "punches", "Job punches is the tab the page opens on");
+  // "quality" was the id of the one tab these five checks used to share: old bookmarks land on the default.
+  for (const junk of [undefined, null, "", "Punches", "quality", "finances", "../etc", "punches,roster"]) {
     assert.equal(dataManagementTab(junk), DEFAULT_DATA_MANAGEMENT_TAB, `${JSON.stringify(junk)} falls back`);
   }
 });
@@ -42,11 +43,22 @@ test("the page builds only the open tab, and every tab has a branch", () => {
   for (const t of DATA_MANAGEMENT_TABS) {
     assert.match(page, new RegExp(`tab === "${t.id}" &&`), `no branch renders the "${t.id}" tab`);
   }
-  // The punch explorer reads every punch: it must live in the Data quality tab only,
+  // The punch explorer reads every punch: it must live in the Job punches tab only,
   // never in the shared body that every tab pays for.
   const view = /export async function DataManagementView[\s\S]*?\n}\n/.exec(page)?.[0] ?? "";
   assert.ok(view.length > 0, "found DataManagementView");
-  assert.doesNotMatch(view, /getPunchExplorer|getDataQuality|getRosterQuality|recentRefreshRuns/, "the body must not query for every tab");
+  assert.doesNotMatch(
+    view,
+    /getPunchExplorer|getDataQuality|getRosterQuality|getPositionFamilyQuality|getTempPunchQuality|recentRefreshRuns/,
+    "the body must not query for every tab",
+  );
+  const punchesTab = /async function PunchesTab[\s\S]*?\n}\n/.exec(page)?.[0] ?? "";
+  assert.match(punchesTab, /getPunchExplorer/, "the explorer is the Job punches tab's");
+  for (const other of ["TempPunchesTab", "RosterSyncTab", "FamiliesTab", "CustomersTab"]) {
+    const body = new RegExp(`async function ${other}[\\s\\S]*?\\n}\\n`).exec(page)?.[0] ?? "";
+    assert.ok(body.length > 0, `found ${other}`);
+    assert.doesNotMatch(body, /getPunchExplorer/, `${other} must not read every punch`);
+  }
 });
 
 test("the tab strip writes no param for the default tab and leaves the other tabs' params alone", () => {

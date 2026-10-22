@@ -32,6 +32,10 @@ import { FINDING_ROW_LIMIT, type TempFinding, type TempNameFinding, type TempPun
 // it opens that check's rows in ONE detail panel under the row. Before this every
 // check was a full-width card with its table open beneath it, stacked, which made
 // the tab a very long page of lists whose counts were rarely on screen together.
+//
+// One tab each (2026-10-22). The five sections were still a long scroll stacked in one
+// tab, so each is exported here and Data Management's page mounts it as its own tab
+// (lib/data-management-tabs.ts). There is no wrapper that stacks them any more.
 
 const fmtH = (n: number) => `${fmtHours(n)}h`;
 
@@ -325,7 +329,7 @@ function CustomerNamingFinding({ data }: { data: DataQuality["customerNaming"] }
 
 // ── Job punches ───────────────────────────────────────────────────
 
-function PunchesSection({
+export function PunchesSection({
   dq,
   explorer,
   month,
@@ -571,7 +575,7 @@ function TempPunchStatusCard({ q }: { q: TempPunchQuality }) {
   );
 }
 
-function TempPunchSection({ q }: { q: TempPunchQuality }) {
+export function TempPunchSection({ q }: { q: TempPunchQuality }) {
   const sum = (g: { hours: number }) => g.hours;
   const checks: Check[] = [
     {
@@ -834,7 +838,7 @@ function SyncStatusCard({ roster }: { roster: RosterQuality }) {
   );
 }
 
-function RosterSection({ roster }: { roster: RosterQuality }) {
+export function RosterSection({ roster }: { roster: RosterQuality }) {
   const f = roster.findings;
   const checks: Check[] = f
     ? [
@@ -975,7 +979,7 @@ function FamiliesStatusCard({ families }: { families: PositionFamilyQuality }) {
   );
 }
 
-function FamiliesSection({ families }: { families: PositionFamilyQuality }) {
+export function FamiliesSection({ families }: { families: PositionFamilyQuality }) {
   const f = families.findings;
   const checks: Check[] = f
     ? [
@@ -1041,39 +1045,13 @@ function FamiliesSection({ families }: { families: PositionFamilyQuality }) {
   );
 }
 
-export function DataQualityPanel({
-  dq,
-  explorer,
-  roster,
-  families,
-  tempPunches,
-  month,
-  undefinedHours,
-}: {
-  dq: DataQuality;
-  explorer: PunchExplorer | null;
-  roster: RosterQuality | null;
-  tempPunches?: TempPunchQuality | null;
-  families: PositionFamilyQuality | null;
-  month: string;
-  undefinedHours: UndefinedKpiFigures;
-}) {
+export function CustomersSection({ dq }: { dq: DataQuality }) {
   return (
-    <div className="space-y-10">
-      <PunchesSection dq={dq} explorer={explorer} month={month} undefinedHours={undefinedHours} />
-
-      {tempPunches && <TempPunchSection q={tempPunches} />}
-
-      {roster && <RosterSection roster={roster} />}
-
-      {families && <FamiliesSection families={families} />}
-
-      <Section
-        title="Customers"
-        description="Customer names as stored on jobs, checked across the whole book — active and completed."
-      >
-        <CustomerNamingFinding data={dq.customerNaming} />
-      </Section>
-    </div>
+    <Section
+      title="Customers"
+      description="Customer names as stored on jobs, checked across the whole book — active and completed."
+    >
+      <CustomerNamingFinding data={dq.customerNaming} />
+    </Section>
   );
 }
