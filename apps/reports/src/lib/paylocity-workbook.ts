@@ -478,6 +478,9 @@ async function worksheetFromFile(path: string): Promise<{ identity: WorkbookIden
 export type WarehousePunch = {
   sheetRow: number;
   employeeId: string | null;
+  // Only read for reports that carry a name and no Employee Id (the temp punches):
+  // see readWarehousePunches' `withNames`. Never reaches the worksheet.
+  employeeName?: string | null;
   workDate: string; // "2026-03-11"
   job: string | null;
   jobName: string | null;
@@ -502,6 +505,21 @@ export function worksheetFromPunches(punches: WarehousePunch[]): ExcelJS.Workshe
 }
 
 async function worksheetFromWarehouse(reportKey: string): Promise<{ identity: WorkbookIdentity; ws: ExcelJS.Worksheet }> {
+  const { identity, punches } = await readWarehousePunches(reportKey);
+  return { identity, ws: worksheetFromPunches(punches) };
+}
+
+/**
+ * One report's punches from "Fact"."JobHours", with the identity of the one file they
+ * came from. `withNames` adds the person's name, for the report that has no Employee Id
+ * (temp punches, resolved to an id by lib/temp-punches.ts); it is off for the Job Hours
+ * reports so their query does not depend on the column.
+ */
+export async function readWarehousePunches(
+  reportKey: string,
+  opts?: { withNames?: boolean },
+): Promise<{ identity: WorkbookIdentity; punches: WarehousePunch[] }> {
+  const nameColumn = opts?.withNames ? `, "EmployeeName" AS "employeeName"` : "";
   const { files, punches } = await warehouseSnapshot(async (q) => ({
     files: await q<{ remotePath: string; remoteSize: string; modifiedUtc: string; sha256: string }>(
       `SELECT DISTINCT s."RemotePath" AS "remotePath", s."RemoteSize"::text AS "remoteSize",
@@ -514,7 +532,7 @@ async function worksheetFromWarehouse(reportKey: string): Promise<{ identity: Wo
     punches: await q<WarehousePunch>(
       `SELECT "SourceSheetRow" AS "sheetRow", "EmployeeId" AS "employeeId", to_char("WorkDate", 'YYYY-MM-DD') AS "workDate",
               "JobCode" AS "job", "JobName" AS "jobName", "SectionCode" AS "section", "FunctionCode" AS "fn",
-              "Hours"::float8 AS "hours", "TravelCode" AS "travel"
+              "Hours"::float8 AS "hours", "TravelCode" AS "travel"${nameColumn}
        FROM "Fact"."JobHours"
        WHERE "SourceReport" = $1
        ORDER BY "SourceSheetRow"`,
@@ -547,7 +565,7 @@ async function worksheetFromWarehouse(reportKey: string): Promise<{ identity: Wo
       modifiedAt: new Date(file.modifiedUtc),
       sha256: file.sha256,
     },
-    ws: worksheetFromPunches(punches),
+    punches,
   };
 }
 
@@ -585,10 +603,17 @@ export async function readPaylocityWorkbook(opts?: {
   // Read this report from the DataWarehouse instead of a file — e.g.
   // "current_job_hours". Supplied by hours-feed.ts when DATAWAREHOUSE_URL is set.
   warehouseReport?: string;
+  // A sheet the caller already built, in the same "Report" layout. The temp punches
+  // arrive with names, not ids: lib/temp-punches.ts puts each person's id in the Employee
+  // Id cell first, then reads the sheet here so every job, phase and rejection rule
+  // below applies to them unchanged.
+  prebuilt?: { identity: WorkbookIdentity; ws: ExcelJS.Worksheet };
 }): Promise<WorkbookReadResult> {
-  const { identity, ws } = opts?.warehouseReport
-    ? await worksheetFromWarehouse(opts.warehouseReport)
-    : await worksheetFromFile(opts?.path ?? workbookPath());
+  const { identity, ws } =
+    opts?.prebuilt ??
+    (opts?.warehouseReport
+      ? await worksheetFromWarehouse(opts.warehouseReport)
+      : await worksheetFromFile(opts?.path ?? workbookPath()));
   const path = identity.path;
 
   // ── Headers, by NAME not position ─────────────────────────────────────────

@@ -8,6 +8,7 @@ import { getDataQuality, getPunchExplorer } from "@/lib/data-quality";
 import { getUndefinedHoursTotals } from "@/lib/unattributed-hours";
 import { getRosterQuality } from "@/lib/paylocity-roster-sync";
 import { getPositionFamilyQuality } from "@/lib/position-families-sync";
+import { getTempPunchQuality } from "@/lib/temp-punch-quality";
 import { recentRefreshRuns, currentRefresh } from "@/lib/refresh-service";
 import { buildSourceHealth } from "@/lib/source-health";
 import { dashboardMonth } from "@/lib/dashboard-overview";
@@ -138,13 +139,15 @@ async function SourcesTab() {
 async function QualityTab({ params }: { params: DataManagementParams }) {
   const month = dashboardMonth(params.m);
 
-  const [dataQuality, explorer, roster, families, undefinedHours] = await Promise.all([
+  const [dataQuality, explorer, roster, families, tempPunches, undefinedHours] = await Promise.all([
     // The Power BI report's Data Quality page, rebuilt locally — see
     // lib/data-quality.ts for where each rule comes from.
     getDataQuality(),
     getPunchExplorer({ from: params.dqFrom, to: params.dqTo, employeeId: params.dqEmp, functionId: params.dqFn, monthToDate: params.dqMtd === "1" }),
     getRosterQuality(),
     getPositionFamilyQuality(),
+    // The temp punches the app cannot use, read live from the warehouse (lib/temp-punch-quality.ts).
+    getTempPunchQuality(),
     // The Monthly ETC card's own figure for this month (same function), so the tile's
     // headline and the detail it opens cannot disagree with that page.
     getUndefinedHoursTotals(month),
@@ -161,6 +164,7 @@ async function QualityTab({ params }: { params: DataManagementParams }) {
         explorer={explorer}
         roster={roster}
         families={families}
+        tempPunches={tempPunches}
         month={month}
         undefinedHours={undefinedHours}
       />

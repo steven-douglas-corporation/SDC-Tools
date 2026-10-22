@@ -35,6 +35,11 @@ export const SYNC_SOURCES = [
   // behind it. Naming the road matters when somebody is deciding where to go and look
   // at why a figure is stale — and the answer is now "the file", not "the model".
   { source: "hours_actual", label: "Actual hours (Paylocity workbook)", monthScoped: false },
+  // Temp and contractor punches (2026-10-22): Paylocity's PunchDetail report for the TEMPS
+  // group, loaded by the warehouse. Read apart from the hours files above, so its own
+  // freshness, staleness and failure show here — a broken temp report never stops the hours
+  // (lib/temp-punches.ts). The step reports on what the hours pass already read.
+  { source: "temp_punches", label: "Temp punches (Paylocity report)", monthScoped: false },
   // Its own stage rather than a silent part of the one above, so a manager watching a
   // refresh sees "Calculating Undefined Hours…" (§42.15) — and so the totals and the
   // punch rows behind them are written together (§42.10-42.12).

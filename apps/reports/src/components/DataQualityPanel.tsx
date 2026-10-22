@@ -14,6 +14,7 @@ import { DataQualityDrill, EmployeeIdDrill } from "@/components/DataQualityDrill
 import { UndefinedHoursDrill } from "@/components/UndefinedHoursDrill";
 import type { UndefinedKpiFigures } from "@/lib/unattributed-hours";
 import { hours as fmtHours } from "@/components/ui/format";
+import { FINDING_ROW_LIMIT, type TempFinding, type TempNameFinding, type TempPunchQuality } from "@/lib/temp-punch-findings";
 
 // The Power BI report's "Data Quality" page. Its rules — which punches count as
 // invalid, and why — are reproduced in lib/data-quality.ts, where each one is
@@ -435,6 +436,224 @@ function PunchesSection({
   );
 }
 
+// ── Temp punches (Paylocity report) ────────────────────────────────
+//
+// Paylocity's Job Hours report cannot carry temps and contractors, so their punches come
+// from a second report (Temp Punches), loaded into the warehouse each morning
+// (lib/temp-punches.ts). These are the punches in it the app cannot use, and the names it
+// cannot tie to a Paylocity ID. The punches are corrected in Paylocity; the names on the
+// Employees page. The list is read live from the warehouse when this tab is opened.
+
+function TempPunchTable({ rows }: { rows: TempFinding[] }) {
+  return (
+    <div className="max-h-80 overflow-auto rounded-lg border border-sdc-border">
+      <table className="w-full text-left text-xs">
+        <thead className="sticky top-0 bg-sdc-gray-50 text-label font-semibold uppercase tracking-[0.04em] text-sdc-gray-600">
+          <tr>
+            <th className="px-3 py-2">Person</th>
+            <th className="px-3 py-2">Date</th>
+            <th className="px-3 py-2">Clocked</th>
+            <th className="px-3 py-2 text-right">Hours</th>
+            <th className="px-3 py-2">What is wrong</th>
+            <th className="px-3 py-2 text-right" title="The row in the Temp Punches report, so it can be found there">
+              Row
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-sdc-border-soft">
+          {rows.map((r) => (
+            <tr key={r.sheetRow}>
+              <td className="px-3 py-1.5 font-medium text-sdc-navy">{r.name}</td>
+              <td className="px-3 py-1.5 tabular-nums text-sdc-gray-600">{r.date}</td>
+              <td className="px-3 py-1.5 tabular-nums text-sdc-gray-600">{r.times || "—"}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-sdc-gray-600">{r.hours > 0 ? fmtHours(r.hours) : "—"}</td>
+              <td className="px-3 py-1.5 text-sdc-gray-600">{r.detail}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-sdc-gray-400">{r.sheetRow}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TempNamesTable({ names }: { names: TempNameFinding[] }) {
+  return (
+    <div className="max-h-80 overflow-auto rounded-lg border border-sdc-border">
+      <table className="w-full text-left text-xs">
+        <thead className="sticky top-0 bg-sdc-gray-50 text-label font-semibold uppercase tracking-[0.04em] text-sdc-gray-600">
+          <tr>
+            <th className="px-3 py-2">Name</th>
+            <th className="px-3 py-2">Filed under</th>
+            <th className="px-3 py-2 text-right">Punches</th>
+            <th className="px-3 py-2 text-right">Hours</th>
+            <th className="px-3 py-2">Dates</th>
+            <th className="px-3 py-2">What to do</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-sdc-border-soft">
+          {names.map((n) => (
+            <tr key={`${n.name}-${n.employeeId ?? ""}`} className="align-top">
+              <td className="px-3 py-1.5 font-medium text-sdc-navy">{n.name}</td>
+              <td className="px-3 py-1.5 font-mono text-[0.7rem] text-sdc-gray-600">{n.employeeId ?? "—"}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-sdc-gray-600">{n.punches.toLocaleString()}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-sdc-gray-600">{fmtHours(n.hours)}</td>
+              <td className="px-3 py-1.5 tabular-nums text-sdc-gray-600">
+                {n.firstDate === n.lastDate ? n.firstDate : `${n.firstDate} – ${n.lastDate}`}
+              </td>
+              <td className="max-w-[28rem] px-3 py-1.5 text-sdc-gray-600">{n.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TempPunchStatusCard({ q }: { q: TempPunchQuality }) {
+  const problem = q.error ? "could not be read" : q.waiting ? "not arrived yet" : q.file?.stale ? "file is stale" : null;
+  return (
+    <div className={`${card("p-5")} ${problem || q.missingColumns.length > 0 ? "border-sdc-yellow" : ""}`}>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-sdc-gray-600">Temp Punches report</p>
+        {problem ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-sdc-yellow-bg px-2 py-0.5 text-label font-semibold text-sdc-yellow-text">
+            ! {problem}
+          </span>
+        ) : (
+          // The file's own state, not the checks': whether punches are clean is the tiles' job.
+          <span className="inline-flex items-center gap-1 rounded-full bg-sdc-green-bg px-2 py-0.5 text-label font-semibold text-sdc-green-text">
+            Up to date
+          </span>
+        )}
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-3">
+        <div>
+          <p className="font-heading text-2xl font-bold tabular-nums text-sdc-navy">{q.punches.toLocaleString()}</p>
+          <p className="text-label text-sdc-muted">punches</p>
+        </div>
+        <div>
+          <p className="font-heading text-2xl font-bold tabular-nums text-sdc-navy">{fmtHours(q.hours)}</p>
+          <p className="text-label text-sdc-muted">hours</p>
+        </div>
+        <div>
+          <p className="font-heading text-2xl font-bold tabular-nums text-sdc-navy">{q.people.toLocaleString()}</p>
+          <p className="text-label text-sdc-muted">people</p>
+        </div>
+      </div>
+      <p className="mt-3 text-xs text-sdc-gray-600">
+        {q.file ? (
+          <>
+            {q.file.name}, delivered {new Date(q.file.modifiedAt).toLocaleString()}.
+          </>
+        ) : (
+          "No file yet."
+        )}
+      </p>
+      {q.error && <p className="mt-2 text-xs text-sdc-yellow-text">{q.error}</p>}
+      {q.waiting && !q.error && (
+        <p className="mt-2 text-xs text-sdc-yellow-text">No Temp Punches report has reached the warehouse yet.</p>
+      )}
+      {q.file?.stale && (
+        <p className="mt-2 text-xs text-sdc-yellow-text">
+          The newest file is {Math.floor(q.file.ageDays)} days old — Paylocity&apos;s report has stopped arriving, so
+          anything recorded since is missing.
+        </p>
+      )}
+      {q.missingColumns.length > 0 && (
+        <p className="mt-2 text-xs text-sdc-yellow-text">
+          Paylocity changed the report&apos;s columns: <strong>{q.missingColumns.join(", ")}</strong> no longer
+          {q.missingColumns.length === 1 ? " appears" : " appear"} in it, so those values read as blank until the
+          warehouse is updated.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TempPunchSection({ q }: { q: TempPunchQuality }) {
+  const sum = (g: { hours: number }) => g.hours;
+  const checks: Check[] = [
+    {
+      key: "noJob",
+      title: "No job",
+      rule: "Punches with no job in Paylocity. They reach no job's hours, and sit under Undefined Hours, until the job is put on the punch in Paylocity. The next daily load brings the correction in.",
+      count: q.noJob.count,
+      hours: sum(q.noJob),
+      unit: "punches",
+      body: <TempPunchTable rows={q.noJob.rows} />,
+    },
+    {
+      key: "noPhase",
+      title: "No phase or function",
+      rule: "Punches that have a job but no phase (or no function) in Paylocity, so the hours cannot be placed in a department. Fixed on the punch in Paylocity.",
+      count: q.noPhase.count,
+      hours: sum(q.noPhase),
+      unit: "punches",
+      body: <TempPunchTable rows={q.noPhase.rows} />,
+    },
+    {
+      key: "jobNotFound",
+      title: "Job not in the app",
+      rule: "Punches whose job number is not a job here — a typo in Paylocity, or a job not created here yet.",
+      count: q.jobNotFound.count,
+      hours: sum(q.jobNotFound),
+      unit: "punches",
+      body: <TempPunchTable rows={q.jobNotFound.rows} />,
+    },
+    {
+      key: "open",
+      title: "No clock-out",
+      rule: "Punches with a clock-in and no clock-out: still open, or a missed punch. Paylocity reports them at 0 hours, so they count for nothing until someone closes them in Paylocity.",
+      count: q.open.count,
+      unit: "punches",
+      body: <TempPunchTable rows={q.open.rows} />,
+    },
+    {
+      key: "names",
+      title: "Names without a Paylocity ID",
+      rule: "People in the report whom this app cannot tie to a Paylocity ID. A temp the roster lacks is added automatically (No department, with a placeholder ID such as TEMP9) and stays here until someone replaces the placeholder with their real ID on the Employees page. One is not added when someone with the same last name is already there: that needs a person. Hours count on the job either way.",
+      count: q.names.length,
+      hours: q.names.reduce((s, n) => s + n.hours, 0),
+      unit: "people",
+      body: <TempNamesTable names={q.names} />,
+    },
+  ];
+  const [selected, setSelected] = useState<string | null>(() => firstWithIssues(checks));
+  const noData = q.error || q.waiting || !q.configured;
+
+  return (
+    <Section
+      title="Temp punches (Paylocity report)"
+      badge={noData ? undefined : <IssueTally checks={checks} />}
+      description={
+        <>
+          Paylocity&apos;s Job Hours report cannot carry temps and contractors, so their punches come from the Temp
+          Punches report, loaded into the warehouse each morning. These are the punches the app cannot use. The report
+          is Paylocity&apos;s, so the punches are corrected there, and the next daily load brings the correction in;
+          names are fixed on the Employees page.
+        </>
+      }
+    >
+      {!q.configured ? (
+        <p className="rounded-lg border border-sdc-border bg-sdc-gray-50 px-4 py-3 text-xs leading-relaxed text-sdc-gray-600">
+          The warehouse isn&apos;t configured on this server, so there is no Temp Punches report to check.
+        </p>
+      ) : (
+        <>
+          <TempPunchStatusCard q={q} />
+          {!noData && <CheckBoard checks={checks} selected={selected} onSelect={setSelected} />}
+          {!noData && q.punches > 0 && (
+            <p className="text-xs text-sdc-gray-400">
+              Lists are capped at {FINDING_ROW_LIMIT} rows — the counts are complete, the tables may not be.
+            </p>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
 // ── Employee roster (Paylocity) ────────────────────────────────────
 //
 // Where the Paylocity roster file and the app disagree about people
@@ -827,12 +1046,14 @@ export function DataQualityPanel({
   explorer,
   roster,
   families,
+  tempPunches,
   month,
   undefinedHours,
 }: {
   dq: DataQuality;
   explorer: PunchExplorer | null;
   roster: RosterQuality | null;
+  tempPunches?: TempPunchQuality | null;
   families: PositionFamilyQuality | null;
   month: string;
   undefinedHours: UndefinedKpiFigures;
@@ -840,6 +1061,8 @@ export function DataQualityPanel({
   return (
     <div className="space-y-10">
       <PunchesSection dq={dq} explorer={explorer} month={month} undefinedHours={undefinedHours} />
+
+      {tempPunches && <TempPunchSection q={tempPunches} />}
 
       {roster && <RosterSection roster={roster} />}
 

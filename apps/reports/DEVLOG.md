@@ -6961,3 +6961,81 @@ permission at all, so any signed-in caller of the action can read it. And the pu
 right-click menu closes on any window `mousedown` before its item's click, so a mouse click on
 "All punches by ..." did nothing in automated tests, including with a 90 ms press; with the
 keyboard it works. Neither is part of this change.
+
+## 79. Temp and contractor punches from Paylocity's Temp Punches report (2026-10-22)
+
+Paylocity's Job Hours report cannot carry temp employees, so their hours only existed as
+timecards typed in from screenshots (`ManualContractorPunch`, `scripts/import-contractor-punches.ts`).
+The warehouse now loads Paylocity's **Temp Punches** report (PunchDetail, group TEMPS) as
+`SourceReport = 'temp_punches'` (tools/data-warehouse, PR #170), and the app reads it.
+
+**A read of its own** (`lib/temp-punches.ts`), merged into the one hours feed in
+`readHoursFeed`. It is not a third entry in `paylocity-sources.ts`: that list is "exactly one
+file owns each year", validated so an overlap can never double-count, and the temp report is
+additive for the same years. Its own file identity, freshness and failure instead.
+
+**Names become ids** (`lib/temp-punch-people.ts`). The report has a name and no Employee Id.
+Each name is matched to the app's `Employee` rows by the rule the typed-in timecards already
+use (the single active namesake wins over a leaver; two active namesakes are never chosen
+between), then to the ids on still-active typed-in timecards while both sources run, and
+otherwise to nobody. Nobody's hours still count on the job, filed under `NAME:<name>`, and the
+person is listed on Data Management. Before the hours are read, the refresh ADDS a temp the
+roster has never heard of (`lib/temp-employees.ts`: active, no department, so the Employees
+page's "No department" card under Contractors; placeholder id `TEMP<next>`, or the report's own
+id when it has one), or gives an id to a same-named row that has none. It never adds when someone
+with the same last name is already on the roster (a nickname is far likelier than two people, and
+a duplicate splits their hours), never renames or removes anyone, and never throws. If Paylocity adds an `Employee Id` column the warehouse
+passes it through and the app prefers it when it knows the id; nothing here changes.
+
+**Same reader, same rules.** The resolved punches go through `readPaylocityWorkbook` (new
+`prebuilt` option) like every other hours file, so a missing job, a missing phase or an
+unknown job is rejected with the same reason and stored with the other rejections. One thing
+worth knowing: that reader checks the labor code BEFORE the job, so a punch with neither
+comes back as `INVALID_LABOR_CODE`, which is stored but does NOT count toward the Undefined
+Hours KPI (it counts only `MISSING_JOB_ID` and `JOB_NOT_FOUND`). Today every no-job temp
+punch also lacks a phase, so none of their 233.95 h moves that KPI. The Data Management
+section below is where they show.
+
+**A failed temp read never fails the hours** (mvest, 2026-10-22). `readTempPunches` never
+throws. The hours go on without the temp punches and the refresh records `temp_punches` as a
+failed source (its own row on Data Management → Data sources). The price: the app rewrites a
+job-month whole, so for that pass the temp punches are absent from the figures and return on
+the next pass that can read them. "Not in the warehouse yet" is a note, not a failure, and a
+file more than two days old is a stale note.
+
+**The same-file check covers both files** (`feedVersionSha`): a new temp file beside an
+unchanged workbook is a new version, not "SAME FILE VERSION, no new data".
+
+**Typed-in timecards give way** to any day the temp feed reports, including punches it
+rejected (`coveredDays`), so a person is never counted twice. At cutover the typed-in rows
+are deactivated (`active = false`); this only covers the overlap.
+
+**Travel** is Concord for every temp punch, as the typed-in timecards had it (a blank reads as
+"not known" on the Dashboard's Travel %).
+
+**Data Management → Data quality → Temp punches (Paylocity report)** (`lib/temp-punch-quality.ts`,
+`lib/temp-punch-findings.ts`): no job, no phase or function, job not in the app, no clock-out
+(0 h in the report, so the hours reader never sees them), and names without a Paylocity ID.
+Read live from the warehouse only when that tab is open. The punch findings are the hours
+reader's own rejections, sorted by what the punch actually lacks, so they cannot disagree
+with Undefined Hours. The punches are corrected in Paylocity (the report is HR's); the names
+on the Employees page.
+
+**Checked** against the real 2026-10-22 file loaded into a scratch Postgres 17 through the
+loader's own code: 679 punches in the fact; 623 resolve to 2,635.72 h, split by id exactly
+as the typed-in timecards split them; 56 reach no job (233.95 h, all `INVALID_LABOR_CODE`);
+8 have no clock-out; the midnight punch is exact (0.57 h + 0.90 h). `npm test` (3,118),
+`tsc`, `lint` and `build` pass.
+
+**Not checked:** the new section in a browser, and a live `runAllSyncs` pass (the dev database
+was not running). Before deploy, confirm in MySQL that each of the eight temps has an Employee row (name
+and paylocityId): the match is by name, and a missing one is added by the refresh with a placeholder id.
+
+### Left for the user
+- Replace each temp's placeholder id (`TEMP<n>`) with their real Paylocity ID on the Employees
+  page when it is known; the roster sync links by name only people with NO id, so a temp who later
+  reaches Paylocity's roster must be given the real id by hand. Anyone the refresh declined to add
+  (same last name already there) shows on Data Management.
+- Cutover: once the figures match the typed-in timecards, deactivate `ManualContractorPunch`.
+- Ask HR to correct the punches with no job or phase, and whether the report can carry an
+  Employee Id column.

@@ -111,7 +111,8 @@ export function contractorCandidatesByName(employees: readonly { name: string; p
   return byName;
 }
 
-function normalizeName(name: string): string {
+/** The key a name is matched on: trimmed and case-folded, nothing cleverer. Shared with the temp punches. */
+export function normalizeName(name: string): string {
   return name.trim().toLowerCase();
 }
 
@@ -137,11 +138,16 @@ const EMPTY: ManualContractorMerge = { rows: [], suppressed: [], unknownJobs: []
  *        is what guarantees the comparison is against the very data being merged.
  * @param knownJobNumbers the job master, so a transfer naming a job the app has
  *        never heard of is surfaced instead of silently attributed.
+ * @param alsoCoveredBy (employee, day) pairs the official feed carries that never became
+ *        rows: the temp punches the reader rejected (no job, no phase). Paylocity has
+ *        reported that person's day, so a typed-in version of it is suppressed too,
+ *        whatever became of the punch — fixing it is a Paylocity correction (lib/temp-punches.ts).
  */
 export async function mergeManualContractorHours(opts: {
   officialRows: JobHoursRow[];
   knownJobNumbers: Set<string>;
   onlyMonth?: string;
+  alsoCoveredBy?: readonly { employeeId: string; workDate: Date | null }[];
 }): Promise<ManualContractorMerge> {
   // $queryRaw, not the typed client: `prisma generate` cannot run while a server
   // holds node_modules/.prisma open, so ManualContractorPunch has no generated
@@ -164,7 +170,7 @@ export async function mergeManualContractorHours(opts: {
 
   // Every (employee id, day) the OFFICIAL feed carries. Built from the rows just
   // read, so this is never stale.
-  const officialDays = new Set(officialRows(opts.officialRows));
+  const officialDays = coveredDays(opts.officialRows, opts.alsoCoveredBy);
 
   const rows: JobHoursRow[] = [];
   const suppressedBy = new Map<string, { employeeName: string; workDate: string; hours: number; segments: number }>();
@@ -260,6 +266,20 @@ export function manualContractorPoolHours(rows: JobHoursRow[]): PoolHoursByMonth
 
 function officialRows(rows: JobHoursRow[]): string[] {
   return rows.map((r) => `${r.employeeId}|${isoDate(r.date)}`);
+}
+
+/**
+ * Every "employeeId|YYYY-MM-DD" the official feed already reports: a day a typed-in segment
+ * must give way to. The rows count, and so do punches the reader rejected (see
+ * mergeManualContractorHours' `alsoCoveredBy`). Pure, so the rule has a test.
+ */
+export function coveredDays(
+  rows: readonly JobHoursRow[],
+  alsoCoveredBy: readonly { employeeId: string; workDate: Date | null }[] = [],
+): Set<string> {
+  const days = new Set(officialRows(rows as JobHoursRow[]));
+  for (const c of alsoCoveredBy) if (c.workDate) days.add(`${c.employeeId}|${isoDate(c.workDate)}`);
+  return days;
 }
 
 function isoDate(d: Date): string {

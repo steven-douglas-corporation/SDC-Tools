@@ -15,6 +15,7 @@ import { aggregateUndefined, countsAsUndefined, type UndefinedReason } from "@/l
 import { prisma } from "@/lib/prisma";
 import { buildJobLabelIndex } from "@/lib/job-label";
 import { mergeManualContractorHours, manualContractorPoolHours } from "@/lib/manual-contractor-hours";
+import { readTempPunches, describeTempFeed, type TempFeed } from "@/lib/temp-punches";
 
 // ── THE hours feed (§42.8, §42.14) ──────────────────────────────────────────
 //
@@ -68,6 +69,18 @@ export type HoursProvenance = {
   // always meant; this is the full picture, including how much overlapping data each
   // archive contributed and how much was excluded as another file's years.
   sources?: PaylocitySourceRead[];
+  // The temp and contractor punches (Paylocity's PunchDetail report), read apart from the
+  // files above and merged below. Its own identity, freshness and failure — see
+  // lib/temp-punches.ts. `status` is "off" when no warehouse is configured.
+  temp: TempProvenance;
+};
+
+/** What a reader of the feed needs to know about the temp punches, without the punches themselves. */
+export type TempProvenance = Omit<TempFeed, "rows" | "rejected" | "poolHours"> & {
+  rowsResolved: number;
+  hoursResolved: number;
+  rowsRejected: number;
+  hoursRejected: number;
 };
 
 export type PaylocitySourceRead = {
@@ -123,7 +136,7 @@ export { countsAsUndefined, aggregateUndefined };
 // The job numbers the app knows about, so a numerically-valid job it has never heard
 // of is reported rather than silently dropped (§42.7). Read once per feed rather than
 // per row.
-async function jobMaster(): Promise<{ known: Set<string>; byLabel: Map<string, string> }> {
+export async function jobMaster(): Promise<{ known: Set<string>; byLabel: Map<string, string> }> {
   const jobs = await prisma.job.findMany({ select: { jobId: true, jobName: true } });
   return {
     known: new Set(jobs.map((j) => j.jobId)),
@@ -195,6 +208,16 @@ export async function readHoursFeed(opts?: { onlyMonth?: string }): Promise<Hour
     for (const [k, v] of read.poolHours) poolHours.set(k, (poolHours.get(k) ?? 0) + v);
   }
 
+  // ── Temp and contractor punches, from Paylocity's PunchDetail report (2026-10-22) ──
+  //
+  // Read apart from the files above, never throwing: a report that cannot be read comes
+  // back as a status, the hours go on without it, and the refresh records it as its own
+  // failed source. See lib/temp-punches.ts for why it is not one of the year-owning files.
+  const temp = await readTempPunches({ knownJobNumbers: known, jobIdByLabel: byLabel, onlyMonth: wanted });
+  const tempHours = temp.rows.reduce((s, r) => s + r.hours, 0);
+  rejected.push(...temp.rejected);
+  for (const [k, v] of temp.poolHours) poolHours.set(k, (poolHours.get(k) ?? 0) + v);
+
   // ── Manual contractor punches (TEMPORARY, 2026-09-01) ─────────────────────
   //
   // Paylocity's report is not carrying temp/contractor punches for July-August
@@ -207,25 +230,40 @@ export async function readHoursFeed(opts?: { onlyMonth?: string }): Promise<Hour
   // merged, on every read: any (employee, work date) the official export already
   // covers drops its manual segments entirely. That is what makes a future
   // Paylocity fix safe without anyone having to delete rows in time.
+  //
+  // The temp punches count as official from 2026-10-22: Paylocity reports them now. Their
+  // rejected punches (no job, no phase) cover their (employee, day) too, so a typed-in
+  // timecard is never counted beside a punch Paylocity already has — fixing that punch is
+  // a Paylocity correction, and until it is fixed it shows under Undefined Hours.
   const manual = await mergeManualContractorHours({
-    officialRows,
+    officialRows: temp.rows.length > 0 ? [...officialRows, ...temp.rows] : officialRows,
     knownJobNumbers: known,
     onlyMonth: wanted,
+    alsoCoveredBy: temp.rejected.filter((r) => r.employeeId !== ""),
   });
   // A manual segment whose employee name matches more than one roster row is not
   // guessed at (2026-09-14): it comes back as a rejected punch so the Undefined
   // Hours drill shows it, instead of landing under whichever namesake came last.
   rejected.push(...manual.rejected);
-  const rows = manual.rows.length > 0 ? [...officialRows, ...manual.rows] : officialRows;
+  const rows =
+    temp.rows.length > 0 || manual.rows.length > 0 ? [...officialRows, ...temp.rows, ...manual.rows] : officialRows;
   for (const [k, v] of manualContractorPoolHours(manual.rows)) {
     poolHours.set(k, (poolHours.get(k) ?? 0) + v);
   }
 
-  const monthsCovered = [...new Set([...reads.flatMap((r) => r.read.monthsCovered), ...manual.rows.map((r) => `${r.year}-${String(r.month).padStart(2, "0")}`)])].sort();
+  const monthsCovered = [
+    ...new Set([
+      ...reads.flatMap((r) => r.read.monthsCovered),
+      ...temp.monthsCovered,
+      ...manual.rows.map((r) => `${r.year}-${String(r.month).padStart(2, "0")}`),
+    ]),
+  ].sort();
   let lastWorkDate: Date | null = null;
   for (const { read } of reads) {
     if (read.lastWorkDate && (!lastWorkDate || read.lastWorkDate > lastWorkDate)) lastWorkDate = read.lastWorkDate;
   }
+  // The temp punches move "hours through" too, as the manual ones always have.
+  if (temp.lastWorkDate && (!lastWorkDate || temp.lastWorkDate > lastWorkDate)) lastWorkDate = temp.lastWorkDate;
   // A manual punch later than anything in the workbook still moves "hours through".
   for (const r of manual.rows) if (!lastWorkDate || r.date > lastWorkDate) lastWorkDate = r.date;
 
@@ -243,6 +281,7 @@ export async function readHoursFeed(opts?: { onlyMonth?: string }): Promise<Hour
       .join("; ") +
     `. Hours through ${lastWorkDate?.toISOString().slice(0, 10) ?? "—"}.` +
     (excludedTotal > 0 ? ` ${excludedTotal.toFixed(2)}h of overlapping duplicate hours prevented.` : "") +
+    describeTempFeed(temp, tempHours) +
     // Stated, never silent: a figure that includes manually transcribed
     // timecards must say so wherever provenance is printed.
     (manual.totalHours > 0
@@ -281,6 +320,21 @@ export async function readHoursFeed(opts?: { onlyMonth?: string }): Promise<Hour
         hoursExcludedByYear: read.stats.hoursExcludedByYear,
         excludedYears: read.stats.excludedYears,
       })),
+      temp: {
+        status: temp.status,
+        identity: temp.identity,
+        monthsCovered: temp.monthsCovered,
+        lastWorkDate: temp.lastWorkDate,
+        punchesRead: temp.punchesRead,
+        people: temp.people,
+        ageDays: temp.ageDays,
+        stale: temp.stale,
+        error: temp.error,
+        rowsResolved: temp.rows.length,
+        hoursResolved: Math.round(tempHours * 100) / 100,
+        rowsRejected: temp.rejected.length,
+        hoursRejected: Math.round(temp.rejected.reduce((s, r) => s + r.hours, 0) * 100) / 100,
+      },
     },
   };
 }

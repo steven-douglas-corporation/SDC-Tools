@@ -381,7 +381,16 @@ export async function runAllSyncs(
   let cached: Awaited<ReturnType<typeof beginPaylocityImport>> | null = null;
   // Single-flight (memoizeAsync): a second step arriving while the first parse is
   // still running joins it rather than starting another.
-  const hoursImport = memoizeAsync(async () => (cached = await beginPaylocityImport(importCtx)));
+  //
+  // Temps the roster does not have are added BEFORE the read, so this same pass files their
+  // hours under their new id rather than a pass later under a stand-in (lib/temp-employees.ts).
+  // It never throws and never holds the hours up.
+  let tempPeopleNote = "";
+  const hoursImport = memoizeAsync(async () => {
+    const { registerTempPeople, describeRegisteredTemps } = await import("@/lib/temp-employees");
+    tempPeopleNote = describeRegisteredTemps(await registerTempPeople());
+    return (cached = await beginPaylocityImport(importCtx));
+  });
   const hoursExport = async () => (await hoursImport()).feed;
 
   // ── Two lanes, run concurrently (§8) ─────────────────────────────────────
@@ -455,6 +464,48 @@ export async function runAllSyncs(
           // arrived. Said here so it reaches the refresh record and the completion
           // message rather than only the log.
           (imported.changed ? "" : " — SAME FILE VERSION as the last import, no new data")
+        );
+      });
+
+      // ── Temp punches, as their own source (2026-10-22) ────────────────────────
+      //
+      // The temp report is read INSIDE the hours import above (lib/hours-feed.ts), so this
+      // step does no reading of its own: it reports what that read found — its own
+      // freshness, its own staleness, its own failure — so Data Management shows the
+      // temp punches as a source of their own. They are deliberately independent of the
+      // hours: a failed temp read is recorded HERE as failed while the hours step above
+      // still succeeds (without those punches, for this pass).
+      await step("temp_punches", labelFor("temp_punches"), false, async () => {
+        let feed;
+        try {
+          feed = await hoursExport();
+        } catch {
+          // The main hours read failed before the temp report was reached. That is
+          // reported on its own row; this one has nothing to say about it.
+          return { skip: "Not checked this pass: the hours read failed first (see Actual hours)." };
+        }
+        const t = feed.provenance.temp;
+        if (t.status === "off") return null;
+        if (t.status === "failed") {
+          throw new Error(
+            `Could not read the temp punches. Hours were refreshed without them, and they return on the next pass that can read them. ${t.error ?? ""}`.trim(),
+          );
+        }
+        if (t.status === "not_arrived") {
+          return { skip: "Waiting for the first Temp Punches report from Paylocity to reach the warehouse." };
+        }
+        // Success first, then the stale note: recordSyncNote only sets the status, so a
+        // stale file still shows the date its data runs through.
+        await recordSyncSuccess("temp_punches", t.lastWorkDate);
+        if (t.stale) {
+          return { skip: `The newest Temp Punches file is ${Math.floor(t.ageDays ?? 0)} days old — Paylocity's report has stopped arriving.` };
+        }
+        const unmatched = t.people.filter((p) => p.person.kind === "unmatched").length;
+        return (
+          `${t.rowsResolved.toLocaleString()} punches, ${t.hoursResolved.toFixed(2)}h through ${t.lastWorkDate?.toISOString().slice(0, 10) ?? "—"}` +
+          (t.rowsRejected > 0 ? `; ${t.rowsRejected} punch(es), ${t.hoursRejected.toFixed(2)}h need fixing in Paylocity` : "") +
+          (unmatched > 0 ? `; ${unmatched} name(s) not matched to anyone here` : "") +
+          (tempPeopleNote ? `; ${tempPeopleNote}` : "")
         );
       });
 
