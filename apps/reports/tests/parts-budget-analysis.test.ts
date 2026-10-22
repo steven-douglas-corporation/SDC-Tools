@@ -9,6 +9,8 @@ import {
   filterRows,
   roundPct,
   sortRows,
+  focusMatches,
+  FOCUS_SORT,
   summarize,
   DEFAULT_SORT,
   type PartsBudgetRow,
@@ -77,6 +79,31 @@ test("filters: status chip, band, and text search compose; no band shows every j
   assert.ok(!f({ band: "under" }).includes("1107"), "a job with no budget has no band");
 });
 
+test("the summary cards open what their figure is: the whole over-budget list, the excess jobs, or ONE named job", () => {
+  const f = (focus: "over" | "excess" | "pct" | "dollars", status: "both" | "active" | "complete" = "both") =>
+    sortRows(filterRows(ROWS, { status, band: null, q: "", focus }), FOCUS_SORT[focus]).map((r) => r.jobId);
+  // Total over budget: every over-budget job, largest overrun $ first. Not the under-budget jobs, not the
+  // job with no budget — and the list adds up to the figure on the card.
+  assert.deepEqual(f("over"), ["1106", "1105", "979", "1104", "1103"]);
+  const listed = filterRows(ROWS, { status: "both", band: null, q: "", focus: "over" });
+  assert.equal(listed.reduce((s, r) => s + (r.delta as number), 0), summarize(ROWS).totalOver);
+  // Highest overrun % and Largest overrun $: exactly one job, the one the card names.
+  assert.deepEqual(f("pct"), ["1106"]);
+  assert.deepEqual(f("dollars"), ["1106"]);
+  assert.equal(f("pct")[0], summarize(ROWS).worstByPct?.jobId);
+  // Excess: exactly the jobs counted on the card.
+  assert.deepEqual(f("excess"), ["979"]);
+  assert.equal(f("excess").length, summarize(ROWS).withExcess);
+  // The status chip scopes the card's figure, so it scopes the job the card names.
+  assert.deepEqual(f("pct", "complete"), ["979"], "979 is the highest % among completed jobs");
+  assert.deepEqual(f("dollars", "complete"), ["979"]);
+  assert.deepEqual(f("over", "complete"), ["979", "1103"]);
+  // 1105 has the second-largest overrun overall, but the single-job cards never list it.
+  assert.ok(!f("dollars").includes("1105"));
+  assert.equal(focusMatches(ROWS[0], "over", ROWS), false, "an under-budget job is not over");
+  assert.equal(focusMatches(ROWS[6], "over", ROWS), false, "a job with no budget is not over");
+});
+
 test("the summary counts over-budget jobs, adds their overruns, and names the worst by % and by $", () => {
   const s = summarize(ROWS);
   assert.equal(s.jobs, 8);
@@ -123,6 +150,23 @@ test("the export holds exactly the rows the table shows, with totals over the jo
   assert.equal(noBudget[5], null);
   assert.equal(noBudget[7], null);
   assert.equal(noBudget[8], null);
+});
+
+test("the export follows a card's list, and a card wins over a band", () => {
+  const q = parsePartsBudgetQuery({ focus: "excess", band: "b25_50", status: "both" });
+  assert.equal(q.focus, "excess");
+  // A single-job card exports exactly that one job.
+  const one = buildPartsBudgetSheet(ROWS, parsePartsBudgetQuery({ focus: "pct" }), "2026-10-22T10:00:00.000Z", new Date());
+  assert.equal(one.rowCount, 1);
+  assert.equal(one.spec.rows[0][0], "1106");
+  const over = buildPartsBudgetSheet(ROWS, parsePartsBudgetQuery({ focus: "over" }), "2026-10-22T10:00:00.000Z", new Date());
+  assert.equal(over.rowCount, 5);
+  assert.equal(q.band, null, "a card's list and a band are never combined");
+  const { spec, rowCount } = buildPartsBudgetSheet(ROWS, q, "2026-10-22T10:00:00.000Z", new Date());
+  assert.equal(rowCount, 1);
+  assert.equal(spec.rows[0][0], "979");
+  assert.match(spec.subtitle[0], /Excess bought this month/);
+  assert.equal(parsePartsBudgetQuery({ focus: "nonsense" }).focus, null);
 });
 
 test("an unrecognised export filter falls back to the default instead of failing", () => {
