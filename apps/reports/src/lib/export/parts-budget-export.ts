@@ -109,7 +109,7 @@ export function buildPartsBudgetSheet(
     subtitle: [
       `${STATUS_LABEL[query.status]}${band ? ` · ${band.label}` : ""}${query.focus ? ` · ${FOCUS_LABEL[query.focus]}` : ""}${query.q.trim() ? ` · matching "${query.q.trim()}"` : ""}`,
       `Live as of ${asOf.slice(0, 16).replace("T", " ")} UTC · exported ${now.toISOString().slice(0, 10)}`,
-      "Projected = Purchased to date + Still to purchase; a completed job with no live data shows its final Parts Cost Actual. Over/Under = Projected − Budget.",
+      "Projected = Purchased to date + Still to purchase; a closed job shows its final Parts Cost Actual. Over/Under = Projected − Budget.",
     ],
     columns: [
       { header: "Job ID", type: "text", width: 10 },

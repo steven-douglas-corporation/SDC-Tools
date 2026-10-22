@@ -277,24 +277,21 @@ export function assemblePartsCostFinancials(i: PartsCostInputs): PartsCostFinanc
   );
   const purchased = purchasedTotal(lines) + transfers.net;
 
-  // ── Completed jobs with no live parts data (2026-10-22) ───────────────────
+  // ── Closed jobs: their final actual (2026-10-22, widened the same day) ────────
   //
-  // A finished job has no open POs and no Left to Purchase, and Total ETO may hold no lines for it at all
-  // (job 960), so every figure above is $0 and the card had nothing to draw. The Projects tab still carries
-  // its final Parts Cost Actual (Job.costActualHistorical), which is what the card now shows for it.
+  // A closed (Complete) job is finished: nothing is left to purchase or invoice, so a projection has no
+  // meaning for it, and what it cost is its final Parts Cost Actual — Job.costActualHistorical, the
+  // Projects tab's figure. It first applied only to a closed job Total ETO holds no lines for (job 960);
+  // reconciling every closed job (Closed_jobs_ledger_recon) showed the rest were wrong the other way: 35
+  // of 63 closed jobs with live lines were shown at purchased + still to purchase, which counted old open
+  // POs and a stale forecast as cost (job 1042: $236,601 against a final $165). Every closed job now uses
+  // its final actual, whether or not Total ETO has lines for it.
   //
-  // Only when the live read SUCCEEDED (failedJobs === 0): a failed read also leaves `lines` empty, and a
-  // timeout must not be passed off as "this job is finished". A job with ANY live lines keeps the normal
-  // card. Null when no such job has a non-zero figure.
-  let completedActualSum = 0;
-  if (failedJobs === 0) {
-    for (const j of jobs) {
-      if (j.status !== "Complete") continue;
-      if ((byJob?.get(j.jobId) ?? []).length > 0) continue;
-      completedActualSum += Number(j.costActualHistorical ?? 0);
-    }
-  }
-  const completedActual = completedActualSum > 0 ? completedActualSum : null;
+  // Set only when EVERY selected job is closed and has one: a selection that mixes in an active job, or a
+  // closed job with no final actual on file, keeps the live reconciliation, so no job is dropped from a
+  // total. Independent of the live Total ETO read, so a timeout cannot change a closed job's figure.
+  const closedFinals = jobs.map((j) => (j.status === "Complete" ? Number(j.costActualHistorical ?? 0) : 0));
+  const completedActual = jobs.length > 0 && closedFinals.every((v) => v > 0) ? closedFinals.reduce((a, b) => a + b, 0) : null;
   const projectionTotal = purchased + stp.stillToPurchase;
 
   // Against the whole projected exposure, never against invoiced alone (spec §11).

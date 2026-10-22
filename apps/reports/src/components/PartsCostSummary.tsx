@@ -355,13 +355,14 @@ export function PartsCostSummary({
   // high against the job ledger people check this card against.
   const invoiced = financials.invoiced; // base segment — "Invoiced"
   const spent = financials.totalSpent; // Invoiced + Left to be invoiced — NOT the bar's total (see below)
-  // ── A completed job with no live parts data (2026-10-22, by request) ──────
+  // ── A closed job shows what it cost (2026-10-22, by request) ───────────────
   //
-  // Nothing is left to purchase or invoice and Total ETO may hold no lines, so every live figure is $0 and
-  // there is no projection to draw. The Projects tab's final Parts Cost Actual stands in: ONE band in the
-  // Projected bar, named "Actual Cost". Only when the selection has no live parts activity at all, so every
-  // other job reads exactly as before.
-  const completedMode = financials.completedActual != null && financials.totalSpent === 0 && financials.projection === 0;
+  // A closed job has nothing left to purchase or invoice, so there is no projection to draw: its final Parts
+  // Cost Actual from the Projects tab is shown instead — ONE band in the Projected bar, named "Actual Cost".
+  // `completedActual` is set only when every selected job is closed and has a final actual on file (see
+  // getPartsCostFinancials), and then it wins over any live figures, which would count old open POs and a
+  // stale forecast as cost. Every other job reads exactly as before.
+  const completedMode = financials.completedActual != null;
   const completedActual = completedMode ? (financials.completedActual as number) : 0;
   const projTotal = completedMode ? completedActual : financials.projection; // = invoiced + max(leftToInvoice, etc) as of 2026-08-19 — the bar's own total height
   // `financials.leftToInvoice` is deliberately NOT read here any more. It is the
@@ -791,7 +792,7 @@ export function PartsCostSummary({
   // derivations; only the order changes.
   const SUMMARY_KEYS = ["actual", "purchased", "stp", "total"];
   const summaryRows = SUMMARY_KEYS.map((k) => breakdown.find((r) => r.key === k)).filter((r): r is BreakdownRow => !!r);
-  // A completed job with no live data has one row: its final actual, with where it comes from.
+  // A closed job has one row: its final actual, with where it comes from.
   const orderedBreakdown: BreakdownRow[] = completedMode
     ? [
         {
@@ -799,7 +800,7 @@ export function PartsCostSummary({
           swatch: BAR_PURCHASED,
           label: "Actual Cost",
           derivation:
-            "this job is complete, so nothing is left to purchase or invoice and Total ETO holds no live parts lines for it; this is its final Parts Cost Actual from the Projects tab",
+            "this job is complete, so nothing is left to purchase or invoice and no projection applies; this is its final Parts Cost Actual from the Projects tab",
           value: projTotalDisplay,
           kind: "total",
         },
@@ -1186,7 +1187,7 @@ export function PartsCostSummary({
               Budget and Projected (TOTAL_GAP), and its top is joined to the Projected bar's purchased
               boundary by a dotted line — the two are the same money. No red here: the excess belongs to
               the Projected bar. */}
-          {/* A completed job with no live data has nothing to split into Invoiced / Not yet invoiced, so the
+          {/* A closed job has nothing to split into Invoiced / Not yet invoiced, so the
               Total bar (an empty "$0") is left out; the Projected bar carries its Actual Cost on its own. */}
           {!completedMode && (
           <div

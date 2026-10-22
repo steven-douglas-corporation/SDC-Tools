@@ -5,7 +5,7 @@
 // (lib/parts-cost-financials.ts assembles both), so a job reads the same here as it does there:
 //
 //   live job        Projected = Purchased to date + Still to purchase;  over/under = Projected − Budget
-//   completed job   with no live parts data in Total ETO: its final Parts Cost Actual from the Projects
+//   closed job      its final Parts Cost Actual from the Projects
 //                   tab stands in for the projection (the card's "Actual Cost")
 //
 // This file is the pure half — bands, filters, sorting and the summary — so the chart, the table and the
@@ -44,7 +44,7 @@ export type PartsBudgetRow = {
   type: string | null;
   status: RowStatus;
   budget: number | null;
-  /** Purchased + still to purchase, or the final actual for a completed job with no live data. */
+  /** Purchased + still to purchase, or the final actual for a closed job. */
   projected: number;
   /** projected − budget. Positive = over. Null without a budget. */
   delta: number | null;
