@@ -1600,3 +1600,10 @@ export async function syncFromTotalEto(): Promise<{ jobsUpdated: number; skipped
     return { jobsUpdated, skippedNoType };
   }, { requestTimeout: TOTALETO_TIMEOUT.sync, feed: "totaleto_jobs.mirror" });
 }
+
+// Every matched transfer, for callers that net per job themselves after one read (the Dashboard's
+// Parts cost vs budget analysis). Declared last on purpose: tests slice this file by the next export, and an
+// export placed beside the transfer reads would cut their spans short.
+export async function loadAllTransfers(asOf: string | null = null): Promise<Transfer[]> {
+  return loadTransfers(asOf);
+}

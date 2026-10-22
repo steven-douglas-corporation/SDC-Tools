@@ -49,6 +49,24 @@ export const FINANCE_CARDS: readonly FinanceCardDef[] = [
   },
 ];
 
+// ── Parts cost vs budget, every job (2026-10-22) ────────────────────────────
+//
+// The section under "This month" follows the same rule as the cards: every figure is the one the Job
+// Details Parts Cost card shows for that job (lib/parts-budget-analysis.ts assembles each job with the
+// card's own function), and each row ends in a link to that job's Job Details. So it carries Job Details'
+// permission and is only offered to a role that can open it — including its Excel export, which the
+// export route gates the same way.
+export const PARTS_BUDGET_SECTION = {
+  title: "Parts cost vs budget",
+  source: "Job Details",
+  permission: "job-hour-details:view" as Permission,
+  href: (jobId: string) => `/job-hours?jobs=${encodeURIComponent(jobId)}`,
+} as const;
+
+export function canSeePartsBudget(role: AppRole | null | undefined): boolean {
+  return hasPermission(role, PARTS_BUDGET_SECTION.permission);
+}
+
 /** The cards this role may see — each one's destination is a page the role can open. */
 export function financeCardsFor(role: AppRole | null | undefined): FinanceCardDef[] {
   return FINANCE_CARDS.filter((c) => hasPermission(role, c.permission));
