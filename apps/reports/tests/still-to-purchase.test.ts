@@ -345,15 +345,24 @@ test("a completed job with no live data draws its Projects-tab actual as one Pro
   assert.match(live, /No parts activity yet/);
   assert.match(live, />Total<\/span>/, "every other job keeps the Total bar");
   assert.doesNotMatch(live, /Actual Cost/);
-  const active = renderToStaticMarkup(React.createElement(PartsCostSummary, {
-    financials: { ...zero, totalSpent: 5000, purchased: 5000, projection: 5000, invoiced: 5000 },
+  // A closed job with live lines (old open POs, a stale forecast) still shows its final actual.
+  const closedWithLines = renderToStaticMarkup(React.createElement(PartsCostSummary, {
+    financials: { ...zero, totalSpent: 140000, purchased: 140000, projection: 160000, invoiced: 130000, stillToPurchase: 20000 },
   }));
-  assert.doesNotMatch(active, /Actual Cost/, "live activity wins over the historical figure");
+  assert.match(closedWithLines, />Actual Cost<\/span><span[^>]*>\$130,600</);
+  assert.doesNotMatch(closedWithLines, /Still to purchase/, "no projection on a closed job");
+  // An active job has no completedActual, so its live figures show.
+  const active = renderToStaticMarkup(React.createElement(PartsCostSummary, {
+    financials: { ...zero, completedActual: null, totalSpent: 5000, purchased: 5000, projection: 5000, invoiced: 5000 },
+  }));
+  assert.doesNotMatch(active, /Actual Cost/, "an active job is unchanged");
 });
 
-test("completedActual is read only for Complete jobs with no live lines, and never after a failed read", () => {
+test("completedActual is set only when every selected job is closed and has a final actual, whatever Total ETO holds", () => {
   const src = noComments(read("src", "lib", "parts-cost-financials.ts"));
-  assert.match(src, /if \(failedJobs === 0\) \{/);
-  assert.match(src, /if \(j\.status !== "Complete"\) continue;/);
-  assert.match(src, /if \(\(byJob\?\.get\(j\.jobId\) \?\? \[\]\)\.length > 0\) continue;/);
+  assert.match(src, /j\.status === "Complete" \? Number\(j\.costActualHistorical \?\? 0\) : 0/);
+  assert.match(src, /closedFinals\.every\(\(v\) => v > 0\)/, "one active or unactualled job keeps the live reconciliation");
+  assert.doesNotMatch(src, /failedJobs === 0\) \{\s*for \(const j of jobs\)/, "a closed job's figure no longer depends on the live read");
+  const analysis = noComments(read("src", "lib", "parts-budget-analysis.ts"));
+  assert.match(analysis, /const final = f\.completedActual != null;/, "the Dashboard shows a closed job at the same figure");
 });

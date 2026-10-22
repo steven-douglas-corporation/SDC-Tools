@@ -106,10 +106,9 @@ export type PartsCostFinancials = {
   // floored away. lib/still-to-purchase.ts has the rule and why it is worked per job.
   /**
    * The final Parts Cost Actual from the Projects tab (Job.costActualHistorical), summed over the
-   * selected jobs that are COMPLETE and have no live purchasing data in Total ETO. Null when there is
-   * none. A finished job has nothing left to purchase or invoice, so the card has no projection to draw
-   * for it; this is the figure it shows instead (2026-10-22). The card uses it only when the selection
-   * has no live parts activity at all.
+   * selection when EVERY selected job is closed (Complete) and has one on file; null otherwise. A closed
+   * job has nothing left to purchase or invoice, so it has no projection: this is what it cost, and the
+   * card and the Dashboard analysis show it in place of purchased + still to purchase (2026-10-22).
    */
   completedActual: number | null;
   /** The yellow band: the jobs' positive results, summed. */

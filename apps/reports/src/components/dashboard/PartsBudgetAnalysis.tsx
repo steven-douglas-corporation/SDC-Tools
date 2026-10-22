@@ -54,7 +54,7 @@ const COLUMNS: { key: SortKey; label: string; align: "left" | "right"; hint?: st
   { key: "type", label: "Type", align: "left" },
   { key: "status", label: "Status", align: "left" },
   { key: "budget", label: "Budget", align: "right" },
-  { key: "projected", label: "Projected", align: "right", hint: "Purchased to date + still to purchase; a completed job with no live data shows its final actual" },
+  { key: "projected", label: "Projected", align: "right", hint: "Purchased to date + still to purchase; a closed job shows its final actual cost" },
   { key: "delta", label: "Over / under", align: "right", hint: "Projected − Budget" },
   { key: "pct", label: "%", align: "right" },
   { key: "stillToPurchase", label: "Still to purchase", align: "right" },
@@ -492,8 +492,8 @@ export function PartsBudgetAnalysis({
             </table>
           </div>
           <p className="border-t border-sdc-border px-4 py-2 text-label text-sdc-gray-400">
-            A job id opens that job in Job Details. Over is red, under is green; the % is Projected against Budget. &ldquo;Final
-            actual&rdquo; is a completed job&apos;s Parts Cost Actual from the Projects tab, used where Total ETO holds no live parts for it.
+            A job id opens that job in Job Details. Over is red, under is green; the % is Projected against Budget. A closed job
+            has nothing left to buy, so it shows its final actual — the Parts Cost Actual on the Projects tab — in place of a projection.
           </p>
         </Panel>
       )}

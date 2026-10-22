@@ -23,7 +23,8 @@ import { roundPct, type PartsBudgetRow } from "@/lib/parts-budget-bands";
 //
 // The jobs on the Job Details picker (a valid project type) that have parts to report: a Parts Cost row on
 // the Monthly ETC, or a completed job with a final Parts Cost Actual on the Projects tab. A job with
-// neither has nothing to project. A job that has a row but has bought nothing yet reads "No parts activity
+// neither has nothing to project. A closed job is shown at that final actual — never at purchased + still to
+// purchase, which would count old open POs and a stale forecast as cost on a finished job. A job that has a row but has bought nothing yet reads "No parts activity
 // yet" on its card, so it is counted (`notStarted`) rather than drawn as a $0 projection.
 //
 // ── Live, not month-scoped ──────────────────────────────────────────────────────────────────────
@@ -132,8 +133,8 @@ async function compute(): Promise<PartsBudgetAnalysis> {
         leftToInvoice: leftToInvoiceForLines(lines),
       });
 
-      // The card's own test for "a completed job with no live data" (PartsCostSummary: completedMode).
-      const final = f.completedActual != null && f.totalSpent === 0 && f.projection === 0;
+      // A closed job is shown at its final actual, as the card does (PartsCostSummary: completedMode).
+      const final = f.completedActual != null;
       if (!final && f.totalSpent === 0 && f.projection === 0) {
         notStarted++;
         continue;
