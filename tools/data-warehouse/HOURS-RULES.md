@@ -10,6 +10,7 @@ about.
 | `Hours Through 20250131.xlsx` ("migration snapshot") | Lifetime hours per job × section-function, a crosstab; no employees, no dates | Everything up to 2025-01-31 |
 | `Job_Hours_2025.xlsx` | Paylocity punches | 2025-01-06 → 2026-01-05 |
 | `Current_Job_Hours.xlsx` | Paylocity punches, replaced daily | 2026-01-01 → today |
+| `Temp Punches.xls` (PunchDetail, group TEMPS) | Temp and contractor punches, replaced daily. Not in the files above | 2026-06-22 → today (the report's range starts 2026-01-01; its first punch is 2026-06-22) |
 
 **The warehouse follows the reports app** (Jon, 2026-10-04). Both are summarised in the
 last column below; Power BI is retired, and its rules are here for reconciliation.
@@ -30,6 +31,7 @@ last column below; Power BI is retired, and its rules are here for reconciliatio
 | 10 | **Travel** | "Not Defined" → Concord, "TRAVEL" → Travel | Same rule (`normalizeTravel`) | Same rule (`"TravelLocation"`); the raw value is kept in `"TravelCode"` |
 | 11 | **Snapshot rows' employee and date** | Employee 0, date 2025-01-31 | Job level only; no employee or date | Employee Unknown (-1), date 2025-01-31 |
 | 12 | **Freshness** | Scheduled refresh; lagged the files by days (July 2026 was 150.53 h short when measured on 2026-08-05) | Reads the source hourly | Loads daily at 06:30; the app reads the warehouse |
+| 13 | **Temp and contractor punches** | Not in the model: the Job Hours report cannot send temps | Typed in from timecards (`ManualContractorPunch`, a CSV import) and merged at the hours feed | The `temp_punches` report, loaded as `"SourceReport" = 'temp_punches'` (2,869.67 h, 679 rows in the 2026-10-22 file, of which 233.95 h have no job or phase). Hours are the regular plus overtime duration of each clock-in and clock-out; lunch gaps and open punches are 0. No Employee Id yet: the person is matched by name. See the README |
 
 ## What that means for totals
 
@@ -49,6 +51,11 @@ Power BI's total for the same period would differ from this by:
 - **Whatever differs between its Planner-workbook snapshot and this file** (row 1). Not yet compared; a baseline query against the Power BI dataset would settle it.
 
 The function-code remaps (row 5) move hours between codes but don't change totals.
+
+The totals above are for 2026-10-04, before the temp punches (row 13). They add 2,869.67 h
+as of the 2026-10-22 file, none of it in Power BI. Total the warehouse with the query below
+and the temp punches are included; to leave them out, add
+`AND "SourceReport" <> 'temp_punches'`.
 
 ## How to total hours in the warehouse
 

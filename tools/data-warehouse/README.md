@@ -38,6 +38,7 @@ sql/      01_schema.sql             tracking tables ("Integration") and raw laye
           04_facts.sql              "Fact"."JobHours", its load, and "Integration"."RefreshWarehouse"()
           05_access.sql             read-only login for the reports app (reports_app)
           (all safe to re-run; apply in order)
+checks/   read-only queries to run after a change or when something looks off (temp_punches.sql)
 ingest/   paylocity_ingest.py, its settings and tests
 ```
 
@@ -80,10 +81,47 @@ Still to come: a job dimension matched to Total ETO's job master (punches keep
 codes sit in more than one family, so that dimension needs a decision on how to handle them.
 
 Staging views: `"EmployeeInformation"` (current roster), `"EmployeeInformationSnapshot"`
-(every daily roster), `"JobHours"`, `"PaidExpense"` (all daily files combined, overlap
+(every daily roster), `"JobHours"`, `"TempPunch"`, `"PaidExpense"` (all daily files combined, overlap
 removed), `"PositionFamily"`, `"PositionFamilyOverride"`, `"HiringPosition"`. Which file owns
 which years of hours is the `"Paylocity"."JobHoursSource"` table; add a row when a new
 yearly archive file appears.
+
+### Temp and contractor punches
+
+Paylocity's Job Hours report cannot carry temp employees, so their hours come from a
+second report: **PunchDetail for the TEMPS group**, delivered daily as
+`/temp_punch_report/Temp Punches.xls` (report key `temp_punches`). It differs from the Job
+Hours files in three ways, all handled in `"Paylocity"."TempPunch"`:
+
+- **The header is on sheet row 5**, under four preamble rows. `"Integration"."SourceReport"`
+  holds `"HeaderRow" = 5` for it (set in `02_paylocity_staging.sql`). A report's header row
+  must be set *before* its first file loads; changing it later means reloading the files
+  (see Day to day).
+- **One row per clock-in and clock-out**, with a regular and an overtime duration instead of
+  a total. A punch's hours are the two added. Lunch gaps and punches with no Out are 0 hours.
+- **Names, not an Employee Id.** `"TempPunch"` carries `"EmployeeName"` (first and last), and
+  `"EmployeeId"` is NULL. If Paylocity adds an `Employee Id` (or `Employee ID`) column, it
+  flows through to `"EmployeeId"` here and in `"Fact"."JobHours"` with no change. Until then
+  the reports app matches the name to its own roster.
+
+`"Paylocity"."JobHours"` projects the non-zero punches onto the Job Hours shape, so they load
+into `"Fact"."JobHours"` with `"SourceReport" = 'temp_punches'`, the person's name in
+`"EmployeeName"`, no Travel, and `"EmployeeKey"` -1 (temps are not in the roster). They are
+additive to `current_job_hours`, not a competing owner of the year: the `"Layout"` column of
+`"JobHoursSource"` says which layout a report has (`job_hours` or `punch_detail`). Like the
+other punches they are replaced a whole year at a time, from the latest file only.
+
+Rows with no job, phase or function load as they are, with NULL codes. Fixing them is a
+Paylocity correction, not a warehouse one. `checks/temp_punches.sql` lists them, the open
+punches, the file's age, and any column Paylocity renames (a renamed hours column makes
+`"Hours"` NULL, not 0, so it can't pass as "nobody worked").
+
+**To apply** (both files are safe to re-run): `02_paylocity_staging.sql`, then
+`04_facts.sql`, then `SELECT "Integration"."RefreshWarehouse"();`, then run
+`checks/temp_punches.sql`. Run the two files **as `dw_loader`**: signed in as yourself, start
+the session with `SET ROLE dw_loader;`. Objects created under your own login are owned by
+you, and the loader (which is not a superuser) can't read a view you own, so the next daily
+load would fail with "permission denied".
 
 ## Naming
 
