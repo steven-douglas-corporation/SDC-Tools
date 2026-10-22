@@ -310,7 +310,48 @@ test("the card renders the red excess band, dotted line and label from the figur
   assert.match(none, /border-top:2px dotted #D4A800/i);
   assert.match(none, /Still to purchase<\/span><span[^>]*>\$3,000</);
   assert.doesNotMatch(html, /border-top:2px dotted #D4A800/i, "no yellow band, no yellow line");
-  // The Projected bar's bands are named beside it; only still to purchase also states its amount.
+  // Bands are named beside their bar, each with its figure under the name.
   // The Projected bar names its own purchased band; the Total bar carries no side names.
-  assert.match(none, />Purchased to date<\/span><\/div>/);
+  // Every side name carries its band's figure underneath.
+  assert.match(none, />Purchased to date<\/span><span[^>]*>\$100,000</);
+  assert.match(none, />Invoiced and posted<\/span><span[^>]*>\$90,000</);
+  assert.match(none, />Not yet invoiced<\/span><span[^>]*>\$10,000</);
+});
+
+// ── A completed job with no live parts data shows its final actual (2026-10-22) ──
+
+test("a completed job with no live data draws its Projects-tab actual as one Projected band named Actual Cost", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const React = await import("react");
+  const { PartsCostSummary } = await import("../src/components/PartsCostSummary");
+  const zero = {
+    budget: 137120, invoiced: 0, leftToInvoice: 0, etc: null, totalSpent: 0, projection: 0, purchased: 0, completedActual: 130600,
+    stillToPurchase: 0, excessPurchased: 0, stillToPurchaseSigned: 0, leftToPurchaseLastMonth: null, purchasedThisMonth: 0,
+    stpJobsFromMonthlyEtc: 0, stpJobsFromForecast: 0, billedNotPosted: 0, priorEtc: null, priorEtcSource: "none",
+    partsSpentThisMonth: 0, adjustedEtcRaw: null, adjustedEtc: 0, openBalance: 0, externalOpen: 0, inHouseExcluded: 0,
+    inHouseRows: 0, additionalExposure: 0, coverageLine: null, etcUnknown: true, etcMonth: null, variance: -137120,
+    variancePct: -100, failedJobs: 0, lineCount: 0, lines: [], transfersNet: 0, transfers: [], transferItems: [],
+    transfersUnavailable: false,
+  } as unknown as Parameters<typeof PartsCostSummary>[0]["financials"];
+  const html = renderToStaticMarkup(React.createElement(PartsCostSummary, { financials: zero }));
+  assert.match(html, />Actual Cost<\/span><span[^>]*>\$130,600</, "side name with its figure under it");
+  assert.match(html, /\$130,600<\/span>/, "the figure above the Projected bar");
+  assert.match(html, /Actual vs Budget/);
+  assert.match(html, /4\.8% under/, "130,600 against a 137,120 budget");
+  assert.doesNotMatch(html, /Purchased to date|Still to purchase|No parts activity yet/);
+  // Not a completed job (or one with live activity): the card is exactly as before.
+  const live = renderToStaticMarkup(React.createElement(PartsCostSummary, { financials: { ...zero, completedActual: null } }));
+  assert.match(live, /No parts activity yet/);
+  assert.doesNotMatch(live, /Actual Cost/);
+  const active = renderToStaticMarkup(React.createElement(PartsCostSummary, {
+    financials: { ...zero, totalSpent: 5000, purchased: 5000, projection: 5000, invoiced: 5000 },
+  }));
+  assert.doesNotMatch(active, /Actual Cost/, "live activity wins over the historical figure");
+});
+
+test("completedActual is read only for Complete jobs with no live lines, and never after a failed read", () => {
+  const src = noComments(read("src", "lib", "parts-cost-financials.ts"));
+  assert.match(src, /if \(failedJobs === 0\) \{/);
+  assert.match(src, /if \(j\.status !== "Complete"\) continue;/);
+  assert.match(src, /if \(\(byJob\?\.get\(j\.jobId\) \?\? \[\]\)\.length > 0\) continue;/);
 });

@@ -104,7 +104,7 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
   if (jobIds.length === 0) {
     return {
       budget: null, invoiced: 0, leftToInvoice: 0, etc: null, totalSpent: 0, projection: 0,
-      purchased: 0, stillToPurchase: 0, excessPurchased: 0, stillToPurchaseSigned: 0,
+      purchased: 0, completedActual: null, stillToPurchase: 0, excessPurchased: 0, stillToPurchaseSigned: 0,
       leftToPurchaseLastMonth: null, purchasedThisMonth: 0, stpJobsFromMonthlyEtc: 0, stpJobsFromForecast: 0,
       billedNotPosted: 0, priorEtc: null, priorEtcSource: "none", partsSpentThisMonth: 0,
       adjustedEtcRaw: null, adjustedEtc: 0, openBalance: 0, externalOpen: 0,
@@ -115,7 +115,7 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
     };
   }
 
-  const jobs = await prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, jobId: true, costQuoted: true } });
+  const jobs = await prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, jobId: true, costQuoted: true, status: true, costActualHistorical: true } });
   const quoted = jobs.reduce((s, j) => s + Number(j.costQuoted ?? 0), 0);
   const budget = quoted > 0 ? quoted : null;
 
@@ -250,6 +250,25 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
     }),
   );
   const purchased = purchasedTotal(lines) + transfers.net;
+
+  // ── Completed jobs with no live parts data (2026-10-22) ───────────────────
+  //
+  // A finished job has no open POs and no Left to Purchase, and Total ETO may hold no lines for it at all
+  // (job 960), so every figure above is $0 and the card had nothing to draw. The Projects tab still carries
+  // its final Parts Cost Actual (Job.costActualHistorical), which is what the card now shows for it.
+  //
+  // Only when the live read SUCCEEDED (failedJobs === 0): a failed read also leaves `lines` empty, and a
+  // timeout must not be passed off as "this job is finished". A job with ANY live lines keeps the normal
+  // card. Null when no such job has a non-zero figure.
+  let completedActualSum = 0;
+  if (failedJobs === 0) {
+    for (const j of jobs) {
+      if (j.status !== "Complete") continue;
+      if ((byJob?.get(j.jobId) ?? []).length > 0) continue;
+      completedActualSum += Number(j.costActualHistorical ?? 0);
+    }
+  }
+  const completedActual = completedActualSum > 0 ? completedActualSum : null;
   const projectionTotal = purchased + stp.stillToPurchase;
 
   // Against the whole projected exposure, never against invoiced alone (spec §11).
@@ -264,6 +283,7 @@ export async function getPartsCostFinancials(jobIds: number[], opts?: { asOfDate
     totalSpent,
     projection: projectionTotal,
     purchased,
+    completedActual,
     stillToPurchase: stp.stillToPurchase,
     excessPurchased: stp.excess,
     stillToPurchaseSigned: stp.signed,
