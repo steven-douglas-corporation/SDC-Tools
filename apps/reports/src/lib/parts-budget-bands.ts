@@ -79,24 +79,28 @@ export function roundPct(n: number): number {
 export type StatusFilter = "both" | "active" | "complete";
 
 /**
- * A summary card the table can be opened from (2026-10-22). Each lists the jobs behind that card's figure,
- * sorted by it, so the job the card names is on the first row:
- *   pct       the over-budget jobs, highest overrun % first
- *   dollars   the over-budget jobs, largest overrun $ first
+ * A summary card the table can be opened from (2026-10-22). What each one opens:
+ *   over      every over-budget job, largest overrun $ first — the jobs the "Total over budget" figure adds up
  *   excess    the jobs that bought beyond last month's Left to Purchase, largest excess first
+ *   pct       the ONE job named on "Highest overrun %" — only that job, not the over-budget list
+ *   dollars   the ONE job named on "Largest overrun $"
+ * The two single-job cards are decided inside the status chip, exactly as the card's own figure is, so the
+ * job opened is always the job the card names.
  */
-export type Focus = "pct" | "dollars" | "excess";
+export type Focus = "over" | "excess" | "pct" | "dollars";
 
 export const FOCUS_LABEL: Record<Focus, string> = {
-  pct: "Over-budget jobs · highest overrun % first",
-  dollars: "Over-budget jobs · largest overrun $ first",
+  over: "Over-budget jobs · largest overrun first",
   excess: "Excess bought this month",
+  pct: "Highest overrun %",
+  dollars: "Largest overrun $",
 };
 
 export const FOCUS_SORT: Record<Focus, SortState> = {
+  over: { key: "delta", dir: "desc" },
+  excess: { key: "excess", dir: "desc" },
   pct: { key: "pct", dir: "desc" },
   dollars: { key: "delta", dir: "desc" },
-  excess: { key: "excess", dir: "desc" },
 };
 
 export type ViewFilter = {
@@ -109,10 +113,16 @@ export type ViewFilter = {
   focus?: Focus | null;
 };
 
-/** The jobs a card's figure is made of. */
-export function focusMatches(row: PartsBudgetRow, focus: Focus): boolean {
+/**
+ * Whether a row is among the jobs behind a card's figure. `scope` is the rows the card was computed from
+ * (the status chip already applied), which is what decides the single job for "pct" and "dollars".
+ */
+export function focusMatches(row: PartsBudgetRow, focus: Focus, scope: readonly PartsBudgetRow[]): boolean {
   if (focus === "excess") return row.excess > 0.5;
-  return row.pct != null && row.pct > 0 && row.delta != null && row.delta > 0;
+  if (focus === "over") return row.pct != null && row.pct > 0 && row.delta != null && row.delta > 0;
+  const s = summarize(scope);
+  const target = focus === "pct" ? s.worstByPct : s.worstByDollars;
+  return target != null && target.id === row.id;
 }
 
 export function statusMatches(status: RowStatus, filter: StatusFilter): boolean {
@@ -128,11 +138,13 @@ export function searchMatches(row: PartsBudgetRow, q: string): boolean {
 
 /** The rows a view shows. A row with no budget has no band, so it only appears when no band is selected. */
 export function filterRows(rows: readonly PartsBudgetRow[], f: ViewFilter): PartsBudgetRow[] {
+  // The card's figures are computed inside the status chip, so a card's job is decided inside it too.
+  const scope = f.focus ? rows.filter((r) => statusMatches(r.status, f.status)) : [];
   return rows.filter(
     (r) =>
       statusMatches(r.status, f.status) &&
       searchMatches(r, f.q) &&
-      (f.focus == null || focusMatches(r, f.focus)) &&
+      (f.focus == null || focusMatches(r, f.focus, scope)) &&
       (f.band == null || (r.pct != null && bandOf(r.pct) === f.band)),
   );
 }

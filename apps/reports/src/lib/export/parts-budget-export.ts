@@ -26,7 +26,7 @@ const SORT_KEYS: ReadonlySet<string> = new Set<SortKey>([
 ]);
 const STATUSES: ReadonlySet<string> = new Set<StatusFilter>(["both", "active", "complete"]);
 const BAND_KEYS: ReadonlySet<string> = new Set<BandKey>(BANDS.map((b) => b.key));
-const FOCUS_KEYS: ReadonlySet<string> = new Set<Focus>(["pct", "dollars", "excess"]);
+const FOCUS_KEYS: ReadonlySet<string> = new Set<Focus>(["over", "excess", "pct", "dollars"]);
 
 export type PartsBudgetExportQuery = {
   status?: string;

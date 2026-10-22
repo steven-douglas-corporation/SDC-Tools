@@ -241,7 +241,15 @@ export function PartsBudgetAnalysis({
           value={`${summary.jobsOver} of ${summary.withBudget}`}
           sub={summary.noBudget > 0 ? `${summary.noBudget} job${summary.noBudget === 1 ? "" : "s"} with no budget on file` : "jobs with a budget"}
         />
-        <Kpi label="Total over budget" value={usd(Math.round(summary.totalOver))} sub="overruns, added up" tone={summary.totalOver > 0 ? "red" : undefined} />
+        <Kpi
+          label="Total over budget"
+          value={usd(Math.round(summary.totalOver))}
+          sub="overruns, added up"
+          tone={summary.totalOver > 0 ? "red" : undefined}
+          onClick={summary.jobsOver > 0 ? () => pickFocus("over") : undefined}
+          active={focus === "over"}
+          hint="List the over-budget jobs this total adds up, largest overrun first"
+        />
         <Kpi
           label="Highest overrun %"
           value={summary.worstByPct ? signedPct(summary.worstByPct.pct as number) : "—"}
@@ -249,7 +257,7 @@ export function PartsBudgetAnalysis({
           tone={summary.worstByPct ? "red" : undefined}
           onClick={summary.worstByPct ? () => pickFocus("pct") : undefined}
           active={focus === "pct"}
-          hint="List the over-budget jobs, highest overrun % first"
+          hint="Show the job with the highest overrun %"
         />
         <Kpi
           label="Largest overrun $"
@@ -258,7 +266,7 @@ export function PartsBudgetAnalysis({
           tone={summary.worstByDollars ? "red" : undefined}
           onClick={summary.worstByDollars ? () => pickFocus("dollars") : undefined}
           active={focus === "dollars"}
-          hint="List the over-budget jobs, largest overrun $ first"
+          hint="Show the job with the largest overrun $"
         />
         <Kpi
           label="Excess this month"
