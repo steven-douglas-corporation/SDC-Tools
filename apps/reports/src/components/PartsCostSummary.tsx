@@ -5,7 +5,7 @@ import { card } from "@/components/ui/classnames";
 // reconcilePartsCostRounding dropped from this import 2026-09-04 — line 341 already
 // explains why it is no longer used here, and the unused binding was the file's only
 // lint warning.
-import { sharedBarMax, scaleToPct, type PartsCostFinancials } from "@/lib/parts-cost-financials-shared";
+import { sharedBarMax, scaleToPct, flooredSegmentPx, type PartsCostFinancials } from "@/lib/parts-cost-financials-shared";
 import { describeTransfers } from "@/lib/parts-transfer-netting";
 import type { PartsDrillMode } from "@/components/PartsCostDrill";
 
@@ -833,25 +833,8 @@ export function PartsCostSummary({
   const stpIdx = projSegments.findIndex((s) => s.key === "stp");
   const MIN_SEG_PX = 10;
   // Rendered pixel heights for one bar, with the floor applied inside that bar only.
-  const flooredPx = (segs: BarSeg[]): number[] => {
-    const px: number[] = segs.map((seg) => barPx(seg.heightPct));
-    let borrowed = 0;
-    for (let i = 0; i < px.length; i++) {
-      // A zero segment is not drawn at all — a floor there would invent a band for
-      // money that does not exist.
-      if (segs[i].heightPct <= 0) continue;
-      if (px[i] < MIN_SEG_PX) {
-        borrowed += MIN_SEG_PX - px[i];
-        px[i] = MIN_SEG_PX;
-      }
-    }
-    if (borrowed > 0) {
-      let tallest = 0;
-      for (let i = 1; i < px.length; i++) if (px[i] > px[tallest]) tallest = i;
-      px[tallest] = Math.max(MIN_SEG_PX, px[tallest] - borrowed);
-    }
-    return px;
-  };
+  const flooredPx = (segs: BarSeg[]): number[] =>
+    flooredSegmentPx(segs.map((seg) => ({ key: seg.key, px: barPx(seg.heightPct), hasValue: seg.heightPct > 0 })), MIN_SEG_PX);
   const projPx = flooredPx(projSegments);
   const totalPx = flooredPx(totalSegments);
 
