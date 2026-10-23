@@ -111,7 +111,15 @@ export type ViewFilter = {
   q: string;
   /** A summary card's job list, or null/absent for none. Chosen instead of a band, never with one. */
   focus?: Focus | null;
+  /** Customers to keep; empty or absent means every customer. A job with no customer is the "" value. */
+  customers?: readonly string[];
+  /** Job types to keep; empty or absent means every type. A job with no type is the "" value. */
+  types?: readonly string[];
 };
+
+/** The value a job with no customer / no type is filtered under. */
+export const NONE_VALUE = "";
+export const NONE_LABEL = "(none)";
 
 /**
  * Whether a row is among the jobs behind a card's figure. `scope` is the rows the card was computed from
@@ -130,6 +138,38 @@ export function statusMatches(status: RowStatus, filter: StatusFilter): boolean 
   return filter === "active" ? status === "Active" : status === "Complete";
 }
 
+/** Customer and Type narrow like the status chip does: nothing chosen keeps every job. */
+export function customerTypeMatches(row: PartsBudgetRow, f: { customers?: readonly string[]; types?: readonly string[] }): boolean {
+  if (f.customers && f.customers.length > 0 && !f.customers.includes(row.customer ?? NONE_VALUE)) return false;
+  if (f.types && f.types.length > 0 && !f.types.includes(row.type ?? NONE_VALUE)) return false;
+  return true;
+}
+
+/**
+ * The jobs every figure on the section is computed from: the status chip, Customer and Type. The summary,
+ * the band chart, a card's job and the table all start here, so they cannot disagree about what is in scope.
+ */
+export function scopeRows(
+  rows: readonly PartsBudgetRow[],
+  f: { status: StatusFilter; customers?: readonly string[]; types?: readonly string[] },
+): PartsBudgetRow[] {
+  return rows.filter((r) => statusMatches(r.status, f.status) && customerTypeMatches(r, f));
+}
+
+export type ScopeOption = { value: string; label: string; count: number };
+
+/** The choices for a Customer or Type menu, with how many jobs each holds in `rows`; most jobs first. */
+export function scopeOptions(rows: readonly PartsBudgetRow[], field: "customer" | "type"): ScopeOption[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const v = (field === "customer" ? r.customer : r.type)?.trim() || NONE_VALUE;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, label: value === NONE_VALUE ? NONE_LABEL : value, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
 export function searchMatches(row: PartsBudgetRow, q: string): boolean {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
@@ -138,11 +178,13 @@ export function searchMatches(row: PartsBudgetRow, q: string): boolean {
 
 /** The rows a view shows. A row with no budget has no band, so it only appears when no band is selected. */
 export function filterRows(rows: readonly PartsBudgetRow[], f: ViewFilter): PartsBudgetRow[] {
-  // The card's figures are computed inside the status chip, so a card's job is decided inside it too.
-  const scope = f.focus ? rows.filter((r) => statusMatches(r.status, f.status)) : [];
+  // The card's figures are computed inside the status chip, Customer and Type, so a card's job is decided
+  // inside them too.
+  const scope = f.focus ? scopeRows(rows, f) : [];
   return rows.filter(
     (r) =>
       statusMatches(r.status, f.status) &&
+      customerTypeMatches(r, f) &&
       searchMatches(r, f.q) &&
       (f.focus == null || focusMatches(r, f.focus, scope)) &&
       (f.band == null || (r.pct != null && bandOf(r.pct) === f.band)),

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Panel, PanelHead, KpiStrip } from "@/components/dashboard/DashboardLayout";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { FilterMenu } from "@/components/dashboard/FilterMenu";
 import { usd } from "@/components/ui/format";
 import {
   BANDS,
@@ -17,7 +18,9 @@ import {
   signedPct,
   signedUsd,
   sortRows,
-  statusMatches,
+  customerTypeMatches,
+  scopeOptions,
+  scopeRows,
   summarize,
   type BandKey,
   type Focus,
@@ -156,21 +159,34 @@ export function PartsBudgetAnalysis({
   const [focus, setFocus] = useState<Focus | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [q, setQ] = useState("");
+  const [customers, setCustomers] = useState<string[]>([]);
+  const [types, setTypes] = useState<string[]>([]);
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
 
-  // The status chip narrows the summary, the chart AND the table; the band narrows only the table, because
-  // the chart is where a band is chosen.
-  const inStatus = useMemo(() => rows.filter((r) => statusMatches(r.status, status)), [rows, status]);
+  // The status chip, Customer and Type narrow the summary, the chart AND the table; the band narrows only the
+  // table, because the chart is where a band is chosen.
+  const inStatus = useMemo(() => scopeRows(rows, { status, customers, types }), [rows, status, customers, types]);
   const summary = useMemo(() => summarize(inStatus), [inStatus]);
   const totals = useMemo(() => bandTotals(inStatus), [inStatus]);
-  const shown = useMemo(() => sortRows(filterRows(rows, { status, band, q, focus }), sort), [rows, status, band, q, focus, sort]);
+  const shown = useMemo(() => sortRows(filterRows(rows, { status, band, q, focus, customers, types }), sort), [rows, status, band, q, focus, customers, types, sort]);
+  // The chips count what is left after Customer and Type; the Customer and Type menus count what is left after
+  // the status chip (and, for each other, the other one), so every number is the size of what choosing it shows.
+  const byCustomerType = useMemo(() => rows.filter((r) => customerTypeMatches(r, { customers, types })), [rows, customers, types]);
   const counts = useMemo(
     () => ({
-      both: rows.length,
-      active: rows.filter((r) => r.status === "Active").length,
-      complete: rows.filter((r) => r.status === "Complete").length,
+      both: byCustomerType.length,
+      active: byCustomerType.filter((r) => r.status === "Active").length,
+      complete: byCustomerType.filter((r) => r.status === "Complete").length,
     }),
-    [rows],
+    [byCustomerType],
+  );
+  const customerOptions = useMemo(
+    () => scopeOptions(scopeRows(rows, { status, types }), "customer"),
+    [rows, status, types],
+  );
+  const typeOptions = useMemo(
+    () => scopeOptions(scopeRows(rows, { status, customers }), "type"),
+    [rows, status, customers],
   );
 
   const maxJobs = Math.max(1, ...totals.map((t) => t.jobs));
@@ -182,6 +198,8 @@ export function PartsBudgetAnalysis({
     if (focus) p.set("focus", focus);
     else if (band) p.set("band", band);
     if (q.trim()) p.set("q", q.trim());
+    for (const c of customers) p.append("customer", c);
+    for (const t of types) p.append("type", t);
     return `/api/export/parts-budget?${p.toString()}`;
   };
 
@@ -209,8 +227,9 @@ export function PartsBudgetAnalysis({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Controls: the status chips scope everything; the export follows the table. */}
+      {/* Controls: the status chips, Customer and Type scope everything; the export follows the table. */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-2">
         <div role="group" aria-label="Job status" className="inline-flex overflow-hidden rounded-lg border border-sdc-border bg-white text-sm shadow-sm">
           {STATUS_CHIPS.map((c) => (
             <button
@@ -225,6 +244,21 @@ export function PartsBudgetAnalysis({
               {c.label} <span className={status === c.key ? "text-white/80" : "text-sdc-gray-400"}>{counts[c.key]}</span>
             </button>
           ))}
+        </div>
+        <FilterMenu label="Customer" options={customerOptions} selected={customers} onChange={setCustomers} />
+        <FilterMenu label="Type" options={typeOptions} selected={types} onChange={setTypes} />
+        {(customers.length > 0 || types.length > 0) && (
+          <button
+            type="button"
+            onClick={() => {
+              setCustomers([]);
+              setTypes([]);
+            }}
+            className="text-xs font-semibold text-sdc-blue hover:underline"
+          >
+            Clear filters
+          </button>
+        )}
         </div>
         <p className="text-label text-sdc-gray-400">
           Live as of{" "}

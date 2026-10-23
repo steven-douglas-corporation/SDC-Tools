@@ -11,6 +11,8 @@ import {
   sortRows,
   focusMatches,
   FOCUS_SORT,
+  scopeOptions,
+  scopeRows,
   summarize,
   DEFAULT_SORT,
   type PartsBudgetRow,
@@ -150,6 +152,86 @@ test("the export holds exactly the rows the table shows, with totals over the jo
   assert.equal(noBudget[5], null);
   assert.equal(noBudget[7], null);
   assert.equal(noBudget[8], null);
+});
+
+// ── Customer and Type filters (2026-10-23) ───────────────────────────────────
+
+const MIXED = [
+  row({ jobId: "2001", budget: 100000, projected: 130000, customer: "Acme", type: "Custom" }), // +30%
+  row({ jobId: "2002", budget: 100000, projected: 110000, customer: "Acme", type: "Duplicate", status: "Complete" }), // +10%
+  row({ jobId: "2003", budget: 100000, projected: 160000, customer: "Beta", type: "Custom" }), // +60%
+  row({ jobId: "2004", budget: 100000, projected: 90000, customer: "Beta", type: "Hybrid" }), // −10%
+  row({ jobId: "2005", budget: 100000, projected: 105000, customer: null, type: null }), // no customer, no type
+];
+const ids = (rows: readonly PartsBudgetRow[]) => rows.map((r) => r.jobId);
+
+test("Customer and Type narrow like the status chip: nothing chosen keeps every job, and they compose", () => {
+  const f = (o: Partial<Parameters<typeof filterRows>[1]>) => ids(filterRows(MIXED, { status: "both", band: null, q: "", ...o }));
+  assert.equal(f({}).length, 5);
+  assert.equal(f({ customers: [], types: [] }).length, 5, "an empty selection is no filter");
+  assert.deepEqual(f({ customers: ["Acme"] }), ["2001", "2002"]);
+  assert.deepEqual(f({ customers: ["Acme", "Beta"] }), ["2001", "2002", "2003", "2004"], "several customers are OR");
+  assert.deepEqual(f({ types: ["Custom"] }), ["2001", "2003"]);
+  assert.deepEqual(f({ customers: ["Beta"], types: ["Custom"] }), ["2003"], "customer AND type");
+  assert.deepEqual(f({ customers: ["Acme"], status: "complete" }), ["2002"], "and the status chip");
+  assert.deepEqual(f({ customers: [""] }), ["2005"], "a job with no customer is its own choice");
+  assert.deepEqual(f({ types: [""] }), ["2005"]);
+  assert.deepEqual(f({ customers: ["Nobody"] }), []);
+});
+
+test("every figure is computed inside the same scope: summary, bands, and the job a card names", () => {
+  const scope = (o: { customers?: string[]; types?: string[]; status?: "both" | "active" | "complete" }) =>
+    scopeRows(MIXED, { status: "both", ...o });
+  // Beta only: the highest overrun is 2003 (+60%), not an Acme job.
+  const beta = scope({ customers: ["Beta"] });
+  assert.equal(summarize(beta).worstByPct?.jobId, "2003");
+  assert.equal(summarize(beta).jobs, 2);
+  // Acme only: the highest overrun is now 2001 (+30%), and a single-job card follows it.
+  assert.equal(summarize(scope({ customers: ["Acme"] })).worstByPct?.jobId, "2001");
+  assert.deepEqual(ids(filterRows(MIXED, { status: "both", band: null, q: "", focus: "pct", customers: ["Acme"] })), ["2001"]);
+  assert.deepEqual(ids(filterRows(MIXED, { status: "both", band: null, q: "", focus: "pct" })), ["2003"]);
+  // Band counts follow the scope.
+  assert.equal(bandTotals(scope({ types: ["Custom"] })).reduce((s, b) => s + b.jobs, 0), 2);
+});
+
+test("menu options carry how many jobs each holds, most first, with an explicit choice for none", () => {
+  const c = scopeOptions(MIXED, "customer");
+  assert.deepEqual(c.map((o) => [o.label, o.count]), [["Acme", 2], ["Beta", 2], ["(none)", 1]]);
+  assert.equal(c.find((o) => o.label === "(none)")?.value, "");
+  const t = scopeOptions(MIXED, "type");
+  assert.deepEqual(t.map((o) => o.label), ["Custom", "(none)", "Duplicate", "Hybrid"], "count first, then name");
+  assert.equal(t[0].count, 2);
+});
+
+test("the export keeps the Customer and Type the table is showing", () => {
+  const q = parsePartsBudgetQuery({ customers: ["Beta"], types: ["Custom"] });
+  assert.deepEqual(q.customers, ["Beta"]);
+  assert.deepEqual(q.types, ["Custom"]);
+  const { spec, rowCount } = buildPartsBudgetSheet(MIXED, q, "2026-10-23T10:00:00.000Z", new Date());
+  assert.equal(rowCount, 1);
+  assert.equal(spec.rows[0][0], "2003");
+  assert.match(spec.subtitle[0], /customer: Beta/);
+  assert.match(spec.subtitle[0], /type: Custom/);
+  const none = buildPartsBudgetSheet(MIXED, parsePartsBudgetQuery({ customers: [""] }), "2026-10-23T10:00:00.000Z", new Date());
+  assert.equal(none.rowCount, 1);
+  assert.match(none.spec.subtitle[0], /customer: \(none\)/);
+  // Bounded: a long list from the URL is cut, never passed on whole.
+  assert.equal(parsePartsBudgetQuery({ customers: Array.from({ length: 500 }, (_, i) => `c${i}`) }).customers.length, 200);
+  assert.equal(parsePartsBudgetQuery({}).customers.length, 0);
+  const route = noComments(src("src", "app", "api", "export", "parts-budget", "route.ts"));
+  assert.match(route, /customers: searchParams\.getAll\("customer"\)/);
+  assert.match(route, /types: searchParams\.getAll\("type"\)/);
+});
+
+test("the section offers Customer and Type menus beside the status chips", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const React = await import("react");
+  const { PartsBudgetAnalysis } = await import("../src/components/dashboard/PartsBudgetAnalysis");
+  const html = renderToStaticMarkup(React.createElement(PartsBudgetAnalysis, { rows: MIXED, notStarted: 0, asOf: "2026-10-23T10:00:00.000Z" }));
+  assert.match(html, /<span class="font-medium">Customer<\/span>/);
+  assert.match(html, /<span class="font-medium">Type<\/span>/);
+  assert.doesNotMatch(html, /Clear filters/, "nothing is chosen yet");
+  assert.match(html, /Both <span[^>]*>5</);
 });
 
 test("the export follows a card's list, and a card wins over a band", () => {
