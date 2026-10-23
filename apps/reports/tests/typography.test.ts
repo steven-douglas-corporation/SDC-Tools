@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 // ── One type system (§39) ───────────────────────────────────────────────────
@@ -159,14 +159,19 @@ test("the migration mapped every old size onto a step of the same size", () => {
 // ── Weights (§39.9, §39.18) ─────────────────────────────────────────────────
 
 test("only the four weights next/font actually loads are used", () => {
-  // layout.tsx loads Montserrat at 400/500/600/700. `font-extrabold` (800) was used in
-  // five places, and the browser SYNTHESISES a weight it does not have — so those five
-  // rendered as a smeared faux bold that matched nothing else on the page. §39.18's "do
-  // not load unnecessary weights" has a mirror: do not use weights you did not load.
-  const loaded = readFileSync(join(SRC, "app", "layout.tsx"), "utf8").match(/weight:\s*\[([^\]]+)\]/);
-  assert.ok(loaded, "could not find the loaded font weights");
-  const weights = loaded[1].match(/\d+/g)!.map(Number);
+  // layout.tsx loads Montserrat at 400-700 (one bundled variable file, so the build never has to reach
+  // Google Fonts). `font-extrabold` (800) was used in five places, and the browser SYNTHESISES a weight it
+  // does not have — so those five rendered as a smeared faux bold that matched nothing else on the page.
+  // §39.18's "do not load unnecessary weights" has a mirror: do not use weights you did not load.
+  const layout = readFileSync(join(SRC, "app", "layout.tsx"), "utf8");
+  const range = layout.match(/weight:\s*"(\d+)\s+(\d+)"/);
+  assert.ok(range, "could not find the loaded font weight range");
+  const weights: number[] = [];
+  for (let w = Number(range[1]); w <= Number(range[2]); w += 100) weights.push(w);
   assert.deepEqual(weights, [400, 500, 600, 700]);
+  assert.match(layout, /src:\s*"\.\/fonts\/Montserrat-latin-wght\.woff2"/, "the font is bundled, not fetched at build time");
+  assert.doesNotMatch(layout, /next\/font\/google/, "a build must not depend on reaching Google Fonts");
+  assert.ok(existsSync(join(SRC, "app", "fonts", "Montserrat-latin-wght.woff2")), "the bundled font file is in the repo");
 
   const CLASS_TO_WEIGHT: Record<string, number> = {
     "font-thin": 100,

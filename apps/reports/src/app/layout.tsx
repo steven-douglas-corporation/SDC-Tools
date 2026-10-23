@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Montserrat } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import SessionProvider from "@/components/SessionProvider";
 
@@ -7,10 +7,15 @@ import SessionProvider from "@/components/SessionProvider";
 // closest web-safe match to the brand print font (Core Sans NR), used app-wide
 // (body + headings) so the UI is typographically on-brand and consistent.
 // Body weights (400/500) plus headline weights (600/700).
-const montserrat = Montserrat({
+//
+// Bundled with the app (./fonts/README.md), not fetched from Google at build time: when the CI runner could
+// not reach Google Fonts, `next build` failed outright. One variable file covers 400-700.
+const montserrat = localFont({
+  src: "./fonts/Montserrat-latin-wght.woff2",
   variable: "--font-montserrat",
-  weight: ["400", "500", "600", "700"],
-  subsets: ["latin"],
+  weight: "400 700",
+  style: "normal",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
