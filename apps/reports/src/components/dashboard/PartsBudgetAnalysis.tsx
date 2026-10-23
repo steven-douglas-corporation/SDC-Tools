@@ -18,11 +18,15 @@ import {
   signedPct,
   signedUsd,
   sortRows,
+  BREAK_LABEL,
+  breakout,
   customerTypeMatches,
   scopeOptions,
   scopeRows,
   summarize,
   type BandKey,
+  type BreakBy,
+  type BreakoutGroup,
   type Focus,
   type PartsBudgetRow,
   type SortKey,
@@ -161,6 +165,9 @@ export function PartsBudgetAnalysis({
   const [q, setQ] = useState("");
   const [customers, setCustomers] = useState<string[]>([]);
   const [types, setTypes] = useState<string[]>([]);
+  const [breakBy, setBreakBy] = useState<BreakBy>("none");
+  // One slice of a broken-out band: narrows the table the way a band does.
+  const [segment, setSegment] = useState<{ by: Exclude<BreakBy, "none">; values: string[]; label: string } | null>(null);
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
 
   // The status chip, Customer and Type narrow the summary, the chart AND the table; the band narrows only the
@@ -168,7 +175,8 @@ export function PartsBudgetAnalysis({
   const inStatus = useMemo(() => scopeRows(rows, { status, customers, types }), [rows, status, customers, types]);
   const summary = useMemo(() => summarize(inStatus), [inStatus]);
   const totals = useMemo(() => bandTotals(inStatus), [inStatus]);
-  const shown = useMemo(() => sortRows(filterRows(rows, { status, band, q, focus, customers, types }), sort), [rows, status, band, q, focus, customers, types, sort]);
+  const bo = useMemo(() => (breakBy === "none" ? null : breakout(inStatus, breakBy)), [inStatus, breakBy]);
+  const shown = useMemo(() => sortRows(filterRows(rows, { status, band, q, focus, customers, types, segment }), sort), [rows, status, band, q, focus, customers, types, segment, sort]);
   // The chips count what is left after Customer and Type; the Customer and Type menus count what is left after
   // the status chip (and, for each other, the other one), so every number is the size of what choosing it shows.
   const byCustomerType = useMemo(() => rows.filter((r) => customerTypeMatches(r, { customers, types })), [rows, customers, types]);
@@ -200,6 +208,10 @@ export function PartsBudgetAnalysis({
     if (q.trim()) p.set("q", q.trim());
     for (const c of customers) p.append("customer", c);
     for (const t of types) p.append("type", t);
+    if (segment && band && !focus) {
+      p.set("segBy", segment.by);
+      for (const v of segment.values) p.append("seg", v);
+    }
     return `/api/export/parts-budget?${p.toString()}`;
   };
 
@@ -209,6 +221,21 @@ export function PartsBudgetAnalysis({
   // One thing is chosen at a time: a band, a card's job list, or the whole list.
   const pickBand = (key: BandKey) => {
     setBand((b) => (b === key ? null : key));
+    setSegment(null);
+    setFocus(null);
+    setShowAll(false);
+  };
+
+  // A slice of a broken-out bar: that band, narrowed to one group. Clicking the same slice again clears it.
+  const pickSegment = (key: BandKey, g: BreakoutGroup) => {
+    if (!bo) return;
+    const same = band === key && segment?.by === bo.by && segment.label === g.label;
+    if (same) {
+      setSegment(null);
+      return;
+    }
+    setBand(key);
+    setSegment({ by: bo.by, values: g.values, label: g.label });
     setFocus(null);
     setShowAll(false);
   };
@@ -221,6 +248,7 @@ export function PartsBudgetAnalysis({
     }
     setFocus(f);
     setBand(null);
+    setSegment(null);
     setShowAll(false);
     setSort(FOCUS_SORT[f]);
   };
@@ -322,6 +350,7 @@ export function PartsBudgetAnalysis({
               onClick={() => {
                 setShowAll((v) => !v);
                 setBand(null);
+                setSegment(null);
                 setFocus(null);
               }}
               className="text-xs font-semibold text-sdc-blue hover:underline"
@@ -330,39 +359,109 @@ export function PartsBudgetAnalysis({
             </button>
           }
         />
+        {/* Break out by (2026-10-23): split every band's bar by Status, Type or Customer, so who is behind a band
+            is visible without opening it. A slice is one group's jobs in one band; clicking it lists them. */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div role="group" aria-label="Break out by" className="inline-flex items-center gap-2 text-sm">
+            <span className="text-label font-semibold uppercase tracking-[0.06em] text-sdc-gray-600">Break out by</span>
+            <span className="inline-flex overflow-hidden rounded-lg border border-sdc-border bg-white shadow-sm">
+              {(["none", "status", "type", "customer"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={breakBy === k}
+                  onClick={() => {
+                    setBreakBy(k);
+                    setSegment(null);
+                  }}
+                  className={`motion-interactive px-3 py-1 font-medium ${
+                    breakBy === k ? "bg-sdc-blue text-white" : "text-sdc-gray-600 hover:bg-sdc-gray-50"
+                  }`}
+                >
+                  {k === "none" ? "None" : BREAK_LABEL[k]}
+                </button>
+              ))}
+            </span>
+          </div>
+          {bo && (
+            <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label text-sdc-gray-600" aria-label={`${BREAK_LABEL[bo.by]} legend`}>
+              {bo.groups.map((g) => (
+                <li key={g.key} className="inline-flex items-center gap-1.5">
+                  <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: g.color }} />
+                  <span className="max-w-[10rem] truncate" title={g.values.map((v) => v || "(none)").join(", ")}>
+                    {g.label}
+                  </span>
+                  <span className="tabular-nums text-sdc-gray-400">{g.jobs}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <ul className="mt-3 flex flex-col gap-1.5">
           {totals.map((t) => {
             const selected = band === t.band.key;
             const isUnder = t.band.key === "under";
+            const slices = bo ? bo.byBand[t.band.key] : [];
+            const rowClass = `motion-interactive grid w-full grid-cols-[7.5rem_1fr_auto] items-center gap-3 rounded-lg px-2 py-1.5 text-left sm:grid-cols-[8.5rem_1fr_13rem] ${
+              selected ? "bg-sdc-blue-light/50 ring-1 ring-sdc-blue" : "hover:bg-sdc-gray-50"
+            }`;
+            const label = (
+              <span className="flex items-center gap-2 text-sm font-medium text-sdc-navy">
+                <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: t.band.color }} />
+                {t.band.label}
+              </span>
+            );
+            const figures = (
+              <span className="flex items-baseline justify-end gap-3 whitespace-nowrap text-sm tabular-nums">
+                <span className="font-bold text-sdc-navy">
+                  {t.jobs} job{t.jobs === 1 ? "" : "s"}
+                </span>
+                <span className={`w-28 text-right text-xs ${isUnder ? "text-sdc-green-text" : "text-sdc-red-text"}`}>
+                  {t.jobs === 0 ? "" : isUnder ? `${usd(Math.round(t.under))} under` : `${usd(Math.round(t.over))} over`}
+                </span>
+              </span>
+            );
+            const barWidth = t.jobs === 0 ? 0 : Math.max(2, (t.jobs / maxJobs) * 100);
             return (
               <li key={t.band.key}>
-                <button
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => pickBand(t.band.key)}
-                  className={`motion-interactive grid w-full grid-cols-[7.5rem_1fr_auto] items-center gap-3 rounded-lg px-2 py-1.5 text-left sm:grid-cols-[8.5rem_1fr_13rem] ${
-                    selected ? "bg-sdc-blue-light/50 ring-1 ring-sdc-blue" : "hover:bg-sdc-gray-50"
-                  }`}
-                >
-                  <span className="flex items-center gap-2 text-sm font-medium text-sdc-navy">
-                    <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: t.band.color }} />
-                    {t.band.label}
-                  </span>
-                  <span className="relative h-5 min-w-0 rounded bg-sdc-gray-50">
-                    <span
-                      className="absolute inset-y-0 left-0 rounded"
-                      style={{ width: t.jobs === 0 ? "0" : `${Math.max(2, (t.jobs / maxJobs) * 100)}%`, background: t.band.color }}
-                    />
-                  </span>
-                  <span className="flex items-baseline justify-end gap-3 whitespace-nowrap text-sm tabular-nums">
-                    <span className="font-bold text-sdc-navy">
-                      {t.jobs} job{t.jobs === 1 ? "" : "s"}
+                {!bo ? (
+                  <button type="button" aria-pressed={selected} onClick={() => pickBand(t.band.key)} className={rowClass}>
+                    {label}
+                    <span className="relative h-5 min-w-0 rounded bg-sdc-gray-50">
+                      <span className="absolute inset-y-0 left-0 rounded" style={{ width: `${barWidth}%`, background: t.band.color }} />
                     </span>
-                    <span className={`w-28 text-right text-xs ${isUnder ? "text-sdc-green-text" : "text-sdc-red-text"}`}>
-                      {t.jobs === 0 ? "" : isUnder ? `${usd(Math.round(t.under))} under` : `${usd(Math.round(t.over))} over`}
+                    {figures}
+                  </button>
+                ) : (
+                  // Broken out: the row is no longer one button, because each slice of the bar is its own.
+                  <div className={rowClass}>
+                    <button type="button" aria-pressed={selected} onClick={() => pickBand(t.band.key)} className="text-left">
+                      {label}
+                    </button>
+                    <span className="relative h-5 min-w-0 rounded bg-sdc-gray-50">
+                      <span className="absolute inset-y-0 left-0 flex overflow-hidden rounded" style={{ width: `${barWidth}%` }}>
+                        {slices.map((sl) => {
+                          const on = selected && segment?.by === bo.by && sl.group.values.every((v) => segment.values.includes(v)) && segment.values.length === sl.group.values.length;
+                          const amount = isUnder ? `${usd(Math.round(sl.under))} under` : `${usd(Math.round(sl.over))} over`;
+                          return (
+                            <button
+                              key={sl.group.key}
+                              type="button"
+                              aria-pressed={on}
+                              onClick={() => pickSegment(t.band.key, sl.group)}
+                              title={`${t.band.label} · ${sl.group.label} · ${sl.jobs} job${sl.jobs === 1 ? "" : "s"} · ${amount}`}
+                              className={`motion-interactive h-full min-w-[3px] hover:brightness-110 ${on ? "ring-2 ring-inset ring-sdc-navy" : "border-r border-white/70 last:border-r-0"}`}
+                              style={{ width: `${(sl.jobs / t.jobs) * 100}%`, background: sl.group.color }}
+                            />
+                          );
+                        })}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                    <button type="button" aria-pressed={selected} onClick={() => pickBand(t.band.key)}>
+                      {figures}
+                    </button>
+                  </div>
+                )}
               </li>
             );
           })}
@@ -391,6 +490,7 @@ export function PartsBudgetAnalysis({
               <h3 className="flex items-center gap-2 text-sm font-semibold text-sdc-navy">
                 {bandDef && <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: bandDef.color }} />}
                 {focus ? FOCUS_LABEL[focus] : bandDef ? bandDef.label : "All jobs"}
+                {segment && !focus && <span className="font-normal text-sdc-gray-600">· {segment.label}</span>}
                 <span className="font-normal text-sdc-gray-400">
                   · {shown.length} job{shown.length === 1 ? "" : "s"}
                 </span>
@@ -425,6 +525,7 @@ export function PartsBudgetAnalysis({
                 type="button"
                 onClick={() => {
                   setBand(null);
+                  setSegment(null);
                   setFocus(null);
                   setShowAll(false);
                   setQ("");

@@ -13,6 +13,9 @@ import {
   FOCUS_SORT,
   scopeOptions,
   scopeRows,
+  breakout,
+  groupValue,
+  MAX_GROUPS,
   summarize,
   DEFAULT_SORT,
   type PartsBudgetRow,
@@ -201,6 +204,88 @@ test("menu options carry how many jobs each holds, most first, with an explicit 
   const t = scopeOptions(MIXED, "type");
   assert.deepEqual(t.map((o) => o.label), ["Custom", "(none)", "Duplicate", "Hybrid"], "count first, then name");
   assert.equal(t[0].count, 2);
+});
+
+// ── Break out by (2026-10-23) ─────────────────────────────────────────────────
+
+test("breaking out a band's bar by status, type or customer: slices add up to the band, same order in every band", () => {
+  for (const by of ["status", "type", "customer"] as const) {
+    const bo = breakout(MIXED, by);
+    const perBand = bandTotals(MIXED);
+    for (const t of perBand) {
+      const slices = bo.byBand[t.band.key];
+      assert.equal(slices.reduce((s, x) => s + x.jobs, 0), t.jobs, `${by}: ${t.band.key} slices add up to the band's jobs`);
+      assert.ok(Math.abs(slices.reduce((s, x) => s + x.over, 0) - t.over) < 1e-6, `${by}: dollars over add up`);
+      assert.ok(Math.abs(slices.reduce((s, x) => s + x.under, 0) - t.under) < 1e-6);
+      const order = slices.map((x) => bo.groups.indexOf(x.group));
+      assert.deepEqual(order, [...order].sort((a, b) => a - b), "a group keeps its place along every bar");
+    }
+    // Only jobs that have a band are counted, so the legend adds up to the jobs in the chart.
+    assert.equal(bo.groups.reduce((s, g) => s + g.jobs, 0), perBand.reduce((s, t) => s + t.jobs, 0));
+  }
+  const status = breakout(MIXED, "status");
+  assert.deepEqual(status.groups.map((g) => [g.label, g.jobs]), [["Active", 4], ["Complete", 1]]);
+  const type = breakout(MIXED, "type");
+  assert.deepEqual(type.groups.map((g) => g.label), ["Custom", "(none)", "Duplicate", "Hybrid"], "largest first, then by name");
+  assert.equal(type.groups[0].jobs, 2);
+});
+
+test("past the colour budget the smallest groups become one Other slice that still lists exactly its jobs", () => {
+  const many = Array.from({ length: 12 }, (_, i) =>
+    row({ jobId: String(3000 + i), budget: 100000, projected: 120000, customer: `Customer ${String(i).padStart(2, "0")}`, type: "Custom" }),
+  );
+  // Customer 00 has three jobs, 01 has two: the rest have one each.
+  many.push(row({ jobId: "3100", budget: 100000, projected: 120000, customer: "Customer 00", type: "Custom" }));
+  many.push(row({ jobId: "3101", budget: 100000, projected: 120000, customer: "Customer 00", type: "Custom" }));
+  many.push(row({ jobId: "3102", budget: 100000, projected: 120000, customer: "Customer 01", type: "Custom" }));
+  const bo = breakout(many, "customer");
+  assert.equal(bo.groups.length, MAX_GROUPS);
+  const other = bo.groups.at(-1)!;
+  assert.match(other.label, /^Other \(\d+\)$/);
+  assert.equal(other.values.length, 12 - (MAX_GROUPS - 1));
+  assert.equal(bo.groups.reduce((s, g) => s + g.jobs, 0), many.length, "nothing is lost into Other");
+  // Choosing the Other slice lists exactly the jobs of the customers it stands for.
+  const listed = filterRows(many, { status: "both", band: "b10_25", q: "", segment: { by: "customer", values: other.values } });
+  assert.equal(listed.length, other.jobs);
+  assert.ok(listed.every((r) => other.values.includes(groupValue(r, "customer"))));
+});
+
+test("a slice narrows the table like a band: one group's jobs, and none of another's", () => {
+  const f = (segment: { by: "status" | "type" | "customer"; values: string[] } | null) =>
+    ids(filterRows(MIXED, { status: "both", band: "b10_25", q: "", segment }));
+  assert.deepEqual(f(null), ["2002"], "10–25% holds job 2002 only");
+  assert.deepEqual(f({ by: "status", values: ["Complete"] }), ["2002"]);
+  assert.deepEqual(f({ by: "status", values: ["Active"] }), []);
+  assert.deepEqual(ids(filterRows(MIXED, { status: "both", band: "b25_50", q: "", segment: { by: "customer", values: ["Acme"] } })), ["2001"]);
+  assert.deepEqual(ids(filterRows(MIXED, { status: "both", band: "b50", q: "", segment: { by: "type", values: ["Custom"] } })), ["2003"]);
+  assert.deepEqual(ids(filterRows(MIXED, { status: "both", band: null, q: "", segment: { by: "customer", values: [""] } })), ["2005"], "no customer is its own slice");
+});
+
+test("the export follows a slice, and the broken-out chart is wired to the same pieces", () => {
+  const q = parsePartsBudgetQuery({ band: "b25_50", segBy: "customer", seg: ["Acme"] });
+  assert.deepEqual(q.segment, { by: "customer", values: ["Acme"] });
+  const { spec, rowCount } = buildPartsBudgetSheet(MIXED, q, "2026-10-23T10:00:00.000Z", new Date());
+  assert.equal(rowCount, 1);
+  assert.equal(spec.rows[0][0], "2001");
+  assert.match(spec.subtitle[0], /customer: Acme/);
+  assert.equal(parsePartsBudgetQuery({ segBy: "nonsense", seg: ["x"] }).segment, null);
+  assert.equal(parsePartsBudgetQuery({}).segment, null);
+  const route = noComments(src("src", "app", "api", "export", "parts-budget", "route.ts"));
+  assert.match(route, /segBy: searchParams\.get\("segBy"\)/);
+  assert.match(route, /seg: searchParams\.getAll\("seg"\)/);
+  const view = noComments(src("src", "components", "dashboard", "PartsBudgetAnalysis.tsx"));
+  assert.match(view, /breakout\(inStatus, breakBy\)/, "the break-out is computed from the same scoped rows as the chart");
+  assert.match(view, /pickSegment\(t\.band\.key, sl\.group\)/);
+});
+
+test("the section starts un-broken-out, with the Break out by control", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const React = await import("react");
+  const { PartsBudgetAnalysis } = await import("../src/components/dashboard/PartsBudgetAnalysis");
+  const html = renderToStaticMarkup(React.createElement(PartsBudgetAnalysis, { rows: MIXED, notStarted: 0, asOf: "2026-10-23T10:00:00.000Z" }));
+  assert.match(html, /Break out by/);
+  for (const label of ["None", "Status", "Type", "Customer"]) assert.match(html, new RegExp(`>${label}</button>`));
+  assert.doesNotMatch(html, /legend/i, "no legend until a break-out is chosen");
 });
 
 test("the export keeps the Customer and Type the table is showing", () => {
