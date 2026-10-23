@@ -11,6 +11,10 @@
 // This file is the pure half — bands, filters, sorting and the summary — so the chart, the table and the
 // Excel export cannot disagree about what a band, a filter or a total is. No server imports.
 
+// Job types this report leaves out (see parts-budget-analysis.ts): a T&M job never appears in the chart, the
+// summary, the table, the filter menus or the export.
+export const PARTS_BUDGET_EXCLUDED_TYPES: readonly string[] = ["T&M"];
+
 export type BandKey = "under" | "b0_10" | "b10_25" | "b25_50" | "b50";
 
 export type Band = { key: BandKey; label: string; short: string; color: string };

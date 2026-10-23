@@ -11,6 +11,7 @@ import {
   sortRows,
   focusMatches,
   FOCUS_SORT,
+  PARTS_BUDGET_EXCLUDED_TYPES,
   scopeOptions,
   scopeRows,
   breakout,
@@ -23,6 +24,7 @@ import {
 import { buildPartsBudgetSheet, parsePartsBudgetQuery } from "../src/lib/export/parts-budget-export";
 import { PARTS_BUDGET_SECTION, canSeePartsBudget } from "../src/lib/finance-cards";
 import { permissionForPath } from "../src/lib/route-permissions";
+import { VALID_JOB_TYPES } from "../src/lib/job-filters";
 import { hasPermission, ROLES } from "../src/lib/permissions";
 
 // ── Parts cost vs budget, every job (2026-10-22) ─────────────────────────────
@@ -357,6 +359,17 @@ test("the section needs Job Details' permission, and so do its rows' links and i
   assert.match(route, /requireApiPermission\(session, "job-hour-details:view"\)/);
   assert.match(route, /await logAudit\(/);
   assert.doesNotMatch(route, /req\.json\(\)/, "rows are re-read on the server, never taken from the browser");
+});
+
+test("T&M jobs are left out of the report at the query itself, and every other valid type stays", () => {
+  assert.deepEqual([...PARTS_BUDGET_EXCLUDED_TYPES], ["T&M"]);
+  const a = noComments(src("src", "lib", "parts-budget-analysis.ts"));
+  assert.match(a, /type: \{ in: \[\.\.\.PARTS_BUDGET_JOB_TYPES\] \}/, "the job query is gated on the allowed types");
+  assert.match(a, /VALID_JOB_TYPES\.filter\(\(t\) => !PARTS_BUDGET_EXCLUDED_TYPES\.includes\(t\)\)/);
+  assert.doesNotMatch(a, /validJobTypeFilter/, "the unfiltered valid-type gate (which includes T&M) is not used here");
+  // Excluding by type removes only T&M: the allowed list is the app's valid types minus it.
+  const allowed = VALID_JOB_TYPES.filter((t) => !PARTS_BUDGET_EXCLUDED_TYPES.includes(t));
+  assert.deepEqual([...allowed], ["Custom", "Duplicate", "Hybrid", "Service"]);
 });
 
 test("the Finances tab offers the section only to a role that may open Job Details", () => {
