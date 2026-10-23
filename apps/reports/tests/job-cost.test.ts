@@ -30,6 +30,7 @@ function baseRow(overrides: Partial<JobCostRow> = {}): JobCostRow {
     engineeringHours: 60,
     shopHours: 40,
     otherHours: 0,
+    serviceHours: null,
     partCost: 1000,
     partInvoiced: 800,
     salesPrice: 50000,
@@ -307,4 +308,26 @@ test("Profitability Type: read from Job.type, drawn after Customer, filterable, 
   assert.match(explorer, /typeFilter\.size === 0 \|\| \(r\.jobType != null && typeFilter\.has\(r\.jobType\)\)/);
   assert.match(read("src/lib/export/job-cost-export.ts"), /jobType: \{ header: "Type", type: "text" \}/);
   assert.equal(jobCostTotals([], ["jobType"]).jobType, null);
+});
+
+test("Service & Spares hours are display-only: no cost, profit, margin or ETC figure moves with them", () => {
+  const without = computeJobCost(baseRow({ serviceHours: null }), DEFAULT_RATES, {}, undefined);
+  const withHours = computeJobCost(baseRow({ serviceHours: 5000 }), DEFAULT_RATES, {}, undefined);
+  for (const k of ["laborCost", "pmCost", "mfgCost", "profit", "margin", "partsProjected", "etcEngHours", "etcShopHours", "actualHours"] as const) {
+    assert.equal(withHours[k], without[k], k);
+  }
+});
+
+test("Service & Spares: bucketed by the Projects grid's own test, kept out of Act Hrs and Other Hrs, and shown after Other Hrs", async () => {
+  const { readFileSync } = await import("node:fs");
+  const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+  const source = read("src/lib/job-cost-source.ts");
+  const add = source.slice(source.indexOf("function addTotal"), source.indexOf("// hoursByYear only ever tracks"));
+  // The service branch returns before actualHours / otherHours are touched.
+  assert.ok(add.indexOf("e.serviceHours += hrs") < add.indexOf("e.actualHours += hrs"));
+  assert.match(add, /!SECTION_CODES\.has\(section\) && isServiceOrSparePartsCode\(section\)/);
+  const explorer = read("src/components/JobCostExplorer.tsx");
+  assert.ok(explorer.indexOf('key: "otherHours", label') < explorer.indexOf('key: "serviceHours", label'));
+  assert.match(explorer, /excluded from Act Hrs and from every calculation/);
+  assert.match(explorer, /title=\{c\.key === "serviceHours" \? SERVICE_NOTE : undefined\}/);
 });

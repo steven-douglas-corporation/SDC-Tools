@@ -31,6 +31,7 @@ const COL_DEFS: Record<string, { header: string; type: SheetColumn["type"] }> = 
   engineeringHours: { header: "Eng Hrs", type: "hours" },
   shopHours: { header: "Shop Hrs", type: "hours" },
   otherHours: { header: "Other Hrs", type: "hours" },
+  serviceHours: { header: "Service & Spares (excluded)", type: "hours" },
   pmCost: { header: "PM $", type: "currency" },
   mfgCost: { header: "Mfg $", type: "currency" },
   laborCost: { header: "Labor $", type: "currency" },

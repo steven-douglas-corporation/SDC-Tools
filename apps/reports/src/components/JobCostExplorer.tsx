@@ -36,7 +36,7 @@ import { JobCostRateMatrixModal } from "@/components/JobCostRateMatrixModal";
 import { JobCostHourAllocationModal } from "@/components/JobCostHourAllocationModal";
 
 type ColKey =
-  | "customerName" | "jobType" | "actualHours" | "engineeringHours" | "shopHours" | "otherHours"
+  | "customerName" | "jobType" | "actualHours" | "engineeringHours" | "shopHours" | "otherHours" | "serviceHours"
   | "pmCost" | "mfgCost" | "laborCost" | "etcEngHours" | "etcShopHours" | "etcPartsCost"
   | "partCost" | "partInvoiced" | "percentComplete" | "salesPrice" | "startDate" | "completeDate"
   | "profit" | "margin";
@@ -105,6 +105,7 @@ const COLS: ColMeta[] = [
   { key: "engineeringHours", label: "Eng Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
   { key: "shopHours", label: "Shop Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
   { key: "otherHours", label: "Other Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
+  { key: "serviceHours", label: "Service & Spares*", group: "hours", type: "hours", widthClass: "w-[80px] min-w-[80px]" },
   { key: "pmCost", label: "PM $", group: "labor", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "mfgCost", label: "Mfg $", group: "labor", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "laborCost", label: "Labor $", group: "labor", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
@@ -129,6 +130,7 @@ const WRAP_LABEL: Partial<Record<ColKey, [string, string]>> = {
   partCost: ["Parts", "Purchased"],
   partInvoiced: ["Parts", "Invoiced"],
   percentComplete: ["%", "Complete"],
+  serviceHours: ["Service &", "Spares*"],
 };
 
 function headerLabel(key: ColKey, label: string) {
@@ -142,6 +144,10 @@ function headerLabel(key: ColKey, label: string) {
     </>
   );
 }
+
+// The note on the Service & Spares column — header tooltip, cell tooltip and the line under the table.
+const SERVICE_NOTE =
+  "Service (80-*) and Spare Parts (90-*) hours, as in the Projects tab's Service & Spare Parts column. Shown for reference only: they are excluded from Act Hrs and from every calculation on this page.";
 
 const HIDDEN_COLS_KEY = "job-cost-explorer-hidden-cols";
 
@@ -556,7 +562,7 @@ export function JobCostExplorer({
   const totals = useMemo(() => {
     const sum = (f: keyof JobCostComputed) => visibleRows.reduce((a, r) => a + (Number(r[f]) || 0), 0);
     return {
-      actualHours: sum("actualHours"), engineeringHours: sum("engineeringHours"), shopHours: sum("shopHours"), otherHours: sum("otherHours"),
+      actualHours: sum("actualHours"), engineeringHours: sum("engineeringHours"), shopHours: sum("shopHours"), otherHours: sum("otherHours"), serviceHours: sum("serviceHours"),
       pmCost: sum("pmCost"), mfgCost: sum("mfgCost"), laborCost: sum("laborCost"),
       etcEngHours: sum("etcEngHours"), etcShopHours: sum("etcShopHours"), etcPartsCost: sum("etcPartsCost"),
       partCost: sum("partCost"), partInvoiced: sum("partInvoiced"), salesPrice: sum("salesPrice"),
@@ -972,6 +978,12 @@ export function JobCostExplorer({
         {inventoryAsOf && ` · Sales/% complete as of ${inventoryAsOf}`}
         {etcRefreshedThru && ` · Submitted ETC for ${etcRefreshedThru}, less work and parts invoiced since`}
       </p>
+      {!hiddenCols.has("serviceHours") && (
+        <p className="text-note text-sdc-gray-400">
+          * Service &amp; Spares hours (Service 80-*, Spare Parts 90-*) are shown for reference only. They are excluded from Act Hrs and from all
+          calculations on this page — labor, ETC, profit and margin.
+        </p>
+      )}
       {!partsCostAvailable && (
         <p className="rounded border border-sdc-yellow bg-sdc-yellow-bg px-2 py-1 text-note text-sdc-yellow-text">
           Total ETO didn&apos;t respond in time for Parts Purchased/Invoiced — those columns show &ldquo;—&rdquo; below. Everything else on this page is unaffected; try again shortly.
@@ -1122,6 +1134,7 @@ export function JobCostExplorer({
                     align="right"
                     sort={sortState}
                     onSort={toggleSort}
+                    title={c.key === "serviceHours" ? SERVICE_NOTE : undefined}
                     className={`px-2 py-1 align-bottom leading-tight ${c.widthClass} ${vBorder(c.key)}`}
                   />
                 ))}
@@ -1171,6 +1184,7 @@ export function JobCostExplorer({
                     {!hiddenCols.has("engineeringHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("engineeringHours")} ${zebra}`}>{fmtNum(r.engineeringHours)}</td>}
                     {!hiddenCols.has("shopHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("shopHours")} ${zebra}`}>{fmtNum(r.shopHours)}</td>}
                     {!hiddenCols.has("otherHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("otherHours")} ${zebra}`}>{r.otherHours ? fmtNum(r.otherHours) : "—"}</td>}
+                    {!hiddenCols.has("serviceHours") && <td title={SERVICE_NOTE} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft italic text-sdc-gray-600 ${vBorder("serviceHours")} ${zebra}`}>{r.serviceHours ? fmtNum(r.serviceHours) : "—"}</td>}
                     {!hiddenCols.has("pmCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("pmCost")} ${zebra}`}>{fmtMoney(r.pmCost)}</td>}
                     {!hiddenCols.has("mfgCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("mfgCost")} ${zebra}`}>{fmtMoney(r.mfgCost)}</td>}
                     {!hiddenCols.has("laborCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("laborCost")} ${zebra}`}>{fmtMoney(r.laborCost)}</td>}
@@ -1235,6 +1249,7 @@ export function JobCostExplorer({
                 {!hiddenCols.has("engineeringHours") && <td className={`px-2 py-1.5 text-right ${vBorder("engineeringHours")}`}>{fmtNum(totals.engineeringHours)}</td>}
                 {!hiddenCols.has("shopHours") && <td className={`px-2 py-1.5 text-right ${vBorder("shopHours")}`}>{fmtNum(totals.shopHours)}</td>}
                 {!hiddenCols.has("otherHours") && <td className={`px-2 py-1.5 text-right ${vBorder("otherHours")}`}>{fmtNum(totals.otherHours)}</td>}
+                {!hiddenCols.has("serviceHours") && <td title={SERVICE_NOTE} className={`px-2 py-1.5 text-right italic text-sdc-gray-600 ${vBorder("serviceHours")}`}>{fmtNum(totals.serviceHours)}</td>}
                 {!hiddenCols.has("pmCost") && <td className={`px-2 py-1.5 text-right ${vBorder("pmCost")}`}>{fmtMoney(totals.pmCost)}</td>}
                 {!hiddenCols.has("mfgCost") && <td className={`px-2 py-1.5 text-right ${vBorder("mfgCost")}`}>{fmtMoney(totals.mfgCost)}</td>}
                 {!hiddenCols.has("laborCost") && <td className={`px-2 py-1.5 text-right ${vBorder("laborCost")}`}>{fmtMoney(totals.laborCost)}</td>}
