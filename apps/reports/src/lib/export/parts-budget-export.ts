@@ -4,6 +4,7 @@ import {
   BASIS_LABEL,
   DEFAULT_SORT,
   FOCUS_LABEL,
+  NONE_LABEL,
   filterRows,
   sortRows,
   type BandKey,
@@ -32,6 +33,8 @@ export type PartsBudgetExportQuery = {
   status?: string;
   band?: string;
   focus?: string;
+  customers?: readonly string[];
+  types?: readonly string[];
   q?: string;
   sort?: string;
   dir?: string;
@@ -41,9 +44,16 @@ export type ParsedPartsBudgetQuery = {
   status: StatusFilter;
   band: BandKey | null;
   focus: Focus | null;
+  customers: string[];
+  types: string[];
   q: string;
   sort: SortState;
 };
+
+// Customer and Type values come from the URL, so they are bounded: at most 200 of them, each trimmed to 200
+// characters. A value that matches no job simply narrows to nothing, which is what a filter does.
+const cleanList = (v: readonly string[] | undefined): string[] =>
+  (v ?? []).slice(0, 200).map((s) => s.slice(0, 200));
 
 /** Anything unrecognised falls back to the default rather than failing: a filter can only narrow. */
 export function parsePartsBudgetQuery(q: PartsBudgetExportQuery): ParsedPartsBudgetQuery {
@@ -52,6 +62,8 @@ export function parsePartsBudgetQuery(q: PartsBudgetExportQuery): ParsedPartsBud
     // A card's list and a band are never combined: a focus wins, as it does on the Dashboard.
     focus: q.focus && FOCUS_KEYS.has(q.focus) ? (q.focus as Focus) : null,
     band: !(q.focus && FOCUS_KEYS.has(q.focus)) && q.band && BAND_KEYS.has(q.band) ? (q.band as BandKey) : null,
+    customers: cleanList(q.customers),
+    types: cleanList(q.types),
     q: (q.q ?? "").slice(0, 200),
     sort:
       q.sort && SORT_KEYS.has(q.sort)
@@ -68,7 +80,14 @@ export function buildPartsBudgetSheet(
   asOf: string,
   now: Date,
 ): { spec: SheetSpec; rowCount: number; fileLabel: string } {
-  const shown = sortRows(filterRows(rows, { status: query.status, band: query.band, q: query.q, focus: query.focus }), query.sort);
+  const shown = sortRows(filterRows(rows, {
+      status: query.status,
+      band: query.band,
+      q: query.q,
+      focus: query.focus,
+      customers: query.customers,
+      types: query.types,
+    }), query.sort);
   const band = query.band ? BANDS.find((b) => b.key === query.band)! : null;
 
   const cells = (r: PartsBudgetRow): CellValue[] => [
@@ -107,7 +126,9 @@ export function buildPartsBudgetSheet(
     sheetName: "Parts Cost vs Budget",
     title: "Parts Cost — Projection vs Budget",
     subtitle: [
-      `${STATUS_LABEL[query.status]}${band ? ` · ${band.label}` : ""}${query.focus ? ` · ${FOCUS_LABEL[query.focus]}` : ""}${query.q.trim() ? ` · matching "${query.q.trim()}"` : ""}`,
+      `${STATUS_LABEL[query.status]}${band ? ` · ${band.label}` : ""}${query.focus ? ` · ${FOCUS_LABEL[query.focus]}` : ""}${
+        query.customers.length ? ` · customer: ${query.customers.map((c) => c || NONE_LABEL).join(", ")}` : ""
+      }${query.types.length ? ` · type: ${query.types.map((t) => t || NONE_LABEL).join(", ")}` : ""}${query.q.trim() ? ` · matching "${query.q.trim()}"` : ""}`,
       `Live as of ${asOf.slice(0, 16).replace("T", " ")} UTC · exported ${now.toISOString().slice(0, 10)}`,
       "Projected = Purchased to date + Still to purchase; a closed job shows its final Parts Cost Actual. Over/Under = Projected − Budget.",
     ],
