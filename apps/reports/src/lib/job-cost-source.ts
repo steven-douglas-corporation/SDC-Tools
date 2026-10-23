@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { validJobTypeFilter } from "@/lib/job-filters";
-import { SECTIONS, PARTS_COST_SECTION, mapPunchToColumns, billingGroupForSection } from "@/lib/sections";
+import { SECTIONS, SECTION_CODES, PARTS_COST_SECTION, mapPunchToColumns, billingGroupForSection, isServiceOrSparePartsCode } from "@/lib/sections";
 import { OUTSIDE_SNAPSHOT, coveredMonths } from "@/lib/actual-hours";
 import { getPartsCostSpentByJob, getPartsActualByJob } from "@/lib/sync-totaleto";
 import { effectiveNewEtc } from "@/lib/etc";
@@ -62,6 +62,8 @@ type JobHoursTotals = {
   engineeringHours: number;
   shopHours: number;
   otherHours: number;
+  /** Service (80-*) and Spare Parts (90-*): kept out of actualHours and otherHours. */
+  serviceHours: number;
   hoursByYear: HoursByYear;
 };
 
@@ -115,12 +117,19 @@ async function loadJobHoursAndYears(jobPks: number[], throughMonth: string | nul
 
   function entry(jobPk: number): JobHoursTotals {
     let e = out.get(jobPk);
-    if (!e) out.set(jobPk, (e = { actualHours: 0, engineeringHours: 0, shopHours: 0, otherHours: 0, hoursByYear: {} }));
+    if (!e) out.set(jobPk, (e = { actualHours: 0, engineeringHours: 0, shopHours: 0, otherHours: 0, serviceHours: 0, hoursByYear: {} }));
     return e;
   }
   function addTotal(jobPk: number, section: string, hrs: number) {
     if (!hrs) return;
     const e = entry(jobPk);
+    // The Projects grid's "Service & Spare Parts" column, by the same test it uses
+    // (offGridActualHours): an 80-/90- code with no grid column. These hours are shown
+    // on their own and are not part of Act Hrs or Other Hrs.
+    if (!SECTION_CODES.has(section) && isServiceOrSparePartsCode(section)) {
+      e.serviceHours += hrs;
+      return;
+    }
     e.actualHours += hrs;
     const bucket = SECTION_BUCKET[section] ?? "other";
     if (bucket === "eng") e.engineeringHours += hrs;
@@ -431,6 +440,7 @@ export async function loadJobCostRows(asOf: string | null = null): Promise<JobCo
       engineeringHours: h?.engineeringHours || null,
       shopHours: h?.shopHours || null,
       otherHours: h?.otherHours || null,
+      serviceHours: h?.serviceHours || null,
       partCost: partsPurchasedMap.get(j.jobId) ?? null,
       partInvoiced: partsInvoicedMap.get(j.jobId) ?? null,
       salesPrice,

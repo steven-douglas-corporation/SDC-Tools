@@ -43,6 +43,11 @@ export type JobCostRow = {
   engineeringHours: number | null;
   shopHours: number | null;
   otherHours: number | null;
+  /**
+   * Service (80-*) and Spare Parts (90-*) hours: the Projects grid's "Service & Spare Parts"
+   * column. Shown for reference and EXCLUDED from actualHours and from every calculation.
+   */
+  serviceHours: number | null;
   partCost: number | null;
   partInvoiced: number | null;
   salesPrice: number | null;
@@ -218,7 +223,7 @@ export function computeJobCost(
 // instead, and a key this function does not know is left blank rather than
 // summed on the assumption that it is additive.
 export const JOB_COST_ADDITIVE_KEYS: ReadonlySet<string> = new Set([
-  "actualHours", "engineeringHours", "shopHours", "otherHours",
+  "actualHours", "engineeringHours", "shopHours", "otherHours", "serviceHours",
   "pmCost", "mfgCost", "laborCost",
   "etcEngHours", "etcShopHours", "etcPartsCost",
   "partCost", "partInvoiced", "partsProjected", "salesPrice", "profit",
