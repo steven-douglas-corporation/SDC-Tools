@@ -4,12 +4,14 @@ import {
   BASIS_LABEL,
   DEFAULT_SORT,
   FOCUS_LABEL,
+  BREAK_LABEL,
   NONE_LABEL,
   filterRows,
   sortRows,
   type BandKey,
   type Focus,
   type PartsBudgetRow,
+  type Segment,
   type SortKey,
   type SortState,
   type StatusFilter,
@@ -35,6 +37,8 @@ export type PartsBudgetExportQuery = {
   focus?: string;
   customers?: readonly string[];
   types?: readonly string[];
+  segBy?: string;
+  seg?: readonly string[];
   q?: string;
   sort?: string;
   dir?: string;
@@ -46,6 +50,7 @@ export type ParsedPartsBudgetQuery = {
   focus: Focus | null;
   customers: string[];
   types: string[];
+  segment: Segment | null;
   q: string;
   sort: SortState;
 };
@@ -64,6 +69,11 @@ export function parsePartsBudgetQuery(q: PartsBudgetExportQuery): ParsedPartsBud
     band: !(q.focus && FOCUS_KEYS.has(q.focus)) && q.band && BAND_KEYS.has(q.band) ? (q.band as BandKey) : null,
     customers: cleanList(q.customers),
     types: cleanList(q.types),
+    // A broken-out slice is only meaningful inside a band, which the same query names.
+    segment:
+      q.segBy && (q.segBy === "status" || q.segBy === "type" || q.segBy === "customer")
+        ? { by: q.segBy, values: cleanList(q.seg) }
+        : null,
     q: (q.q ?? "").slice(0, 200),
     sort:
       q.sort && SORT_KEYS.has(q.sort)
@@ -87,6 +97,7 @@ export function buildPartsBudgetSheet(
       focus: query.focus,
       customers: query.customers,
       types: query.types,
+      segment: query.segment,
     }), query.sort);
   const band = query.band ? BANDS.find((b) => b.key === query.band)! : null;
 
@@ -128,7 +139,9 @@ export function buildPartsBudgetSheet(
     subtitle: [
       `${STATUS_LABEL[query.status]}${band ? ` · ${band.label}` : ""}${query.focus ? ` · ${FOCUS_LABEL[query.focus]}` : ""}${
         query.customers.length ? ` · customer: ${query.customers.map((c) => c || NONE_LABEL).join(", ")}` : ""
-      }${query.types.length ? ` · type: ${query.types.map((t) => t || NONE_LABEL).join(", ")}` : ""}${query.q.trim() ? ` · matching "${query.q.trim()}"` : ""}`,
+      }${query.types.length ? ` · type: ${query.types.map((t) => t || NONE_LABEL).join(", ")}` : ""}${
+        query.segment ? ` · ${BREAK_LABEL[query.segment.by].toLowerCase()}: ${query.segment.values.map((v) => v || NONE_LABEL).join(", ")}` : ""
+      }${query.q.trim() ? ` · matching "${query.q.trim()}"` : ""}`,
       `Live as of ${asOf.slice(0, 16).replace("T", " ")} UTC · exported ${now.toISOString().slice(0, 10)}`,
       "Projected = Purchased to date + Still to purchase; a closed job shows its final Parts Cost Actual. Over/Under = Projected − Budget.",
     ],

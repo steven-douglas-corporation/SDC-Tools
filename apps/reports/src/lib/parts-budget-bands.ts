@@ -115,7 +115,83 @@ export type ViewFilter = {
   customers?: readonly string[];
   /** Job types to keep; empty or absent means every type. A job with no type is the "" value. */
   types?: readonly string[];
+  /** One slice of a broken-out band (see breakout), or null/absent. Narrows the table like a band does. */
+  segment?: Segment | null;
 };
+
+// ── Break out by (2026-10-23) ───────────────────────────────────────────────────────────────────
+//
+// Each band's bar can be split by Status, Type or Customer, so "who is behind this band" is visible without
+// opening it. A slice is one group's jobs in one band; clicking it lists exactly those jobs.
+
+export type BreakBy = "none" | "status" | "type" | "customer";
+
+export const BREAK_LABEL: Record<Exclude<BreakBy, "none">, string> = {
+  status: "Status",
+  type: "Type",
+  customer: "Customer",
+};
+
+/** A group of jobs: `values` are the raw field values it stands for (several for "Other"). */
+export type Segment = { by: Exclude<BreakBy, "none">; values: readonly string[] };
+
+export function groupValue(row: PartsBudgetRow, by: Exclude<BreakBy, "none">): string {
+  if (by === "status") return row.status;
+  return (by === "type" ? row.type : row.customer)?.trim() || NONE_VALUE;
+}
+
+/** Categorical colours for the groups. They deliberately avoid the green-to-red the bands use. */
+export const GROUP_COLORS = ["#3B7DD8", "#E07A5F", "#3D9970", "#9B6BB5", "#C9A227", "#2A9DA5"] as const;
+export const OTHER_COLOR = "#A9AFB9";
+/** More groups than this are shown as the largest few plus "Other", so a bar never turns into confetti. */
+export const MAX_GROUPS = GROUP_COLORS.length;
+
+export type BreakoutGroup = { key: string; label: string; values: string[]; jobs: number; color: string };
+export type BreakoutSlice = { group: BreakoutGroup; jobs: number; over: number; under: number };
+export type Breakout = { by: Exclude<BreakBy, "none">; groups: BreakoutGroup[]; byBand: Record<BandKey, BreakoutSlice[]> };
+
+/**
+ * Splits each band's jobs by `by`. Only jobs that have a band (a budget) are counted, so the slices add up
+ * to the band's own count. Groups are ordered largest first; past MAX_GROUPS the rest are one "Other" group
+ * whose `values` list every field value it holds, so clicking it can still list exactly those jobs.
+ */
+export function breakout(rows: readonly PartsBudgetRow[], by: Exclude<BreakBy, "none">): Breakout {
+  const banded = rows.filter((r) => r.pct != null && r.delta != null);
+  const counts = new Map<string, number>();
+  for (const r of banded) counts.set(groupValue(r, by), (counts.get(groupValue(r, by)) ?? 0) + 1);
+  const label = (v: string) => (v === NONE_VALUE ? NONE_LABEL : v);
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1] || label(a[0]).localeCompare(label(b[0])));
+  const keep = sorted.length > MAX_GROUPS ? sorted.slice(0, MAX_GROUPS - 1) : sorted;
+  const rest = sorted.length > MAX_GROUPS ? sorted.slice(MAX_GROUPS - 1) : [];
+  const groups: BreakoutGroup[] = keep.map(([v, n], i) => ({ key: v, label: label(v), values: [v], jobs: n, color: GROUP_COLORS[i] }));
+  if (rest.length > 0) {
+    groups.push({
+      key: "__other__",
+      label: `Other (${rest.length})`,
+      values: rest.map(([v]) => v),
+      jobs: rest.reduce((s, [, n]) => s + n, 0),
+      color: OTHER_COLOR,
+    });
+  }
+  const groupOf = new Map<string, BreakoutGroup>();
+  for (const g of groups) for (const v of g.values) groupOf.set(v, g);
+  const byBand = Object.fromEntries(BANDS.map((b) => [b.key, [] as BreakoutSlice[]])) as Record<BandKey, BreakoutSlice[]>;
+  for (const r of banded) {
+    const g = groupOf.get(groupValue(r, by))!;
+    const slices = byBand[bandOf(r.pct as number)];
+    let s = slices.find((x) => x.group === g);
+    if (!s) {
+      s = { group: g, jobs: 0, over: 0, under: 0 };
+      slices.push(s);
+    }
+    s.jobs++;
+    if ((r.delta as number) > 0) s.over += r.delta as number;
+    else s.under += -(r.delta as number);
+  }
+  // Same order in every band, so a group sits in the same place along each bar.
+  for (const k of Object.keys(byBand) as BandKey[]) byBand[k].sort((a, b) => groups.indexOf(a.group) - groups.indexOf(b.group));
+  return { by, groups, byBand };
+}
 
 /** The value a job with no customer / no type is filtered under. */
 export const NONE_VALUE = "";
@@ -185,6 +261,7 @@ export function filterRows(rows: readonly PartsBudgetRow[], f: ViewFilter): Part
     (r) =>
       statusMatches(r.status, f.status) &&
       customerTypeMatches(r, f) &&
+      (f.segment == null || f.segment.values.includes(groupValue(r, f.segment.by))) &&
       searchMatches(r, f.q) &&
       (f.focus == null || focusMatches(r, f.focus, scope)) &&
       (f.band == null || (r.pct != null && bandOf(r.pct) === f.band)),
