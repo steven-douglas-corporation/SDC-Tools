@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { compareJobIds, validJobTypeFilter } from "@/lib/job-filters";
+import { compareJobIds, VALID_JOB_TYPES } from "@/lib/job-filters";
 import { PARTS_COST_SECTION } from "@/lib/sections";
 import { getPartsCostForJobs, loadAllTransfers } from "@/lib/sync-totaleto";
 import { summarizeTransfersForJobs } from "@/lib/parts-transfer-netting";
@@ -9,7 +9,7 @@ import { readLeftToPurchaseLastMonth } from "@/lib/parts-left-to-purchase";
 import { assemblePartsCostFinancials } from "@/lib/parts-cost-financials";
 import { leftToInvoiceForLines } from "@/lib/left-to-invoice";
 import { withTimeoutOrNull } from "@/lib/with-timeout";
-import { roundPct, type PartsBudgetRow } from "@/lib/parts-budget-bands";
+import { PARTS_BUDGET_EXCLUDED_TYPES, roundPct, type PartsBudgetRow } from "@/lib/parts-budget-bands";
 
 // ── Projection vs Budget, for every job at once (2026-10-22) ───────────────────────────────────
 //
@@ -21,7 +21,7 @@ import { roundPct, type PartsBudgetRow } from "@/lib/parts-budget-bands";
 //
 // ── Which jobs ──────────────────────────────────────────────────────────────────────────────────
 //
-// The jobs on the Job Details picker (a valid project type) that have parts to report: a Parts Cost row on
+// The jobs on the Job Details picker (a valid project type, but NOT T&M — see below) that have parts to report: a Parts Cost row on
 // the Monthly ETC, or a completed job with a final Parts Cost Actual on the Projects tab. A job with
 // neither has nothing to project. A closed job is shown at that final actual — never at purchased + still to
 // purchase, which would count old open POs and a stale forecast as cost on a finished job. A job that has a row but has bought nothing yet reads "No parts activity
@@ -32,6 +32,13 @@ import { roundPct, type PartsBudgetRow } from "@/lib/parts-budget-bands";
 // The projection is as of now, like the card, so it ignores the Dashboard's month picker. The result is
 // held for a few minutes: the read is one Total ETO round trip plus a handful of queries, and the section
 // is opened far more often than the figures change.
+
+// ── T&M jobs are not part of this report (2026-10-23, by request) ────────────────────────────────
+//
+// Time-and-materials jobs were showing up in this report (job 1165, Johnson Matthey, in the 0–10% band) and
+// do not belong in it. Every other valid type stays. Excluded in the query itself, so a T&M job cannot reach
+// the chart, the summary, the table, the Customer/Type menus or the export.
+export const PARTS_BUDGET_JOB_TYPES = VALID_JOB_TYPES.filter((t) => !PARTS_BUDGET_EXCLUDED_TYPES.includes(t));
 
 const BUDGET_MS = 120_000;
 const TTL_MS = 5 * 60_000;
@@ -62,7 +69,7 @@ async function compute(): Promise<PartsBudgetAnalysis> {
   try {
     const jobs = await prisma.job.findMany({
       where: {
-        ...validJobTypeFilter,
+        type: { in: [...PARTS_BUDGET_JOB_TYPES] },
         OR: [
           { etcEntries: { some: { section: PARTS_COST_SECTION } } },
           { status: "Complete", costActualHistorical: { gt: 0 } },
@@ -70,7 +77,7 @@ async function compute(): Promise<PartsBudgetAnalysis> {
       },
       select: {
         id: true, jobId: true, jobName: true, customer: true, type: true, status: true,
-        costQuoted: true, costActualHistorical: true,
+        costQuoted: true, costActualHistorical: true, startDate: true, completeDate: true,
       },
     });
     if (jobs.length === 0) return { state: "ok", rows: [], notStarted: 0, asOf: new Date().toISOString() };
@@ -148,6 +155,9 @@ async function compute(): Promise<PartsBudgetAnalysis> {
         customer: j.customer,
         type: j.type,
         status: j.status,
+        // Date-only values, the way the Projects tab shows them.
+        start: j.startDate ? j.startDate.toISOString().slice(0, 10) : null,
+        end: j.completeDate ? j.completeDate.toISOString().slice(0, 10) : null,
         budget,
         projected,
         delta: budget != null ? projected - budget : null,

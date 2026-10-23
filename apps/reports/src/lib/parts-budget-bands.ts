@@ -11,6 +11,10 @@
 // This file is the pure half — bands, filters, sorting and the summary — so the chart, the table and the
 // Excel export cannot disagree about what a band, a filter or a total is. No server imports.
 
+// Job types this report leaves out (see parts-budget-analysis.ts): a T&M job never appears in the chart, the
+// summary, the table, the filter menus or the export.
+export const PARTS_BUDGET_EXCLUDED_TYPES: readonly string[] = ["T&M"];
+
 export type BandKey = "under" | "b0_10" | "b10_25" | "b25_50" | "b50";
 
 export type Band = { key: BandKey; label: string; short: string; color: string };
@@ -43,6 +47,9 @@ export type PartsBudgetRow = {
   customer: string | null;
   type: string | null;
   status: RowStatus;
+  /** Project start and completion dates as `YYYY-MM-DD` (the Projects tab's Start / Complete dates); null when not set. */
+  start: string | null;
+  end: string | null;
   budget: number | null;
   /** Purchased + still to purchase, or the final actual for a closed job. */
   projected: number;
@@ -117,7 +124,48 @@ export type ViewFilter = {
   types?: readonly string[];
   /** One slice of a broken-out band (see breakout), or null/absent. Narrows the table like a band does. */
   segment?: Segment | null;
+  /** Which project date the range below applies to; start by default. */
+  dateField?: DateField;
+  /** Inclusive `YYYY-MM-DD` bounds on that date. Either, both or neither; a job with no such date is out once a bound is set. */
+  from?: string | null;
+  to?: string | null;
 };
+
+/** The project date a range filters on: the Projects tab's own two choices (Start / Complete). */
+export type DateField = "start" | "end";
+
+export const DATE_FIELD_LABEL: Record<DateField, string> = { start: "Start date", end: "Complete date" };
+
+export type DateRange = { dateField?: DateField; from?: string | null; to?: string | null };
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A usable bound, or null: anything that is not a real `YYYY-MM-DD` is no bound at all. */
+export function cleanBound(v: string | null | undefined): string | null {
+  if (!v || !ISO_DATE.test(v)) return null;
+  const d = new Date(`${v}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v ? null : v;
+}
+
+/** ISO dates compare correctly as text, so the bounds are inclusive string comparisons. */
+export function dateMatches(row: PartsBudgetRow, f: DateRange): boolean {
+  const from = cleanBound(f.from);
+  const to = cleanBound(f.to);
+  if (!from && !to) return true;
+  const v = (f.dateField ?? "start") === "end" ? row.end : row.start;
+  if (!v) return false;
+  return (!from || v >= from) && (!to || v <= to);
+}
+
+/** The calendar years a date field spans in `rows`, newest first — the quick choices the menu offers. */
+export function dateYears(rows: readonly PartsBudgetRow[], field: DateField): number[] {
+  const years = new Set<number>();
+  for (const r of rows) {
+    const v = field === "end" ? r.end : r.start;
+    if (v) years.add(Number(v.slice(0, 4)));
+  }
+  return [...years].sort((a, b) => b - a);
+}
 
 // ── Break out by (2026-10-23) ───────────────────────────────────────────────────────────────────
 //
@@ -227,9 +275,17 @@ export function customerTypeMatches(row: PartsBudgetRow, f: { customers?: readon
  */
 export function scopeRows(
   rows: readonly PartsBudgetRow[],
-  f: { status: StatusFilter; customers?: readonly string[]; types?: readonly string[] },
+  f: { status: StatusFilter; customers?: readonly string[]; types?: readonly string[] } & DateRange,
 ): PartsBudgetRow[] {
-  return rows.filter((r) => statusMatches(r.status, f.status) && customerTypeMatches(r, f));
+  return rows.filter((r) => statusMatches(r.status, f.status) && scopeMatches(r, f));
+}
+
+/** Customer, Type and the date range together: everything a job must pass besides status, band and search. */
+export function scopeMatches(
+  row: PartsBudgetRow,
+  f: { customers?: readonly string[]; types?: readonly string[] } & DateRange,
+): boolean {
+  return customerTypeMatches(row, f) && dateMatches(row, f);
 }
 
 export type ScopeOption = { value: string; label: string; count: number };
@@ -260,7 +316,7 @@ export function filterRows(rows: readonly PartsBudgetRow[], f: ViewFilter): Part
   return rows.filter(
     (r) =>
       statusMatches(r.status, f.status) &&
-      customerTypeMatches(r, f) &&
+      scopeMatches(r, f) &&
       (f.segment == null || f.segment.values.includes(groupValue(r, f.segment.by))) &&
       searchMatches(r, f.q) &&
       (f.focus == null || focusMatches(r, f.focus, scope)) &&
@@ -314,7 +370,7 @@ export function summarize(rows: readonly PartsBudgetRow[]): Summary {
 }
 
 export type SortKey =
-  | "jobId" | "jobName" | "customer" | "type" | "status" | "budget" | "projected" | "delta" | "pct" | "stillToPurchase" | "excess";
+  | "jobId" | "jobName" | "customer" | "type" | "status" | "start" | "end" | "budget" | "projected" | "delta" | "pct" | "stillToPurchase" | "excess";
 
 export type SortState = { key: SortKey; dir: "asc" | "desc" };
 

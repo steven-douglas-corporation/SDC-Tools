@@ -5,13 +5,16 @@ import {
   DEFAULT_SORT,
   FOCUS_LABEL,
   BREAK_LABEL,
+  DATE_FIELD_LABEL,
   NONE_LABEL,
+  cleanBound,
   filterRows,
   sortRows,
   type BandKey,
   type Focus,
   type PartsBudgetRow,
   type Segment,
+  type DateField,
   type SortKey,
   type SortState,
   type StatusFilter,
@@ -37,6 +40,9 @@ export type PartsBudgetExportQuery = {
   focus?: string;
   customers?: readonly string[];
   types?: readonly string[];
+  dateField?: string;
+  from?: string;
+  to?: string;
   segBy?: string;
   seg?: readonly string[];
   q?: string;
@@ -51,6 +57,9 @@ export type ParsedPartsBudgetQuery = {
   customers: string[];
   types: string[];
   segment: Segment | null;
+  dateField: DateField;
+  from: string | null;
+  to: string | null;
   q: string;
   sort: SortState;
 };
@@ -74,6 +83,10 @@ export function parsePartsBudgetQuery(q: PartsBudgetExportQuery): ParsedPartsBud
       q.segBy && (q.segBy === "status" || q.segBy === "type" || q.segBy === "customer")
         ? { by: q.segBy, values: cleanList(q.seg) }
         : null,
+    // Same fields the Projects tab filters on; a bound that is not a real date is dropped, never guessed.
+    dateField: q.dateField === "end" ? "end" : "start",
+    from: cleanBound(q.from),
+    to: cleanBound(q.to),
     q: (q.q ?? "").slice(0, 200),
     sort:
       q.sort && SORT_KEYS.has(q.sort)
@@ -98,6 +111,9 @@ export function buildPartsBudgetSheet(
       customers: query.customers,
       types: query.types,
       segment: query.segment,
+      dateField: query.dateField,
+      from: query.from,
+      to: query.to,
     }), query.sort);
   const band = query.band ? BANDS.find((b) => b.key === query.band)! : null;
 
@@ -107,6 +123,8 @@ export function buildPartsBudgetSheet(
     r.customer,
     r.type,
     r.status,
+    r.start ? new Date(`${r.start}T00:00:00Z`) : null,
+    r.end ? new Date(`${r.end}T00:00:00Z`) : null,
     r.budget,
     r.projected,
     r.delta,
@@ -125,7 +143,7 @@ export function buildPartsBudgetSheet(
   const totals: CellValue[] = [
     "Total",
     `${budgeted.length} job${budgeted.length === 1 ? "" : "s"} with a budget`,
-    null, null, null,
+    null, null, null, null, null,
     totalBudget,
     totalProjected,
     totalProjected - totalBudget,
@@ -140,6 +158,10 @@ export function buildPartsBudgetSheet(
       `${STATUS_LABEL[query.status]}${band ? ` · ${band.label}` : ""}${query.focus ? ` · ${FOCUS_LABEL[query.focus]}` : ""}${
         query.customers.length ? ` · customer: ${query.customers.map((c) => c || NONE_LABEL).join(", ")}` : ""
       }${query.types.length ? ` · type: ${query.types.map((t) => t || NONE_LABEL).join(", ")}` : ""}${
+        query.from || query.to
+          ? ` · ${DATE_FIELD_LABEL[query.dateField].toLowerCase()}: ${query.from ?? "…"} to ${query.to ?? "…"}`
+          : ""
+      }${
         query.segment ? ` · ${BREAK_LABEL[query.segment.by].toLowerCase()}: ${query.segment.values.map((v) => v || NONE_LABEL).join(", ")}` : ""
       }${query.q.trim() ? ` · matching "${query.q.trim()}"` : ""}`,
       `Live as of ${asOf.slice(0, 16).replace("T", " ")} UTC · exported ${now.toISOString().slice(0, 10)}`,
@@ -151,6 +173,8 @@ export function buildPartsBudgetSheet(
       { header: "Customer", type: "text", width: 26 },
       { header: "Type", type: "text", width: 12 },
       { header: "Status", type: "text", width: 11 },
+      { header: "Start date", type: "date", width: 12 },
+      { header: "Complete date", type: "date", width: 14 },
       { header: "Budget", type: "currency", width: 14 },
       { header: "Projected", type: "currency", width: 14 },
       { header: "Over / Under ($)", type: "currency", width: 16 },

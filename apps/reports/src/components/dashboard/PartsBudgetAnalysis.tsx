@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Panel, PanelHead, KpiStrip } from "@/components/dashboard/DashboardLayout";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { FilterMenu } from "@/components/dashboard/FilterMenu";
+import { DateRangeMenu } from "@/components/dashboard/DateRangeMenu";
 import { usd } from "@/components/ui/format";
 import {
   BANDS,
@@ -20,13 +21,15 @@ import {
   sortRows,
   BREAK_LABEL,
   breakout,
-  customerTypeMatches,
+  dateYears,
+  scopeMatches,
   scopeOptions,
   scopeRows,
   summarize,
   type BandKey,
   type BreakBy,
   type BreakoutGroup,
+  type DateField,
   type Focus,
   type PartsBudgetRow,
   type SortKey,
@@ -60,6 +63,8 @@ const COLUMNS: { key: SortKey; label: string; align: "left" | "right"; hint?: st
   { key: "customer", label: "Customer", align: "left" },
   { key: "type", label: "Type", align: "left" },
   { key: "status", label: "Status", align: "left" },
+  { key: "start", label: "Start", align: "left", hint: "Project start date (Projects tab)" },
+  { key: "end", label: "Complete", align: "left", hint: "Project complete date (Projects tab)" },
   { key: "budget", label: "Budget", align: "right" },
   { key: "projected", label: "Projected", align: "right", hint: "Purchased to date + still to purchase; a closed job shows its final actual cost" },
   { key: "delta", label: "Over / under", align: "right", hint: "Projected − Budget" },
@@ -165,6 +170,9 @@ export function PartsBudgetAnalysis({
   const [q, setQ] = useState("");
   const [customers, setCustomers] = useState<string[]>([]);
   const [types, setTypes] = useState<string[]>([]);
+  const [dateField, setDateField] = useState<DateField>("start");
+  const [from, setFrom] = useState<string | null>(null);
+  const [to, setTo] = useState<string | null>(null);
   const [breakBy, setBreakBy] = useState<BreakBy>("none");
   // One slice of a broken-out band: narrows the table the way a band does.
   const [segment, setSegment] = useState<{ by: Exclude<BreakBy, "none">; values: string[]; label: string } | null>(null);
@@ -172,14 +180,20 @@ export function PartsBudgetAnalysis({
 
   // The status chip, Customer and Type narrow the summary, the chart AND the table; the band narrows only the
   // table, because the chart is where a band is chosen.
-  const inStatus = useMemo(() => scopeRows(rows, { status, customers, types }), [rows, status, customers, types]);
+  const inStatus = useMemo(
+    () => scopeRows(rows, { status, customers, types, dateField, from, to }),
+    [rows, status, customers, types, dateField, from, to],
+  );
   const summary = useMemo(() => summarize(inStatus), [inStatus]);
   const totals = useMemo(() => bandTotals(inStatus), [inStatus]);
   const bo = useMemo(() => (breakBy === "none" ? null : breakout(inStatus, breakBy)), [inStatus, breakBy]);
-  const shown = useMemo(() => sortRows(filterRows(rows, { status, band, q, focus, customers, types, segment }), sort), [rows, status, band, q, focus, customers, types, segment, sort]);
+  const shown = useMemo(() => sortRows(filterRows(rows, { status, band, q, focus, customers, types, segment, dateField, from, to }), sort), [rows, status, band, q, focus, customers, types, segment, dateField, from, to, sort]);
   // The chips count what is left after Customer and Type; the Customer and Type menus count what is left after
   // the status chip (and, for each other, the other one), so every number is the size of what choosing it shows.
-  const byCustomerType = useMemo(() => rows.filter((r) => customerTypeMatches(r, { customers, types })), [rows, customers, types]);
+  const byCustomerType = useMemo(
+    () => rows.filter((r) => scopeMatches(r, { customers, types, dateField, from, to })),
+    [rows, customers, types, dateField, from, to],
+  );
   const counts = useMemo(
     () => ({
       both: byCustomerType.length,
@@ -189,14 +203,16 @@ export function PartsBudgetAnalysis({
     [byCustomerType],
   );
   const customerOptions = useMemo(
-    () => scopeOptions(scopeRows(rows, { status, types }), "customer"),
-    [rows, status, types],
+    () => scopeOptions(scopeRows(rows, { status, types, dateField, from, to }), "customer"),
+    [rows, status, types, dateField, from, to],
   );
   const typeOptions = useMemo(
-    () => scopeOptions(scopeRows(rows, { status, customers }), "type"),
-    [rows, status, customers],
+    () => scopeOptions(scopeRows(rows, { status, customers, dateField, from, to }), "type"),
+    [rows, status, customers, dateField, from, to],
   );
 
+  const years = useMemo(() => dateYears(rows, dateField), [rows, dateField]);
+  const undated = useMemo(() => rows.filter((r) => !(dateField === "end" ? r.end : r.start)).length, [rows, dateField]);
   const maxJobs = Math.max(1, ...totals.map((t) => t.jobs));
   const tableOpen = band != null || focus != null || showAll;
   const bandDef = band ? BANDS.find((b) => b.key === band)! : null;
@@ -208,6 +224,11 @@ export function PartsBudgetAnalysis({
     if (q.trim()) p.set("q", q.trim());
     for (const c of customers) p.append("customer", c);
     for (const t of types) p.append("type", t);
+    if (from || to) {
+      p.set("dateField", dateField);
+      if (from) p.set("from", from);
+      if (to) p.set("to", to);
+    }
     if (segment && band && !focus) {
       p.set("segBy", segment.by);
       for (const v of segment.values) p.append("seg", v);
@@ -275,12 +296,24 @@ export function PartsBudgetAnalysis({
         </div>
         <FilterMenu label="Customer" options={customerOptions} selected={customers} onChange={setCustomers} />
         <FilterMenu label="Type" options={typeOptions} selected={types} onChange={setTypes} />
-        {(customers.length > 0 || types.length > 0) && (
+        <DateRangeMenu
+          value={{ field: dateField, from, to }}
+          years={years}
+          undated={undated}
+          onChange={(v) => {
+            setDateField(v.field);
+            setFrom(v.from);
+            setTo(v.to);
+          }}
+        />
+        {(customers.length > 0 || types.length > 0 || from != null || to != null) && (
           <button
             type="button"
             onClick={() => {
               setCustomers([]);
               setTypes([]);
+              setFrom(null);
+              setTo(null);
             }}
             className="text-xs font-semibold text-sdc-blue hover:underline"
           >
@@ -595,6 +628,8 @@ export function PartsBudgetAnalysis({
                         <td className="whitespace-nowrap px-3 py-1.5">
                           <StatusBadge variant={r.status === "Complete" ? "complete" : "active"}>{r.status}</StatusBadge>
                         </td>
+                        <td className="whitespace-nowrap px-3 py-1.5 font-mono text-note tabular-nums text-sdc-gray-600">{r.start ?? "—"}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5 font-mono text-note tabular-nums text-sdc-gray-600">{r.end ?? "—"}</td>
                         <td className="whitespace-nowrap px-3 py-1.5 text-right font-mono tabular-nums">{r.budget != null ? usd(Math.round(r.budget)) : "—"}</td>
                         <td className="whitespace-nowrap px-3 py-1.5 text-right font-mono font-semibold tabular-nums text-sdc-navy">{usd(Math.round(r.projected))}</td>
                         <td className={`whitespace-nowrap px-3 py-1.5 text-right font-mono tabular-nums ${tone}`}>
