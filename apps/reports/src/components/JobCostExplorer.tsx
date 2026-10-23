@@ -970,7 +970,7 @@ export function JobCostExplorer({
       <p className="text-note text-sdc-gray-400">
         {visibleRows.length} jobs
         {inventoryAsOf && ` · Sales/% complete as of ${inventoryAsOf}`}
-        {etcRefreshedThru && ` · Submitted ETC for ${etcRefreshedThru}`}
+        {etcRefreshedThru && ` · Submitted ETC for ${etcRefreshedThru}, less work and parts invoiced since`}
       </p>
       {!partsCostAvailable && (
         <p className="rounded border border-sdc-yellow bg-sdc-yellow-bg px-2 py-1 text-note text-sdc-yellow-text">

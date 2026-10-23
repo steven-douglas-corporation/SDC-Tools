@@ -8,6 +8,7 @@ import { effectiveNewEtc } from "@/lib/etc";
 import { runDax } from "@/lib/powerbi-client";
 import { withTimeoutOrNull } from "@/lib/with-timeout";
 import { getInventorySnapshotForDate, listInventorySnapshotDates } from "@/lib/job-cost-inventory-snapshot";
+import { drawDownEtc, NO_ETC_ACTIVITY, type EtcActivity } from "@/lib/job-cost-etc-drawdown";
 import type { HoursByYear, JobCostRow } from "@/lib/job-cost";
 
 // ── Job Cost Explorer data assembly ─────────────────────────────────────────
@@ -210,7 +211,14 @@ export type SubmittedEtc = { etcEngHours: number; etcShopHours: number; etcParts
  * resolved `month` via listLockedEtcMonthsDesc — this does not re-check
  * lock status itself, it just reads whatever's frozen for that exact month.
  */
-export async function getSubmittedEtcSnapshot(jobPks: number[], month: string): Promise<Map<number, SubmittedEtc>> {
+export async function getSubmittedEtcSnapshot(
+  jobPks: number[],
+  month: string,
+  // What happened after `month` was submitted (loadEtcActivitySince). Omitted = the figure
+  // exactly as submitted. When given, each section is drawn down by its own activity — see
+  // job-cost-etc-drawdown.ts for why that is per section and not netted across the job.
+  activity: Map<number, EtcActivity> = new Map(),
+): Promise<Map<number, SubmittedEtc>> {
   const out = new Map<number, SubmittedEtc>();
   if (jobPks.length === 0) return out;
 
@@ -223,10 +231,73 @@ export async function getSubmittedEtcSnapshot(jobPks: number[], month: string): 
   for (const e of entries) {
     let ref = out.get(e.jobId);
     if (!ref) out.set(e.jobId, (ref = { etcEngHours: 0, etcShopHours: 0, etcPartsCost: 0 }));
-    const value = effectiveNewEtc(e); // needsReview=false here always reduces this to Number(e.newEtc)
-    if (e.section === PARTS_COST_SECTION) ref.etcPartsCost += value;
-    else if (SECTION_BUCKET[e.section] === "eng") ref.etcEngHours += value;
-    else if (SECTION_BUCKET[e.section] === "shop") ref.etcShopHours += value;
+    const submitted = effectiveNewEtc(e); // needsReview=false here always reduces this to Number(e.newEtc)
+    const since = activity.get(e.jobId) ?? NO_ETC_ACTIVITY;
+    if (e.section === PARTS_COST_SECTION) ref.etcPartsCost += drawDownEtc(submitted, since.parts);
+    else if (SECTION_BUCKET[e.section] === "eng") ref.etcEngHours += drawDownEtc(submitted, since.hours.get(e.section));
+    else if (SECTION_BUCKET[e.section] === "shop") ref.etcShopHours += drawDownEtc(submitted, since.hours.get(e.section));
+  }
+  return out;
+}
+
+/**
+ * Hours worked per section, and GL-posted parts spend, in the months AFTER `etcMonth`
+ * (through `throughMonth` for a historical snapshot) — what the submitted ETC has not
+ * yet accounted for. Same two eras and the same fold as loadJobHoursAndYears, so an
+ * hour that raises Act Hrs is the very hour that draws the ETC down.
+ *
+ * Parts come from the PARTS_COST EtcEntry's `hoursWorked` (money spent that month), the
+ * documented GL-posted basis of Parts Invoiced (see parts-budget-projection.ts).
+ */
+export async function loadEtcActivitySince(
+  jobPks: number[],
+  etcMonth: string,
+  throughMonth: string | null,
+): Promise<Map<number, EtcActivity>> {
+  const out = new Map<number, { hours: Map<string, Map<string, number>>; parts: Map<string, number> }>();
+  if (jobPks.length === 0) return out;
+
+  const entry = (jobPk: number) => {
+    let e = out.get(jobPk);
+    if (!e) out.set(jobPk, (e = { hours: new Map(), parts: new Map() }));
+    return e;
+  };
+  const add = (m: Map<string, number>, month: string, n: number) => m.set(month, (m.get(month) ?? 0) + n);
+  const after = { gt: etcMonth, ...(throughMonth ? { lte: throughMonth } : {}) };
+
+  const covered = await coveredMonths();
+  const [frozen, punches, parts] = await Promise.all([
+    prisma.etcEntry.groupBy({
+      by: ["jobId", "section", "month"],
+      where: { jobId: { in: jobPks }, section: { not: PARTS_COST_SECTION }, month: { notIn: covered, ...after } },
+      _sum: { hoursWorked: true },
+    }),
+    prisma.jobHoursDetail.groupBy({
+      by: ["jobId", "section", "month"],
+      where: { jobId: { in: jobPks }, month: { in: covered, ...after } },
+      _sum: { hours: true },
+    }),
+    prisma.etcEntry.groupBy({
+      by: ["jobId", "month"],
+      where: { jobId: { in: jobPks }, section: PARTS_COST_SECTION, month: after },
+      _sum: { hoursWorked: true },
+    }),
+  ]);
+
+  function addHours(jobPk: number, section: string, month: string, hrs: number) {
+    if (!hrs) return;
+    const byMonth = entry(jobPk).hours;
+    let m = byMonth.get(section);
+    if (!m) byMonth.set(section, (m = new Map()));
+    add(m, month, hrs);
+  }
+  for (const f of frozen) addHours(f.jobId, f.section, f.month, Number(f._sum.hoursWorked ?? 0));
+  for (const p of punches) {
+    for (const col of mapPunchToColumns(p.section, Number(p._sum.hours ?? 0))) addHours(p.jobId, col.section, p.month, col.hours);
+  }
+  for (const p of parts) {
+    const spent = Number(p._sum.hoursWorked ?? 0);
+    if (spent) add(entry(p.jobId).parts, p.month, spent);
   }
   return out;
 }
@@ -329,7 +400,11 @@ export async function loadJobCostRows(asOf: string | null = null): Promise<JobCo
     // own always-current TotalETO figure either way, exactly as it already does.
     withTimeoutOrNull("Total ETO parts actual (Job Cost Explorer)", PARTS_BATCH_BUDGET_MS, () => getPartsActualByJob(), onPartsFail),
     getInventorySnapshotForDate(asOf),
-    etcMonth ? getSubmittedEtcSnapshot(jobPks, etcMonth) : Promise.resolve(new Map<number, SubmittedEtc>()),
+    // The submitted figure, drawn down by what has been worked / invoiced since — so an
+    // hour in Act Hrs is not also still sitting in ETC Eng/Shop (and parts likewise).
+    etcMonth
+      ? loadEtcActivitySince(jobPks, etcMonth, throughMonth).then((activity) => getSubmittedEtcSnapshot(jobPks, etcMonth, activity))
+      : Promise.resolve(new Map<number, SubmittedEtc>()),
     loadSalesPriceFallback(),
   ]);
   const partsPurchasedMap = partsPurchased ?? new Map<string, number>();
