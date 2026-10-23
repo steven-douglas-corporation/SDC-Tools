@@ -238,3 +238,26 @@ export function sharedBarMax(...values: number[]): number {
 export function scaleToPct(value: number, sharedMax: number, ceilingPct = 94): number {
   return Math.min(ceilingPct, (value / sharedMax) * ceilingPct);
 }
+
+// Rendered pixel heights for one bar's stack (bottom to top), with a minimum height for any non-zero
+// segment so a thin one stays visible. Pixels are borrowed from the tallest segment so the bar's total
+// height stays true — EXCEPT for the `capKey` segment (Still to purchase), which grows upward instead:
+// borrowing for it from the purchased band below would lower the purchased boundary, and the dotted line
+// that joins it to the top of the Total bar (Invoiced + Not yet invoiced) would no longer meet that top.
+export function flooredSegmentPx(segs: { key: string; px: number; hasValue: boolean }[], minPx: number, capKey = "stp"): number[] {
+  const px = segs.map((s) => s.px);
+  let borrowed = 0;
+  for (let i = 0; i < px.length; i++) {
+    if (!segs[i].hasValue) continue;
+    if (px[i] < minPx) {
+      if (segs[i].key !== capKey) borrowed += minPx - px[i];
+      px[i] = minPx;
+    }
+  }
+  if (borrowed > 0) {
+    let tallest = 0;
+    for (let i = 1; i < px.length; i++) if (px[i] > px[tallest]) tallest = i;
+    px[tallest] = Math.max(minPx, px[tallest] - borrowed);
+  }
+  return px;
+}
