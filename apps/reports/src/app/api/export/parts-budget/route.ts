@@ -9,7 +9,7 @@ import { buildPartsBudgetSheet, parsePartsBudgetQuery } from "@/lib/export/parts
 import { loadPartsBudgetAnalysis } from "@/lib/parts-budget-analysis";
 import { requireApiPermission } from "@/lib/require-permission";
 
-// ── GET /api/export/parts-budget?format=xlsx|csv&status=&band=&focus=&customer=&type=&segBy=&seg=&q=&sort=&dir= ─────────────────────
+// ── GET /api/export/parts-budget?format=xlsx|csv&status=&band=&focus=&customer=&type=&segBy=&seg=&dateField=&from=&to=&q=&sort=&dir= ─────────────────────
 //
 // The Dashboard's Projection vs Budget table, as a file. The browser sends the FILTER it is looking at,
 // never rows: the rows are re-read here from the same analysis the Dashboard shows, so the file holds
@@ -43,6 +43,9 @@ export async function GET(req: NextRequest) {
       focus: searchParams.get("focus") ?? undefined,
       customers: searchParams.getAll("customer"),
       types: searchParams.getAll("type"),
+      dateField: searchParams.get("dateField") ?? undefined,
+      from: searchParams.get("from") ?? undefined,
+      to: searchParams.get("to") ?? undefined,
       segBy: searchParams.get("segBy") ?? undefined,
       seg: searchParams.getAll("seg"),
       q: searchParams.get("q") ?? undefined,
@@ -62,7 +65,7 @@ export async function GET(req: NextRequest) {
         report: "parts-budget",
         format,
         rows: rowCount,
-        filters: { status: query.status, band: query.band, focus: query.focus, customers: query.customers, types: query.types, segment: query.segment, q: query.q || null },
+        filters: { status: query.status, band: query.band, focus: query.focus, customers: query.customers, types: query.types, segment: query.segment, dateField: query.dateField, from: query.from, to: query.to, q: query.q || null },
         appVersion: APP_VERSION,
       },
     });

@@ -77,7 +77,7 @@ async function compute(): Promise<PartsBudgetAnalysis> {
       },
       select: {
         id: true, jobId: true, jobName: true, customer: true, type: true, status: true,
-        costQuoted: true, costActualHistorical: true,
+        costQuoted: true, costActualHistorical: true, startDate: true, completeDate: true,
       },
     });
     if (jobs.length === 0) return { state: "ok", rows: [], notStarted: 0, asOf: new Date().toISOString() };
@@ -155,6 +155,9 @@ async function compute(): Promise<PartsBudgetAnalysis> {
         customer: j.customer,
         type: j.type,
         status: j.status,
+        // Date-only values, the way the Projects tab shows them.
+        start: j.startDate ? j.startDate.toISOString().slice(0, 10) : null,
+        end: j.completeDate ? j.completeDate.toISOString().slice(0, 10) : null,
         budget,
         projected,
         delta: budget != null ? projected - budget : null,

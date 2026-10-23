@@ -17,6 +17,10 @@ import {
   breakout,
   groupValue,
   MAX_GROUPS,
+  dateMatches,
+  dateYears,
+  cleanBound,
+  scopeMatches,
   summarize,
   DEFAULT_SORT,
   type PartsBudgetRow,
@@ -32,7 +36,7 @@ import { hasPermission, ROLES } from "../src/lib/permissions";
 const row = (o: Partial<PartsBudgetRow> & Pick<PartsBudgetRow, "jobId" | "budget" | "projected">): PartsBudgetRow => {
   const delta = o.budget != null ? o.projected - o.budget : null;
   return {
-    id: Number(o.jobId), jobName: `Job ${o.jobId}`, customer: "Acme", type: "Custom", status: "Active",
+    id: Number(o.jobId), jobName: `Job ${o.jobId}`, customer: "Acme", type: "Custom", status: "Active", start: null, end: null,
     delta, pct: o.budget ? roundPct((delta! / o.budget) * 100) : null,
     purchased: o.projected, stillToPurchase: 0, excess: 0, basis: "live", ...o,
   };
@@ -149,14 +153,16 @@ test("the export holds exactly the rows the table shows, with totals over the jo
   assert.equal(all.rowCount, ROWS.length);
   // Totals skip the job with no budget so Projected and Over/Under still add up to a Budget total.
   const t = all.spec.totals!;
-  assert.equal(t[5], 100000 * 6 + 50000);
-  assert.equal(t[6], 90000 + 100000 + 105000 + 110000 + 124990 + 150000 + 70000);
-  assert.equal((t[6] as number) - (t[5] as number), t[7]);
+  const col = (h: string) => all.spec.columns.findIndex((c) => c.header === h);
+  const [iBudget, iProjected, iDelta, iPct] = [col("Budget"), col("Projected"), col("Over / Under ($)"), col("Over / Under (%)")];
+  assert.equal(t[iBudget], 100000 * 6 + 50000);
+  assert.equal(t[iProjected], 90000 + 100000 + 105000 + 110000 + 124990 + 150000 + 70000);
+  assert.equal((t[iProjected] as number) - (t[iBudget] as number), t[iDelta]);
   // A blank stays blank, never a zero: the no-budget job has no over/under.
   const noBudget = all.spec.rows.find((r) => r[0] === "1107")!;
-  assert.equal(noBudget[5], null);
-  assert.equal(noBudget[7], null);
-  assert.equal(noBudget[8], null);
+  assert.equal(noBudget[iBudget], null);
+  assert.equal(noBudget[iDelta], null);
+  assert.equal(noBudget[iPct], null);
 });
 
 // ── Customer and Type filters (2026-10-23) ───────────────────────────────────
@@ -288,6 +294,78 @@ test("the section starts un-broken-out, with the Break out by control", async ()
   assert.match(html, /Break out by/);
   for (const label of ["None", "Status", "Type", "Customer"]) assert.match(html, new RegExp(`>${label}</button>`));
   assert.doesNotMatch(html, /legend/i, "no legend until a break-out is chosen");
+});
+
+// ── Project date range (2026-10-23) ───────────────────────────────────────────
+
+const DATED = [
+  row({ jobId: "4001", budget: 100000, projected: 120000, start: "2024-11-15", end: "2025-03-20", status: "Complete" }),
+  row({ jobId: "4002", budget: 100000, projected: 130000, start: "2025-01-01", end: "2025-12-31", status: "Complete" }),
+  row({ jobId: "4003", budget: 100000, projected: 140000, start: "2025-12-31", end: "2026-06-30" }),
+  row({ jobId: "4004", budget: 100000, projected: 90000, start: "2026-01-01", end: null }),
+  row({ jobId: "4005", budget: 100000, projected: 110000, start: null, end: null }),
+];
+
+test("a date range keeps jobs whose start (or complete) date falls inside it, edges included", () => {
+  const ids2 = (f: Parameters<typeof dateMatches>[1]) => DATED.filter((r) => dateMatches(r, f)).map((r) => r.jobId);
+  assert.deepEqual(ids2({}), ["4001", "4002", "4003", "4004", "4005"], "no range is no filter, undated jobs included");
+  assert.deepEqual(ids2({ from: "2025-01-01", to: "2025-12-31" }), ["4002", "4003"], "started in 2025, both edge days counted");
+  assert.deepEqual(ids2({ dateField: "start", from: "2026-01-01" }), ["4004"], "an open-ended range");
+  assert.deepEqual(ids2({ to: "2024-12-31" }), ["4001"]);
+  assert.deepEqual(ids2({ dateField: "end", from: "2025-01-01", to: "2025-12-31" }), ["4001", "4002"], "completed in 2025");
+  assert.deepEqual(ids2({ dateField: "end", from: "2026-01-01" }), ["4003"], "a job with no complete date is out once a bound is set");
+  assert.deepEqual(ids2({ from: "2026-02-01", to: "2025-01-01" }), [], "from after to matches nothing");
+});
+
+test("a bound that is not a real date is no bound, never a guess", () => {
+  assert.equal(cleanBound("2025-02-30"), null, "February 30th does not exist");
+  assert.equal(cleanBound("2025-13-01"), null);
+  assert.equal(cleanBound("25-01-01"), null);
+  assert.equal(cleanBound("'; drop table"), null);
+  assert.equal(cleanBound(""), null);
+  assert.equal(cleanBound(null), null);
+  assert.equal(cleanBound("2024-02-29"), "2024-02-29", "a real leap day");
+  assert.deepEqual(DATED.filter((r) => dateMatches(r, { from: "nonsense", to: "also nonsense" })).length, DATED.length, "a bad bound filters nothing");
+});
+
+test("the date range composes with status, customer and type, and the quick years come from the data", () => {
+  const f = (o: Parameters<typeof filterRows>[1]) => ids(filterRows(DATED, o));
+  assert.deepEqual(f({ status: "complete", band: null, q: "", from: "2025-01-01", to: "2025-12-31" }), ["4002"]);
+  assert.deepEqual(f({ status: "both", band: "b25_50", q: "", dateField: "start", from: "2025-01-01", to: "2025-12-31" }), ["4002", "4003"], "25–50% over, started in 2025");
+  assert.deepEqual(f({ status: "both", band: null, q: "", focus: "pct", from: "2025-01-01", to: "2025-12-31" }), ["4003"], "the highest overrun inside the range");
+  assert.equal(scopeMatches(DATED[0], { from: "2025-01-01" }), false);
+  assert.deepEqual(dateYears(DATED, "start"), [2026, 2025, 2024]);
+  assert.deepEqual(dateYears(DATED, "end"), [2026, 2025]);
+});
+
+test("the export carries the date range and the table's dates", () => {
+  const q = parsePartsBudgetQuery({ dateField: "end", from: "2025-01-01", to: "2025-12-31" });
+  assert.equal(q.dateField, "end");
+  const { spec, rowCount } = buildPartsBudgetSheet(DATED, q, "2026-10-23T10:00:00.000Z", new Date());
+  assert.equal(rowCount, 2);
+  assert.match(spec.subtitle[0], /complete date: 2025-01-01 to 2025-12-31/);
+  const iStart = spec.columns.findIndex((c) => c.header === "Start date");
+  const iEnd = spec.columns.findIndex((c) => c.header === "Complete date");
+  assert.ok(iStart >= 0 && iEnd === iStart + 1, "both date columns are in the file");
+  assert.equal(spec.columns[iStart].type, "date");
+  assert.ok(spec.rows[0][iStart] instanceof Date, "a real date cell, not text");
+  assert.equal(spec.totals?.length, spec.columns.length);
+  assert.equal(spec.rows[0].length, spec.columns.length);
+  const bad = parsePartsBudgetQuery({ dateField: "x", from: "garbage", to: "2025-02-30" });
+  assert.deepEqual([bad.dateField, bad.from, bad.to], ["start", null, null]);
+  const route = noComments(src("src", "app", "api", "export", "parts-budget", "route.ts"));
+  assert.match(route, /from: searchParams\.get\("from"\)/);
+  assert.match(route, /dateField: searchParams\.get\("dateField"\)/);
+});
+
+test("the section offers a Dates menu and shows each job's start and complete dates", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const React = await import("react");
+  const { PartsBudgetAnalysis } = await import("../src/components/dashboard/PartsBudgetAnalysis");
+  const html = renderToStaticMarkup(React.createElement(PartsBudgetAnalysis, { rows: DATED, notStarted: 0, asOf: "2026-10-23T10:00:00.000Z" }));
+  assert.match(html, /<span class="font-medium">Dates<\/span>/);
+  assert.match(html, /Both <span[^>]*>5</);
+  assert.doesNotMatch(html, /Clear filters/);
 });
 
 test("the export keeps the Customer and Type the table is showing", () => {
