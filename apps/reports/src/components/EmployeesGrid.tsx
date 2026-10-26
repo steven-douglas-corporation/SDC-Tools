@@ -185,6 +185,7 @@ export function EmployeesGrid({
   disciplines,
   placeholders,
   canAddEmployees,
+  canViewHours,
   hiringPositions,
   hiringError,
   canAssignHiring,
@@ -196,6 +197,8 @@ export function EmployeesGrid({
   disciplines: string[];
   placeholders: SchedulerPlaceholder[];
   canAddEmployees: boolean;
+  /** dashboard:view — offers the employee panel's Hours tab. */
+  canViewHours: boolean;
   hiringPositions: HiringPosition[];
   hiringError: string | null;
   canAssignHiring: boolean;
@@ -707,6 +710,9 @@ export function EmployeesGrid({
           departmentTitle={selectedEmployeeGroup?.title ?? selectedEmployee.department?.trim() ?? DASH}
           workforceGroup={workforceGroupForCardKey(selectedEmployeeGroup?.key ?? "")}
           canEdit={canAddEmployees}
+          canViewHours={canViewHours}
+          people={rows}
+          onSelectEmployee={selectEmployee}
           supervisorOptions={rows
             .filter((r) => r.active)
             .map((r) => ({ id: r.id, name: r.name }))

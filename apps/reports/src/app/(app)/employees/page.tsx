@@ -138,6 +138,7 @@ export async function EmployeesView() {
           disciplines={DISCIPLINES}
           placeholders={placeholders}
           canAddEmployees={canAddEmployees}
+          canViewHours={hasPermission(session.user.role, "dashboard:view")}
           hiringPositions={hiringPositions}
           hiringError={hiring.error}
           canAssignHiring={canAssignHiring}
