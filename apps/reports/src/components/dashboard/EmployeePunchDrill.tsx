@@ -25,7 +25,7 @@ import type { PunchBucket } from "@/lib/department-utilization";
  * neutral/yellow. Red is kept for Invalid punches, which are errors to fix rather
  * than a way the hours were spent — the whole row is tinted red as well.
  */
-const BUCKET_TONE: Record<PunchBucket, string> = {
+export const BUCKET_TONE: Record<PunchBucket, string> = {
   billableActive: "bg-sdc-green-bg text-sdc-green-text",
   warranty: "bg-sdc-blue-light text-sdc-blue-dark",
   service: "bg-sdc-blue-light text-sdc-blue-dark",

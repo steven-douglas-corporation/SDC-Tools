@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useId, useMemo, useState, useTransition } from "react";
 import { BuildReadinessDrawer } from "@/components/build-readiness/BuildReadinessDrawer";
+import { EmployeeHoursTab } from "@/components/EmployeeHoursTab";
+import { directReports, reportingChain } from "@/lib/employee-panel-view";
 import { DASH, isPaylocityId, type EmployeeRow } from "@/lib/employee-row";
 import { workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 import { setEmployeeActive, setEmployeeSupervisor, setEmployeeTeamOverride } from "@/lib/employee-actions";
@@ -147,28 +149,23 @@ function SupervisorPicker({
   );
 }
 
-export function EmployeeDetailDrawer({
+function DetailsTab({
   employee,
   departmentTitle,
   workforceGroup,
   canEdit,
-  supervisorOptions = [],
-  onClose,
+  supervisorOptions,
+  active,
+  onActiveChange,
 }: {
   employee: EmployeeRow;
-  /** The Level-2 department card title this person is filed under (may differ from the raw Paylocity `department` string — e.g. two spellings share one card). */
   departmentTitle: string;
   workforceGroup: WorkforceGroupKey;
-  /** employees:edit — the same permission setEmployeeActive enforces server-side. */
   canEdit: boolean;
-  /** Shown people to pick a supervisor from — used only for someone not in Paylocity. */
-  supervisorOptions?: { id: number; name: string }[];
-  onClose: () => void;
+  supervisorOptions: { id: number; name: string }[];
+  active: boolean;
+  onActiveChange: (next: boolean) => void;
 }) {
-  // Local, because `employee` is the snapshot taken when the drawer opened; the
-  // page's rows refresh underneath via revalidatePath, this keeps the drawer
-  // honest in the meantime.
-  const [active, setActive] = useState(employee.active);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -178,7 +175,7 @@ export function EmployeeDetailDrawer({
     startTransition(async () => {
       try {
         await setEmployeeActive(employee.id, next, new FormData());
-        setActive(next);
+        onActiveChange(next);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save.");
       }
@@ -186,15 +183,7 @@ export function EmployeeDetailDrawer({
   }
 
   return (
-    <BuildReadinessDrawer
-      title={employee.name}
-      subtitle={`${departmentTitle} · ${workforceGroupTitle(workforceGroup)}`}
-      badge={active ? undefined : { label: "HIDDEN", cls: "bg-sdc-gray-100 text-sdc-muted" }}
-      breadcrumb={[employee.name]}
-      onBreadcrumbClick={() => {}}
-      onClose={onClose}
-    >
-      <div className="flex flex-col">
+    <div className="flex flex-col">
         {canEdit ? (
           <TeamPicker employeeId={employee.id} current={employee.teamOverride ?? null} shown={employee.team} />
         ) : (
@@ -239,6 +228,153 @@ export function EmployeeDetailDrawer({
             {error && <p className="mt-1.5 text-label text-red-700">{error}</p>}
           </div>
         )}
+    </div>
+  );
+}
+
+// ── Team tab (2026-10-26) ────────────────────────────────────────────────────
+// Who this person reports up to and who reports to them, from the same roster
+// rows the page already holds. Clicking a name moves the panel to that person.
+function PersonLink({ person, onSelect, note }: { person: EmployeeRow; onSelect: (row: EmployeeRow) => void; note?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(person)}
+      className="flex w-full items-baseline justify-between gap-3 border-b border-sdc-border-soft px-4 py-2 text-left hover:bg-sdc-blue-light/25"
+    >
+      <span className={`min-w-0 truncate text-sm font-medium ${person.active ? "text-sdc-navy" : "text-sdc-muted"}`}>
+        {person.name}
+        {!person.active && <span className="ml-1.5 text-label font-bold tracking-wide text-sdc-muted">HIDDEN</span>}
+      </span>
+      <span className="max-w-[55%] shrink-0 truncate text-note text-sdc-muted" title={person.positionTitle}>
+        {note ?? (person.positionTitle !== DASH ? person.positionTitle : "")}
+      </span>
+    </button>
+  );
+}
+
+function TeamTab({ employee, people, onSelect }: { employee: EmployeeRow; people: EmployeeRow[]; onSelect: (row: EmployeeRow) => void }) {
+  const chain = useMemo(() => reportingChain(people, employee.id), [people, employee.id]);
+  const reports = useMemo(() => directReports(people, employee.id), [people, employee.id]);
+  const shownReports = reports.filter((r) => r.active).length;
+  return (
+    <div className="flex flex-col">
+      <div className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-sdc-muted">Reports up to</div>
+      {chain.length === 0 ? (
+        <p className="border-b border-sdc-border-soft px-4 pb-3 text-sm text-sdc-muted">
+          {employee.supervisorId == null ? "No supervisor on file." : "Supervisor is not on the roster."}
+        </p>
+      ) : (
+        chain.map((boss, i) => <PersonLink key={boss.id} person={boss} onSelect={onSelect} note={i === 0 ? "Supervisor" : undefined} />)
+      )}
+      <div className="px-4 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-sdc-muted">
+        Direct reports{reports.length > 0 && ` · ${shownReports} shown${reports.length > shownReports ? `, ${reports.length - shownReports} hidden` : ""}`}
+      </div>
+      {reports.length === 0 ? (
+        <p className="px-4 pb-3 text-sm text-sdc-muted">No one reports to {employee.name}.</p>
+      ) : (
+        reports.map((r) => <PersonLink key={r.id} person={r} onSelect={onSelect} />)
+      )}
+    </div>
+  );
+}
+
+type TabId = "details" | "hours" | "team";
+
+export function EmployeeDetailDrawer({
+  employee,
+  departmentTitle,
+  workforceGroup,
+  canEdit,
+  canViewHours = false,
+  people = [],
+  supervisorOptions = [],
+  onSelectEmployee,
+  onClose,
+}: {
+  employee: EmployeeRow;
+  /** The Level-2 department card title this person is filed under (may differ from the raw Paylocity `department` string — e.g. two spellings share one card). */
+  departmentTitle: string;
+  workforceGroup: WorkforceGroupKey;
+  /** employees:edit — the same permission setEmployeeActive enforces server-side. */
+  canEdit: boolean;
+  /** dashboard:view — the permission loadEmployeeMonthPunches enforces server-side. Without it the Hours tab is not offered. */
+  canViewHours?: boolean;
+  /** The whole roster (hidden people too), for the Team tab. */
+  people?: EmployeeRow[];
+  /** Shown people to pick a supervisor from — used only for someone not in Paylocity. */
+  supervisorOptions?: { id: number; name: string }[];
+  /** Moves the panel to another person (Team tab). Without it the Team tab is not offered. */
+  onSelectEmployee?: (row: EmployeeRow) => void;
+  onClose: () => void;
+}) {
+  // Local, because `employee` is the snapshot taken when the drawer opened; the
+  // page's rows refresh underneath via revalidatePath, this keeps the drawer
+  // honest in the meantime. Re-seeded when the panel moves to another person
+  // (adjusting state during render, the pattern the repo's lint requires).
+  const [active, setActive] = useState(employee.active);
+  const [activeFor, setActiveFor] = useState(employee.id);
+  if (activeFor !== employee.id) {
+    setActiveFor(employee.id);
+    setActive(employee.active);
+  }
+
+  const tabs: { id: TabId; label: string }[] = [{ id: "details", label: "Details" }];
+  // Hours are keyed by the id on the person's punches (their Paylocity id, or a
+  // TEMP/P-style one); someone with no id at all has nothing to look up.
+  if (canViewHours && employee.paylocityId.trim()) tabs.push({ id: "hours", label: "Hours" });
+  if (onSelectEmployee) tabs.push({ id: "team", label: "Team" });
+  const [picked, setPicked] = useState<TabId>("details");
+  // Someone without an Hours tab never lands on a blank one when the panel moves to them.
+  const tab = tabs.some((t) => t.id === picked) ? picked : "details";
+  const uid = useId();
+
+  return (
+    <BuildReadinessDrawer
+      title={employee.name}
+      subtitle={`${departmentTitle} · ${workforceGroupTitle(workforceGroup)}`}
+      badge={active ? undefined : { label: "HIDDEN", cls: "bg-sdc-gray-100 text-sdc-muted" }}
+      breadcrumb={[employee.name]}
+      onBreadcrumbClick={() => {}}
+      onClose={onClose}
+    >
+      {tabs.length > 1 && (
+        <div className="flex items-center gap-1 border-b border-sdc-border px-2" role="tablist">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              id={`${uid}-${t.id}`}
+              aria-selected={tab === t.id}
+              aria-controls={`${uid}-panel`}
+              onClick={() => setPicked(t.id)}
+              className={`relative -mb-px border-b-2 px-3 py-2 text-sm font-semibold motion-interactive ${
+                tab === t.id
+                  ? "border-sdc-blue text-sdc-blue-dark"
+                  : "border-transparent text-sdc-muted hover:border-sdc-border hover:text-sdc-navy"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div role="tabpanel" id={`${uid}-panel`} aria-labelledby={`${uid}-${tab}`}>
+        {tab === "details" && (
+          <DetailsTab
+            key={employee.id}
+            employee={employee}
+            departmentTitle={departmentTitle}
+            workforceGroup={workforceGroup}
+            canEdit={canEdit}
+            supervisorOptions={supervisorOptions}
+            active={active}
+            onActiveChange={setActive}
+          />
+        )}
+        {tab === "hours" && <EmployeeHoursTab key={employee.id} paylocityId={employee.paylocityId.trim()} name={employee.name} />}
+        {tab === "team" && onSelectEmployee && <TeamTab employee={employee} people={people} onSelect={onSelectEmployee} />}
       </div>
     </BuildReadinessDrawer>
   );
