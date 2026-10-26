@@ -411,9 +411,9 @@ the process STOPPED → `next build`, not the generic `npm run deploy`.
 The Scheduler deliberately keeps pulling from Dan's repo: that is the pattern being
 mirrored, not something to migrate.
 
-`scripts/server-auto-update.js` is NOT this. It is superseded, wired to nothing, and
-would restart Reports on a stale build if anyone started it — it is marked accordingly
-at the top of the file.
+The old top-level `scripts/server-auto-update.js` is gone (removed in PR #152). It was
+superseded by `sdc-updater-hub`, was wired to nothing, and would have restarted Reports on
+a stale build if anyone had started it.
 
 ### Desktop apps — one artifact, one feed
 
