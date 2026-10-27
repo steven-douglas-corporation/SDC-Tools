@@ -36,6 +36,11 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   { keys: ["tm:view"], label: "T&M", section: "General" },
   { keys: ["projects:view"], label: "Projects — View", section: "Projects" },
   { keys: ["projects:edit"], label: "Projects — Edit", section: "Projects" },
+  // By request: only Sales and ELT should see what a job sold for. Independent
+  // of projects:edit — a role could in principle see pricing without being
+  // able to edit the grid, or vice versa, the same relationship Standard Fees
+  // already has with Projects — Edit (see quoted/page.tsx's sectionAllowed).
+  { keys: ["projects:pricing"], label: "Projects — Sales Price / Change Quote / Total columns", section: "Projects" },
   { keys: ["monthly-etc:view"], label: "Monthly ETC — View", section: "Monthly ETC" },
   { keys: ["monthly-etc:edit"], label: "Monthly ETC — Edit (enter/save New ETC)", section: "Monthly ETC" },
   { keys: ["monthly-etc:submit"], label: "Monthly ETC — Submit Monthly Report", section: "Monthly ETC" },

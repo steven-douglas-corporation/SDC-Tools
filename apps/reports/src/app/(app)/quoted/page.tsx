@@ -281,6 +281,12 @@ const PRICE_COLUMNS = [
   { key: "totalPrice", field: "totalPrice", label: "Total" },
 ] as const;
 
+// Same three keys PRICE_COLUMNS uses, as a Set — for filtering them out of
+// TOGGLE_COLUMNS (PROJECTS_INFO_COLUMNS) below, which lists these columns too
+// (for the "Columns" dropdown and the hide/show URL param) but doesn't share
+// PRICE_COLUMNS's array.
+const PRICE_COLUMN_KEYS: ReadonlySet<string> = new Set(PRICE_COLUMNS.map((c) => c.key));
+
 export async function ProjectsView({ params }: { params: {
     cols?: string;
     sort?: string;
@@ -373,6 +379,15 @@ export async function ProjectsView({ params }: { params: {
     return permission === null || hasPermission(role, permission);
   };
   const visibleSections = SECTIONS.filter((s) => sectionAllowed(s.code));
+  // Sales Price / Change Quote / Total — shown only to a role with the
+  // projects:pricing permission (Sales and ELT by default, same as the
+  // Standard Fees columns above). Filtered out of the actual columns, the
+  // Columns picker and the Add Project row below — not merely CSS-hidden —
+  // since a CSS hide still ships the dollar figures to a browser that
+  // shouldn't see them.
+  const priceColumnsAllowed = hasPermission(role, "projects:pricing");
+  const visiblePriceColumns = priceColumnsAllowed ? PRICE_COLUMNS : [];
+  const visibleToggleColumns = priceColumnsAllowed ? TOGGLE_COLUMNS : TOGGLE_COLUMNS.filter((c) => !PRICE_COLUMN_KEYS.has(c.key));
   // Column show/hide — `hide` is a comma-separated list of hidden column
   // keys (absent = all shown). Drives the "Columns" dropdown.
   const hiddenCols = new Set(decodeParamList(hide ?? null));
@@ -680,7 +695,7 @@ export async function ProjectsView({ params }: { params: {
             sections: visibleSections.filter((s) => s.phase === g.phase).map((s) => ({ code: s.code, name: s.name })),
           }))}
           visibleCodes={visibleCodes}
-          infoColumns={[...TOGGLE_COLUMNS]}
+          infoColumns={[...visibleToggleColumns]}
         />
         {/* "Display ▾" is gone (§47.4). Its only remaining control was an "Actual hours
             in cells" checkbox writing the same `actuals` param the switch below now owns
@@ -898,7 +913,7 @@ export async function ProjectsView({ params }: { params: {
                   />
                 </th>
               )}
-              {PRICE_COLUMNS.filter((c) => show(c.key)).map((c) => (
+              {visiblePriceColumns.filter((c) => show(c.key)).map((c) => (
                 <th key={c.key} data-col={c.key}
                   rowSpan={3}
                   style={{ width: "var(--price-col-width, 100px)", minWidth: "var(--price-col-width, 100px)" }}
@@ -1043,7 +1058,7 @@ export async function ProjectsView({ params }: { params: {
           <tbody>
             <WhenEditing>
             <NewProjectRows
-              hidden={[...hiddenCols]}
+              hidden={priceColumnsAllowed ? [...hiddenCols] : [...hiddenCols, ...PRICE_COLUMNS.map((c) => c.key)]}
               phaseGroups={PHASE_GROUPS.map((g) => ({ phase: g.phase, sections: visibleSectionsByPhase.get(g.phase) ?? [] }))}
               allStatuses={allStatuses}
             />
@@ -1051,7 +1066,7 @@ export async function ProjectsView({ params }: { params: {
             {jobs.length === 0 && (
               <tr>
                 {/* 2 always-on (# + Job Id) + visible toggle columns + phase cols + 1 cost col (merged 2026-08-11) */}
-                <td colSpan={2 + TOGGLE_COLUMNS.filter((c) => show(c.key)).length + dataColumnCount + 1} className="px-4 py-5 text-center text-sdc-gray-400">
+                <td colSpan={2 + visibleToggleColumns.filter((c) => show(c.key)).length + dataColumnCount + 1} className="px-4 py-5 text-center text-sdc-gray-400">
                   No jobs found.
                 </td>
               </tr>
@@ -1285,7 +1300,7 @@ export async function ProjectsView({ params }: { params: {
                       />
                     </td>
                   )}
-                  {PRICE_COLUMNS.filter((c) => show(c.key)).map((c) => (
+                  {visiblePriceColumns.filter((c) => show(c.key)).map((c) => (
                     <td key={c.key} data-col={c.key}
                       style={{ width: "var(--price-col-width, 100px)", minWidth: "var(--price-col-width, 100px)", maxWidth: "var(--price-col-width, 100px)" }}
                       className="overflow-hidden whitespace-nowrap px-1 py-1.5 text-left align-middle text-label text-sdc-muted"
@@ -1507,7 +1522,7 @@ export async function ProjectsView({ params }: { params: {
                 >
                   {row.detail}
                 </td>
-                {TOGGLE_COLUMNS.filter((c) => c.key !== "job").map((c) => (
+                {visibleToggleColumns.filter((c) => c.key !== "job").map((c) => (
                   <td key={c.key} data-col={c.key} />
                 ))}
                 {visibleSectionsFlat.map((s) => {
