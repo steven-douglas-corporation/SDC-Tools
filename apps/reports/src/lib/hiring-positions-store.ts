@@ -249,6 +249,15 @@ export async function updateCreatedHiringPositionVisibility(id: number, isVisibl
   `;
 }
 
+/**
+ * Removes a position created in SDC Reports (2026-10-27). Only this table: a
+ * Paylocity requisition has no row here to remove. The audit entry written by
+ * deleteHiringPosition keeps what the row said.
+ */
+export async function deleteCreatedHiringPosition(id: number): Promise<void> {
+  await prisma.$executeRaw`DELETE FROM HiringPositionCreated WHERE id = ${id}`;
+}
+
 // ── Openings: quantity and filled count (2026-08-24) ────────────────────────
 //
 // Four narrow writers rather than folding these into the general edit paths,

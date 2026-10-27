@@ -7,7 +7,7 @@ import { HiringExpectedStartDateControl } from "@/components/HiringExpectedStart
 import { HiringOpeningsControl } from "@/components/HiringOpeningsControl";
 import { workforceGroupForCardKey, workforceGroupTitle, WORKFORCE_GROUPS, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
-import { updateHiringPosition } from "@/lib/hiring-actions";
+import { updateHiringPosition, deleteHiringPosition } from "@/lib/hiring-actions";
 import { MANUAL_JOB_STATUSES, isManualJobStatus, isOpenHiringStatus } from "@/lib/hiring-position-status";
 import { HiringStatusPill } from "@/components/HiringStatusPill";
 import type { HiringPosition } from "@/lib/hiring-positions";
@@ -23,6 +23,8 @@ import type { HiringPosition } from "@/lib/hiring-positions";
 // - "manual": a real edit form — title/status/group/department all live on
 //   this position's own HiringPositionCreated row (see that model's comment
 //   in schema.prisma), so all four are editable here, not just group/dept.
+//   It can also be deleted (2026-10-27), for a request that is no longer
+//   needed. A Paylocity position never offers Delete: it is closed in Paylocity.
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -42,10 +44,12 @@ const ASSIGNABLE_GROUPS = WORKFORCE_GROUPS.filter((g) => g.key !== "other");
 function ManualEditForm({
   position,
   onUpdated,
+  onDeleted,
   onClose,
 }: {
   position: HiringPosition;
   onUpdated: (sourceId: string, patch: Partial<HiringPosition>) => void;
+  onDeleted: (sourceId: string) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(position.title);
@@ -118,6 +122,19 @@ function ManualEditForm({
         expectedStartDate: startDate,
       });
       onClose();
+    });
+  }
+
+  function remove() {
+    if (!window.confirm(`Delete "${position.title}"? It comes off the Employees page and the hiring totals. This can't be undone.`)) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteHiringPosition(position.sourceId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      onDeleted(position.sourceId);
     });
   }
 
@@ -198,7 +215,15 @@ function ManualEditForm({
           {error}
         </p>
       )}
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={remove}
+          className="text-sm font-semibold text-sdc-red-text hover:underline disabled:opacity-60"
+        >
+          Delete position
+        </button>
         <button
           type="button"
           disabled={pending}
@@ -217,12 +242,15 @@ export function HiringPositionDetailDrawer({
   canAssign,
   onAssigned,
   onUpdated,
+  onDeleted,
   onClose,
 }: {
   position: HiringPosition;
   canAssign: boolean;
   onAssigned: (positionSourceId: string, next: { workforceGroup: WorkforceGroupKey | null; department: string | null }) => void;
   onUpdated: (sourceId: string, patch: Partial<HiringPosition>) => void;
+  /** A created position was deleted: drop it from the page. The caller closes the drawer. */
+  onDeleted: (sourceId: string) => void;
   onClose: () => void;
 }) {
   const departmentTitle = EMPLOYEE_TEAMS.find((t) => t.schedulerCode === position.department)?.name;
@@ -236,7 +264,7 @@ export function HiringPositionDetailDrawer({
       onClose={onClose}
     >
       {position.source === "manual" && canAssign ? (
-        <ManualEditForm position={position} onUpdated={onUpdated} onClose={onClose} />
+        <ManualEditForm position={position} onUpdated={onUpdated} onDeleted={onDeleted} onClose={onClose} />
       ) : (
         <div className="flex flex-col">
           <div className="flex items-center justify-between gap-3 border-b border-sdc-border-soft px-4 py-2.5">

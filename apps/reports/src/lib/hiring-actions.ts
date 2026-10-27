@@ -11,6 +11,7 @@ import {
   setHiringQuantity,
   setHiringFilledCount,
   updateCreatedHiringPositionFilledCount,
+  deleteCreatedHiringPosition,
 } from "@/lib/hiring-positions-store";
 import { getHiringPositionById } from "@/lib/hiring-positions";
 import { logAudit } from "@/lib/audit";
@@ -341,6 +342,48 @@ export async function updateHiringPosition(sourceId: string, input: HiringPositi
   });
 
   return { ok: true, sourceId };
+}
+
+export type DeleteHiringPositionResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Deleting a position created in SDC Reports (2026-10-27). Managers use these as
+ * requests ("I need someone in this role; please post it in Paylocity") and want
+ * to withdraw one that is no longer needed. Positions from Paylocity are refused:
+ * the app doesn't own them, and the next warehouse load would bring them back.
+ * Closing one of those is done in Paylocity. The audit entry keeps the row's
+ * details, so a deletion can be traced and re-created by hand.
+ */
+export async function deleteHiringPosition(sourceId: string): Promise<DeleteHiringPositionResult> {
+  const session = await assertActionPermission("employees:hiring:assign");
+  const match = /^manual-(\d+)$/.exec(sourceId);
+  if (!match) return { ok: false, error: "Only positions created in SDC Reports can be deleted. Close a Paylocity position in Paylocity." };
+  const id = Number(match[1]);
+
+  const before = await getHiringPositionById(sourceId);
+  if (!before) return { ok: false, error: "This position no longer exists." };
+
+  await deleteCreatedHiringPosition(id);
+
+  await logAudit({
+    action: "hiring.positionDeleted",
+    entityType: "HiringPositionCreated",
+    entityId: sourceId,
+    summary: `${before.title}${before.quantity > 1 ? ` ×${before.quantity}` : ""}: deleted (was ${before.status} · ${before.workforceGroup ?? "—"}/${before.department ?? "—"}) (by ${session.user.email ?? "unknown"})`,
+    metadata: {
+      sourceId,
+      title: before.title,
+      jobStatus: before.status,
+      workforceGroup: before.workforceGroup,
+      department: before.department,
+      quantity: before.quantity,
+      filledCount: before.filledCount,
+      expectedStartDate: before.expectedStartDate,
+      createdBy: before.createdBy,
+    },
+  });
+
+  return { ok: true };
 }
 
 // ── Openings: hiring against a position, and changing how many it asks for ──

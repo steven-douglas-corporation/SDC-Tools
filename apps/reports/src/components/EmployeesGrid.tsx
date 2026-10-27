@@ -279,6 +279,11 @@ export function EmployeesGrid({
     setHiring((prev) => [position, ...prev]);
   }
 
+  function applyHiringDelete(positionSourceId: string) {
+    setHiring((prev) => prev.filter((p) => p.sourceId !== positionSourceId));
+    setSelectedHiringPosition(null);
+  }
+
   // Always OPEN positions only — the input WorkforceSummaryCards/EmployeesCards'
   // hiring-count formulas expect (see WorkforceSummaryCards' own "Already OPEN
   // positions only" comment). A closed/filled position (from either source)
@@ -727,6 +732,7 @@ export function EmployeesGrid({
           canAssign={canAssignHiring}
           onAssigned={applyAssignment}
           onUpdated={applyHiringUpdate}
+          onDeleted={applyHiringDelete}
           onClose={() => setSelectedHiringPosition(null)}
         />
       )}
