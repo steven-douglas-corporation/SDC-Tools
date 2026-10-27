@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { HiringMoveToControl } from "@/components/HiringMoveToControl";
 import { HiringVisibilityControl } from "@/components/HiringVisibilityControl";
 import { WORKFORCE_GROUPS, workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
@@ -14,9 +13,7 @@ import { countOpenings, openingsSummary } from "@/lib/hiring-openings";
 // Level 2 for the "Hiring Positions" card (2026-08-19) — every position
 // (workbook + manually created), bucketed by its current workforce group
 // (manual assignment if any, else the classifier's best-effort guess — see
-// hiring-positions.ts), each row carrying the same Move-to control the
-// detail drawer offers, so a manager scanning the whole list can reassign
-// without opening each one. Never mixed into EmployeesCards' own employee
+// hiring-positions.ts). Never mixed into EmployeesCards' own employee
 // list — the task's own "do not mix open positions into the actual employee
 // list as if they are employees".
 //
@@ -38,6 +35,12 @@ import { countOpenings, openingsSummary } from "@/lib/hiring-openings";
 // always come from the full set filtered by `isOpen` -- isOpenHiringStatus is
 // still the only rule deciding that, and it did not change (see
 // WorkforceSummaryCards' caller in EmployeesGrid.tsx).
+//
+// (2026-10-27) Every row now ends in the same "Edit" link, Paylocity rows included.
+// Paylocity rows used to carry the group + department dropdowns inline, two
+// selects per row, which made the list read as a form. Those dropdowns live in
+// the position panel ("Move to", HiringPositionDetailDrawer), one click away;
+// the department still shows beside the title and the group is the section.
 
 const DEPARTMENT_TITLE = new Map(EMPLOYEE_TEAMS.map((t) => [t.schedulerCode, t.name]));
 const ALL_FILTER = "__all__";
@@ -49,7 +52,6 @@ export function HiringPositionsList({
   canAssign,
   canCreate,
   onSelect,
-  onAssigned,
   onVisibilityChanged,
   onCreate,
 }: {
@@ -57,7 +59,6 @@ export function HiringPositionsList({
   canAssign: boolean;
   canCreate: boolean;
   onSelect: (position: HiringPosition) => void;
-  onAssigned: (positionSourceId: string, next: { workforceGroup: WorkforceGroupKey | null; department: string | null }) => void;
   onVisibilityChanged: (positionSourceId: string, isVisible: boolean) => void;
   onCreate: () => void;
 }) {
@@ -167,7 +168,7 @@ export function HiringPositionsList({
             <div className="hidden items-center gap-3 border-b border-sdc-border-soft bg-white px-3.5 py-1.5 text-label font-bold uppercase tracking-wider text-sdc-muted sm:flex">
               <span className="min-w-0 flex-1">Position</span>
               <span className="w-28 shrink-0">Status</span>
-              <span className="w-56 shrink-0 text-right">Assignment</span>
+              <span className="w-24 shrink-0" aria-hidden />
             </div>
             <ul className="divide-y divide-sdc-border-soft">
               {bucket.positions.map((p) => {
@@ -207,25 +208,15 @@ export function HiringPositionsList({
                     <span className="w-28 shrink-0">
                       <HiringStatusPill status={p.status} />
                     </span>
-                    <span className="flex w-56 shrink-0 items-center justify-end gap-2.5">
-                      {p.source === "workbook" ? (
-                        <HiringMoveToControl
-                          positionSourceId={p.sourceId}
-                          workforceGroup={p.workforceGroup}
-                          department={p.department}
-                          canAssign={canAssign}
-                          onAssigned={onAssigned}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onSelect(p)}
-                          className="text-note font-medium text-sdc-blue hover:underline"
-                          title="Edit this position"
-                        >
-                          Edit
-                        </button>
-                      )}
+                    <span className="flex w-24 shrink-0 items-center justify-end gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => onSelect(p)}
+                        className="text-note font-medium text-sdc-blue hover:underline"
+                        title="Edit this position"
+                      >
+                        Edit
+                      </button>
                       <HiringVisibilityControl position={p} canAssign={canAssign} onToggled={onVisibilityChanged} />
                     </span>
                   </li>

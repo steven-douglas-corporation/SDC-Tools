@@ -7,9 +7,7 @@ import type { HiringPosition } from "@/lib/hiring-positions";
 // The Show/Hide row action (2026-08-19) — a plain text link, matching
 // HiringPositionsList's existing "Edit" link style, rather than a new icon
 // system. Picks the right write path by source (workbook vs manually-created
-// — see hiring-actions.ts's own comments on why each is a separate function),
-// same as HiringPositionsList already does for HiringMoveToControl vs the
-// plain "Edit" link.
+// — see hiring-actions.ts's own comments on why each is a separate function).
 //
 // This ONLY ever changes isVisible — it never touches workforceGroup/
 // department/expectedStartDate/status. Visibility is display-only; hiding a
