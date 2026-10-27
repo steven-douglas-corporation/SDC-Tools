@@ -52,6 +52,11 @@ export type Permission =
   | "build-readiness:view"
   | "projects:view"
   | "projects:edit"
+  // Sales Price / Change Quote / Total on the Projects grid — a narrower view
+  // gate than projects:view itself, by request: only Sales and ELT should see
+  // what a job sold for. Seeded ON for SALES and (nominally — see the ELT
+  // comment below) ELT, OFF for ALL/MANAGER/PM. Same shape as cash-flow:view.
+  | "projects:pricing"
   | "monthly-etc:view"
   | "monthly-etc:edit"
   | "monthly-etc:submit"
@@ -186,6 +191,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "hours:view",
     "projects:view",
     "projects:edit",
+    "projects:pricing",
     "tm:view",
     "data-management:view",
     "feedback:submit",
@@ -200,6 +206,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "users:manage",
     "permissions:manage",
     "cash-flow:view",
+    "projects:pricing",
     "data-management:view",
     "feedback:view",
     "feedback:triage",
