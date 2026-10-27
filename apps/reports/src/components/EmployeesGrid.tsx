@@ -702,7 +702,6 @@ export function EmployeesGrid({
             canAssign={canAssignHiring}
             canCreate={canAssignHiring}
             onSelect={selectHiringPosition}
-            onAssigned={applyAssignment}
             onVisibilityChanged={(sourceId, isVisible) => applyHiringUpdate(sourceId, { isVisible })}
             onCreate={() => setCreatingHiringPosition(true)}
           />
