@@ -71,7 +71,14 @@ test("PAGE_SHELL keeps a real gutter, not a flush edge", () => {
   // "Preserve intentional padding": the ask was to remove hundreds of blank
   // pixels, not the page margin. 24px, 32px from md up.
   assert.ok(/\bpx-6\b/.test(PAGE_SHELL) && /\bmd:px-8\b/.test(PAGE_SHELL), PAGE_SHELL);
-  assert.ok(/\bpy-6\b/.test(PAGE_SHELL) && /\bmd:py-7\b/.test(PAGE_SHELL), PAGE_SHELL);
+  assert.ok(/\bpt-6\b/.test(PAGE_SHELL) && /\bmd:pt-7\b/.test(PAGE_SHELL), PAGE_SHELL);
+});
+
+test("PAGE_SHELL leaves room at the bottom for the fixed Flag button", () => {
+  // The button is `fixed bottom-4 right-4`, about 38px tall: 54px from the bottom edge.
+  // Anything under 80px puts it back on top of the last row of a page.
+  assert.ok(/\bpb-20\b/.test(PAGE_SHELL), PAGE_SHELL);
+  assert.ok(!/\b(md:)?py-/.test(PAGE_SHELL), "a py-* here would override the bottom room at that breakpoint");
 });
 
 test("no tab's outer wrapper caps its width", () => {

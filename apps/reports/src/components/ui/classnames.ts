@@ -264,4 +264,11 @@ export const GRID_SCROLLER =
 // (p-8, p-6, px-6 md:px-10, and px-8 md:px-13 — 52px, which is well past a
 // gutter). 24px, 32px from md up: a standard page margin, and the same one
 // everywhere so tabs stop disagreeing about where content starts.
-export const PAGE_SHELL = "w-full min-w-0 px-6 py-6 md:px-8 md:py-7";
+//
+// Bottom room for the Flag button (2026-10-27): it is `fixed bottom-4 right-4`
+// (FeedbackButton.tsx) and sat on top of whatever ended a page — the last table row,
+// a Save button. pb-20 (80px) clears its 16px offset plus its ~38px height with room
+// to spare, so scrolling to the end always leaves the last element uncovered. It is
+// on the shell, not on <main>, so it also applies inside a split pane, which scrolls
+// its own container rather than the document.
+export const PAGE_SHELL = "w-full min-w-0 px-6 pt-6 pb-20 md:px-8 md:pt-7";
