@@ -109,3 +109,43 @@ export function monthName(month: string): string {
   if (!m) return month;
   return new Date(Number(m[1]), Number(m[2]) - 1, 1).toLocaleString("en-US", { month: "short", year: "numeric" });
 }
+
+// ── All jobs together (2026-10-28) ───────────────────────────────────────────
+//
+// The Monthly ETC overview: one row per job, one column per expected billing month. Each job's
+// buckets are the ones its own Left to Invoice cell already carries (parts-etc-breakout.ts), so
+// every row sums to its cell and the Total row sums to the column of cells above it.
+
+export type JobBuckets = { jobId: string; jobName: string; buckets: LeftToInvoiceBuckets };
+
+export type LeftToInvoiceOverview = {
+  /** Ascending `YYYY-MM`, every month any job has money in. */
+  months: string[];
+  /** Jobs with a non-zero balance, largest first. */
+  rows: (JobBuckets & { sum: number })[];
+  totals: { overdue: number; months: Record<string, number>; noDate: number; sum: number };
+};
+
+/** Overdue + months + no date. The per-job figure its grid cell shows (before any manual override). */
+export function bucketSum(b: LeftToInvoiceBuckets): number {
+  return b.overdue + b.noDate + Object.values(b.months).reduce((a, v) => a + v, 0);
+}
+
+export function buildOverview(jobs: readonly JobBuckets[]): LeftToInvoiceOverview {
+  const rows = jobs
+    .map((j) => ({ ...j, sum: bucketSum(j.buckets) }))
+    .filter((r) => Math.abs(r.sum) >= 0.005 || Math.abs(r.buckets.overdue) >= 0.005 || Math.abs(r.buckets.noDate) >= 0.005)
+    .sort((a, b) => b.sum - a.sum || a.jobId.localeCompare(b.jobId));
+  const totals = { overdue: 0, months: {} as Record<string, number>, noDate: 0, sum: 0 };
+  const months = new Set<string>();
+  for (const r of rows) {
+    totals.overdue += r.buckets.overdue;
+    totals.noDate += r.buckets.noDate;
+    totals.sum += r.sum;
+    for (const [m, v] of Object.entries(r.buckets.months)) {
+      months.add(m);
+      totals.months[m] = (totals.months[m] ?? 0) + v;
+    }
+  }
+  return { months: [...months].sort(), rows, totals };
+}

@@ -124,3 +124,24 @@ test("describeBuckets: one readable line, empty buckets left out", () => {
   assert.equal(describeBuckets(b, (n) => "$" + n), "Overdue $1200 · Nov 2026 $300 · No date $40");
   assert.equal(describeBuckets(emptyBuckets(), (n) => "$" + n), "");
 });
+
+import { buildOverview, bucketSum } from "../src/lib/left-to-invoice-by-month";
+
+test("buildOverview: rows sum to their own total, the Total row sums the rows, months are unioned and sorted", () => {
+  const a = leftToInvoiceByMonth([line({ total: 100, requiredDate: "2026-03-01" }), line({ total: 50, requiredDate: "2026-12-01" })], {}, TODAY);
+  const b = leftToInvoiceByMonth([line({ total: 400, requiredDate: "2026-11-01" }), line({ total: 25 })], {}, TODAY);
+  const empty = leftToInvoiceByMonth([], {}, TODAY);
+  const o = buildOverview([
+    { jobId: "1001", jobName: "A", buckets: a },
+    { jobId: "1002", jobName: "B", buckets: b },
+    { jobId: "1003", jobName: "Nothing", buckets: empty },
+  ]);
+  assert.deepEqual(o.rows.map((r) => r.jobId), ["1002", "1001"]); // largest first, empty job dropped
+  assert.deepEqual(o.months, ["2026-11", "2026-12"]);
+  assert.equal(bucketSum(a), 150);
+  assert.equal(o.totals.overdue, 100);
+  assert.equal(o.totals.months["2026-11"], 400);
+  assert.equal(o.totals.noDate, 25);
+  assert.equal(o.totals.sum, 575);
+  assert.equal(o.totals.sum, o.rows.reduce((s, r) => s + r.sum, 0));
+});
