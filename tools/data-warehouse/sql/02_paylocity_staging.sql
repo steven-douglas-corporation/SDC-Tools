@@ -9,8 +9,7 @@
 --
 -- Staging stays faithful to the source: it converts text to proper types and
 -- parses codes, but makes no business decisions. Matching jobs to Total ETO,
--- relabelling Travel, and applying position-family overrides happen in the
--- dimension and fact layers. Codes keep their original text next to the parsed
+-- and relabelling Travel happen in the dimension and fact layers. Codes keep their original text next to the parsed
 -- number, so nothing is lost.
 --
 -- Every view carries "FileId" and "SnapshotUtc" (when Paylocity produced the
@@ -109,20 +108,11 @@ FROM "RawPaylocity"."DataRow" AS d
 JOIN "RawPaylocity"."LatestFile" AS l USING ("FileId")
 WHERE d."ReportKey" = 'position_families';
 
--- Our hand-maintained overrides file, same layout. Applying it (an override row
--- replaces Paylocity's rows for its position code) happens in the dimension.
-CREATE OR REPLACE VIEW "Paylocity"."PositionFamilyOverride" AS
-SELECT
-    nullif(btrim(d."RowJson" ->> 'Family Code'), '')            AS "FamilyCode",
-    nullif(btrim(d."RowJson" ->> 'Family Name'), '')            AS "FamilyName",
-    nullif(btrim(d."RowJson" ->> 'Position Code'), '')          AS "PositionCode",
-    nullif(btrim(d."RowJson" ->> 'Title'), '')                  AS "Title",
-    "Integration"."TryNumeric"(d."RowJson" ->> 'Total Headcount')::integer AS "TotalHeadcount",
-    d."FileId",
-    d."RemoteModifiedUtc"                                       AS "SnapshotUtc"
-FROM "RawPaylocity"."DataRow" AS d
-JOIN "RawPaylocity"."LatestFile" AS l USING ("FileId")
-WHERE d."ReportKey" = 'position_families_overrides';
+-- Our position family overrides were a hand-maintained file on the share
+-- (Position_Families_Overrides.xlsx), staged by a view here. Since 2026-10-28
+-- they are a table in the reports app, set on its Data Management page, so the
+-- view is gone. Its raw rows stay in "RawPaylocity" like any old file's.
+DROP VIEW IF EXISTS "Paylocity"."PositionFamilyOverride";
 
 -- ── Temp and contractor punches ─────────────────────────────────────────────
 

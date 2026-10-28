@@ -125,8 +125,8 @@ model Employee {
   positionTitle String?
   // Paylocity's Position Code (e.g. "MB01", "ME SR"), mirrored by the hourly
   // roster sync from the file's Position Code column. Its family is looked up
-  // in PositionFamily below at read time, not copied here, so an edit to the
-  // overrides file takes effect without re-touching people.
+  // in PositionFamily below at read time, not copied here, so an edit to an
+  // override takes effect without re-touching people.
   positionCode  String?
   billingGroup  String? // e.g. Engineering / Shop
   // Team grouping, matching the SDC Scheduler app's team_members.discipline
@@ -169,8 +169,8 @@ model Employee {
 }
 
 // Which family each Paylocity Position Code belongs to (2026-10-02), mirrored
-// every hourly pass from two files of the same layout: Paylocity's
-// Position_Families report, and our Position_Families_Overrides file. An
+// every hourly pass from Paylocity's Position_Families report and our
+// overrides (PositionFamilyOverride, below). An
 // override row replaces Paylocity's rows for its position code, so it can both
 // fill a code Paylocity's report lacks and correct one it files wrongly. Delete
 // the override once Paylocity has it right. See lib/position-families-sync.ts.
@@ -194,7 +194,7 @@ model PositionFamily {
 // Our position family overrides (2026-10-28), set on Data Management's Position
 // families tab. They replace the hand-edited Position_Families_Overrides.xlsx on
 // the SFTP share: the first hourly pass after this shipped copied that file in
-// once, and the file is not read after that. One row per (code, family), same
+// once, and the file and its path setting were then removed. One row per (code, family), same
 // as the file; the sync copies them into PositionFamily as source "override".
 // Codes are matched ignoring case (codeKey), so a code is stored as first typed.
 model PositionFamilyOverride {

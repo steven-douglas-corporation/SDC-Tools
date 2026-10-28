@@ -29,7 +29,7 @@ export type OrgNode = {
   team: string | null;
   /** Shown beside the name on hover: why this person isn't placed by their own family. */
   note: string | null;
-  /** The position code's family comes from the overrides file. */
+  /** The position code's family comes from an override (set on Data Management). */
   override: boolean;
   /** Team set by hand and different from the reporting line: shown in its own section on the card. */
   byHand: boolean;

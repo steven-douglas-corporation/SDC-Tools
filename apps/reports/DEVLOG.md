@@ -7074,3 +7074,17 @@ Files: `prisma/migrations/20261028120000_add_position_family_override`,
 Still to do (next PR): remove the one-time import, `PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH`,
 the warehouse loader's `keep_on_server` entry and the `"Paylocity"."PositionFamilyOverride"`
 view, and then the file on the share.
+
+## 81. The position family overrides file is retired (2026-10-28)
+
+Follow-up to §80, after the one-time copy ran in production and the editor was confirmed
+working. The reports app no longer knows about `Position_Families_Overrides.xlsx`:
+`importOverridesFileOnce`, `overridesFilePath` and `PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH`
+are gone, and the sync reads overrides only from `PositionFamilyOverride`. A save no longer
+runs the import first.
+
+Warehouse: `"Paylocity"."PositionFamilyOverride"` is dropped (`DROP VIEW IF EXISTS` in
+`02_paylocity_staging.sql`, re-runnable like the rest), and the loader's `keep_on_server`
+is empty, so the file is archived and deleted from the SFTP share like every other
+Paylocity file. Both need a hand step on the server: re-run the SQL file, and carry the
+`keep_on_server` change into the live `D:\DataWarehouse\ingest\settings.toml`.

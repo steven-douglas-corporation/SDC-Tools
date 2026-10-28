@@ -10,7 +10,7 @@ the order to take that chain apart, and what still depends on each piece. Status
 |---|---|---|
 | Power Automate flow: SFTP → SharePoint (`SDC-PowerBIIntegration`) | **Off** (2026-10-04, Jon) | Nothing known. The Power BI inputs it fed are now frozen |
 | SharePoint copies (`Project Planner V2/Job Hours Report/…`) | **Frozen** at 2026-10-04 | Power BI dataset; manual reports-app scripts |
-| Paylocity files on the SFTP server | **Deleted after each copy** (loader `delete_after_download = true`) | Only `Position_Families_Overrides.xlsx` stays: it's hand-edited there and the reports app still reads it |
+| Paylocity files on the SFTP server | **Deleted after each copy** (loader `delete_after_download = true`) | Nothing. `Position_Families_Overrides.xlsx` was the last file kept there; since 2026-10-28 the overrides are set in the reports app |
 | Power BI "Job Hours Report - Management Level" (dataset + report) | **Frozen** (inputs no longer update) | **Reports app** (below), and anyone still opening the report |
 | Fabric warehouse `SDC-DataWarehouse-…` | **Live** | **Reports app** ETC history sync; Power BI dataset |
 
@@ -60,7 +60,7 @@ flow that's now off, or are edited directly in SharePoint.
      weeks without trouble.
    - ETC Planner (`D:\AI Projects\sdc-abhi\sdc-etc-planner\.env`): `JOB_HOURS_LOCAL_PATH`
      points at a OneDrive copy and isn't used by its code; remove it.
-8. **SFTP server (SERVER-DC1):** once the overrides file has a new home (a warehouse
-   reference table, edited through the reports app), nothing needs the share at all. Also
+8. **SFTP server (SERVER-DC1):** nothing reads the share any more. The overrides file moved
+   into the reports app on 2026-10-28 (a table set on Data Management). Also
    raise with infrastructure that an SFTP server and an open file share run on what appears
    to be the domain controller.

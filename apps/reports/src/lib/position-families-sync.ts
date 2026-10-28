@@ -18,46 +18,27 @@ import {
   type PositionFamilyFindings,
 } from "@/lib/position-families-parse";
 
-// ── Paylocity position families, synced from two files (2026-10-02) ─────────
+// ── Paylocity position families, plus our overrides (2026-10-02) ────────────
 //
 // One step of the hourly refresh (auto-sync.ts, source "position_families"),
 // run just before the roster step: read Paylocity's Position_Families report
-// and our Position_Families_Overrides file from the SFTP folder, and replace
-// the PositionFamily table with what they say. The merge rule (an override
-// replaces Paylocity's rows for its code) lives in position-families-parse.ts;
-// this file is only the disk reads and the write.
+// and our overrides, and replace the PositionFamily table with what they say.
+// The merge rule (an override replaces Paylocity's rows for its code) lives in
+// position-families-parse.ts; this file is only the reads and the write.
 //
-// Two settings, same convention as PAYLOCITY_EMPLOYEES_LOCAL_PATH:
-//   • PAYLOCITY_POSITION_FAMILIES_LOCAL_PATH — required; unset skips the step.
-//   • PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH — optional. Set but missing
-//     FAILS the step rather than importing without the overrides: dropping them
-//     silently would move whole branches of people once teams follow families.
-//     Read only once since 2026-10-28; see "Overrides from the app" below.
+// Paylocity's report: from the warehouse when DATAWAREHOUSE_URL is set (since
+// 2026-10-04 the file is deleted from the share once the warehouse loader has
+// it; paylocity-warehouse.ts), otherwise from PAYLOCITY_POSITION_FAMILIES_LOCAL_PATH,
+// through the same grid parser. Neither set skips the step.
 //
-// Nothing here assigns anyone to a team yet. The table is read by the Data
-// Quality tab today and by the team rule next.
-
-// Since 2026-10-04 Paylocity's Position_Families file is deleted from the share
-// once the warehouse loader has it, so with DATAWAREHOUSE_URL set it is read from
-// the warehouse instead (paylocity-warehouse.ts), through the same grid parser.
-// The overrides file is NOT: it is hand-edited on the share and stays there, so
-// it is still read from PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH.
-//
-// ── Overrides from the app (2026-10-28) ──────────────────────────────────────
-//
-// The overrides now live in the PositionFamilyOverride table, set on Data
-// Management (position-family-override-actions.ts). The file is read once
-// more, by the first pass after this shipped, to fill that table — then never
-// again: importOverridesFileOnce() won't run once the table has been filled or
-// edited, which the audit log records. Removing that import, the path setting
-// and the file itself is the follow-up.
+// Our overrides: the PositionFamilyOverride table, set on Data Management
+// (position-family-override-actions.ts) since 2026-10-28. They were the
+// hand-edited Position_Families_Overrides.xlsx on the SFTP share until then;
+// the first pass after the switch copied the file into the table, and the
+// file, its path setting and that one-time copy were removed afterwards.
 export function familiesFilePath(): string | null {
   if (warehouseConfigured()) return WAREHOUSE_FAMILIES_LABEL;
   return process.env.PAYLOCITY_POSITION_FAMILIES_LOCAL_PATH?.trim() || null;
-}
-
-export function overridesFilePath(): string | null {
-  return process.env.PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH?.trim() || null;
 }
 
 const NOT_CONFIGURED =
@@ -65,37 +46,7 @@ const NOT_CONFIGURED =
 
 const fail = (m: string) => new PositionFamilyFileError(m);
 
-/** Every audit action an override write records; any one of them means the table is ours now. */
-export const OVERRIDE_AUDIT_PREFIX = "positionFamilyOverride.";
-
-/**
- * Copies the overrides file into PositionFamilyOverride, once: only while the
- * table is empty and nothing has ever written it. Without that second check,
- * removing the last override in the app would bring the whole file back.
- */
-export async function importOverridesFileOnce(): Promise<void> {
-  const path = overridesFilePath();
-  if (!path) return;
-  if (await prisma.positionFamilyOverride.count()) return;
-  if (await prisma.auditLog.findFirst({ where: { action: { startsWith: OVERRIDE_AUDIT_PREFIX } }, select: { id: true } })) return;
-  // A set path whose file is missing still fails the step, as before: importing
-  // without it would move whole branches of people.
-  const rows = parsePositionFamiliesWorkbook(await readStableFile(path, "Position_Families_Overrides file", fail), "override");
-  await prisma.positionFamilyOverride.createMany({
-    data: rows.map((r) => ({ positionCode: r.positionCode, familyCode: r.familyCode, familyName: r.familyName, title: r.title, updatedByEmail: "import:overrides-file" })),
-    skipDuplicates: true,
-  });
-  await logAudit({
-    action: `${OVERRIDE_AUDIT_PREFIX}import`,
-    entityType: "PositionFamilyOverride",
-    entityId: 0,
-    summary: `Position family overrides: ${rows.length} row${rows.length === 1 ? "" : "s"} copied from the overrides file, which is no longer read`,
-    metadata: { path, rows: rows.map((r) => `${r.positionCode} ${r.familyCode}`) },
-  });
-}
-
 async function readOverrides(): Promise<PositionFamilyRow[]> {
-  await importOverridesFileOnce();
   const stored = await prisma.positionFamilyOverride.findMany({ select: { positionCode: true, familyCode: true, familyName: true, title: true } });
   return stored.map((r) => ({ ...r, headcount: null, source: "override" as const }));
 }

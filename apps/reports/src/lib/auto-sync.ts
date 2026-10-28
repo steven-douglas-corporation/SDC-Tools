@@ -646,7 +646,7 @@ export async function runAllSyncs(
         return await syncJobCostInventorySnapshots();
       });
 
-      // Paylocity position families + our overrides file (2026-10-02). Before the
+      // Paylocity position families + our overrides (2026-10-02). Before the
       // roster step, so the codes the roster brings in already have their families.
       await step("position_families", labelFor("position_families"), true, async () => {
         const { syncPositionFamilies } = await import("@/lib/position-families-sync");

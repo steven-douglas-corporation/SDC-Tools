@@ -69,7 +69,7 @@ export const SYNC_SOURCES = [
   // a newer file arriving.
   { source: "job_cost_inventory", label: "Job Cost inventory (monthly file)", monthScoped: false },
   // Position Code → family, from Paylocity's Position_Families report plus our
-  // overrides file (2026-10-02). Ahead of the roster, which it feeds. See
+  // overrides (2026-10-02). Ahead of the roster, which it feeds. See
   // lib/position-families-sync.ts.
   { source: "position_families", label: "Position families (Paylocity file)", monthScoped: false },
   // The Paylocity employee roster file (2026-09-30) — adds new people (hidden),

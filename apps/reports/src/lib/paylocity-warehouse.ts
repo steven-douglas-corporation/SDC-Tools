@@ -76,7 +76,7 @@ export function positionFamilyGrid(rows: WarehousePositionFamily[]): unknown[][]
   ];
 }
 
-/** Paylocity's Position_Families report, latest file. The overrides file is still read from disk. */
+/** Paylocity's Position_Families report, latest file. Our overrides are the PositionFamilyOverride table. */
 export async function readPositionFamilyGridFromWarehouse(): Promise<unknown[][]> {
   const rows = await warehouseSnapshot((q) =>
     q<WarehousePositionFamily>(
