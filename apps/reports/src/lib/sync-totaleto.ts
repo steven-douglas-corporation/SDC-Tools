@@ -3,6 +3,7 @@ import { devFakeEtoEnabled, fakePartsLines, fakeJobPartsCost, fakeJobPartsInvoic
 import { TOTALETO_TIMEOUT, withTotalEto } from "@/lib/totaleto-connection";
 import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES } from "@/lib/job-filters";
+import { hasFinalPartsActual } from "@/lib/parts-actual-final";
 import { applyRefundSign, sqlRefundSigned } from "@/lib/parts-refund";
 import { splitActualBySdc, isSdcBilling, type PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
 import {
@@ -1520,6 +1521,9 @@ export async function syncPartsCostActual(): Promise<{ jobsUpdated: number; jobs
   let jobsUpdated = 0;
   let jobsNotFound = 0;
   for (const [jobId, spent] of spentByJobId) {
+    // Closed jobs below the cutoff hold a final figure imported from the Sage job ledger
+    // (lib/parts-actual-final.ts). Total ETO must never overwrite it.
+    if (hasFinalPartsActual(jobId)) continue;
     const job = byJobId.get(jobId);
     if (!job) {
       // TotalETO carries spare-parts/service pseudo-IDs that never map to an app

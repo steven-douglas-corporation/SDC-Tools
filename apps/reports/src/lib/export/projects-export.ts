@@ -5,6 +5,7 @@ import { buildProjectsQuery, sortProjectRows, type ProjectsViewParams } from "@/
 import { loadActualHoursBySection } from "@/lib/actual-hours";
 import { getPartsActualSdcSplitByJob } from "@/lib/sync-totaleto";
 import type { PartsActualSdcSplit } from "@/lib/parts-actual-sdc";
+import { hasFinalPartsActual } from "@/lib/parts-actual-final";
 import { round2 } from "@/lib/etc";
 import { deliveryWeeks } from "@/lib/delivery-weeks";
 import type { CellValue, SheetColumn, SheetSpec } from "@/lib/export/sheet";
@@ -183,7 +184,9 @@ export async function buildProjectsExport(
     let costActualExcl: number | null = null;
     let costRemainingExcl: number | null = null;
     let exclBasis: string;
-    const split = sdcSplit?.get(job.jobId);
+    // A job with a final imported actual has no SDC split: the Sage ledger figure is one number, and a live
+    // Total ETO split of a different total beside it would not add up.
+    const split = hasFinalPartsActual(job.jobId) ? undefined : sdcSplit?.get(job.jobId);
     const costActualShown = asOf !== null && split ? round2(split.actual) : costActual;
     if (sdcSplit === null) {
       exclBasis = "Unavailable - Total ETO did not respond";

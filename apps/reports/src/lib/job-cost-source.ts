@@ -4,6 +4,7 @@ import { validJobTypeFilter } from "@/lib/job-filters";
 import { SECTIONS, SECTION_CODES, PARTS_COST_SECTION, mapPunchToColumns, billingGroupForSection, isServiceOrSparePartsCode } from "@/lib/sections";
 import { OUTSIDE_SNAPSHOT, coveredMonths } from "@/lib/actual-hours";
 import { getPartsCostSpentByJob, getPartsActualByJob } from "@/lib/sync-totaleto";
+import { hasFinalPartsActual } from "@/lib/parts-actual-final";
 import { effectiveNewEtc } from "@/lib/etc";
 import { runDax } from "@/lib/powerbi-client";
 import { withTimeoutOrNull } from "@/lib/with-timeout";
@@ -376,7 +377,7 @@ export type JobCostData = {
 export async function loadJobCostRows(asOf: string | null = null): Promise<JobCostData> {
   const jobs = await prisma.job.findMany({
     where: validJobTypeFilter,
-    select: { id: true, jobId: true, jobName: true, status: true, customer: true, type: true, startDate: true, completeDate: true },
+    select: { id: true, jobId: true, jobName: true, status: true, customer: true, type: true, startDate: true, completeDate: true, costActualHistorical: true },
   });
   const jobPks = jobs.map((j) => j.id);
 
@@ -442,7 +443,13 @@ export async function loadJobCostRows(asOf: string | null = null): Promise<JobCo
       otherHours: h?.otherHours || null,
       serviceHours: h?.serviceHours || null,
       partCost: partsPurchasedMap.get(j.jobId) ?? null,
-      partInvoiced: partsInvoicedMap.get(j.jobId) ?? null,
+      // A job below the cutoff is closed and carries a final Parts Cost Actual imported from the Sage job
+      // ledger (lib/parts-actual-final.ts) — the Projects tab's figure, so the two cannot disagree. From
+      // the cutoff up, and for a final job with no stored figure, it stays the live Total ETO read.
+      partInvoiced:
+        hasFinalPartsActual(j.jobId) && j.costActualHistorical != null
+          ? Number(j.costActualHistorical)
+          : (partsInvoicedMap.get(j.jobId) ?? null),
       salesPrice,
       startDate: j.startDate ? j.startDate.toISOString().slice(0, 10) : null,
       completeDate: j.completeDate ? j.completeDate.toISOString().slice(0, 10) : null,
