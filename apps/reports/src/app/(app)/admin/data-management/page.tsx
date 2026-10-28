@@ -116,7 +116,7 @@ export async function DataManagementView({ params }: { params: DataManagementPar
         {tab === "punches" && <PunchesTab params={params} />}
         {tab === "temp" && <TempPunchesTab />}
         {tab === "roster-sync" && <RosterSyncTab />}
-        {tab === "families" && <FamiliesTab />}
+        {tab === "families" && <FamiliesTab canEdit={canReconcile} />}
         {tab === "customers" && <CustomersTab />}
         {tab === "sources" && <SourcesTab />}
         {tab === "roster" && <RosterTab canReconcile={canReconcile} />}
@@ -180,8 +180,9 @@ async function RosterSyncTab() {
   return <RosterSection roster={await getRosterQuality()} />;
 }
 
-async function FamiliesTab() {
-  return <FamiliesSection families={await getPositionFamilyQuality()} />;
+// Setting overrides needs employees:edit, like every other team change; the actions check it too.
+async function FamiliesTab({ canEdit }: { canEdit: boolean }) {
+  return <FamiliesSection families={await getPositionFamilyQuality()} canEdit={canEdit} />;
 }
 
 // Reads the same book as the punch checks (getDataQuality), but only its customer naming is shown.

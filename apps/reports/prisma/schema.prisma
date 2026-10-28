@@ -191,6 +191,25 @@ model PositionFamily {
   @@index([positionCode])
 }
 
+// Our position family overrides (2026-10-28), set on Data Management's Position
+// families tab. They replace the hand-edited Position_Families_Overrides.xlsx on
+// the SFTP share: the first hourly pass after this shipped copied that file in
+// once, and the file is not read after that. One row per (code, family), same
+// as the file; the sync copies them into PositionFamily as source "override".
+// Codes are matched ignoring case (codeKey), so a code is stored as first typed.
+model PositionFamilyOverride {
+  id             Int      @id @default(autoincrement())
+  positionCode   String
+  familyCode     String
+  familyName     String
+  title          String?
+  updatedByEmail String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([positionCode, familyCode])
+}
+
 // Source of jobs: manual entry for now (Phase 1).
 // `source` flag lets us add automated sync later without a schema change.
 model Job {

@@ -153,6 +153,27 @@ export function planTeamWrites(people: TeamPerson[], rows: PositionFamilyRow[]):
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export type TeamMove = { id: number; name: string; from: string | null; to: string | null };
+
+/**
+ * Who would end up on a different team if the family rows went from `before` to
+ * `after` (2026-10-28): the preview behind an override edit on Data Management.
+ * Compares what the rule would leave each person on under each, so moves the
+ * next pass would make anyway are not blamed on the edit.
+ */
+export function teamMoves(people: TeamPerson[], before: PositionFamilyRow[], after: PositionFamilyRow[]): TeamMove[] {
+  const planned = (rows: PositionFamilyRow[]) => new Map(planTeamWrites(people, rows).map((w) => [w.id, w.to]));
+  const was = planned(before);
+  const now = planned(after);
+  return people
+    .flatMap((p) => {
+      const from = was.get(p.id) ?? p.team;
+      const to = now.get(p.id) ?? p.team;
+      return from === to ? [] : [{ id: p.id, name: p.name, from, to }];
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export type TeamChange = { id: number; name: string; from: string | null; to: string; reason: string };
 
 /** What applying the proposals would change, for people shown in the app. */

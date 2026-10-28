@@ -19,6 +19,8 @@ import * as XLSX from "xlsx";
 //     code: it fills a code the report lacks (AII, HRM, …) and can correct one
 //     the report files wrongly. Delete it once Paylocity has the code right;
 //     Data Management lists the overrides Paylocity now covers.
+//     Since 2026-10-28 the overrides live in the PositionFamilyOverride table,
+//     set on Data Management; the file is only read once, to fill that table.
 //
 // Codes are matched ignoring case and surrounding spaces ("Shop" = "SHOP").
 
@@ -160,10 +162,49 @@ export function mergePositionFamilies(rows: PositionFamilyRow[]): Map<string, Po
   return byCode;
 }
 
+// ── Overrides set in the app (2026-10-28) ───────────────────────────────────
+//
+// The overrides file became the PositionFamilyOverride table, edited on Data
+// Management. These two are the pure half of that editor: what it offers, and
+// what the table would hold after a save, so the save can be previewed by
+// running the team rule on it before anything is written.
+
+export type FamilyChoice = { code: string; name: string };
+
+/** Every family the rows name, in code order: what an override can pick from. Paylocity's name wins. */
+export function familyChoices(rows: PositionFamilyRow[]): FamilyChoice[] {
+  const byCode = new Map<string, string>();
+  for (const r of [...rows].sort((a, b) => (a.source === b.source ? 0 : a.source === "paylocity" ? -1 : 1))) {
+    if (!byCode.has(r.familyCode)) byCode.set(r.familyCode, r.familyName);
+  }
+  return [...byCode]
+    .map(([code, name]) => ({ code, name }))
+    .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+}
+
+/**
+ * The rows with one code's override replaced by `families`. An empty list
+ * removes the override, so Paylocity's rows for the code apply again.
+ */
+export function withOverride(
+  rows: PositionFamilyRow[],
+  positionCode: string,
+  families: FamilyChoice[],
+  title: string | null,
+): PositionFamilyRow[] {
+  const k = codeKey(positionCode);
+  const kept = rows.filter((r) => r.source !== "override" || codeKey(r.positionCode) !== k);
+  const code = positionCode.trim();
+  return [
+    ...kept,
+    ...families.map((f) => ({ positionCode: code, familyCode: f.code, familyName: f.name, title, headcount: null, source: "override" as const })),
+  ];
+}
+
 // ── Data quality ────────────────────────────────────────────────────────────
 //
 // Data Management's Position families section. Everything here is a gap a
-// person has to close — in Paylocity, in the overrides file, or on the
+// person has to close — in Paylocity, with an override, or on the
 // Employees page — so it lists, it never acts.
 
 export type FamilyPerson = {
@@ -174,7 +215,7 @@ export type FamilyPerson = {
   active: boolean;
 };
 
-export type FamilyFinding = { name: string; paylocityId: string | null; detail: string };
+export type FamilyFinding = { name: string; paylocityId: string | null; detail: string; positionCode?: string };
 
 export type PositionFamilyFindings = {
   /** Active people whose position code is in neither file. */
@@ -198,7 +239,7 @@ export function positionFamilyFindings(people: FamilyPerson[], rows: PositionFam
 
   const unknownCodes = active
     .filter((p) => p.positionCode && !merged.has(codeKey(p.positionCode)))
-    .map((p) => ({ name: p.name, paylocityId: p.paylocityId, detail: `Position code ${p.positionCode}` }))
+    .map((p) => ({ name: p.name, paylocityId: p.paylocityId, detail: `Position code ${p.positionCode}`, positionCode: p.positionCode! }))
     .sort(byName);
   const noCode = active
     .filter((p) => !p.positionCode)

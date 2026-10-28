@@ -5,6 +5,8 @@ import {
   mergePositionFamilies,
   positionFamilyFindings,
   describeFamilies,
+  familyChoices,
+  withOverride,
   PositionFamilyFileError,
   type FamilyPerson,
 } from "../src/lib/position-families-parse";
@@ -82,4 +84,28 @@ test("findings: unknown codes, no code, no supervisor (Leadership exempt), cover
   assert.deepEqual(f.noSupervisor.map((x) => x.name), ["Lahu Shedole"], "the CFO is Leadership; inactive people are skipped");
   assert.deepEqual(f.overridesCovered, [{ positionCode: "IC", override: "107 Procurement", paylocity: "107 Procurement; 404 Manufacturing Operations" }]);
   assert.equal(f.overrides, 2);
+});
+
+// The editor that replaced the overrides file (2026-10-28).
+test("familyChoices: every family once, in code order, Paylocity's name first", () => {
+  const rows = [
+    ...PAYLOCITY,
+    { positionCode: "AII", familyCode: "108", familyName: "AI + Internal Processes", title: null, headcount: null, source: "override" as const },
+    { positionCode: "X", familyCode: "107", familyName: "Procurement (ours)", title: null, headcount: null, source: "override" as const },
+  ];
+  assert.deepEqual(
+    familyChoices(rows).map((f) => `${f.code} ${f.name}`),
+    ["100 Management", "106 Project Management", "107 Procurement", "108 AI + Internal Processes", "201 Mechanical Engineering", "301 Electrical Controls Engineering", "404 Manufacturing Operations", "500 Service"],
+  );
+});
+
+test("withOverride: replaces a code's override under any casing; an empty list hands it back to Paylocity", () => {
+  const rows = [...PAYLOCITY, ...parsePositionFamiliesGrid(grid(["107", "Procurement", "IC", "Inventory Coordinator", null]), "override")];
+  const set = withOverride(rows, " ic ", [{ code: "404", name: "Manufacturing Operations" }], "Inventory Coordinator");
+  assert.deepEqual(mergePositionFamilies(set).get("ic")?.families, [{ code: "404", name: "Manufacturing Operations" }]);
+  assert.equal(set.filter((r) => r.source === "override").length, 1);
+  const removed = withOverride(rows, "IC", [], null);
+  const ic = mergePositionFamilies(removed).get("ic");
+  assert.equal(ic?.source, "paylocity");
+  assert.deepEqual(ic?.families.map((f) => f.code), ["107", "404"]);
 });
