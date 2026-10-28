@@ -27,6 +27,7 @@ import { buildEtcIssues } from "@/lib/etc-issues";
 import { PartsCostNewEtcCell } from "@/components/PartsCostNewEtcCell";
 import { PartsBreakoutCell } from "@/components/PartsBreakoutCell";
 import { readPartsEtcBreakout, type PartsEtcBreakout } from "@/lib/parts-etc-breakout";
+import { describeBuckets } from "@/lib/left-to-invoice-by-month";
 import { monthEndLabel } from "@/lib/left-to-invoice";
 import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
 import { resolveLeftToInvoice, partsNewEtc } from "@/lib/left-to-invoice";
@@ -2209,6 +2210,12 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                                   : resolvedInvoice.overridden
                                   ? `Manually adjusted earlier. Total ETO’s figure as of ${cutoffLabel} is ${currencyExact(resolvedInvoice.defaultValue ?? 0)}; this cell holds ${currencyExact(leftToInvoiceValue)}. This cell can no longer be edited.`
                                   : `${currencyExact(leftToInvoiceValue)} on purchase orders and not yet invoiced as of ${cutoffLabel}. Only invoices dated on or before that day are counted, so later invoices do not change it. This cell cannot be edited.` +
+                                    // When it is expected to be billed — the PO line's required date, i.e. when the
+                                    // part is due to arrive. An estimate: nothing is invoiced yet, so no due date exists.
+                                    // "Overdue" = required date already passed, balance still not invoiced.
+                                    (suggestion?.byRequiredMonth && describeBuckets(suggestion.byRequiredMonth, currencyExact)
+                                      ? ` Expected to be billed (by PO required date): ${describeBuckets(suggestion.byRequiredMonth, currencyExact)}.`
+                                      : "") +
                                     (supersededNewEtc != null
                                       ? ` This row previously carried a hand-typed New ETC of ${currencyExact(supersededNewEtc)}; New ETC is now this figure plus Left to Purchase.`
                                       : "")
