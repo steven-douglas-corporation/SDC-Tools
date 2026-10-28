@@ -26,6 +26,19 @@ import { dayOf, isWithinAsOf, leftToInvoiceForLines, lineLeftToInvoice, rawLeftT
 export const OVERDUE_BUCKET = "overdue" as const;
 export const NO_DATE_BUCKET = "no-date" as const;
 
+/**
+ * Typical supplier terms (net 30), added to the required date for the "expected payment month"
+ * view (2026-10-28, by request). A flat figure on purpose: Total ETO's invoice data shows roughly
+ * half of AP invoices carry 0-day terms, so this is an estimate, not each vendor's real terms.
+ */
+export const NET_TERMS_DAYS = 30;
+
+/** `YYYY-MM-DD` plus `days` calendar days, as a `YYYY-MM-DD`. Pure date arithmetic (UTC), no local-time drift. */
+export function addDays(day: string, days: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
 export type LeftToInvoiceBuckets = {
   /** Required date before `today`. */
   overdue: number;
@@ -43,21 +56,26 @@ export function emptyBuckets(): LeftToInvoiceBuckets {
   return { overdue: 0, months: {}, noDate: 0, floorAdjustment: 0, total: 0 };
 }
 
-/** The bucket one line falls in. `today` is an inclusive `YYYY-MM-DD`; string compare, no Date. */
-export function bucketOf(line: PartsCostLine, today: string): string {
+/**
+ * The bucket one line falls in. `today` is an inclusive `YYYY-MM-DD`; string compare, no Date.
+ * `termsDays` shifts only the MONTH a not-yet-due line lands in (required date + terms); Overdue
+ * is always judged on the required date itself, so a late, un-billed part never slips out of view.
+ */
+export function bucketOf(line: PartsCostLine, today: string, termsDays = 0): string {
   const due = dayOf(line.requiredDate);
   if (due === null) return NO_DATE_BUCKET;
-  return due < today ? OVERDUE_BUCKET : due.slice(0, 7);
+  if (due < today) return OVERDUE_BUCKET;
+  return (termsDays ? addDays(due, termsDays) : due).slice(0, 7);
 }
 
 /** One job's lines, split. Pass the same `scope` the headline used so the totals are the headline. */
-export function leftToInvoiceByMonth(lines: readonly PartsCostLine[], scope: LeftToInvoiceScope, today: string): LeftToInvoiceBuckets {
+export function leftToInvoiceByMonth(lines: readonly PartsCostLine[], scope: LeftToInvoiceScope, today: string, termsDays = 0): LeftToInvoiceBuckets {
   const out = emptyBuckets();
   for (const line of lines) {
     if (!isWithinAsOf(line, scope.asOf)) continue;
     const v = lineLeftToInvoice(line, scope);
     if (v === 0) continue;
-    const key = bucketOf(line, today);
+    const key = bucketOf(line, today, termsDays);
     if (key === OVERDUE_BUCKET) out.overdue += v;
     else if (key === NO_DATE_BUCKET) out.noDate += v;
     else out.months[key] = (out.months[key] ?? 0) + v;
@@ -117,6 +135,11 @@ export function monthName(month: string): string {
 // every row sums to its cell and the Total row sums to the column of cells above it.
 
 export type JobBuckets = { jobId: string; jobName: string; buckets: LeftToInvoiceBuckets };
+
+/** The same jobs with `pick` choosing which of their splits to show (e.g. billing vs payment month). */
+export function pickBuckets<T extends { jobId: string; jobName: string }>(jobs: readonly T[], pick: (j: T) => LeftToInvoiceBuckets): JobBuckets[] {
+  return jobs.map((j) => ({ jobId: j.jobId, jobName: j.jobName, buckets: pick(j) }));
+}
 
 export type LeftToInvoiceOverview = {
   /** Ascending `YYYY-MM`, every month any job has money in. */

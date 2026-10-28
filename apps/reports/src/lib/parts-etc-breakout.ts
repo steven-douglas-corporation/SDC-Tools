@@ -3,7 +3,7 @@ import { getPartsCostForJobs } from "@/lib/sync-totaleto";
 import { withTimeoutOrNull, UPSTREAM_BUDGET_MS } from "@/lib/with-timeout";
 import { explainLeftToInvoice, monthEndCutoff } from "@/lib/left-to-invoice";
 import { isSdcBillingLine } from "@/lib/parts-actual-sdc";
-import { leftToInvoiceByMonth, todayLocal, type LeftToInvoiceBuckets } from "@/lib/left-to-invoice-by-month";
+import { NET_TERMS_DAYS, leftToInvoiceByMonth, todayLocal, type LeftToInvoiceBuckets } from "@/lib/left-to-invoice-by-month";
 
 // ── Seeding the Parts Cost breakout ──────────────────────────────────────────
 //
@@ -72,6 +72,8 @@ export type PartsEtcBreakout = {
    * Null when the lines could not be read. "Overdue" is relative to TODAY, not the month end.
    */
   byRequiredMonth: LeftToInvoiceBuckets | null;
+  /** Same split with each not-yet-due month shifted by NET_TERMS_DAYS (expected payment month). Overdue is unchanged. */
+  byPaymentMonth: LeftToInvoiceBuckets | null;
 };
 
 export type PartsEtcBreakoutResult = {
@@ -80,7 +82,7 @@ export type PartsEtcBreakoutResult = {
   linesFailed: boolean;
 };
 
-const EMPTY: PartsEtcBreakout = { leftToInvoice: null, rawLeftToInvoice: null, postedAfterCutoff: 0, byRequiredMonth: null };
+const EMPTY: PartsEtcBreakout = { leftToInvoice: null, rawLeftToInvoice: null, postedAfterCutoff: 0, byRequiredMonth: null, byPaymentMonth: null };
 
 /**
  * The Left to Invoice figure for a month's jobs.
@@ -163,6 +165,7 @@ export async function readPartsEtcBreakout(
       rawLeftToInvoice: x.raw,
       postedAfterCutoff: x.postedAfterCutoff,
       byRequiredMonth: leftToInvoiceByMonth(lines, { asOf, asOfPosting: true }, today),
+      byPaymentMonth: leftToInvoiceByMonth(lines, { asOf, asOfPosting: true }, today, NET_TERMS_DAYS),
     });
   }
 

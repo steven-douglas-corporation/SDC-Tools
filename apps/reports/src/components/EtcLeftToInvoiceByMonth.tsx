@@ -1,5 +1,5 @@
 import { usd } from "@/components/ui/format";
-import { monthName, type LeftToInvoiceOverview } from "@/lib/left-to-invoice-by-month";
+import { NET_TERMS_DAYS, monthName, type LeftToInvoiceOverview } from "@/lib/left-to-invoice-by-month";
 
 // Monthly ETC → every job's Left to Invoice, side by side by expected billing month (2026-10-28).
 //
@@ -18,15 +18,18 @@ const money = (n: number) => (Math.abs(n) < 0.5 ? "—" : usd(n));
 
 export function EtcLeftToInvoiceByMonth({
   overview,
+  payOverview,
   overriddenJobs,
   cutoffLabel,
 }: {
   overview: LeftToInvoiceOverview;
+  /** Same jobs with each month moved NET_TERMS_DAYS later (expected payment month). */
+  payOverview: LeftToInvoiceOverview;
   /** Jobs whose cell holds a manual figure instead of this computed one, so their row is not what the cell shows. */
   overriddenJobs: number;
   cutoffLabel: string;
 }) {
-  const { rows, months, totals } = overview;
+  const { rows, totals } = overview;
   if (rows.length === 0) return null;
   const overduePct = totals.sum > 0 ? Math.round((totals.overdue / totals.sum) * 100) : 0;
 
@@ -51,54 +54,69 @@ export function EtcLeftToInvoiceByMonth({
             ? ` ${overriddenJobs} job${overriddenJobs === 1 ? "" : "s"} carry a manually adjusted figure in the grid; this table shows the computed one.`
             : ""}
         </p>
-        <div className="max-h-[28rem] overflow-auto">
-          <table className="w-full border-collapse text-left">
-            <thead className="sticky top-0 z-[1] bg-sdc-navy text-micro font-bold uppercase tracking-wider text-white">
-              <tr>
-                <th className="px-2 py-1.5">Job</th>
-                <th className="px-2 py-1.5 text-right">Overdue</th>
-                {months.map((m) => (
-                  <th key={m} className="px-2 py-1.5 text-right">
-                    {monthName(m)}
-                  </th>
-                ))}
-                <th className="px-2 py-1.5 text-right">No date</th>
-                <th className="px-2 py-1.5 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.jobId} className="border-b border-sdc-border-soft hover:bg-sdc-blue-light/40">
-                  <td className="max-w-[18rem] truncate px-2 py-1" title={`${r.jobId} — ${r.jobName}`}>
-                    <span className="font-mono">{r.jobId}</span> <span className="text-sdc-muted">{r.jobName}</span>
-                  </td>
-                  <td className={`${NUM} ${r.buckets.overdue > 0.5 ? "bg-sdc-yellow-bg/50" : ""}`}>{money(r.buckets.overdue)}</td>
-                  {months.map((m) => (
-                    <td key={m} className={NUM}>
-                      {money(r.buckets.months[m] ?? 0)}
-                    </td>
-                  ))}
-                  <td className={NUM}>{money(r.buckets.noDate)}</td>
-                  <td className={`${NUM} font-semibold`}>{money(r.sum)}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot className="sticky bottom-0 bg-sdc-navy font-bold text-white">
-              <tr>
-                <td className="px-2 py-1.5">Total · {rows.length} jobs</td>
-                <td className={NUM}>{money(totals.overdue)}</td>
-                {months.map((m) => (
-                  <td key={m} className={NUM}>
-                    {money(totals.months[m] ?? 0)}
-                  </td>
-                ))}
-                <td className={NUM}>{money(totals.noDate)}</td>
-                <td className={NUM}>{money(totals.sum)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+        <OverviewTable overview={overview} />
+        <h3 className="border-t border-sdc-border px-4 pb-1 pt-2.5 text-xs font-semibold text-sdc-navy">
+          By expected payment month — required date + {NET_TERMS_DAYS} days
+        </h3>
+        <p className="px-4 pb-2 text-note leading-relaxed text-sdc-gray-600">
+          The same balances with each month moved {NET_TERMS_DAYS} days after the required date, assuming net {NET_TERMS_DAYS} supplier terms. A flat estimate: many
+          suppliers bill with shorter terms, and net terms run from the invoice date, which can be after the required date. Overdue stays on the required date.
+        </p>
+        <OverviewTable overview={payOverview} />
       </div>
     </details>
+  );
+}
+
+function OverviewTable({ overview }: { overview: LeftToInvoiceOverview }) {
+  const { rows, months, totals } = overview;
+  return (
+    <div className="max-h-[28rem] overflow-auto">
+      <table className="w-full border-collapse text-left">
+        <thead className="sticky top-0 z-[1] bg-sdc-navy text-micro font-bold uppercase tracking-wider text-white">
+          <tr>
+            <th className="px-2 py-1.5">Job</th>
+            <th className="px-2 py-1.5 text-right">Overdue</th>
+            {months.map((m) => (
+              <th key={m} className="px-2 py-1.5 text-right">
+                {monthName(m)}
+              </th>
+            ))}
+            <th className="px-2 py-1.5 text-right">No date</th>
+            <th className="px-2 py-1.5 text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.jobId} className="border-b border-sdc-border-soft hover:bg-sdc-blue-light/40">
+              <td className="max-w-[18rem] truncate px-2 py-1" title={`${r.jobId} — ${r.jobName}`}>
+                <span className="font-mono">{r.jobId}</span> <span className="text-sdc-muted">{r.jobName}</span>
+              </td>
+              <td className={`${NUM} ${r.buckets.overdue > 0.5 ? "bg-sdc-yellow-bg/50" : ""}`}>{money(r.buckets.overdue)}</td>
+              {months.map((m) => (
+                <td key={m} className={NUM}>
+                  {money(r.buckets.months[m] ?? 0)}
+                </td>
+              ))}
+              <td className={NUM}>{money(r.buckets.noDate)}</td>
+              <td className={`${NUM} font-semibold`}>{money(r.sum)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot className="sticky bottom-0 bg-sdc-navy font-bold text-white">
+          <tr>
+            <td className="px-2 py-1.5">Total · {rows.length} jobs</td>
+            <td className={NUM}>{money(totals.overdue)}</td>
+            {months.map((m) => (
+              <td key={m} className={NUM}>
+                {money(totals.months[m] ?? 0)}
+              </td>
+            ))}
+            <td className={NUM}>{money(totals.noDate)}</td>
+            <td className={NUM}>{money(totals.sum)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
   );
 }
