@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 // rules are unit-testable against synthetic grids
 // (tests/position-families.test.ts). Same split as paylocity-roster-parse.ts.
 //
-// ── The two files ───────────────────────────────────────────────────────────
+// ── The two sources ───────────────────────────────────────────────────────────
 //
 // Both have one layout, Paylocity's Position_Families report ("Report" sheet):
 //
@@ -20,7 +20,8 @@ import * as XLSX from "xlsx";
 //     the report files wrongly. Delete it once Paylocity has the code right;
 //     Data Management lists the overrides Paylocity now covers.
 //     Since 2026-10-28 the overrides live in the PositionFamilyOverride table,
-//     set on Data Management; the file is only read once, to fill that table.
+//     set on Data Management, and the file is gone. Parsing an override grid
+//     stays for the tests, which build both sources the same way.
 //
 // Codes are matched ignoring case and surrounding spaces ("Shop" = "SHOP").
 
@@ -130,7 +131,7 @@ export function parsePositionFamiliesGrid(grid: unknown[][], source: PositionFam
   }
 
   // Paylocity's report empty means a broken export: importing it would leave
-  // every position code without a family. An empty overrides file is just
+  // every position code without a family. No overrides is just
   // "no overrides".
   if (source === "paylocity" && rows.length === 0) {
     throw new PositionFamilyFileError(`${label} has a header but no position codes — that looks like a broken export. Nothing was imported.`);

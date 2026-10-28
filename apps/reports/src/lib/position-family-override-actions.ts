@@ -6,7 +6,6 @@ import { logAudit } from "@/lib/audit";
 import { recordChanges, classifyChange } from "@/lib/change-log";
 import { assertActionPermission } from "@/lib/require-permission";
 import { applyTeamRule } from "@/lib/paylocity-roster-sync";
-import { importOverridesFileOnce, OVERRIDE_AUDIT_PREFIX } from "@/lib/position-families-sync";
 import { codeKey, familyChoices, mergePositionFamilies, withOverride, type FamilyChoice, type PositionFamilyRow } from "@/lib/position-families-parse";
 import { teamMoves, TEAM_NAME } from "@/lib/team-resolution";
 
@@ -26,6 +25,8 @@ import { teamMoves, TEAM_NAME } from "@/lib/team-resolution";
 //
 // employees:edit, the permission behind every other team change (the Employees
 // page's team set by hand, Reconcile with Scheduler on this same page).
+
+const OVERRIDE_AUDIT_PREFIX = "positionFamilyOverride.";
 
 export type OverrideMove = { name: string; from: string; to: string; shown: boolean };
 export type OverridePreview = { ok: true; moves: OverrideMove[] } | { ok: false; error: string };
@@ -74,13 +75,6 @@ export async function previewPositionFamilyOverride(positionCode: string, family
 
 export async function savePositionFamilyOverride(positionCode: string, familyCodes: string[], title: string | null): Promise<OverrideSaveResult> {
   const session = await assertActionPermission("employees:edit");
-  // Before the first write: an edit made ahead of the one-time import would
-  // otherwise mark the table as ours and leave the rest of the file behind.
-  try {
-    await importOverridesFileOnce();
-  } catch (err) {
-    return { ok: false, error: `The overrides file still has to be copied in first, and it couldn't be read: ${err instanceof Error ? err.message : String(err)}` };
-  }
   const c = await check(positionCode, familyCodes, title);
   if ("error" in c) return { ok: false, error: c.error };
 

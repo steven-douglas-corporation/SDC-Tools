@@ -82,7 +82,7 @@ codes sit in more than one family, so that dimension needs a decision on how to 
 
 Staging views: `"EmployeeInformation"` (current roster), `"EmployeeInformationSnapshot"`
 (every daily roster), `"JobHours"`, `"TempPunch"`, `"PaidExpense"` (all daily files combined, overlap
-removed), `"PositionFamily"`, `"PositionFamilyOverride"`, `"HiringPosition"`. Which file owns
+removed), `"PositionFamily"`, `"HiringPosition"`. Which file owns
 which years of hours is the `"Paylocity"."JobHoursSource"` table; add a row when a new
 yearly archive file appears.
 
@@ -224,8 +224,8 @@ change: their first file adds a row to `"Integration"."SourceReport"`.
 As of 2026-10-04 (Jon's decision):
 
 - **Remote delete is on.** Every file is removed from the SFTP server once its copy is
-  checked and recorded (301 files deleted on the first run). Only
-  `Position_Families_Overrides.xlsx` stays, because it's hand-maintained (`keep_on_server`).
+  checked and recorded (301 files deleted on the first run). `Position_Families_Overrides.xlsx`
+  stayed (`keep_on_server`) until 2026-10-28, when the overrides moved into the reports app.
 - **The Power Automate flow that copied SFTP files to SharePoint is turned off.** The
   copies in the `SDC-PowerBIIntegration` site are frozen as of that date.
 
@@ -237,7 +237,7 @@ database instead:
 | Reports app (`apps/reports`), hours import | `\\SERVER-DC1\ClientApps\SFTP\hours\` (`JOB_HOURS_LOCAL_PATH`) | Repointed to `"Fact"."JobHours"` when `DATAWAREHOUSE_URL` is set. **Broken until deployed** |
 | Reports app, hourly roster sync | `...\employees\Employee_Information.xlsx` (`PAYLOCITY_EMPLOYEES_LOCAL_PATH`) | Repointed to `"Dimension"."Employee"` (current rows). **Broken until deployed** |
 | Reports app, position families | `...\position_family_reports\Position_Families.xlsx` | Repointed to `"Paylocity"."PositionFamily"`. **Broken until deployed** |
-| Reports app, position-family overrides | `...\Position_Families_Overrides.xlsx` | Still works (file kept on the server) |
+| Reports app, position-family overrides | `...\Position_Families_Overrides.xlsx` | Moved into the reports app (2026-10-28): set on Data Management. The file is no longer read |
 | Power BI "Job Hours Report - Management Level" | SharePoint `SDC-PowerBIIntegration` workbooks | **Frozen** at 2026-10-04; being retired |
 | `apps/reports/scripts/etl_job_hours.py`, `check-graph-auth.ts` | SharePoint via Microsoft Graph | Manual scripts; stale, retire |
 | ETC Planner `.env` `JOB_HOURS_LOCAL_PATH` | OneDrive copy of the SharePoint folder | Setting unused by its code; remove |

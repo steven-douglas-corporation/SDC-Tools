@@ -15,7 +15,9 @@ root = "/"
 delete_after_download = true
 # Reports that are never deleted from the server, even with the above on:
 # files people maintain by hand there rather than daily Paylocity exports.
-keep_on_server = ["position_families_overrides"]
+# Empty since 2026-10-28: the one such file, Position_Families_Overrides.xlsx,
+# moved into the reports app, so it is archived and deleted like the rest.
+keep_on_server = []
 
 [warehouse]
 # PostgreSQL on this server. The password comes from Windows Credential Manager
