@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveTeams, pendingTeamChanges, planTeamWrites, pickFamily, departmentLeads, type TeamPerson } from "../src/lib/team-resolution";
-import type { PositionFamilyRow } from "../src/lib/position-families-parse";
+import { resolveTeams, pendingTeamChanges, planTeamWrites, pickFamily, departmentLeads, teamMoves, type TeamPerson } from "../src/lib/team-resolution";
+import { withOverride as withFamilyOverride, type PositionFamilyRow } from "../src/lib/position-families-parse";
 
 // The reporting-line team rule (2026-10-02). See the header of
 // src/lib/team-resolution.ts. People and codes below are the real cases from
@@ -164,4 +164,18 @@ test("pending changes say when a team was set by hand", () => {
   const people = withOverride(12, "growth"); // Ivan, stored on service
   const change = pendingTeamChanges(people, resolveTeams(people, ROWS)).find((c) => c.id === 12);
   assert.deepEqual([change?.from, change?.to, change?.reason], ["service", "growth", "team set by hand"]);
+});
+
+// The preview behind an override edit on Data Management (2026-10-28).
+test("teamMoves: an override on the branch head moves the whole branch, and only what the edit changes", () => {
+  // Teams as the hourly pass left them, so nothing is pending before the edit.
+  const settled = PEOPLE.map((x) => ({ ...x, team: planTeamWrites(PEOPLE, ROWS).find((w) => w.id === x.id)?.to ?? x.team }));
+  const after = withFamilyOverride(ROWS, "sem", [{ code: "404", name: "Manufacturing Operations" }], null);
+  assert.deepEqual(
+    teamMoves(settled, ROWS, after).map((m) => [m.name, m.from, m.to]),
+    [["Billy Cantrell", "service", "mfgops"], ["Ivan Galvez", "service", "mfgops"], ["Monica Saggio", "service", "mfgops"]],
+  );
+  assert.deepEqual(teamMoves(settled, ROWS, ROWS), [], "no edit, no moves");
+  // A move the next pass would make anyway (Billy still on mfgops) is not the edit's.
+  assert.deepEqual(teamMoves(PEOPLE, ROWS, ROWS), []);
 });

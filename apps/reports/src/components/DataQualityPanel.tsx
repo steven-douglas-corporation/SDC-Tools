@@ -7,8 +7,9 @@ import { SectionTitle } from "@/components/ui/Typography";
 import type { DataQuality, PunchExplorer } from "@/lib/data-quality";
 import type { RosterQuality } from "@/lib/paylocity-roster-sync";
 import type { RosterPerson } from "@/lib/paylocity-roster-parse";
-import type { PositionFamilyQuality } from "@/lib/position-families-sync";
-import type { FamilyFinding } from "@/lib/position-families-parse";
+import type { PositionFamilyQuality, PositionFamilyOverrideEntry } from "@/lib/position-families-sync";
+import type { FamilyChoice, FamilyFinding, PositionFamilyFindings } from "@/lib/position-families-parse";
+import { PositionFamilyOverrideDrawer, type OverrideEdit } from "@/components/PositionFamilyOverrideDrawer";
 import { DataQualityExplorer } from "@/components/DataQualityExplorer";
 import { DataQualityDrill, EmployeeIdDrill } from "@/components/DataQualityDrill";
 import { UndefinedHoursDrill } from "@/components/UndefinedHoursDrill";
@@ -924,9 +925,172 @@ export function RosterSection({ roster }: { roster: RosterQuality }) {
 // ── Position families (Paylocity) ──────────────────────────────────
 //
 // The PositionFamily table the hourly sync builds from Paylocity's
-// Position_Families report and our overrides file
+// Position_Families report and our overrides
 // (lib/position-families-parse.ts positionFamilyFindings). Each check is a gap
-// someone closes in Paylocity, in the overrides file, or on the Employees page.
+// someone closes in Paylocity, with an override, or on the Employees page.
+//
+// The overrides are set here since 2026-10-28 (they were a file on the SFTP
+// share): the Overrides card lists them, and the two checks an override closes
+// carry a button for it. Every edit goes through PositionFamilyOverrideDrawer,
+// which shows who changes team before it saves. Buttons need employees:edit.
+
+const SMALL_BUTTON =
+  "rounded-md border border-sdc-border bg-white px-2 py-0.5 text-label font-semibold text-sdc-navy motion-interactive hover:bg-sdc-gray-50";
+
+function familyLine(fs: FamilyChoice[]) {
+  return fs.map((f) => `${f.code} ${f.name}`.trim()).join("; ");
+}
+
+function OverridesCard({
+  overrides,
+  canEdit,
+  onEdit,
+}: {
+  overrides: PositionFamilyOverrideEntry[];
+  canEdit: boolean;
+  onEdit: (e: OverrideEdit) => void;
+}) {
+  return (
+    <div className={card("p-5")}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-sdc-gray-600">Overrides</p>
+          <p className="mt-0.5 text-xs text-sdc-muted">
+            Families set here for a code Paylocity&apos;s report lacks or files wrongly. They replace Paylocity&apos;s for that code.
+          </p>
+        </div>
+        {canEdit && (
+          <button type="button" className={SMALL_BUTTON} onClick={() => onEdit({ positionCode: "", title: null, families: [] })}>
+            Add override
+          </button>
+        )}
+      </div>
+      {overrides.length === 0 ? (
+        <p className="mt-3 text-sm text-sdc-gray-600">None. Every code uses Paylocity&apos;s families.</p>
+      ) : (
+        <div className="mt-3 max-h-80 overflow-auto rounded-lg border border-sdc-border">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-sdc-gray-50 text-label font-semibold uppercase tracking-[0.04em] text-sdc-gray-600">
+              <tr>
+                <th className="px-3 py-2">Position code</th>
+                <th className="px-3 py-2">Title</th>
+                <th className="px-3 py-2">Families</th>
+                {canEdit && <th className="px-3 py-2" />}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-sdc-border-soft">
+              {overrides.map((o) => (
+                <tr key={o.positionCode}>
+                  <td className="px-3 py-1.5 font-medium text-sdc-navy">{o.positionCode}</td>
+                  <td className="px-3 py-1.5 text-sdc-gray-600">{o.title ?? "—"}</td>
+                  <td className="px-3 py-1.5 text-sdc-gray-600">{familyLine(o.families)}</td>
+                  {canEdit && (
+                    <td className="px-3 py-1.5 text-right">
+                      <button
+                        type="button"
+                        className={SMALL_BUTTON}
+                        onClick={() => onEdit({ positionCode: o.positionCode, title: o.title, families: o.families.map((f) => f.code) })}
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The codes behind "Position codes with no family", one button each, above the people.
+function UnknownCodes({
+  rows,
+  codeTitles,
+  canEdit,
+  onEdit,
+}: {
+  rows: FamilyFinding[];
+  codeTitles: Record<string, string>;
+  canEdit: boolean;
+  onEdit: (e: OverrideEdit) => void;
+}) {
+  const codes = [...new Map(rows.filter((r) => r.positionCode).map((r) => [r.positionCode!.trim().toLowerCase(), r.positionCode!])).entries()];
+  return (
+    <div className="flex flex-col gap-2">
+      {canEdit && codes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-sdc-gray-600">Set a family for:</span>
+          {codes.map(([key, code]) => (
+            <button
+              key={key}
+              type="button"
+              className={SMALL_BUTTON}
+              onClick={() => onEdit({ positionCode: code, title: codeTitles[key] ?? null, families: [] })}
+            >
+              {code}
+            </button>
+          ))}
+        </div>
+      )}
+      {findingsTable(rows)}
+    </div>
+  );
+}
+
+function CoveredOverrides({
+  rows,
+  overrides,
+  canEdit,
+  onEdit,
+}: {
+  rows: PositionFamilyFindings["overridesCovered"];
+  overrides: PositionFamilyOverrideEntry[];
+  canEdit: boolean;
+  onEdit: (e: OverrideEdit) => void;
+}) {
+  return (
+    <div className="max-h-80 overflow-auto rounded-lg border border-sdc-border">
+      <table className="w-full text-left text-xs">
+        <thead className="sticky top-0 bg-sdc-gray-50 text-label font-semibold uppercase tracking-[0.04em] text-sdc-gray-600">
+          <tr>
+            <th className="px-3 py-2">Position code</th>
+            <th className="px-3 py-2">Override</th>
+            <th className="px-3 py-2">Paylocity</th>
+            {canEdit && <th className="px-3 py-2" />}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-sdc-border-soft">
+          {rows.map((o) => {
+            const entry = overrides.find((x) => x.positionCode === o.positionCode);
+            return (
+              <tr key={o.positionCode}>
+                <td className="px-3 py-1.5 font-medium text-sdc-navy">{o.positionCode}</td>
+                <td className="px-3 py-1.5 text-sdc-gray-600">{o.override}</td>
+                <td className="px-3 py-1.5 text-sdc-gray-600">{o.paylocity}</td>
+                {canEdit && (
+                  <td className="px-3 py-1.5 text-right">
+                    <button
+                      type="button"
+                      className={SMALL_BUTTON}
+                      onClick={() =>
+                        onEdit({ positionCode: o.positionCode, title: entry?.title ?? null, families: entry?.families.map((f) => f.code) ?? [], remove: true })
+                      }
+                    >
+                      Use Paylocity&apos;s
+                    </button>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function findingsTable(rows: FamilyFinding[]) {
   const people = rows.map((r) => ({ name: r.name, paylocityId: r.paylocityId, title: null }));
@@ -969,27 +1133,23 @@ function FamiliesStatusCard({ families }: { families: PositionFamilyQuality }) {
           Set <code>PAYLOCITY_POSITION_FAMILIES_LOCAL_PATH</code> in the server&apos;s .env to Paylocity&apos;s Position_Families file.
         </p>
       )}
-      {families.configured && !families.overridesConfigured && (
-        <p className="mt-3 text-xs text-sdc-gray-600">
-          No overrides file configured (<code>PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH</code>), so only Paylocity&apos;s report is used.
-        </p>
-      )}
       {statusIsProblem && <p className="mt-3 text-xs text-sdc-yellow-text">{families.lastStatus}</p>}
     </div>
   );
 }
 
-export function FamiliesSection({ families }: { families: PositionFamilyQuality }) {
+export function FamiliesSection({ families, canEdit }: { families: PositionFamilyQuality; canEdit: boolean }) {
   const f = families.findings;
+  const [editing, setEditing] = useState<OverrideEdit | null>(null);
   const checks: Check[] = f
     ? [
         {
           key: "unknownCodes",
-          title: "Position codes in neither file",
-          rule: "Active people whose Paylocity position code isn't in the Position_Families report or the overrides file, so nothing says which family they belong to. Add the code in Paylocity, or add a row for it to the overrides file.",
+          title: "Position codes with no family",
+          rule: "Active people whose Paylocity position code isn't in the Position_Families report and has no override, so nothing says which family they belong to. Add the code in Paylocity, or set a family for it here.",
           count: f.unknownCodes.length,
           unit: "people",
-          body: findingsTable(f.unknownCodes),
+          body: <UnknownCodes rows={f.unknownCodes} codeTitles={families.codeTitles} canEdit={canEdit} onEdit={setEditing} />,
         },
         {
           key: "noCode",
@@ -1010,18 +1170,10 @@ export function FamiliesSection({ families }: { families: PositionFamilyQuality 
         {
           key: "overridesCovered",
           title: "Overrides Paylocity now covers",
-          rule: "Codes in the overrides file that Paylocity's report now lists too. The override still wins; if Paylocity's families are right, delete the override row.",
+          rule: "Codes with an override that Paylocity's report now lists too. The override still wins; if Paylocity's families are right, switch the code back to Paylocity's.",
           count: f.overridesCovered.length,
           unit: "codes",
-          body: (
-            <PeopleTable
-              people={f.overridesCovered.map((o) => ({ name: o.positionCode, paylocityId: null, title: null }))}
-              note={(p) => {
-                const o = f.overridesCovered.find((x) => x.positionCode === p.name);
-                return o ? `Override: ${o.override} · Paylocity: ${o.paylocity}` : null;
-              }}
-            />
-          ),
+          body: <CoveredOverrides rows={f.overridesCovered} overrides={families.overrides} canEdit={canEdit} onEdit={setEditing} />,
         },
       ]
     : [];
@@ -1033,14 +1185,25 @@ export function FamiliesSection({ families }: { families: PositionFamilyQuality 
       badge={checks.length ? <IssueTally checks={checks} /> : undefined}
       description={
         <>
-          Every hour the sync reads Paylocity&apos;s Position_Families report and the overrides file, which together say
-          which family each position code belongs to. An override row replaces Paylocity&apos;s for its code. These checks
-          list the people and codes those files can&apos;t place yet.
+          Every hour the sync reads Paylocity&apos;s Position_Families report and the overrides below, which together say
+          which family each position code belongs to. An override replaces Paylocity&apos;s families for its code. These
+          checks list the people and codes that can&apos;t be placed yet.
         </>
       }
     >
-      <FamiliesStatusCard families={families} />
+      <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr]">
+        <FamiliesStatusCard families={families} />
+        <OverridesCard overrides={families.overrides} canEdit={canEdit} onEdit={setEditing} />
+      </div>
       {checks.length > 0 && <CheckBoard checks={checks} selected={selected} onSelect={setSelected} />}
+      {editing && (
+        <PositionFamilyOverrideDrawer
+          key={editing.positionCode || "new"}
+          edit={editing}
+          choices={families.choices}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </Section>
   );
 }

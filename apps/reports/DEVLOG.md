@@ -7039,3 +7039,38 @@ and paylocityId): the match is by name, and a missing one is added by the refres
 - Cutover: once the figures match the typed-in timecards, deactivate `ManualContractorPunch`.
 - Ask HR to correct the punches with no job or phase, and whether the report can carry an
   Employee Id column.
+
+## 80. Position family overrides are set on Data Management, not in a file (2026-10-28)
+
+Our overrides to Paylocity's position families lived in `Position_Families_Overrides.xlsx`
+on the SFTP share, edited by hand. They are now the `PositionFamilyOverride` table, set on
+Data Management's Position families tab. The merge rule is unchanged: an override replaces
+all of Paylocity's families for its code, and an empty override means Paylocity's apply.
+
+**The switch moves nobody.** The first hourly pass after deploy copies the file into the
+table once (`importOverridesFileOnce` in `lib/position-families-sync.ts`) and records it in
+the audit log. After that, the file is not read: the import only runs while the table is
+empty AND no `positionFamilyOverride.*` audit row exists, so removing the last override in
+the app can't bring the file back. A save made before that first pass runs the import first.
+
+**On the tab** (`employees:edit`, the permission behind every other team change):
+- an Overrides card lists every override, with Edit and Add override;
+- "Position codes with no family" (was "in neither file") has a button per code;
+- "Overrides Paylocity now covers" has "Use Paylocity's" per code.
+
+Every edit opens `PositionFamilyOverrideDrawer`: tick families, then **Review**, which runs
+the team rule on the edited rows (`teamMoves` in `lib/team-resolution.ts`) and lists who
+changes team, and only then Save. The preview compares the rule before and after the edit,
+so moves the next pass would make anyway are not shown as the edit's. Saving writes the
+code's rows into both the override table and `PositionFamily` and runs `applyTeamRule()`,
+so teams change at once rather than on the next hourly pass. Audit log and change log
+both record it.
+
+Files: `prisma/migrations/20261028120000_add_position_family_override`,
+`lib/position-family-override-actions.ts`, `components/PositionFamilyOverrideDrawer.tsx`,
+`lib/position-families-parse.ts` (`familyChoices`, `withOverride`), tests in
+`tests/position-families.test.ts` and `tests/team-resolution.test.ts`.
+
+Still to do (next PR): remove the one-time import, `PAYLOCITY_POSITION_FAMILY_OVERRIDES_LOCAL_PATH`,
+the warehouse loader's `keep_on_server` entry and the `"Paylocity"."PositionFamilyOverride"`
+view, and then the file on the share.
