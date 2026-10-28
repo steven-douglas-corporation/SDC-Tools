@@ -12,6 +12,15 @@ import type { PartsCostFinancials } from "@/lib/parts-cost-financials-shared";
 import { describeTransfers, NO_DESTINATION, type JobTransferItem } from "@/lib/parts-transfer-netting";
 import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { normalizeVendor } from "@/lib/vendor-normalize";
+import {
+  bucketOf,
+  leftToInvoiceByMonth,
+  monthName,
+  sortedMonths,
+  todayLocal,
+  NO_DATE_BUCKET,
+  OVERDUE_BUCKET,
+} from "@/lib/left-to-invoice-by-month";
 
 // Drill-through for the Parts Cost card's Actual / Projection bar.
 //
@@ -124,6 +133,7 @@ type ColKey =
   | "total"
   | "invoiced"
   | "left"
+  | "requiredDate"
   | "invoicedDate"
   | "purchaseDate";
 
@@ -137,6 +147,7 @@ const COLUMNS: { key: ColKey; label: string; type: "text" | "number" | "currency
   { key: "total", label: "Total $", type: "currency" },
   { key: "invoiced", label: "Invoiced $", type: "currency" },
   { key: "left", label: "Left to Invoice", type: "currency" },
+  { key: "requiredDate", label: "Required", type: "date" },
   { key: "purchaseDate", label: "Purchased", type: "date" },
   { key: "invoicedDate", label: "Invoiced Date", type: "date" },
 ];
@@ -151,6 +162,7 @@ const SORT_COLUMNS: SortColumns<Row, ColKey> = {
   total: { type: "currency", value: (r) => r.totalPrice },
   invoiced: { type: "currency", value: (r) => r.actualAmount },
   left: { type: "currency", value: (r) => r.leftToInvoice },
+  requiredDate: { type: "date", value: (r) => r.requiredDate ?? null },
   purchaseDate: { type: "date", value: (r) => r.purchaseDate },
   invoicedDate: { type: "date", value: (r) => r.invoicedDate },
 };
@@ -164,6 +176,7 @@ function rowsForMode(rows: Row[], mode: PartsDrillMode): Row[] {
 }
 
 const dash = (s: string | null) => (s && s.trim() ? s : "—");
+
 
 export function PartsCostDrill({
   financials,
@@ -185,6 +198,9 @@ export function PartsCostDrill({
   className?: string;
 }) {
   const [query, setQuery] = useState("");
+  // Which "expected to be billed" bucket the Not-yet-invoiced rows are narrowed to (null = all).
+  const [bucket, setBucket] = useState<string | null>(null);
+  const today = useMemo(() => todayLocal(), []);
 
   // ── The ETC history, fetched only when that mode is opened ────────────────
   //
@@ -244,13 +260,25 @@ export function PartsCostDrill({
   );
 
   const scoped = useMemo(() => rowsForMode(rows, mode), [rows, mode]);
+  // ── Left to Invoice by expected billing month (2026-10-28) ───────────────
+  //
+  // The strip above the rows. Built from `financials.lines` with the lifetime scope — the very
+  // lines and rule the card's "Left to be invoiced" sums — so Overdue + months + No date + the
+  // floor adjustment add back to that figure to the cent. The date is the PO line's required
+  // date: when the part is due to arrive, so roughly when the supplier bills it. Not a payment
+  // due date — nothing is invoiced yet, so none exists.
+  const buckets = useMemo(() => leftToInvoiceByMonth(financials.lines, {}, today), [financials.lines, today]);
+  const bucketed = useMemo(
+    () => (mode === "left" && bucket ? scoped.filter((r) => !r.isTransfer && bucketOf(r, today) === bucket) : scoped),
+    [scoped, mode, bucket, today],
+  );
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return scoped;
-    return scoped.filter((r) =>
+    if (!q) return bucketed;
+    return bucketed.filter((r) =>
       [r.poNumber, r.partNumber, r.description, r.supplier].some((v) => v?.toLowerCase().includes(q)),
     );
-  }, [scoped, query]);
+  }, [bucketed, query]);
   const sorted = useMemo(() => sortRows(searched, sort.sort, SORT_COLUMNS), [searched, sort.sort]);
 
   // ── The reconciliation, computed from the rows on screen ──────────────────
@@ -491,6 +519,51 @@ export function PartsCostDrill({
         ))}
       </div>
 
+      {mode === "left" && Math.abs(buckets.total) >= 0.005 && (
+        <div className="border-b border-sdc-border px-4 py-3">
+          <p className={DRILL_TOTAL_LABEL} title="Left to invoice split by each PO line's required date — when the part is due to arrive, so roughly when the supplier bills it. Not a payment due date: nothing here is invoiced yet.">
+            Expected to be billed — by PO required date
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {[
+              { key: OVERDUE_BUCKET, label: "Overdue", amount: buckets.overdue, hint: "Required date has passed and the balance is still not invoiced — the supplier has not billed it, or the bill has not been entered." },
+              ...sortedMonths(buckets).map((m) => ({ key: m.month, label: monthName(m.month), amount: m.amount, hint: `Required in ${monthName(m.month)}` })),
+              { key: NO_DATE_BUCKET, label: "No date", amount: buckets.noDate, hint: "Extra costs, and PO lines Total ETO has no required date for." },
+            ]
+              .filter((b) => Math.abs(b.amount) >= 0.005)
+              .map((b) => (
+                <button
+                  key={b.key}
+                  type="button"
+                  title={b.hint}
+                  aria-pressed={bucket === b.key}
+                  onClick={() => setBucket(bucket === b.key ? null : b.key)}
+                  className={`motion-interactive rounded-md border px-2.5 py-1 text-left text-xs ${
+                    bucket === b.key
+                      ? "border-sdc-blue bg-sdc-blue-light text-sdc-blue-dark"
+                      : b.key === OVERDUE_BUCKET
+                        ? "border-sdc-border-soft bg-sdc-yellow-bg/50 text-sdc-navy hover:border-sdc-blue"
+                        : "border-sdc-border-soft text-sdc-navy hover:border-sdc-blue"
+                  }`}
+                >
+                  <span className="text-micro uppercase tracking-wide text-sdc-muted">{b.label}</span>
+                  <span className="block font-mono font-semibold tabular-nums">{usd(b.amount)}</span>
+                </button>
+              ))}
+            {Math.abs(buckets.floorAdjustment) >= 0.005 && (
+              <span className="px-1 text-note text-sdc-muted" title="The card floors left to invoice at zero job-wide; this is what that floor adds back.">
+                + {usd(buckets.floorAdjustment)} floor adjustment
+              </span>
+            )}
+            {bucket && (
+              <button type="button" onClick={() => setBucket(null)} className="px-1 text-xs text-sdc-blue underline">
+                Show all
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {mode === "etc" ? (
         <div>
           {/* The explanation stays — it is what stops someone hunting for a
@@ -633,6 +706,7 @@ export function PartsCostDrill({
                 <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.totalPrice)}</td>
                 <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.actualAmount)}</td>
                 <td className={`px-2 py-1 ${DRILL_NUM}`}>{money(r.leftToInvoice)}</td>
+                <td className="px-2 py-1">{dash(r.requiredDate ?? null)}</td>
                 <td className="px-2 py-1">{dash(r.purchaseDate)}</td>
                 <td className="px-2 py-1">{dash(r.invoicedDate)}</td>
               </tr>
@@ -652,7 +726,7 @@ export function PartsCostDrill({
               <td className={`px-2 py-1.5 ${DRILL_NUM} text-white`}>{money(sums.purchased)}</td>
               <td className={`px-2 py-1.5 ${DRILL_NUM} text-white`}>{money(sums.invoiced)}</td>
               <td className={`px-2 py-1.5 ${DRILL_NUM} text-white`}>{money(sums.left)}</td>
-              <td colSpan={2} />
+              <td colSpan={3} />
             </tr>
           </tfoot>
         </table>

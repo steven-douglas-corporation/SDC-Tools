@@ -1004,6 +1004,12 @@ export type PartsCostLine = {
   itemId: number | null;
   purchaseDate: string | null;
   invoicedDate: string | null;
+  /**
+   * When the part is due to arrive (`POD.DateRequired`, else the PO header's) — `YYYY-MM-DD`.
+   * The best date Total ETO has for "when will the supplier bill this"; NOT a payment due date.
+   * Null on Extra Costs, on PO lines with no date, and absent on feeds that do not read it.
+   */
+  requiredDate?: string | null;
   supplier: string | null;
   manufacturer: string | null;
   category: string | null;
@@ -1073,6 +1079,9 @@ SELECT
   ,POD.ItemID AS ItemId
   ,CONVERT(varchar(10), POH.PurchaseDate, 23) AS PurchaseDate
   ,CONVERT(varchar(10), INV.APDocDate, 23) AS InvoicedDate
+  -- When the part is due to arrive — the same stand-in the Cash Flow forecast uses for
+  -- "when will this be billed" (cash-flow-totaleto.ts). Extra Costs below have none.
+  ,CONVERT(varchar(10), ISNULL(POD.DateRequired, POH.PurchaseDateRequired), 23) AS RequiredDate
   ,SUP.CName AS Supplier
   ,IM.Manufacturer AS Manufacturer
   ,CAT.CategoryDescription AS Category
@@ -1118,6 +1127,7 @@ SELECT
   ,CAST(NULL AS int) AS ItemId
   ,CONVERT(varchar(10), EC.APDocDate, 23) AS PurchaseDate
   ,CONVERT(varchar(10), EC.APDocDate, 23) AS InvoicedDate
+  ,CAST(NULL AS varchar(10)) AS RequiredDate
   ,EC.Vendor AS Supplier
   ,NULL AS Manufacturer
   ,EC.APDocDesc AS Category
@@ -1155,6 +1165,7 @@ function toPartsCostLine(r: Record<string, unknown>): PartsCostLine {
     itemId: r.ItemId != null ? Number(r.ItemId) : null,
     purchaseDate: (r.PurchaseDate as string) ?? null,
     invoicedDate: (r.InvoicedDate as string) ?? null,
+    requiredDate: (r.RequiredDate as string) ?? null,
     supplier: (r.Supplier as string) ?? null,
     manufacturer: (r.Manufacturer as string) ?? null,
     category: (r.Category as string) ?? null,

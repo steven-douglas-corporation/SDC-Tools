@@ -3,6 +3,7 @@ import { getPartsCostForJobs } from "@/lib/sync-totaleto";
 import { withTimeoutOrNull, UPSTREAM_BUDGET_MS } from "@/lib/with-timeout";
 import { explainLeftToInvoice, monthEndCutoff } from "@/lib/left-to-invoice";
 import { isSdcBillingLine } from "@/lib/parts-actual-sdc";
+import { leftToInvoiceByMonth, todayLocal, type LeftToInvoiceBuckets } from "@/lib/left-to-invoice-by-month";
 
 // ── Seeding the Parts Cost breakout ──────────────────────────────────────────
 //
@@ -65,6 +66,12 @@ export type PartsEtcBreakout = {
    * read it, and because the default (non-`asOfPosting`) rule can still produce a value.
    */
   postedAfterCutoff: number;
+  /**
+   * The same lines and rule as `rawLeftToInvoice`, split by each PO line's required date
+   * (lib/left-to-invoice-by-month.ts). Overdue + months + no-date sums to `rawLeftToInvoice`.
+   * Null when the lines could not be read. "Overdue" is relative to TODAY, not the month end.
+   */
+  byRequiredMonth: LeftToInvoiceBuckets | null;
 };
 
 export type PartsEtcBreakoutResult = {
@@ -73,7 +80,7 @@ export type PartsEtcBreakoutResult = {
   linesFailed: boolean;
 };
 
-const EMPTY: PartsEtcBreakout = { leftToInvoice: null, rawLeftToInvoice: null, postedAfterCutoff: 0 };
+const EMPTY: PartsEtcBreakout = { leftToInvoice: null, rawLeftToInvoice: null, postedAfterCutoff: 0, byRequiredMonth: null };
 
 /**
  * The Left to Invoice figure for a month's jobs.
@@ -113,6 +120,7 @@ export async function readPartsEtcBreakout(
   // in which case this degrades to the lifetime figure it used to be, rather than to
   // an empty one.
   const asOf = monthEndCutoff(month);
+  const today = todayLocal();
 
   for (const j of jobs) {
     // ── Absent from the map is ZERO, not unknown (fixed 2026-09-03) ─────────
@@ -154,6 +162,7 @@ export async function readPartsEtcBreakout(
       leftToInvoice: x.total,
       rawLeftToInvoice: x.raw,
       postedAfterCutoff: x.postedAfterCutoff,
+      byRequiredMonth: leftToInvoiceByMonth(lines, { asOf, asOfPosting: true }, today),
     });
   }
 
