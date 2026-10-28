@@ -145,3 +145,31 @@ test("buildOverview: rows sum to their own total, the Total row sums the rows, m
   assert.equal(o.totals.sum, 575);
   assert.equal(o.totals.sum, o.rows.reduce((s, r) => s + r.sum, 0));
 });
+
+import { NET_TERMS_DAYS, addDays } from "../src/lib/left-to-invoice-by-month";
+
+test("addDays: calendar arithmetic across month, year and leap boundaries", () => {
+  assert.equal(addDays("2026-10-28", 30), "2026-11-27");
+  assert.equal(addDays("2026-12-15", 30), "2027-01-14");
+  assert.equal(addDays("2028-01-30", 30), "2028-02-29");
+  assert.equal(addDays("2026-10-28", 0), "2026-10-28");
+});
+
+test("net terms: not-yet-due months move +30 days, Overdue and No date do not, and the total is unchanged", () => {
+  const lines = [
+    line({ total: 600, requiredDate: "2026-05-10" }), // overdue — stays overdue
+    line({ total: 100, requiredDate: "2026-10-30" }), // Oct 30 + 30d → Nov
+    line({ total: 200, requiredDate: "2026-11-15" }), // → Dec
+    line({ total: 300, requiredDate: "2026-12-20" }), // → Jan 2027
+    line({ total: 75, lineId: "ec:1:x:75" }), // no date
+  ];
+  assert.equal(bucketOf(lines[0], TODAY, NET_TERMS_DAYS), "overdue");
+  assert.equal(bucketOf(lines[1], TODAY, NET_TERMS_DAYS), "2026-11");
+  const bill = leftToInvoiceByMonth(lines, {}, TODAY);
+  const pay = leftToInvoiceByMonth(lines, {}, TODAY, NET_TERMS_DAYS);
+  assert.equal(pay.overdue, bill.overdue);
+  assert.equal(pay.noDate, bill.noDate);
+  assert.deepEqual(pay.months, { "2026-11": 100, "2026-12": 200, "2027-01": 300 });
+  assert.equal(pay.total, bill.total);
+  assert.ok(Math.abs(sum(pay) - leftToInvoiceForLines(lines, {})) < 1e-9);
+});
