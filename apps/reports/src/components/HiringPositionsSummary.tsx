@@ -79,7 +79,7 @@ export function HiringPositionsSummary({
         <h2 className="text-base font-bold uppercase tracking-wider text-sdc-navy">Hiring Positions</h2>
         <span className="text-xs text-sdc-muted">Not yet people — open requisitions</span>
         <span className="ml-auto text-xs text-sdc-muted">
-          <span className="font-bold tabular-nums text-sdc-navy">{openPositions}</span> open
+          <span className="font-bold tabular-nums text-sdc-navy">{openPositions}</span> published
         </span>
       </div>
 
@@ -94,15 +94,30 @@ export function HiringPositionsSummary({
             type="button"
             onClick={onSelectHiring}
             aria-expanded={expanded}
-            title={expanded ? "Collapse hiring positions" : "Show all open hiring positions below"}
+            title={expanded ? "Collapse hiring positions" : "Show all hiring positions below"}
             className="flex min-w-[12rem] flex-col gap-0.5 border-r border-dashed border-sdc-green bg-sdc-green-bg/50 px-4 py-3 text-left motion-interactive hover:brightness-95"
           >
             <span className="flex items-baseline gap-1.5 text-sdc-green-text">
               <span className="text-lg font-bold tabular-nums">{openPositions}</span>
-              <span className="text-xs font-semibold uppercase tracking-wide">open positions</span>
+              <span className="text-xs font-semibold uppercase tracking-wide">published positions</span>
             </span>
             <span className="text-label text-sdc-muted">{expanded ? "Hide the list" : "Show the full list"}</span>
           </button>
+
+          {/* Requests sit right beside the published positions (2026-10-29), in
+              red: asked for, not in Paylocity yet. They never count toward the
+              published total or the hours and team tiles that follow. */}
+          {requestCount > 0 && (
+            <button
+              type="button"
+              onClick={onSelectHiring}
+              title="Positions asked for in hire requests, not posted in Paylocity yet"
+              className="flex min-w-[9rem] flex-col justify-center gap-0.5 border-r border-dashed border-sdc-border px-4 py-3 text-left text-sdc-red-text hover:bg-sdc-red-bg/40"
+            >
+              <span className="text-lg font-bold tabular-nums">{requestCount}</span>
+              <span className="text-label font-semibold uppercase tracking-wide">Requested</span>
+            </button>
+          )}
 
           {hasCapacityPolicy && (
             <button
@@ -130,24 +145,10 @@ export function HiringPositionsSummary({
           ))}
 
           {unassigned > 0 && (
-            <div className="flex min-w-[9rem] flex-col justify-center gap-0.5 border-r border-dashed border-sdc-border px-4 py-3">
+            <div className="flex min-w-[9rem] flex-col justify-center gap-0.5 px-4 py-3">
               <span className="text-lg font-bold tabular-nums text-sdc-navy">{unassigned}</span>
               <span className="text-label uppercase tracking-wide text-sdc-muted">Unassigned</span>
             </div>
-          )}
-
-          {/* Requests sit apart from the openings: they are not in Paylocity yet
-              and never count toward the totals to the left. */}
-          {requestCount > 0 && (
-            <button
-              type="button"
-              onClick={onSelectHiring}
-              title="Positions asked for in hire requests, not posted in Paylocity yet"
-              className="flex min-w-[9rem] flex-col justify-center gap-0.5 px-4 py-3 text-left hover:bg-sdc-blue-light/30"
-            >
-              <span className="text-lg font-bold tabular-nums text-sdc-muted">{requestCount}</span>
-              <span className="text-label uppercase tracking-wide text-sdc-muted">Requested</span>
-            </button>
           )}
         </div>
       </div>
