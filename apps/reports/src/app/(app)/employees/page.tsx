@@ -114,9 +114,14 @@ export async function EmployeesView() {
 
   return (
     <div className={PAGE_SHELL}>
-      <PageTitle className="mb-1">Employees</PageTitle>
+      {/* The Dashboard's header (2026-10-29): title, one line on what the page
+          is, and the rule the tabs below sit under. */}
+      <div className="mb-7 border-b border-sdc-border pb-5">
+        <PageTitle>Employees</PageTitle>
+        <p className="text-sm text-sdc-gray-600">Everyone on the Paylocity roster by who they report to, plus contractors and the positions being hired for</p>
+      </div>
 
-      <div className="mt-5">
+      <div>
         <EmployeesGrid
           rows={rows}
           placeholders={placeholders}
