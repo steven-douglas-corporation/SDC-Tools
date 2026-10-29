@@ -40,7 +40,7 @@ export function HiringPositionsSummary({
   onSelectHiring: () => void;
   onSelectCapacity: (target: CapacityDrillTarget) => void;
   expanded: boolean;
-  /** Hire requests waiting to be posted (2026-10-29). Shown beside the openings, never added to them. */
+  /** Positions asked for in hire requests waiting to be posted (2026-10-29): a request for 3 counts 3, like the openings. Shown beside the openings, never added to them. */
   requestCount: number;
   /** Whether the viewer can request a hire: the band then always shows, since the list it opens is where the button is. */
   canRequest: boolean;
@@ -142,7 +142,7 @@ export function HiringPositionsSummary({
             <button
               type="button"
               onClick={onSelectHiring}
-              title="Hire requests waiting to be posted in Paylocity"
+              title="Positions asked for in hire requests, not posted in Paylocity yet"
               className="flex min-w-[9rem] flex-col justify-center gap-0.5 px-4 py-3 text-left hover:bg-sdc-blue-light/30"
             >
               <span className="text-lg font-bold tabular-nums text-sdc-muted">{requestCount}</span>

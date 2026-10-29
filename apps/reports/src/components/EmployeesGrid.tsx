@@ -698,7 +698,7 @@ export function EmployeesGrid({
           onSelectHiring={openHiringView}
           onSelectCapacity={setCapacityDrill}
           expanded={showHiring}
-          requestCount={hiring.filter((p) => p.source === "manual" && p.isVisible).length}
+          requestCount={countOpenings(hiring.filter((p) => p.source === "manual" && p.isVisible))}
           canRequest={canAssignHiring}
         />
       )}

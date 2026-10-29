@@ -194,7 +194,8 @@ export function HiringPositionsList({
             <h3 className="text-sm font-bold text-sdc-navy">
               Requested <span className="font-normal text-sdc-muted">· not in Paylocity yet</span>
             </h3>
-            <span className="text-xs font-semibold tabular-nums text-sdc-muted">{requests.length}</span>
+            {/* Positions, not requests, the same as the posting sections below: a request for 3 counts 3. */}
+            <span className="text-xs font-semibold tabular-nums text-sdc-muted">{countOpenings(requests)}</span>
           </header>
           <ul className="divide-y divide-sdc-border-soft">
             {requests.map((r) => {

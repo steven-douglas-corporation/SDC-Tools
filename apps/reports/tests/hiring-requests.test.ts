@@ -136,6 +136,11 @@ test("a request has no openings to fill or resize outside its own form", () => {
   assert.match(quantity, /if \(manual\) return \{ ok: false/);
 });
 
+test("requested is counted in positions, like the openings: a request for 3 counts 3", () => {
+  assert.match(src("components/EmployeesGrid.tsx"), /requestCount=\{countOpenings\(hiring\.filter\(\(p\) => p\.source === "manual"/);
+  assert.match(src("components/HiringPositionsList.tsx"), /\{countOpenings\(requests\)\}/);
+});
+
 test("the store only deletes from the created-positions table", () => {
   const store = src("lib/hiring-positions-store.ts");
   const fn = store.slice(store.indexOf("export async function deleteCreatedHiringPosition"));
