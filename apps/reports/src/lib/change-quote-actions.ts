@@ -14,7 +14,6 @@ import {
   cleanDraft,
   planApply,
   planReverse,
-  type ApplyMode,
   type CqInput,
   type CqStatus,
   type PlanResult,
@@ -319,7 +318,7 @@ async function writePlan(tx: Tx, jobPk: number, jobNumber: string, before: { hou
   return changes;
 }
 
-export async function applyChangeQuote(input: { jobPk: number; id: number; mode: ApplyMode }): Promise<ChangeQuoteResult> {
+export async function applyChangeQuote(input: { jobPk: number; id: number }): Promise<ChangeQuoteResult> {
   let role: AppRole | undefined;
   try {
     await assertProjectsEditable();
@@ -327,7 +326,6 @@ export async function applyChangeQuote(input: { jobPk: number; id: number; mode:
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Not allowed." };
   }
-  if (input.mode !== "add" && input.mode !== "included") return { ok: false, error: "Unknown apply mode." };
   const email = (await auth())?.user?.email ?? null;
   let changes: CellChange[] = [];
   let label = "";
@@ -340,7 +338,7 @@ export async function applyChangeQuote(input: { jobPk: number; id: number; mode:
       label = cq!.label;
       for (const h of cq!.hours) if (!allowed.has(h.section)) return fail(`This change quote includes ${sectionName(h.section) ?? h.section}, which you don't have access to.`);
       const { jobNumber, totals } = await readTotals(tx, input.jobPk, allowed);
-      const plan = planApply(totals, toCqInput(cq!), input.mode);
+      const plan = planApply(totals, toCqInput(cq!));
       if (!plan.ok) return fail(plan.error);
       // Claim the Draft → Applied transition first: of two concurrent applies exactly one
       // gets count === 1, so the totals can never be added twice.
@@ -351,11 +349,11 @@ export async function applyChangeQuote(input: { jobPk: number; id: number; mode:
       if (claimed.count !== 1) return fail("This change quote was already applied by someone else.");
       return writePlan(tx, input.jobPk, jobNumber, totals, plan);
     });
-    return `${label} applied${input.mode === "included" ? " (recorded as already in the totals)" : " — added to the totals"}.`;
+    return `${label} applied — added to the totals.`;
   });
 
   if (result.ok) {
-    await logAudit({ action: "changeQuote.apply", entityType: "JobChangeQuote", entityId: input.id, summary: `Applied change quote ${label} on job ${input.jobPk} (${input.mode})`, metadata: { mode: input.mode, sections: changes.length } });
+    await logAudit({ action: "changeQuote.apply", entityType: "JobChangeQuote", entityId: input.id, summary: `Applied change quote ${label} on job ${input.jobPk} `, metadata: { cells: changes.length } });
     await recordChanges(changes, { action: "changeQuote.apply" });
     revalidatePath("/quoted");
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BUTTON_COMPACT, BUTTON_COMPACT_DANGER, BUTTON_PRIMARY, BUTTON_SECONDARY, INPUT } from "@/components/ui/classnames";
+import { BUTTON_COMPACT_DANGER, BUTTON_PRIMARY, BUTTON_SECONDARY, INPUT } from "@/components/ui/classnames";
 import { useProjectsEditMode } from "@/components/ProjectsEditMode";
 import {
   applyChangeQuote,
@@ -302,7 +302,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                   onChange={(e) => patchDraft(d.key, { label: e.target.value })}
                                 />
                                 <span className={`rounded-full px-2 py-0.5 text-label font-semibold ${isApplied ? "bg-sdc-green-bg text-sdc-green-text" : "bg-sdc-gray-100 text-sdc-muted"}`}>
-                                  {isApplied ? (q?.addedToTotals ? "Applied" : "Applied · was in totals") : d.id === undefined ? "Unsaved" : "Draft"}
+                                  {isApplied ? "Applied" : d.id === undefined ? "Unsaved" : "Draft"}
                                 </span>
                               </div>
                             </td>
@@ -382,24 +382,11 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                               title={dirty ? "Save your changes first — apply uses the saved figures" : "Add these hours and parts cost to the grid totals"}
                                               onClick={() => {
                                                 if (window.confirm(`Add ${hrs(totalHours(h))} hours${q && q.partsCents > 0 ? ` and ${usd(q.partsCents)} parts cost` : ""} from ${d.label} to Job ${data.job.jobId}'s quoted totals on the grid?`)) {
-                                                  void act(`apply-${d.key}`, () => applyChangeQuote({ jobPk: data.job.pk, id: d.id!, mode: "add" }));
+                                                  void act(`apply-${d.key}`, () => applyChangeQuote({ jobPk: data.job.pk, id: d.id! }));
                                                 }
                                               }}
                                             >
                                               {busy === `apply-${d.key}` ? "Applying…" : "Apply to totals"}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className={BUTTON_COMPACT}
-                                              disabled={rowBusy || dirty}
-                                              title="These figures were already typed into the grid earlier — record this change quote without adding them again"
-                                              onClick={() => {
-                                                if (window.confirm(`Record ${d.label} as ALREADY included in Job ${data.job.jobId}'s grid totals? Nothing will be added to the grid.`)) {
-                                                  void act(`incl-${d.key}`, () => applyChangeQuote({ jobPk: data.job.pk, id: d.id!, mode: "included" }));
-                                                }
-                                              }}
-                                            >
-                                              Already in totals
                                             </button>
                                           </>
                                         )}
@@ -472,8 +459,8 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
               )}
               {drafts.length === 0 && <p className="mt-3 text-sm text-sdc-muted">No change quotes on this job yet. Original equals the grid total.</p>}
               <p className="mt-4 text-note text-sdc-muted">
-                Original is the grid total minus every applied change quote. A draft is recorded but not in the totals until you apply it. &ldquo;Apply to totals&rdquo; adds the hours and parts cost to the grid;
-                &ldquo;Already in totals&rdquo; is for figures that were typed into the grid by hand earlier and must not be added twice.
+                Original is the grid total minus every applied change quote. A draft is recorded but not in the totals until you apply it. &ldquo;Apply to totals&rdquo; adds the hours, parts cost and amount (to the Change Quote column) to the grid.
+                Whatever the grid holds today is the baseline — enter each new change quote here, and don&apos;t also type its hours or amount into the grid by hand.
               </p>
             </>
           )}
