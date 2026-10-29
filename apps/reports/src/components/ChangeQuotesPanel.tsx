@@ -379,9 +379,12 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                               type="button"
                                               className={BUTTON_PRIMARY}
                                               disabled={rowBusy || dirty}
-                                              title={dirty ? "Save your changes first — apply uses the saved figures" : "Add these hours and parts cost to the grid totals"}
+                                              title={dirty ? "Save your changes first — apply uses the saved figures" : "Add these hours, parts cost and amount to the grid"}
                                               onClick={() => {
-                                                if (window.confirm(`Add ${hrs(totalHours(h))} hours${q && q.partsCents > 0 ? ` and ${usd(q.partsCents)} parts cost` : ""} from ${d.label} to Job ${data.job.jobId}'s quoted totals on the grid?`)) {
+                                                const amt = data.canSeePricing ? (q?.amountCents ?? 0) : 0;
+                                                const col = data.gridChangeQuoteCents ?? 0;
+                                                const colNote = amt > 0 ? ` Its ${usd(amt)} will also be ADDED to the Change Quote column (${usd(col)} now → ${usd(col + amt)}).${col > 0 ? " That column already has a figure — if it already includes this change quote, use \"Already in totals\" instead." : ""}` : "";
+                                                if (window.confirm(`Add ${hrs(totalHours(h))} hours${q && q.partsCents > 0 ? ` and ${usd(q.partsCents)} parts cost` : ""} from ${d.label} to Job ${data.job.jobId}'s quoted totals on the grid?${colNote}`)) {
                                                   void act(`apply-${d.key}`, () => applyChangeQuote({ jobPk: data.job.pk, id: d.id!, mode: "add" }));
                                                 }
                                               }}
@@ -394,7 +397,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                               disabled={rowBusy || dirty}
                                               title="These figures were already typed into the grid earlier — record this change quote without adding them again"
                                               onClick={() => {
-                                                if (window.confirm(`Record ${d.label} as ALREADY included in Job ${data.job.jobId}'s grid totals? Nothing will be added to the grid.`)) {
+                                                if (window.confirm(`Record ${d.label} as ALREADY included in Job ${data.job.jobId}'s grid totals? Nothing will be added to the grid, including the Change Quote column.`)) {
                                                   void act(`incl-${d.key}`, () => applyChangeQuote({ jobPk: data.job.pk, id: d.id!, mode: "included" }));
                                                 }
                                               }}
@@ -424,7 +427,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                         title={q?.addedToTotals ? "Take these hours and parts cost back out of the grid totals and return this to a draft" : "Return this to a draft — the grid totals are not touched"}
                                         onClick={() => {
                                           const msg = q?.addedToTotals
-                                            ? `Reverse ${d.label}? Its hours and parts cost will be SUBTRACTED from Job ${data.job.jobId}'s grid totals.`
+                                            ? `Reverse ${d.label}? Its hours, parts cost${data.canSeePricing && (q?.amountCents ?? 0) > 0 ? ` and ${usd(q!.amountCents!)} amount (from the Change Quote column)` : ""} will be SUBTRACTED from Job ${data.job.jobId}'s grid.`
                                             : `Return ${d.label} to a draft? The grid totals are not changed.`;
                                           if (window.confirm(msg)) void act(`rev-${d.key}`, () => reverseChangeQuote({ jobPk: data.job.pk, id: d.id! }));
                                         }}
@@ -460,7 +463,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                 return (
                   <p className={`mt-3 text-sm ${matches ? "text-sdc-muted" : "text-sdc-navy"}`}>
                     Applied change quotes total {usd(sum)}; the grid&apos;s Change Quote column shows {usd(data.gridChangeQuoteCents)}
-                    {matches ? " — they match." : " — they differ. That column is still typed by hand; this panel doesn't change it."}
+                    {matches ? " — they match." : " — they differ (the column can also be typed by hand)."}
                   </p>
                 );
               })()}
@@ -472,7 +475,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
               )}
               {drafts.length === 0 && <p className="mt-3 text-sm text-sdc-muted">No change quotes on this job yet. Original equals the grid total.</p>}
               <p className="mt-4 text-note text-sdc-muted">
-                Original is the grid total minus every applied change quote. A draft is recorded but not in the totals until you apply it. &ldquo;Apply to totals&rdquo; adds the hours and parts cost to the grid;
+                Original is the grid total minus every applied change quote. A draft is recorded but not in the totals until you apply it. &ldquo;Apply to totals&rdquo; adds the hours, parts cost and amount (to the Change Quote column) to the grid;
                 &ldquo;Already in totals&rdquo; is for figures that were typed into the grid by hand earlier and must not be added twice.
               </p>
             </>

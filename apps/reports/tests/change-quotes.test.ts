@@ -8,6 +8,7 @@ import {
   splitParts,
   planApply,
   planReverse,
+  planColumnAmount,
   reconcile,
   cleanDraft,
   type CqInput,
@@ -197,4 +198,28 @@ test("a blank amount is allowed (hours-only change quote) and parts default to z
   if (!r.ok) return;
   assert.equal(r.value.amountCents, null);
   assert.equal(r.value.partsCents, 0);
+});
+
+test("applying adds the amount to the Change Quote column, reversing takes it back out", () => {
+  const a = planColumnAmount(null, 15_530_000, "apply", true);
+  assert.deepEqual(a, { ok: true, nextCents: 15_530_000, changed: true });
+  const b = planColumnAmount(1_000_000, 15_530_000, "apply", true);
+  assert.deepEqual(b, { ok: true, nextCents: 16_530_000, changed: true });
+  // apply then reverse is a round trip, including back to "nothing entered"
+  const r = planColumnAmount(15_530_000, 15_530_000, "reverse", true);
+  assert.deepEqual(r, { ok: true, nextCents: null, changed: true });
+  const r2 = planColumnAmount(16_530_000, 15_530_000, "reverse", true);
+  assert.deepEqual(r2, { ok: true, nextCents: 1_000_000, changed: true });
+});
+
+test("'already in totals', no amount, or a zero amount never touch the column", () => {
+  assert.deepEqual(planColumnAmount(15_530_000, 15_530_000, "apply", false), { ok: true, nextCents: 15_530_000, changed: false });
+  assert.deepEqual(planColumnAmount(15_530_000, 15_530_000, "reverse", false), { ok: true, nextCents: 15_530_000, changed: false });
+  assert.deepEqual(planColumnAmount(100, null, "apply", true), { ok: true, nextCents: 100, changed: false });
+  assert.deepEqual(planColumnAmount(null, 0, "apply", true), { ok: true, nextCents: null, changed: false });
+});
+
+test("reversing is refused when the column is below the change quote's amount", () => {
+  assert.equal(planColumnAmount(100, 15_530_000, "reverse", true).ok, false);
+  assert.equal(planColumnAmount(null, 15_530_000, "reverse", true).ok, false);
 });
