@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Manual add (2026-10-29): the "+" in an Org chart team card's header adds someone
+// Manual add (2026-10-29): a row at an Org chart team card's foot adds someone
 // not in Paylocity (a contractor). It replaced the Cards view's Add member, the
 // only way such a person reached the roster besides the Temp Punches report.
 
@@ -26,4 +26,13 @@ test("manualAddPerson checks the permission and places the person by supervisor"
   assert.match(fn, /supervisorId: supervisor\.id/);
   // Set by hand only when the supervisor's team is not the card's (the leader fallback).
   assert.match(fn, /const teamOverride = supervisor\.team === team \? null : team;/);
+});
+
+test("Manual add sits at the card's foot, after the people and Contractors and above the open positions — not in the header", () => {
+  const chart = src("components/OrgChart.tsx");
+  const people = chart.indexOf("{children(title)}");
+  const add = chart.indexOf("<ManualAddButton");
+  const open = chart.indexOf("<OpenPositionsDropdown positions={listedHiring}");
+  assert.ok(people >= 0 && people < add && add < open, "children, then Manual add, then See open positions");
+  assert.doesNotMatch(src("components/EmployeePersonRow.tsx"), /action/);
 });

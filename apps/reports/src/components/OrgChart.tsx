@@ -46,7 +46,7 @@ type Ctx = {
   canAssignHiring?: boolean;
   /** Starts a hire request for a team: offered at the foot of every delivery team's card. */
   onRequestHire?: (team: string) => void;
-  /** employees:edit — each team card's header offers Manual add (a contractor). */
+  /** employees:edit — each team card's foot offers Manual add (a contractor). */
   canManualAdd?: boolean;
   /** While searching: whether a person matches. Anyone drawn who doesn't is a manager shown for context, and is dimmed. */
   match?: (id: number) => boolean;
@@ -180,9 +180,6 @@ function TeamCard({
         colors={group?.colors ?? { bg: "#e2e8f0", text: "#1e293b" }}
         isAi={group?.key === "ai"}
         className="rounded-t-[11px]"
-        action={
-          ctx.canManualAdd && addUnder != null && isTeamCode(team) ? <ManualAddButton team={team} teamTitle={title} supervisorId={addUnder} /> : undefined
-        }
       />
       <CardStats
         stats={{ active: count, inactive, hiringOpenings, currentHours: canOpenCapacity ? currentHours : null, hiringHours }}
@@ -194,6 +191,8 @@ function TeamCard({
         }
       />
       {children(title)}
+      {/* After the people and Contractors, above the open positions. */}
+      {ctx.canManualAdd && addUnder != null && isTeamCode(team) && <ManualAddButton team={team} teamTitle={title} supervisorId={addUnder} />}
       <OpenPositionsDropdown positions={listedHiring} onSelect={ctx.onSelectHiring} />
       {/* Where Cards had "Add employee" (2026-10-29): people now come from the
           Paylocity roster, so a team's card offers a hire request instead, under
@@ -257,7 +256,7 @@ export function OrgChart({
   canAssignHiring?: boolean;
   /** Omitted for a viewer who can't request hires: no "Request a hire" on the cards. */
   onRequestHire?: (team: string) => void;
-  /** employees:edit — a "+" in each team card's header adds someone not in Paylocity (ManualAddButton). */
+  /** employees:edit — a "Manual add" row at each team card's foot adds someone not in Paylocity (ManualAddButton). */
   canManualAdd?: boolean;
 }) {
   if (!chart.ready) {
