@@ -22,5 +22,7 @@ test("every row's Edit link opens the panel, whatever the source", () => {
 
 test("the panel still offers Move to for a Paylocity position", () => {
   const drawer = src("components/HiringPositionDetailDrawer.tsx");
-  assert.match(drawer, /position\.source === "workbook" \? \(\s*<HiringMoveToControl/);
+  // Requests take the first branch (2026-10-29); everything else is a posting.
+  const postingBranch = drawer.slice(drawer.indexOf("{isRequest ? ("));
+  assert.match(postingBranch, /\) : \(\s*<div className="flex flex-col">[\s\S]{0,400}<HiringMoveToControl/);
 });

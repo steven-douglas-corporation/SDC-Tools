@@ -2,6 +2,7 @@ import "server-only";
 
 import { warehouseConfigured, warehouseSnapshot } from "@/lib/data-warehouse";
 import { toHiringPositions, type WarehouseHiringPosition, type WarehouseHiringRow } from "@/lib/hiring-warehouse-parse";
+import { devFakeHiringEnabled, fakeWarehouseHiringRows } from "@/lib/dev-fake-hiring";
 
 // ── Open positions, read from the DataWarehouse ─────────────────────────────
 //
@@ -17,6 +18,8 @@ import { toHiringPositions, type WarehouseHiringPosition, type WarehouseHiringRo
 export const WAREHOUSE_HIRING_LABEL = 'DataWarehouse "Paylocity"."HiringPosition"';
 
 export async function readHiringPositionsFromWarehouse(): Promise<WarehouseHiringPosition[]> {
+  // Local development only: fake postings instead of the warehouse (dev-fake-hiring.ts).
+  if (devFakeHiringEnabled()) return toHiringPositions(fakeWarehouseHiringRows());
   if (!warehouseConfigured()) {
     throw new Error("The DataWarehouse is not configured: set DATAWAREHOUSE_URL in .env.");
   }

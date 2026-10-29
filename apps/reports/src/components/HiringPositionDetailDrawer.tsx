@@ -1,30 +1,26 @@
 "use client";
 
-import { useState, useTransition } from "react";
 import { BuildReadinessDrawer } from "@/components/build-readiness/BuildReadinessDrawer";
 import { HiringMoveToControl } from "@/components/HiringMoveToControl";
 import { HiringExpectedStartDateControl } from "@/components/HiringExpectedStartDateControl";
 import { HiringOpeningsControl } from "@/components/HiringOpeningsControl";
-import { workforceGroupForCardKey, workforceGroupTitle, WORKFORCE_GROUPS, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
+import { HiringRequestForm } from "@/components/HiringRequestForm";
+import { workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
-import { updateHiringPosition, deleteHiringPosition } from "@/lib/hiring-actions";
-import { MANUAL_JOB_STATUSES, isManualJobStatus, isOpenHiringStatus } from "@/lib/hiring-position-status";
+import { isOpenHiringStatus } from "@/lib/hiring-position-status";
+import { waitingLabel, type TeamLead } from "@/lib/hiring-requests";
 import { HiringStatusPill } from "@/components/HiringStatusPill";
 import type { HiringPosition } from "@/lib/hiring-positions";
 
 // Level 3 for a hiring position (2026-08-19). Two modes, by `position.source`:
 //
-// - "workbook": unchanged from before Job Status editing existed — read-only
-//   fields straight off Job.xlsx (only the workbook's own "Report" sheet
-//   columns are shown — see hiring-workbook-parse.ts's REQUIRED_HEADERS/type
-//   for the exhaustive real column list), plus the existing Move-to control
-//   for workforce group/department (the one thing this app DOES own for a
-//   Paylocity-sourced position).
-// - "manual": a real edit form — title/status/group/department all live on
-//   this position's own HiringPositionCreated row (see that model's comment
-//   in schema.prisma), so all four are editable here, not just group/dept.
-//   It can also be deleted (2026-10-27), for a request that is no longer
-//   needed. A Paylocity position never offers Delete: it is closed in Paylocity.
+// - "workbook": a Paylocity posting. Read-only fields from the warehouse, plus
+//   the overlays this app does own for it: Move to (group/department), Expected
+//   Start Date and Openings.
+// - "manual": a hire request (2026-10-29; see lib/hiring-requests.ts). Editors get
+//   the request form, which also closes it, as posted (when the app has matched
+//   it to a posting) or as no longer needed. Anyone else sees what was asked
+//   for. A Paylocity posting is never closed here: that is done in Paylocity.
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -37,202 +33,23 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-const INPUT = "h-9 w-full rounded-lg border border-sdc-border bg-white px-2.5 text-sm text-sdc-navy outline-none focus:border-sdc-blue";
-const LABEL = "text-xs font-semibold uppercase tracking-wide text-sdc-muted";
-const ASSIGNABLE_GROUPS = WORKFORCE_GROUPS.filter((g) => g.key !== "other");
-
-function ManualEditForm({
-  position,
-  onUpdated,
-  onDeleted,
-  onClose,
-}: {
-  position: HiringPosition;
-  onUpdated: (sourceId: string, patch: Partial<HiringPosition>) => void;
-  onDeleted: (sourceId: string) => void;
-  onClose: () => void;
-}) {
-  const [title, setTitle] = useState(position.title);
-  // Raw text for the same reason as the Create form's field — see the note there.
-  const [quantity, setQuantity] = useState(String(position.quantity));
-  const [jobStatus, setJobStatus] = useState(position.status);
-  const [workforceGroup, setWorkforceGroup] = useState<WorkforceGroupKey>(position.workforceGroup ?? "engineering");
-  const [department, setDepartment] = useState(position.department ?? "");
-  const [expectedStartDate, setExpectedStartDate] = useState(position.expectedStartDate ? position.expectedStartDate.toISOString().slice(0, 10) : "");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  // The four statuses, plus this position's OWN status if it somehow sits
-  // outside them (a legacy value written before the vocabulary changed) --
-  // otherwise a <select> with no matching option would silently rewrite it to
-  // the first entry on the next save.
-  const statusOptions = isManualJobStatus(position.status)
-    ? (MANUAL_JOB_STATUSES as readonly string[])
-    : [...MANUAL_JOB_STATUSES, position.status];
-
-  const departmentsInGroup = EMPLOYEE_TEAMS.filter((t) => workforceGroupForCardKey(t.schedulerCode) === workforceGroup);
-  const selectedDepartment = departmentsInGroup.some((t) => t.schedulerCode === department) ? department : departmentsInGroup[0]?.schedulerCode ?? "";
-
-  function save() {
-    setError(null);
-    if (!title.trim()) {
-      setError("Position Title is required.");
-      return;
-    }
-    const parsedQuantity = Number(quantity);
-    if (!quantity.trim() || !Number.isInteger(parsedQuantity) || parsedQuantity < 1) {
-      setError("Quantity must be a whole number of 1 or more.");
-      return;
-    }
-    if (parsedQuantity < position.filledCount) {
-      setError(`Quantity can't be lower than the ${position.filledCount} already filled on this position.`);
-      return;
-    }
-    startTransition(async () => {
-      const startDate = expectedStartDate ? new Date(expectedStartDate) : null;
-      const result = await updateHiringPosition(position.sourceId, {
-        title,
-        jobStatus,
-        workforceGroup,
-        department: selectedDepartment,
-        expectedStartDate: startDate,
-        quantity: parsedQuantity,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      onUpdated(position.sourceId, {
-        title: title.trim(),
-        status: jobStatus,
-        quantity: parsedQuantity,
-        remainingQuantity: Math.max(0, parsedQuantity - position.filledCount),
-        // isOpenHiringStatus is the ONE rule for open-ness (Open/Published
-        // open, On Hold/Filled closed). Mirroring it here rather than
-        // re-testing for "Open" keeps this optimistic update identical to what
-        // the server just stored -- with the old literal check, saving a
-        // position as Published would have dropped it out of the hiring
-        // counts on screen until the next full page load.
-        // Also gated on openings remaining (2026-08-24), matching
-        // hiring-positions.ts: lowering Quantity to what is already filled
-        // closes the position, exactly as the server will have stored it.
-        isOpen: isOpenHiringStatus(jobStatus, position.subStatus, false) && parsedQuantity > position.filledCount,
-        workforceGroup,
-        department: selectedDepartment,
-        expectedStartDate: startDate,
-      });
-      onClose();
-    });
-  }
-
-  function remove() {
-    if (!window.confirm(`Delete "${position.title}"? It comes off the Employees page and the hiring totals. This can't be undone.`)) return;
-    setError(null);
-    startTransition(async () => {
-      const result = await deleteHiringPosition(position.sourceId);
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      onDeleted(position.sourceId);
-    });
-  }
-
+/** A hire request, for someone who can't edit it. */
+function RequestDetails({ position, managerName, posting }: { position: HiringPosition; managerName: string | null; posting: HiringPosition | null }) {
+  const team = EMPLOYEE_TEAMS.find((t) => t.schedulerCode === position.department)?.name;
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Position Title *</span>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} className={INPUT} />
-      </label>
-
-      {/* Directly below Position Title, same as the Create form. Filling
-          openings is NOT done here — that is the "Mark one hired" control
-          (HiringOpeningsControl), so a hire never requires opening and
-          re-saving the whole edit form. This field is only "how many did we
-          ask for". */}
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Quantity *</span>
-        <input
-          type="number"
-          min={Math.max(1, position.filledCount)}
-          step={1}
-          inputMode="numeric"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-          className={`${INPUT} w-24`}
-        />
-        {position.filledCount > 0 && (
-          <span className="text-note text-sdc-muted">
-            {position.filledCount} of {position.quantity} already filled — Quantity can&apos;t go below {position.filledCount}.
-          </span>
-        )}
-      </label>
-
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Job Status *</span>
-        <select value={jobStatus} onChange={(e) => setJobStatus(e.target.value)} className={INPUT}>
-          {statusOptions.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Workforce Group *</span>
-        <select
-          value={workforceGroup}
-          onChange={(e) => {
-            const next = e.target.value as WorkforceGroupKey;
-            setWorkforceGroup(next);
-            setDepartment("");
-          }}
-          className={INPUT}
-        >
-          {ASSIGNABLE_GROUPS.map((g) => (
-            <option key={g.key} value={g.key}>
-              {g.title}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Department *</span>
-        <select value={selectedDepartment} onChange={(e) => setDepartment(e.target.value)} className={INPUT}>
-          {departmentsInGroup.map((t) => (
-            <option key={t.schedulerCode} value={t.schedulerCode}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Expected Start Date</span>
-        <input type="date" value={expectedStartDate} onChange={(e) => setExpectedStartDate(e.target.value)} className={INPUT} />
-      </label>
-      {error && (
-        <p className="text-note text-sdc-red-text" role="alert">
-          {error}
+    <div className="flex flex-col">
+      {posting && (
+        <p className="border-b border-sdc-border-soft bg-sdc-blue-light px-4 py-2.5 text-sm text-sdc-navy">
+          Looks posted in Paylocity as {posting.title} (Job {posting.sourceId}).
         </p>
       )}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={remove}
-          className="text-sm font-semibold text-sdc-red-text hover:underline disabled:opacity-60"
-        >
-          Delete position
-        </button>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={save}
-          className="h-9 rounded-lg bg-sdc-blue px-3.5 text-sm font-semibold text-white motion-interactive hover:brightness-95 disabled:opacity-60"
-        >
-          {pending ? "Saving…" : "Save Changes"}
-        </button>
-      </div>
+      <Field label="Status" value={`Requested ${waitingLabel(position.requestedAt)}`.trim()} />
+      {team && <Field label="Team" value={team} />}
+      <Field label="Hiring manager" value={managerName ?? (position.hiringManagerIds[0] ? `Paylocity ID ${position.hiringManagerIds[0]}` : "Not set")} />
+      <Field label="How many" value={String(position.quantity)} />
+      {position.expectedStartDate && <Field label="Needed by" value={position.expectedStartDate.toLocaleDateString("en-US", { timeZone: "UTC" })} />}
+      {position.createdBy && <Field label="Requested by" value={position.createdBy} />}
+      {position.note && <p className="whitespace-pre-wrap border-b border-sdc-border-soft px-4 py-2.5 text-sm text-sdc-navy">{position.note}</p>}
     </div>
   );
 }
@@ -242,64 +59,71 @@ export function HiringPositionDetailDrawer({
   canAssign,
   onAssigned,
   onUpdated,
-  onDeleted,
+  onClosed,
   onClose,
+  leads,
+  managerName,
+  posting,
 }: {
   position: HiringPosition;
   canAssign: boolean;
   onAssigned: (positionSourceId: string, next: { workforceGroup: WorkforceGroupKey | null; department: string | null }) => void;
   onUpdated: (sourceId: string, patch: Partial<HiringPosition>) => void;
-  /** A created position was deleted: drop it from the page. The caller closes the drawer. */
-  onDeleted: (sourceId: string) => void;
+  /** A hire request was closed: drop it from the page. The caller closes the drawer. */
+  onClosed: (sourceId: string) => void;
   onClose: () => void;
+  /** Team leads, for a request's hiring manager. */
+  leads: TeamLead[];
+  /** A request's hiring manager, by name. */
+  managerName: string | null;
+  /** The Paylocity posting a request looks like it became, if any. */
+  posting: HiringPosition | null;
 }) {
   const departmentTitle = EMPLOYEE_TEAMS.find((t) => t.schedulerCode === position.department)?.name;
+  const isRequest = position.source === "manual";
 
   return (
     <BuildReadinessDrawer
       title={position.title}
-      subtitle={position.workforceGroup ? `${workforceGroupTitle(position.workforceGroup)}${departmentTitle ? ` · ${departmentTitle}` : ""}` : "Unassigned"}
+      subtitle={
+        isRequest
+          ? `Hire request${departmentTitle ? ` · ${departmentTitle}` : ""}`
+          : position.workforceGroup
+            ? `${workforceGroupTitle(position.workforceGroup)}${departmentTitle ? ` · ${departmentTitle}` : ""}`
+            : "Unassigned"
+      }
       breadcrumb={["Hiring Positions", position.title]}
       onBreadcrumbClick={() => {}}
       onClose={onClose}
     >
-      {position.source === "manual" && canAssign ? (
-        <ManualEditForm position={position} onUpdated={onUpdated} onDeleted={onDeleted} onClose={onClose} />
+      {isRequest ? (
+        canAssign ? (
+          <HiringRequestForm request={position} leads={leads} posting={posting} onUpdated={onUpdated} onClosed={onClosed} onCancel={onClose} />
+        ) : (
+          <RequestDetails position={position} managerName={managerName} posting={posting} />
+        )
       ) : (
         <div className="flex flex-col">
           <div className="flex items-center justify-between gap-3 border-b border-sdc-border-soft px-4 py-2.5">
             <span className="text-xs font-semibold uppercase tracking-wide text-sdc-muted">Move to</span>
-            {position.source === "workbook" ? (
-              <HiringMoveToControl
-                positionSourceId={position.sourceId}
-                workforceGroup={position.workforceGroup}
-                department={position.department}
-                canAssign={canAssign}
-                onAssigned={onAssigned}
-              />
-            ) : (
-              <span className="text-note text-sdc-muted">
-                {position.workforceGroup ? workforceGroupTitle(position.workforceGroup) : "Unassigned"}
-                {departmentTitle ? ` · ${departmentTitle}` : ""}
-              </span>
-            )}
+            <HiringMoveToControl
+              positionSourceId={position.sourceId}
+              workforceGroup={position.workforceGroup}
+              department={position.department}
+              canAssign={canAssign}
+              onAssigned={onAssigned}
+            />
           </div>
-          {position.source === "workbook" && (
-            <div className="flex items-center justify-between gap-3 border-b border-sdc-border-soft px-4 py-2.5">
-              <span className="text-xs font-semibold uppercase tracking-wide text-sdc-muted">Expected Start Date</span>
-              <HiringExpectedStartDateControl
-                positionSourceId={position.sourceId}
-                expectedStartDate={position.expectedStartDate}
-                canAssign={canAssign}
-                onSaved={(sourceId, date) => onUpdated(sourceId, { expectedStartDate: date })}
-              />
-            </div>
-          )}
-          {/* Openings (2026-08-24) — shown for BOTH sources, unlike Expected
-              Start Date above: a manual position reaches this branch too when
-              the viewer lacks edit permission, and its opening count is worth
-              reading even then (the control renders as plain text without
-              `canAssign`). */}
+          <div className="flex items-center justify-between gap-3 border-b border-sdc-border-soft px-4 py-2.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-sdc-muted">Expected Start Date</span>
+            <HiringExpectedStartDateControl
+              positionSourceId={position.sourceId}
+              expectedStartDate={position.expectedStartDate}
+              canAssign={canAssign}
+              onSaved={(sourceId, date) => onUpdated(sourceId, { expectedStartDate: date })}
+            />
+          </div>
+          {/* Openings (2026-08-24): plain text without `canAssign`. */}
           <div className="flex items-start justify-between gap-3 border-b border-sdc-border-soft px-4 py-2.5">
             <span className="pt-1 text-xs font-semibold uppercase tracking-wide text-sdc-muted">Openings</span>
             <HiringOpeningsControl
@@ -342,7 +166,7 @@ export function HiringPositionDetailDrawer({
           {position.remote && <Field label="Remote" value="Yes" />}
           {position.internal && <Field label="Internal Only" value="Yes" />}
           <Field label="Position ID" value={position.sourceId} />
-          {position.source === "workbook" && !position.isManuallyAssigned && position.workforceGroup && (
+          {!position.isManuallyAssigned && position.workforceGroup && (
             <p className="px-4 py-2.5 text-note text-sdc-muted">
               Placed here automatically from its hiring manager&apos;s team — not yet manually confirmed.
             </p>

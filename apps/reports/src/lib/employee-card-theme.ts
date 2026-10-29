@@ -144,6 +144,18 @@ export function resolveEmployeeGroup(
   return { key, title: key, colors: OTHER_COLORS };
 }
 
+/**
+ * The card for a card key resolveEmployeeGroup() produced ("mech", "operations"),
+ * or null if no card has that key. For records that store the key rather than a
+ * person's team — a hiring position's department (2026-10-29).
+ */
+export function employeeGroupForKey(key: string): EmployeeGroup | null {
+  const team = EMPLOYEE_TEAMS.find((t) => t.schedulerCode === key);
+  if (team) return { key, title: team.name, colors: CARD_COLORS[key] ?? OTHER_COLORS };
+  const backOffice = Object.values(BACK_OFFICE_TEAM).find((b) => b.key === key);
+  return backOffice ? { key, title: backOffice.title, colors: CARD_COLORS[key] ?? OTHER_COLORS } : null;
+}
+
 // Canonical card order: the seven delivery teams in the order work moves
 // through them (employee-teams.ts), then Growth and the named back-office
 // departments, then any other real department A→Z, with "No department"

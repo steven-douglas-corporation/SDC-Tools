@@ -1469,6 +1469,12 @@ model HiringPositionCreated {
   // filledCount == quantity has nothing left open and stops counting, which is
   // the "only close it when ALL openings are filled" rule.
   filledCount        Int       @default(0)
+  // ── Hire requests (2026-10-29) ────────────────────────────────────────────
+  // Every row is now a manager's request for a hire, not an opening: the
+  // opening is the Paylocity posting it becomes. See the migration's comment.
+  // Paylocity employee id of the team lead named as hiring manager.
+  hiringManagerId    String?   @db.VarChar(32)
+  note               String?   @db.VarChar(1000)
   createdByEmail     String?   @db.VarChar(191)
   updatedByEmail     String?   @db.VarChar(191)
   createdAt          DateTime  @default(now())

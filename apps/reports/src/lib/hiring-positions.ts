@@ -3,7 +3,7 @@ import { isOpenPosition, type HiringPositionSourceRow } from "@/lib/hiring-workb
 import { readHiringPositionsFromWarehouse } from "@/lib/hiring-warehouse";
 import { departmentFromHiringManagers } from "@/lib/hiring-warehouse-parse";
 import { getHiringAssignments, getCreatedHiringPositions, type HiringAssignmentRow, type CreatedHiringPositionRow } from "@/lib/hiring-positions-store";
-import { isOpenHiringStatus } from "@/lib/hiring-position-status";
+import { REQUEST_STATUS } from "@/lib/hiring-requests";
 import { workforceGroupForCardKey, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 
 // The one place the DataWarehouse's open positions, the manual-assignment
@@ -50,13 +50,16 @@ export type HiringPosition = {
    * it here too would double it into Planned.
    */
   remainingQuantity: number;
-  /** "workbook" = from Paylocity's Recruiting export (via the DataWarehouse; the name predates it); "manual" = created inside SDC Reports (HiringPositionCreated). */
+  /** "workbook" = from Paylocity's Recruiting export (via the DataWarehouse; the name predates it); "manual" = a hire request made in SDC Reports (HiringPositionCreated). See lib/hiring-requests.ts. */
   source: "workbook" | "manual";
   workforceGroup: WorkforceGroupKey | null;
   /** A DepartmentCard key (an employee-teams.ts schedulerCode) — the SAME key EmployeesCards' own cards use, so a hiring count slots into the identical card as its real employees. */
   department: string | null;
-  /** Paylocity employee ids of the hiring managers (empty for a manual position): what the Org chart places a position by. */
+  /** Paylocity employee ids of the hiring managers: what the Org chart places a posting by, and what a request is matched to its posting by. A request carries at most one (the team lead it names). */
   hiringManagerIds: string[];
+  /** Hire requests only: when it was asked for (drives "N days ago"), and a note for the recruiter. Null on a Paylocity posting. */
+  requestedAt: Date | null;
+  note: string | null;
   /** True if a person has explicitly assigned/moved this position — false means workforceGroup/department (if any) are only the classifier's best-effort guess. Always true for a manually-created position (it was assigned outright at creation). */
   isManuallyAssigned: boolean;
   /** Prorates this position's Hiring Capacity hours (workforce-capacity.ts) — null means "unknown," which counts as full-year, not zero. */
@@ -124,6 +127,8 @@ function toWorkbookPosition(
     workforceGroup,
     department,
     hiringManagerIds,
+    requestedAt: null,
+    note: null,
     isManuallyAssigned: !!manual,
     expectedStartDate: manual?.expectedStartDate ?? null,
     isVisible: manual?.isVisible ?? true,
@@ -138,18 +143,25 @@ function toWorkbookPosition(
   };
 }
 
+// A hire request (2026-10-29), never an opening: isOpen is always false, so it
+// stays out of Open Positions, Planned Headcount, Hiring Capacity hours, the team
+// cards and the org chart, which all read only open positions. The Paylocity
+// posting it becomes is what counts. The stored jobStatus is no longer read:
+// every row reads as Requested, whatever an older edit set it to.
 function toManualPosition(row: CreatedHiringPositionRow): HiringPosition {
   return {
     sourceId: `manual-${row.id}`,
     title: row.title,
-    status: row.jobStatus,
+    status: REQUEST_STATUS,
     subStatus: null,
-    isOpen: isOpenHiringStatus(row.jobStatus, null, false) && readOpenings(row.quantity, row.filledCount).remainingQuantity > 0,
-    ...readOpenings(row.quantity, row.filledCount),
+    isOpen: false,
+    ...readOpenings(row.quantity, 0),
     source: "manual",
     workforceGroup: row.workforceGroup as WorkforceGroupKey,
     department: row.department,
-    hiringManagerIds: [],
+    hiringManagerIds: row.hiringManagerId ? [row.hiringManagerId] : [],
+    requestedAt: row.createdAt,
+    note: row.note,
     isManuallyAssigned: true,
     expectedStartDate: row.expectedStartDate,
     isVisible: row.isVisible,
@@ -274,6 +286,7 @@ export function redactHiddenPositions(positions: HiringPosition[], canSeeHidden:
           workLocDescription: null,
           createdBy: null,
           modifiedBy: null,
+          note: null,
         },
   );
 }

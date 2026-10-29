@@ -13,6 +13,7 @@ import { OpenPositionsDropdown } from "@/components/OpenPositionsDropdown";
 import type { HiringPosition } from "@/lib/hiring-positions";
 import { countOpenings } from "@/lib/hiring-openings";
 import { cardId, LEADERS_CARD, placeHiringOnChart } from "@/lib/org-chart-hiring";
+import { isRequestableTeam } from "@/lib/hiring-requests";
 
 // The Employees page's Org chart view (2026-10-02): the same department cards
 // as the Cards view — same header, same "N active" line, same person rows
@@ -41,6 +42,8 @@ type Ctx = {
   onSelectHiring?: (position: HiringPosition) => void;
   /** A viewer who can assign hiring also sees positions hidden from everyone else. */
   canAssignHiring?: boolean;
+  /** Starts a hire request for a team: offered at the foot of every delivery team's card. */
+  onRequestHire?: (team: string) => void;
   /** While searching: whether a person matches. Anyone drawn who doesn't is a manager shown for context, and is dimmed. */
   match?: (id: number) => boolean;
 };
@@ -162,6 +165,7 @@ function TeamCard({
   const hiringOpenings = countOpenings(cardHiring);
   const hiringHours = hasCapacityPolicy ? hiringCapacityHours(cardHiring, ctx.year!) : 0;
   const currentHours = hasCapacityPolicy ? employeeCapacityHours(count, ctx.year!) : 0;
+  const listedHiring = visibleTo(cardHiring, ctx);
   return (
     <section className="flex flex-col rounded-xl border border-sdc-border bg-white shadow-sm">
       <DepartmentCardHeader title={title} colors={group?.colors ?? { bg: "#e2e8f0", text: "#1e293b" }} isAi={group?.key === "ai"} className="rounded-t-[11px]" />
@@ -175,7 +179,21 @@ function TeamCard({
         }
       />
       {children(title)}
-      <OpenPositionsDropdown positions={visibleTo(cardHiring, ctx)} onSelect={ctx.onSelectHiring} />
+      <OpenPositionsDropdown positions={listedHiring} onSelect={ctx.onSelectHiring} />
+      {/* Where Cards had "Add employee" (2026-10-29): people now come from the
+          Paylocity roster, so a team's card offers a hire request instead, under
+          its open positions if it has any. */}
+      {ctx.onRequestHire && isRequestableTeam(team) && (
+        <button
+          type="button"
+          onClick={() => ctx.onRequestHire!(team)}
+          title={`Ask the recruiter to post a position for ${title}`}
+          className="flex w-full items-center gap-1.5 rounded-b-[11px] border-t border-dashed border-sdc-border px-3 py-1.5 text-left text-xs font-semibold text-sdc-muted hover:bg-sdc-gray-50 hover:text-sdc-navy"
+        >
+          <span aria-hidden="true">+</span>
+          <span>Request a hire</span>
+        </button>
+      )}
     </section>
   );
 }
@@ -206,6 +224,7 @@ export function OrgChart({
   hiringPositions,
   onSelectHiringPosition,
   canAssignHiring,
+  onRequestHire,
   query = "",
 }: {
   chart: OrgChartData;
@@ -220,6 +239,8 @@ export function OrgChart({
   hiringPositions?: HiringPosition[];
   onSelectHiringPosition?: (position: HiringPosition) => void;
   canAssignHiring?: boolean;
+  /** Omitted for a viewer who can't request hires: no "Request a hire" on the cards. */
+  onRequestHire?: (team: string) => void;
 }) {
   if (!chart.ready) {
     return (
@@ -247,6 +268,7 @@ export function OrgChart({
     hiringByCard: placement.byCard,
     onSelectHiring: onSelectHiringPosition,
     canAssignHiring,
+    onRequestHire,
     match,
   };
   const narrow = (nodes: OrgNode[]) => (match ? filterOrgNodes(nodes, match) : nodes);

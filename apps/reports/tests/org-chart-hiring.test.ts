@@ -56,6 +56,8 @@ function position(overrides: Partial<HiringPosition>): HiringPosition {
     workforceGroup: null,
     department: null,
     hiringManagerIds: [],
+    requestedAt: null,
+    note: null,
     isManuallyAssigned: false,
     expectedStartDate: null,
     isVisible: true,
