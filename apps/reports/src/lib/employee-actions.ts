@@ -7,6 +7,8 @@ import { recordChanges, classifyChange } from "@/lib/change-log";
 import { reconcileSchedulerRoster, type RosterReconciliation } from "@/lib/sync-scheduler-team";
 import type { SupervisorImportResult } from "@/lib/import-employee-supervisors";
 import { assertActionPermission } from "@/lib/require-permission";
+import { DISCIPLINE_LABEL } from "@/lib/disciplines";
+import { pushTeamMemberToScheduler } from "@/lib/scheduler-push";
 import { isPaylocityId } from "@/lib/employee-row";
 import { TEAM_NAME, isTeamCode } from "@/lib/team-names";
 import { applyTeamRule } from "@/lib/paylocity-roster-sync";
@@ -270,4 +272,50 @@ export async function setEmployeeActive(id: number, active: boolean, _formData: 
     { action: active ? "employee.reactivate" : "employee.deactivate" },
   );
   revalidatePath("/employees");
+}
+
+export type ManualAddResult = { ok: true; schedulerSynced: boolean } | { ok: false; error: string };
+
+// "Manual add" from an Org chart team card (2026-10-29; was Cards' "Add member").
+// For someone not in Paylocity — a contractor — who would otherwise never reach
+// the roster: Paylocity's sync only brings its own people, and the Temp Punches
+// report only temps who clock in.
+//
+// The person is placed the way the Org chart places anyone not in Paylocity: by
+// a supervisor set here. The card supplies one (its top Paylocity person, else
+// the leader the card reports to), so they land on that card under Contractors
+// and follow its team; their team is written straight away so they show there
+// before the next hourly sync.
+//
+// Then a best-effort push to Scheduler's team board, as Add member did, so they
+// can be scheduled. A push failure keeps the Reports row: someone in Reports but
+// not yet on the board is recoverable; losing the row because another app timed
+// out is not. Teams Scheduler has no discipline for (Human Resources) skip it.
+export async function manualAddPerson(team: string, supervisorId: number, name: string): Promise<ManualAddResult> {
+  await assertActionPermission("employees:edit");
+
+  const trimmedName = name.trim();
+  if (!trimmedName) return { ok: false, error: "Name is required." };
+  if (trimmedName.length > 191) return { ok: false, error: "That name is too long." };
+  if (!isTeamCode(team)) return { ok: false, error: "That is not a team." };
+  const supervisor = await prisma.employee.findUnique({ where: { id: supervisorId }, select: { id: true, name: true, active: true, team: true } });
+  if (!supervisor?.active) return { ok: false, error: "That card's manager is no longer on the roster. Refresh the page and try again." };
+
+  const label = DISCIPLINE_LABEL[team] ?? null;
+  // A card with no Paylocity person offers the leader it reports to, whose own
+  // team is not the card's: set the team by hand then, or the person would follow
+  // the leader's team onto another card.
+  const teamOverride = supervisor.team === team ? null : team;
+  const employee = await prisma.employee.create({ data: { name: trimmedName, discipline: label, team, teamOverride, supervisorId: supervisor.id } });
+  await logAudit({
+    action: "employee.create",
+    entityType: "Employee",
+    entityId: employee.id,
+    summary: `Added ${employee.name} to ${TEAM_NAME[team] ?? team}, under ${supervisor.name} (manual add on the Org chart)`,
+    metadata: { name: trimmedName, team, supervisorId: supervisor.id },
+  });
+
+  const push = label ? await pushTeamMemberToScheduler(employee.id, trimmedName, team) : { ok: true };
+  revalidatePath("/employees");
+  return { ok: true, schedulerSynced: push.ok };
 }

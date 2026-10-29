@@ -233,6 +233,7 @@ export function EmployeesGrid({
             onSelectHiringPosition={selectHiringPosition}
             canAssignHiring={canAssignHiring}
             onRequestHire={HIRING_POSITIONS_ENABLED && canAssignHiring ? (team) => setRequestingHire({ team }) : undefined}
+            canManualAdd={canAddEmployees}
           />
         </div>
       ) : (
