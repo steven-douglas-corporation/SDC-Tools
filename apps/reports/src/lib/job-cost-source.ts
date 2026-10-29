@@ -377,7 +377,7 @@ export type JobCostData = {
 export async function loadJobCostRows(asOf: string | null = null): Promise<JobCostData> {
   const jobs = await prisma.job.findMany({
     where: validJobTypeFilter,
-    select: { id: true, jobId: true, jobName: true, status: true, customer: true, type: true, startDate: true, completeDate: true, costActualHistorical: true },
+    select: { id: true, jobId: true, jobName: true, status: true, customer: true, type: true, startDate: true, completeDate: true, costActualHistorical: true, salesPrice: true },
   });
   const jobPks = jobs.map((j) => j.id);
 
@@ -424,7 +424,13 @@ export async function loadJobCostRows(asOf: string | null = null): Promise<JobCo
     const h = hoursByJobPk.get(j.id);
     const inv = inventory.map.get(j.jobId);
     const etc = etcSnapshotByJobPk.get(j.id);
-    const salesPrice = inv?.salesPrice ?? salesFallback.get(j.jobId) ?? null;
+    // Current view: the Projects tab's Sales Price (Job.salesPrice) is the figure of record, so the two
+    // tabs cannot disagree. It used to come only from the inventory workbook / Power BI, which had gone
+    // stale or blank for several active jobs. A historical as-of view keeps that month's inventory
+    // figure — a snapshot must not be rewritten by today's contract value. A job with no Projects
+    // price entered falls back to the old sources exactly as before.
+    const projectsPrice = !asOf && j.salesPrice != null ? Number(j.salesPrice) : null;
+    const salesPrice = projectsPrice ?? inv?.salesPrice ?? salesFallback.get(j.jobId) ?? null;
 
     return {
       jobId: j.jobId,
