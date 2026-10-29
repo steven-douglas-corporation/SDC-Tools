@@ -27,6 +27,7 @@ import {
 } from "@/lib/employee-workforce-groups";
 import { countOpenings } from "@/lib/hiring-openings";
 import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
+import { findPostingForRequest, teamLeadOptions } from "@/lib/hiring-requests";
 import { OrgChart, PendingTeamChanges } from "@/components/OrgChart";
 import type { OrgChart as OrgChartData } from "@/lib/org-chart";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
@@ -279,10 +280,20 @@ export function EmployeesGrid({
     setHiring((prev) => [position, ...prev]);
   }
 
-  function applyHiringDelete(positionSourceId: string) {
+  function applyHiringRequestClosed(positionSourceId: string) {
     setHiring((prev) => prev.filter((p) => p.sourceId !== positionSourceId));
     setSelectedHiringPosition(null);
   }
+
+  // Hire requests (2026-10-29): the team leads a request can name as hiring
+  // manager, and every roster name by Paylocity id so a request shows its
+  // manager by name even if they are no longer a lead.
+  const teamLeads = useMemo(() => teamLeadOptions(rows), [rows]);
+  const nameByPaylocityId = useMemo(() => new Map(rows.filter((r) => r.paylocityId).map((r) => [r.paylocityId, r.name])), [rows]);
+  const selectedRequestPosting = useMemo(
+    () => (selectedHiringPosition ? findPostingForRequest(selectedHiringPosition, hiring) : null),
+    [selectedHiringPosition, hiring],
+  );
 
   // Always OPEN positions only — the input WorkforceSummaryCards/EmployeesCards'
   // hiring-count formulas expect (see WorkforceSummaryCards' own "Already OPEN
@@ -677,8 +688,9 @@ export function EmployeesGrid({
       )}
 
       {/* Hiring Positions last, after Execution and Operations (2026-08-24).
-          Full width, and hidden entirely when nothing is open — the same rule the
-          old aside followed. */}
+          Full width. Hidden when nothing is open and there are no hire requests,
+          unless the viewer can request one (2026-10-29): the list it opens is
+          where "Request a hire" lives. */}
       {HIRING_POSITIONS_ENABLED && (
         <HiringPositionsSummary
           hiringPositions={openHiring}
@@ -686,6 +698,8 @@ export function EmployeesGrid({
           onSelectHiring={openHiringView}
           onSelectCapacity={setCapacityDrill}
           expanded={showHiring}
+          requestCount={hiring.filter((p) => p.source === "manual" && p.isVisible).length}
+          canRequest={canAssignHiring}
         />
       )}
 
@@ -701,6 +715,7 @@ export function EmployeesGrid({
             positions={hiring}
             canAssign={canAssignHiring}
             canCreate={canAssignHiring}
+            managerNames={nameByPaylocityId}
             onSelect={selectHiringPosition}
             onVisibilityChanged={(sourceId, isVisible) => applyHiringUpdate(sourceId, { isVisible })}
             onCreate={() => setCreatingHiringPosition(true)}
@@ -731,13 +746,16 @@ export function EmployeesGrid({
           canAssign={canAssignHiring}
           onAssigned={applyAssignment}
           onUpdated={applyHiringUpdate}
-          onDeleted={applyHiringDelete}
+          onClosed={applyHiringRequestClosed}
           onClose={() => setSelectedHiringPosition(null)}
+          leads={teamLeads}
+          managerName={nameByPaylocityId.get(selectedHiringPosition.hiringManagerIds[0] ?? "") ?? null}
+          posting={selectedRequestPosting}
         />
       )}
 
       {HIRING_POSITIONS_ENABLED && creatingHiringPosition && (
-        <CreateHiringPositionDrawer onClose={() => setCreatingHiringPosition(false)} onCreated={applyHiringCreate} />
+        <CreateHiringPositionDrawer leads={teamLeads} onClose={() => setCreatingHiringPosition(false)} onCreated={applyHiringCreate} />
       )}
 
       {capacityDrill && (

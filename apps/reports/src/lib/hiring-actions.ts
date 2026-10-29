@@ -10,14 +10,13 @@ import {
   updateCreatedHiringPositionVisibility,
   setHiringQuantity,
   setHiringFilledCount,
-  updateCreatedHiringPositionFilledCount,
   deleteCreatedHiringPosition,
 } from "@/lib/hiring-positions-store";
 import { getHiringPositionById } from "@/lib/hiring-positions";
 import { logAudit } from "@/lib/audit";
 import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
 import { workforceGroupForCardKey, WORKFORCE_GROUPS, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
-import { MANUAL_JOB_STATUSES, DEFAULT_MANUAL_JOB_STATUS, isManualJobStatus } from "@/lib/hiring-position-status";
+import { REQUEST_STATUS } from "@/lib/hiring-requests";
 
 // The write paths for hiring positions (2026-08-19) — `employees:hiring:assign`
 // gates all of them (create/edit/move), same permission key as before this
@@ -196,17 +195,25 @@ export async function setCreatedHiringPositionVisibility(sourceId: string, isVis
   return { ok: true };
 }
 
-export type HiringPositionFormInput = {
+// ── Hire requests (2026-10-29) ──────────────────────────────────────────────
+//
+// What used to be "Create Position" is a manager's request for a hire: the
+// recruiter files it in Paylocity, and the posting it becomes is what counts.
+// See lib/hiring-requests.ts. The group is derived from the team, so the two can
+// never disagree, and there is no status to pick: a request is just requested
+// until it is closed (posted, or no longer needed).
+
+export type HiringRequestInput = {
   title: string;
-  jobStatus: string;
-  workforceGroup: WorkforceGroupKey;
+  /** Which team the hire is for: an employee-teams.ts schedulerCode. */
   department: string;
-  workLocDescription?: string | null;
-  remote?: boolean;
-  internal?: boolean;
-  expectedStartDate?: Date | null;
-  /** Openings this one position represents (2026-08-24). Omitted reads as 1, so an older caller keeps today's behaviour. */
+  /** Paylocity id of the team lead who will be the posting's hiring manager. */
+  hiringManagerId: string;
+  /** How many people. Omitted reads as 1. */
   quantity?: number;
+  /** Needed by. */
+  expectedStartDate?: Date | null;
+  note?: string | null;
 };
 
 export type HiringPositionActionResult = { ok: true; sourceId: string } | { ok: false; error: string };
@@ -230,155 +237,148 @@ function parseQuantity(value: number | undefined): { ok: true; quantity: number 
   return { ok: true, quantity: value };
 }
 
-function validateGroupDepartment(workforceGroup: string, department: string): string | null {
-  if (!ASSIGNABLE_GROUPS.has(workforceGroup as WorkforceGroupKey)) return `"${workforceGroup}" isn't a valid workforce group.`;
-  if (!VALID_DEPARTMENTS.has(department)) return `"${department}" isn't a known department.`;
-  if (workforceGroupForCardKey(department) !== workforceGroup) return `"${department}" doesn't belong to the ${workforceGroup} group.`;
-  return null;
-}
-
-/** The "+ Create Position" drawer's write path — see HiringPositionCreated's own comment in schema.prisma for why this is a real table, not a write into Job.xlsx. */
-export async function createHiringPosition(input: HiringPositionFormInput): Promise<HiringPositionActionResult> {
-  const session = await assertActionPermission("employees:hiring:assign");
-
+/** Title, team, hiring manager, quantity and note as stored, or the first problem with them. */
+function parseHiringRequest(input: HiringRequestInput):
+  | { ok: true; title: string; workforceGroup: WorkforceGroupKey; department: string; hiringManagerId: string; quantity: number; note: string | null }
+  | { ok: false; error: string } {
   const title = input.title.trim();
-  if (!title) return { ok: false, error: "Position Title is required." };
-
-  const jobStatus = input.jobStatus.trim() || DEFAULT_MANUAL_JOB_STATUS;
-  if (!isManualJobStatus(jobStatus)) return { ok: false, error: `Job Status must be one of: ${MANUAL_JOB_STATUSES.join(", ")}.` };
-
-  const groupDeptError = validateGroupDepartment(input.workforceGroup, input.department);
-  if (groupDeptError) return { ok: false, error: groupDeptError };
-
+  if (!title) return { ok: false, error: "Position title is required." };
+  if (!VALID_DEPARTMENTS.has(input.department)) return { ok: false, error: `"${input.department}" isn't a known team.` };
+  const workforceGroup = workforceGroupForCardKey(input.department);
+  if (!ASSIGNABLE_GROUPS.has(workforceGroup)) return { ok: false, error: `"${input.department}" isn't a team a hire can be requested for.` };
+  const hiringManagerId = input.hiringManagerId.trim();
+  if (!/^\d{1,32}$/.test(hiringManagerId)) return { ok: false, error: "Pick the team lead who will be the hiring manager." };
   const qty = parseQuantity(input.quantity);
   if (!qty.ok) return { ok: false, error: qty.error };
+  const note = input.note?.trim() || null;
+  if (note && note.length > 1000) return { ok: false, error: "The note is too long — 1,000 characters at most." };
+  return { ok: true, title, workforceGroup, department: input.department, hiringManagerId, quantity: qty.quantity, note };
+}
+
+/** The "Request a hire" form's write path. */
+export async function createHiringRequest(input: HiringRequestInput): Promise<HiringPositionActionResult> {
+  const session = await assertActionPermission("employees:hiring:assign");
+  const parsed = parseHiringRequest(input);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
 
   const row = await insertCreatedHiringPosition({
-    title,
-    jobStatus,
-    workforceGroup: input.workforceGroup,
-    department: input.department,
-    workLocDescription: input.workLocDescription?.trim() || null,
-    remote: !!input.remote,
-    internal: !!input.internal,
+    title: parsed.title,
+    jobStatus: REQUEST_STATUS,
+    workforceGroup: parsed.workforceGroup,
+    department: parsed.department,
+    workLocDescription: null,
+    remote: false,
+    internal: false,
     expectedStartDate: input.expectedStartDate ?? null,
-    quantity: qty.quantity,
+    quantity: parsed.quantity,
+    hiringManagerId: parsed.hiringManagerId,
+    note: parsed.note,
     actorEmail: session.user.email ?? null,
   });
 
   const sourceId = `manual-${row.id}`;
 
   await logAudit({
-    action: "hiring.positionCreated",
+    action: "hiring.requestCreated",
     entityType: "HiringPositionCreated",
     entityId: sourceId,
-    summary: `${title}${qty.quantity > 1 ? ` ×${qty.quantity}` : ""}: created as ${jobStatus} · ${input.workforceGroup} · ${input.department} (by ${session.user.email ?? "unknown"})`,
-    metadata: { sourceId, title, jobStatus, workforceGroup: input.workforceGroup, department: input.department, quantity: qty.quantity },
+    summary: `${parsed.title}${parsed.quantity > 1 ? ` ×${parsed.quantity}` : ""}: hire requested for ${parsed.department}, hiring manager ${parsed.hiringManagerId} (by ${session.user.email ?? "unknown"})`,
+    metadata: { sourceId, title: parsed.title, department: parsed.department, hiringManagerId: parsed.hiringManagerId, quantity: parsed.quantity, note: parsed.note },
   });
 
   return { ok: true, sourceId };
 }
 
-/** Editing a manually-created position — title/status/group/department all live directly on its row (see createHiringPosition's comment). Workbook-sourced positions aren't editable this way; use assignHiringPosition for their group/department. */
-export async function updateHiringPosition(sourceId: string, input: HiringPositionFormInput): Promise<HiringPositionActionResult> {
+/** Editing a hire request. Paylocity postings aren't editable this way; their team is set with assignHiringPosition. */
+export async function updateHiringRequest(sourceId: string, input: HiringRequestInput): Promise<HiringPositionActionResult> {
   const session = await assertActionPermission("employees:hiring:assign");
   const match = /^manual-(\d+)$/.exec(sourceId);
-  if (!match) return { ok: false, error: "Only positions created in SDC Reports can be edited this way." };
+  if (!match) return { ok: false, error: "Only hire requests can be edited this way." };
   const id = Number(match[1]);
 
-  const title = input.title.trim();
-  if (!title) return { ok: false, error: "Position Title is required." };
-
-  const jobStatus = input.jobStatus.trim();
-  if (!isManualJobStatus(jobStatus)) return { ok: false, error: `Job Status must be one of: ${MANUAL_JOB_STATUSES.join(", ")}.` };
-
-  const groupDeptError = validateGroupDepartment(input.workforceGroup, input.department);
-  if (groupDeptError) return { ok: false, error: groupDeptError };
+  const parsed = parseHiringRequest(input);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
 
   const before = await getHiringPositionById(sourceId);
-  if (!before) return { ok: false, error: "This position no longer exists." };
-
-  const qty = parseQuantity(input.quantity ?? before.quantity);
-  if (!qty.ok) return { ok: false, error: qty.error };
-  // Lowering quantity below what has already been hired would leave the row
-  // claiming more people were filled than were ever asked for. readOpenings()
-  // in hiring-positions.ts clamps that on read so nothing breaks, but the
-  // number someone typed would silently not be what they got — better to say so.
-  if (qty.quantity < before.filledCount) {
-    return {
-      ok: false,
-      error: `Quantity can't be lower than the ${before.filledCount} opening${before.filledCount === 1 ? "" : "s"} already filled on this position.`,
-    };
-  }
+  if (!before) return { ok: false, error: "This request no longer exists." };
 
   await updateCreatedHiringPositionRow(id, {
-    title,
-    jobStatus,
-    workforceGroup: input.workforceGroup,
-    department: input.department,
+    title: parsed.title,
+    jobStatus: REQUEST_STATUS,
+    workforceGroup: parsed.workforceGroup,
+    department: parsed.department,
     expectedStartDate: input.expectedStartDate ?? null,
-    quantity: qty.quantity,
+    quantity: parsed.quantity,
+    hiringManagerId: parsed.hiringManagerId,
+    note: parsed.note,
     actorEmail: session.user.email ?? null,
   });
 
   await logAudit({
-    action: "hiring.positionUpdated",
+    action: "hiring.requestUpdated",
     entityType: "HiringPositionCreated",
     entityId: sourceId,
-    summary: `${before.title}: ${before.status} · ${before.workforceGroup ?? "—"}/${before.department ?? "—"} → ${jobStatus} · ${input.workforceGroup}/${input.department} (by ${session.user.email ?? "unknown"})`,
+    summary: `${before.title}: request edited (by ${session.user.email ?? "unknown"})`,
     metadata: {
       sourceId,
       previousTitle: before.title,
-      previousJobStatus: before.status,
-      previousWorkforceGroup: before.workforceGroup,
       previousDepartment: before.department,
-      newTitle: title,
-      newJobStatus: jobStatus,
-      newWorkforceGroup: input.workforceGroup,
-      newDepartment: input.department,
+      previousHiringManagerId: before.hiringManagerIds[0] ?? null,
       previousQuantity: before.quantity,
-      newQuantity: qty.quantity,
+      newTitle: parsed.title,
+      newDepartment: parsed.department,
+      newHiringManagerId: parsed.hiringManagerId,
+      newQuantity: parsed.quantity,
     },
   });
 
   return { ok: true, sourceId };
 }
 
-export type DeleteHiringPositionResult = { ok: true } | { ok: false; error: string };
+export type CloseHiringRequestResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Deleting a position created in SDC Reports (2026-10-27). Managers use these as
- * requests ("I need someone in this role; please post it in Paylocity") and want
- * to withdraw one that is no longer needed. Positions from Paylocity are refused:
- * the app doesn't own them, and the next warehouse load would bring them back.
- * Closing one of those is done in Paylocity. The audit entry keeps the row's
- * details, so a deletion can be traced and re-created by hand.
+ * Closing a hire request. Two reasons, one write: it has been posted in Paylocity
+ * (`postedAsJobId`, the posting the app matched it to and a person confirmed), or
+ * it is no longer needed. Either way the row is removed; the audit entry keeps
+ * what it said and why it closed, so a mistake can be traced and re-made.
+ * Paylocity postings are refused: the app doesn't own them, and the next
+ * warehouse load would bring them back.
  */
-export async function deleteHiringPosition(sourceId: string): Promise<DeleteHiringPositionResult> {
+export async function closeHiringRequest(sourceId: string, postedAsJobId?: string): Promise<CloseHiringRequestResult> {
   const session = await assertActionPermission("employees:hiring:assign");
   const match = /^manual-(\d+)$/.exec(sourceId);
-  if (!match) return { ok: false, error: "Only positions created in SDC Reports can be deleted. Close a Paylocity position in Paylocity." };
+  if (!match) return { ok: false, error: "Only hire requests can be closed here. A Paylocity posting is closed in Paylocity." };
   const id = Number(match[1]);
 
   const before = await getHiringPositionById(sourceId);
-  if (!before) return { ok: false, error: "This position no longer exists." };
+  if (!before) return { ok: false, error: "This request no longer exists." };
+
+  if (postedAsJobId !== undefined) {
+    const posting = await getHiringPositionById(postedAsJobId);
+    if (!posting || posting.source !== "workbook") return { ok: false, error: "That Paylocity posting isn't in the latest load any more." };
+  }
 
   await deleteCreatedHiringPosition(id);
 
+  const posted = postedAsJobId !== undefined;
   await logAudit({
-    action: "hiring.positionDeleted",
+    action: posted ? "hiring.requestPosted" : "hiring.requestWithdrawn",
     entityType: "HiringPositionCreated",
     entityId: sourceId,
-    summary: `${before.title}${before.quantity > 1 ? ` ×${before.quantity}` : ""}: deleted (was ${before.status} · ${before.workforceGroup ?? "—"}/${before.department ?? "—"}) (by ${session.user.email ?? "unknown"})`,
+    summary:
+      `${before.title}${before.quantity > 1 ? ` ×${before.quantity}` : ""}: ` +
+      `${posted ? `request closed, posted in Paylocity as Job ${postedAsJobId}` : "request withdrawn, no longer needed"} (by ${session.user.email ?? "unknown"})`,
     metadata: {
       sourceId,
+      postedAsJobId: postedAsJobId ?? null,
       title: before.title,
-      jobStatus: before.status,
-      workforceGroup: before.workforceGroup,
       department: before.department,
+      hiringManagerId: before.hiringManagerIds[0] ?? null,
       quantity: before.quantity,
-      filledCount: before.filledCount,
       expectedStartDate: before.expectedStartDate,
+      note: before.note,
+      requestedAt: before.requestedAt,
       createdBy: before.createdBy,
     },
   });
@@ -428,17 +428,16 @@ export async function setHiringFilled(positionSourceId: string, filledCount: num
   }
   if (filledCount === before.filledCount) return { ok: true }; // nothing to do, and nothing worth auditing
 
+  // A hire request has nothing to fill (2026-10-29): it is filled in Paylocity,
+  // once it is posted there.
   const manual = /^manual-(\d+)$/.exec(positionSourceId);
-  if (manual) {
-    await updateCreatedHiringPositionFilledCount(Number(manual[1]), filledCount, session.user.email ?? null);
-  } else {
-    await setHiringFilledCount(positionSourceId, filledCount, before.workforceGroup, before.department, session.user.email ?? null);
-  }
+  if (manual) return { ok: false, error: "A hire request isn't filled here. Once it is posted, fill it in Paylocity." };
+  await setHiringFilledCount(positionSourceId, filledCount, before.workforceGroup, before.department, session.user.email ?? null);
 
   const nowClosed = filledCount >= before.quantity;
   await logAudit({
     action: nowClosed ? "hiring.positionFilled" : "hiring.openingFilled",
-    entityType: manual ? "HiringPositionCreated" : "HiringPositionAssignment",
+    entityType: "HiringPositionAssignment",
     entityId: positionSourceId,
     summary:
       `${before.title}: ${before.filledCount} → ${filledCount} of ${before.quantity} opening${before.quantity === 1 ? "" : "s"} filled` +
@@ -481,28 +480,14 @@ export async function setHiringPositionQuantity(positionSourceId: string, quanti
   }
   if (parsed.quantity === before.quantity) return { ok: true };
 
+  // A hire request's quantity is edited on the request itself (updateHiringRequest).
   const manual = /^manual-(\d+)$/.exec(positionSourceId);
-  if (manual) {
-    // Reuses the full edit write path rather than adding a quantity-only
-    // UPDATE for this table: a manual position owns all its fields, so passing
-    // its current values back is not a clobber risk, and it keeps one SET
-    // clause for this row instead of two that could drift.
-    await updateCreatedHiringPositionRow(Number(manual[1]), {
-      title: before.title,
-      jobStatus: before.status,
-      workforceGroup: before.workforceGroup ?? "",
-      department: before.department ?? "",
-      expectedStartDate: before.expectedStartDate,
-      quantity: parsed.quantity,
-      actorEmail: session.user.email ?? null,
-    });
-  } else {
-    await setHiringQuantity(positionSourceId, parsed.quantity, before.workforceGroup, before.department, session.user.email ?? null);
-  }
+  if (manual) return { ok: false, error: "Change how many on the request itself." };
+  await setHiringQuantity(positionSourceId, parsed.quantity, before.workforceGroup, before.department, session.user.email ?? null);
 
   await logAudit({
     action: "hiring.quantityChanged",
-    entityType: manual ? "HiringPositionCreated" : "HiringPositionAssignment",
+    entityType: "HiringPositionAssignment",
     entityId: positionSourceId,
     summary: `${before.title}: quantity ${before.quantity} → ${parsed.quantity} (by ${session.user.email ?? "unknown"})`,
     metadata: { positionSourceId, title: before.title, previousQuantity: before.quantity, newQuantity: parsed.quantity },

@@ -31,6 +31,8 @@ export function HiringPositionsSummary({
   onSelectHiring,
   onSelectCapacity,
   expanded,
+  requestCount,
+  canRequest,
 }: {
   /** Already filtered to OPEN positions by the caller — see EmployeesGrid's `openHiring`. */
   hiringPositions: HiringPosition[];
@@ -38,6 +40,10 @@ export function HiringPositionsSummary({
   onSelectHiring: () => void;
   onSelectCapacity: (target: CapacityDrillTarget) => void;
   expanded: boolean;
+  /** Hire requests waiting to be posted (2026-10-29). Shown beside the openings, never added to them. */
+  requestCount: number;
+  /** Whether the viewer can request a hire: the band then always shows, since the list it opens is where the button is. */
+  canRequest: boolean;
 }) {
   const byGroup = useMemo(() => {
     const m = new Map<WorkforceGroupKey, number>();
@@ -63,7 +69,7 @@ export function HiringPositionsSummary({
     .map((g) => ({ key: g.key, title: g.title, count: byGroup.get(g.key) ?? 0 }))
     .filter((g) => g.count > 0);
 
-  if (openPositions === 0) return null;
+  if (openPositions === 0 && requestCount === 0 && !canRequest) return null;
 
   return (
     <section className="mt-6">
@@ -124,10 +130,24 @@ export function HiringPositionsSummary({
           ))}
 
           {unassigned > 0 && (
-            <div className="flex min-w-[9rem] flex-col justify-center gap-0.5 px-4 py-3">
+            <div className="flex min-w-[9rem] flex-col justify-center gap-0.5 border-r border-dashed border-sdc-border px-4 py-3">
               <span className="text-lg font-bold tabular-nums text-sdc-navy">{unassigned}</span>
               <span className="text-label uppercase tracking-wide text-sdc-muted">Unassigned</span>
             </div>
+          )}
+
+          {/* Requests sit apart from the openings: they are not in Paylocity yet
+              and never count toward the totals to the left. */}
+          {requestCount > 0 && (
+            <button
+              type="button"
+              onClick={onSelectHiring}
+              title="Hire requests waiting to be posted in Paylocity"
+              className="flex min-w-[9rem] flex-col justify-center gap-0.5 px-4 py-3 text-left hover:bg-sdc-blue-light/30"
+            >
+              <span className="text-lg font-bold tabular-nums text-sdc-muted">{requestCount}</span>
+              <span className="text-label uppercase tracking-wide text-sdc-muted">Requested</span>
+            </button>
           )}
         </div>
       </div>
