@@ -76,7 +76,7 @@ test("parts split; a never-entered total reads as zero", () => {
 
 test("applying adds hours and parts to the totals and leaves untouched sections alone", () => {
   const before = totals();
-  const r = planApply(before, cq(), "add");
+  const r = planApply(before, cq());
   assert.ok(r.ok);
   if (!r.ok) return;
   assert.equal(r.hours["10-211"], 230);
@@ -91,40 +91,18 @@ test("applying adds hours and parts to the totals and leaves untouched sections 
 });
 
 test("applying an already-applied change quote is refused (no double count)", () => {
-  const r = planApply(totals(), cq({ status: "Applied", addedToTotals: true }), "add");
+  const r = planApply(totals(), cq({ status: "Applied", addedToTotals: true }));
   assert.equal(r.ok, false);
 });
 
 test("an empty change quote can't be applied", () => {
-  assert.equal(planApply(totals(), cq({ hours: {}, partsCents: 0 }), "add").ok, false);
-  assert.equal(planApply(totals(), cq({ hours: { a: 0 }, partsCents: 0 }), "add").ok, false);
-});
-
-test("'already included' changes nothing in the totals", () => {
-  const big: TotalsState = { hours: { ...Object.fromEntries(Object.entries(CQ4_HOURS).map(([k, v]) => [k, v + 100])) }, partsCents: 9_000_000 };
-  const r = planApply(big, cq(), "included");
-  assert.ok(r.ok);
-  if (!r.ok) return;
-  assert.deepEqual(r.hours, big.hours);
-  assert.equal(r.partsCents, 9_000_000);
-  assert.deepEqual(r.changedSections, []);
-  assert.equal(r.addedToTotals, false);
-  assert.equal(r.partsChanged, false);
-});
-
-test("'already included' is refused when a total is smaller than the change quote", () => {
-  const r = planApply(totals(), cq(), "included"); // totals lack 40-211 etc.
-  assert.equal(r.ok, false);
-});
-
-test("'already included' is refused when parts total is smaller", () => {
-  const t: TotalsState = { hours: Object.fromEntries(Object.entries(CQ4_HOURS)), partsCents: 100 };
-  assert.equal(planApply(t, cq(), "included").ok, false);
+  assert.equal(planApply(totals(), cq({ hours: {}, partsCents: 0 })).ok, false);
+  assert.equal(planApply(totals(), cq({ hours: { a: 0 }, partsCents: 0 })).ok, false);
 });
 
 test("apply then reverse restores the totals exactly", () => {
   const before = totals();
-  const applied = planApply(before, cq(), "add");
+  const applied = planApply(before, cq());
   assert.ok(applied.ok);
   if (!applied.ok) return;
   const rev = planReverse({ hours: applied.hours, partsCents: applied.partsCents }, cq({ status: "Applied", addedToTotals: true }));
@@ -136,7 +114,7 @@ test("apply then reverse restores the totals exactly", () => {
   assert.equal(rev.partsCents, before.partsCents);
 });
 
-test("reversing an 'included' change quote never touches the totals", () => {
+test("a change quote that was never added to the totals is not subtracted on reverse (guard)", () => {
   const t = totals();
   const r = planReverse(t, cq({ status: "Applied", addedToTotals: false }));
   assert.ok(r.ok);
@@ -212,7 +190,7 @@ test("applying adds the amount to the Change Quote column, reversing takes it ba
   assert.deepEqual(r2, { ok: true, nextCents: 1_000_000, changed: true });
 });
 
-test("'already in totals', no amount, or a zero amount never touch the column", () => {
+test("a never-added change quote, no amount, or a zero amount never touch the column", () => {
   assert.deepEqual(planColumnAmount(15_530_000, 15_530_000, "apply", false), { ok: true, nextCents: 15_530_000, changed: false });
   assert.deepEqual(planColumnAmount(15_530_000, 15_530_000, "reverse", false), { ok: true, nextCents: 15_530_000, changed: false });
   assert.deepEqual(planColumnAmount(100, null, "apply", true), { ok: true, nextCents: 100, changed: false });

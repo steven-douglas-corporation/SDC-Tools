@@ -16,13 +16,6 @@
 
 export type CqStatus = "Draft" | "Applied";
 
-/** How a Draft becomes Applied. */
-export type ApplyMode =
-  /** Add its hours and parts to the totals — the normal case for a new change quote. */
-  | "add"
-  /** The figures are ALREADY in the totals (typed in by hand earlier): record, don't add. */
-  | "included";
-
 export type CqInput = {
   /** Section code → whole hours. Absent / 0 means none. */
   hours: Readonly<Record<string, number>>;
@@ -123,29 +116,15 @@ export type PlanResult =
 /**
  * What the totals become when `cq` is applied, or an error naming why it can't be.
  * Pure: the caller writes the result inside one transaction and re-checks status there.
+ * Applying always ADDS — there is one rule: whatever is in the grid is the baseline, and
+ * every change quote after it goes through the panel.
  */
-export function planApply(totals: TotalsState, cq: CqInput, mode: ApplyMode): PlanResult {
+export function planApply(totals: TotalsState, cq: CqInput): PlanResult {
   if (cq.status === "Applied") return { ok: false, error: "This change quote is already applied." };
   const entered = compactHours(cq.hours);
   if (Object.keys(entered).length === 0 && cq.partsCents === 0) {
     return { ok: false, error: "Enter hours or a parts cost before applying — this change quote is empty." };
   }
-
-  if (mode === "included") {
-    // Nothing is added, so the only thing to prove is that the totals really do
-    // contain these figures. If a total is smaller than the change quote, Original
-    // would go negative — the manager has the wrong idea about what the grid holds.
-    for (const [s, h] of Object.entries(entered)) {
-      if ((totals.hours[s] ?? 0) < h) {
-        return { ok: false, error: `The grid total for ${s} is ${totals.hours[s] ?? 0}, less than this change quote's ${h}. It can't already be included.` };
-      }
-    }
-    if (cq.partsCents > (totals.partsCents ?? 0)) {
-      return { ok: false, error: "The grid's Parts Cost Quoted is less than this change quote's parts cost. It can't already be included." };
-    }
-    return { ok: true, hours: { ...totals.hours }, partsCents: totals.partsCents, changedSections: [], partsChanged: false, addedToTotals: false };
-  }
-
   const hours = { ...totals.hours };
   const changedSections: string[] = [];
   for (const [s, h] of Object.entries(entered)) {
@@ -159,7 +138,7 @@ export function planApply(totals: TotalsState, cq: CqInput, mode: ApplyMode): Pl
 
 /**
  * What the totals become when an Applied `cq` is reversed back to Draft. A change
- * quote that was only recorded as "already included" leaves the totals alone. One
+ * quote that was never added to the totals (none can be created now — kept as a guard) leaves them alone. One
  * that was added is subtracted — refused if that would take a total below zero,
  * which can only mean someone has since edited the totals down by hand.
  */
@@ -193,9 +172,7 @@ export function planReverse(totals: TotalsState, cq: CqInput): PlanResult {
 // ── The grid's Change Quote $ column ────────────────────────────────────────
 //
 // Applying a change quote ADDS its amount to Job.changeQuote and reversing takes it
-// back out, so the dollar figure is entered once, in the panel. A change quote
-// recorded as "already in totals" never touches the column: its money was typed there
-// by hand already, and adding it again would count it twice.
+// back out, so the dollar figure is entered once, in the panel.
 
 export type ColumnPlan = { ok: true; nextCents: number | null; changed: boolean } | { ok: false; error: string };
 
