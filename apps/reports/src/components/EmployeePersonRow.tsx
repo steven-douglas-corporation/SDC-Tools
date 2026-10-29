@@ -1,10 +1,9 @@
 import { DASH, type EmployeeRow } from "@/lib/employee-row";
 import type { CardColors } from "@/lib/employee-card-theme";
 
-// The pieces a department card is made of, shared by the Employees page's two
-// views (2026-10-02) so a card looks the same in Cards and in Org chart: the
-// coloured header and one person's row. Moved out of EmployeesCards.tsx
-// unchanged; the Org chart adds only its nesting lines around the rows.
+// The pieces a team card is made of on the Org chart: the coloured header and
+// one person's row. Moved out of the old Cards view (2026-10-02, removed
+// 2026-10-29); the Org chart adds only its nesting lines around the rows.
 
 // Title/discipline, whichever adds information — showing the card's own
 // department name again under every row inside it would just repeat the
@@ -16,10 +15,23 @@ export function roleOf(r: EmployeeRow, cardTitle: string): string {
   return DASH;
 }
 
-export function DepartmentCardHeader({ title, colors, isAi, className = "" }: { title: string; colors: CardColors; isAi?: boolean; className?: string }) {
+export function DepartmentCardHeader({
+  title,
+  colors,
+  isAi,
+  className = "",
+  action,
+}: {
+  title: string;
+  colors: CardColors;
+  isAi?: boolean;
+  className?: string;
+  /** A control at the header's right end (the Org chart's Manual add "+"). Anything it drops down anchors to the header. */
+  action?: React.ReactNode;
+}) {
   return (
-    <header className={`px-3.5 py-2.5 ${className}`} style={{ background: colors.bg, color: colors.text }}>
-      <h3 className="flex items-center gap-1 truncate text-sm font-bold">
+    <header className={`relative flex items-center gap-2 px-3.5 py-2.5 ${className}`} style={{ background: colors.bg, color: colors.text }}>
+      <h3 className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm font-bold">
         {title}
         {/* AI department marker (2026-09-22) — a small bot glyph after the
             card name, matching the way the lead star sits beside a person's
@@ -30,6 +42,7 @@ export function DepartmentCardHeader({ title, colors, isAi, className = "" }: { 
           </span>
         )}
       </h3>
+      {action}
     </header>
   );
 }

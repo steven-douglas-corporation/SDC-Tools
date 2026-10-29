@@ -3,7 +3,6 @@ import { PAGE_SHELL } from "@/components/ui/classnames";
 import { PageTitle } from "@/components/ui/Typography";
 import { EmployeesGrid } from "@/components/EmployeesGrid";
 import { DISCIPLINE_LABELS } from "@/lib/disciplines";
-import type { EmployeeRow } from "@/components/EmployeesCards";
 import { fetchEmployeeTeams } from "@/lib/employee-team-field";
 import { fetchSchedulerPlaceholders } from "@/lib/scheduler-db";
 import { fetchSchedulerOverlay } from "@/lib/employee-scheduler-overlay";
@@ -14,7 +13,7 @@ import { getHiringPositions, redactHiddenPositions } from "@/lib/hiring-position
 import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
 import { resolveTeams, departmentLeads } from "@/lib/team-resolution";
 import { resolveEmployeeGroup, NO_DEPARTMENT } from "@/lib/employee-card-theme";
-import { isPaylocityId } from "@/lib/employee-row";
+import { isPaylocityId, type EmployeeRow } from "@/lib/employee-row";
 import { buildOrgChart } from "@/lib/org-chart";
 import type { PositionFamilyRow } from "@/lib/position-families-parse";
 
@@ -26,7 +25,7 @@ const DASH = "—";
 // Replaces the "Employees" tab of Project Planner Data Control.xlsx.
 // Soft-delete only: deactivating keeps every historical hour intact.
 //
-// Read-only view — see EmployeesCards. The roster's fields all have upstream
+// Read-only view. The roster's fields all have upstream
 // owners (Scheduler for discipline, Paylocity for name/department/supervisor),
 // so it is maintained through the toolbar's sync and import buttons rather than
 // by typing into cells.
@@ -115,24 +114,14 @@ export async function EmployeesView() {
 
   return (
     <div className={PAGE_SHELL}>
-      <div className="mb-1">
-        <div>
-          <PageTitle className="mb-1">Employees</PageTitle>
-          <p className="max-w-4xl text-sm text-sdc-gray-600">
-            Replaces the Project Planner workbook&apos;s Employees tab. The Org chart shows everyone nested by who
-            they report to — a person&apos;s own detail opens in a side panel. Hiring lists the positions published
-            in Paylocity and the hire requests waiting to be posted. Deactivated employees keep all historical hours.
-            New people, supervisors, job titles and
-            position codes sync from Paylocity every hour — change those in Paylocity. Each person&apos;s team follows
-            their reporting line: the person they report up to just below Leadership sets the team for that whole
-            branch, by their Paylocity position family. Leadership is badged and listed first on its card. New
-            people arrive hidden; open one and choose Show to put them on the roster, and people Paylocity marks
-            inactive are hidden for you.
-          </p>
-        </div>
+      {/* The Dashboard's header (2026-10-29): title, one line on what the page
+          is, and the rule the tabs below sit under. */}
+      <div className="mb-7 border-b border-sdc-border pb-5">
+        <PageTitle>Employees</PageTitle>
+        <p className="text-sm text-sdc-gray-600">Everyone on the Paylocity roster by who they report to, plus contractors and the positions being hired for</p>
       </div>
 
-      <div className="mt-5">
+      <div>
         <EmployeesGrid
           rows={rows}
           placeholders={placeholders}

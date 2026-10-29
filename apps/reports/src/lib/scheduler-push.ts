@@ -4,7 +4,7 @@ import { withTimeoutOrNull } from "@/lib/with-timeout";
 
 export type SchedulerPushResult = { ok: boolean; reason?: string };
 
-// The write half of Add Member — the read half (fetchSchedulerTeam,
+// The write half of the Org chart's Manual add (was Cards' Add Member) — the read half (fetchSchedulerTeam,
 // fetchSchedulerPlaceholders) goes through the read-only SCHEDULER_DATABASE_URL
 // connection, but that connection is deliberately read-only (a dedicated
 // MySQL user, enforced by convention — see scheduler-db.ts), so creating a

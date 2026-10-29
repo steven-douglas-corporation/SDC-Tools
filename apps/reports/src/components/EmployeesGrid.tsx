@@ -169,41 +169,44 @@ export function EmployeesGrid({
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center gap-3">
-        {views.length > 1 && (
-          <div role="radiogroup" aria-label="View" className="flex items-center rounded-lg border border-sdc-border bg-white p-0.5">
-            {views.map(([v, label]) => (
-              <button
-                key={v}
-                type="button"
-                role="radio"
-                aria-checked={view === v}
-                onClick={() => setView(v)}
-                title={v === "chart" ? "Everyone nested by who they report to" : "Published positions and hire requests"}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold motion-interactive ${
-                  view === v ? "bg-sdc-navy text-white" : "text-sdc-gray-600 hover:bg-sdc-blue-light"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        {view === "chart" && (
-          <>
-            <SearchBox value={q} onChange={setQ} />
-            <label className="flex items-center gap-2 text-xs font-medium text-sdc-gray-600">
-              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="h-3.5 w-3.5" />
-              Show inactive
-            </label>
-            {hiddenInactiveMatches > 0 && (
-              <button type="button" onClick={() => setShowInactive(true)} className="text-xs font-medium text-sdc-blue hover:underline">
-                {hiddenInactiveMatches} inactive {hiddenInactiveMatches === 1 ? "person matches" : "people match"} — show them
-              </button>
-            )}
-          </>
-        )}
-      </div>
+      {/* Underlined tabs, the Dashboard's own strip (DashboardTabs.tsx), so the
+          two pages with tabs look alike. Local state, not a URL param: neither
+          tab costs a server round trip, unlike the Dashboard's Finances. */}
+      {views.length > 1 && (
+        <div className="mb-6 flex items-center gap-1 border-b border-sdc-border" role="tablist">
+          {views.map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              role="tab"
+              aria-selected={view === v}
+              onClick={() => setView(v)}
+              className={`relative -mb-px border-b-2 px-4 py-2.5 text-sm font-semibold motion-interactive ${
+                view === v
+                  ? "border-sdc-blue text-sdc-blue-dark"
+                  : "border-transparent text-sdc-muted hover:border-sdc-border hover:text-sdc-navy"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {view === "chart" && (
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <SearchBox value={q} onChange={setQ} />
+          <label className="flex items-center gap-2 text-xs font-medium text-sdc-gray-600">
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="h-3.5 w-3.5" />
+            Show inactive
+          </label>
+          {hiddenInactiveMatches > 0 && (
+            <button type="button" onClick={() => setShowInactive(true)} className="text-xs font-medium text-sdc-blue hover:underline">
+              {hiddenInactiveMatches} inactive {hiddenInactiveMatches === 1 ? "person matches" : "people match"} — show them
+            </button>
+          )}
+        </div>
+      )}
 
       {hiringError && (
         <p className="mb-3 rounded border border-sdc-yellow bg-sdc-yellow-bg px-2 py-1 text-note text-sdc-yellow-text">
@@ -233,6 +236,7 @@ export function EmployeesGrid({
             onSelectHiringPosition={selectHiringPosition}
             canAssignHiring={canAssignHiring}
             onRequestHire={HIRING_POSITIONS_ENABLED && canAssignHiring ? (team) => setRequestingHire({ team }) : undefined}
+            canManualAdd={canAddEmployees}
           />
         </div>
       ) : (

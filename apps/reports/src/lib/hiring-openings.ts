@@ -4,7 +4,7 @@
 // carries a `quantity` of openings and a `filledCount` of those already hired
 // against it. Before that change every hiring total in the app was some form of
 // `positions.length` or `count + 1`, spread across WorkforceSummaryCards,
-// EmployeesGrid and EmployeesCards.
+// EmployeesGrid and the old Cards view.
 //
 // Replacing each of those with its own `reduce((s, p) => s + p.remainingQuantity)`
 // would work and would also be four independent chances to use `quantity` where

@@ -14,6 +14,8 @@ import type { HiringPosition } from "@/lib/hiring-positions";
 import { countOpenings } from "@/lib/hiring-openings";
 import { cardId, LEADERS_CARD, placeHiringOnChart } from "@/lib/org-chart-hiring";
 import { isRequestableTeam } from "@/lib/hiring-requests";
+import { isTeamCode } from "@/lib/team-names";
+import { ManualAddButton } from "@/components/ManualAddButton";
 
 // The Employees page's Org chart view (2026-10-02): the same department cards
 // as the Cards view — same header, same "N active" line, same person rows
@@ -44,6 +46,8 @@ type Ctx = {
   canAssignHiring?: boolean;
   /** Starts a hire request for a team: offered at the foot of every delivery team's card. */
   onRequestHire?: (team: string) => void;
+  /** employees:edit — each team card's header offers Manual add (a contractor). */
+  canManualAdd?: boolean;
   /** While searching: whether a person matches. Anyone drawn who doesn't is a manager shown for context, and is dimmed. */
   match?: (id: number) => boolean;
 };
@@ -135,10 +139,13 @@ function TeamCard({
   shown = null,
   nodes,
   ctx,
+  addUnder,
   children,
 }: {
   /** cardId() — which positions are placed here. */
   id: string;
+  /** Who a manually added person reports to, which is what puts them on this card; omitted, no Manual add (Leadership). */
+  addUnder?: number;
   team: string | null;
   /** ACTIVE people only: it is the headcount, and the capacity hours are built on it. */
   count: number;
@@ -168,7 +175,15 @@ function TeamCard({
   const listedHiring = visibleTo(cardHiring, ctx);
   return (
     <section className="flex flex-col rounded-xl border border-sdc-border bg-white shadow-sm">
-      <DepartmentCardHeader title={title} colors={group?.colors ?? { bg: "#e2e8f0", text: "#1e293b" }} isAi={group?.key === "ai"} className="rounded-t-[11px]" />
+      <DepartmentCardHeader
+        title={title}
+        colors={group?.colors ?? { bg: "#e2e8f0", text: "#1e293b" }}
+        isAi={group?.key === "ai"}
+        className="rounded-t-[11px]"
+        action={
+          ctx.canManualAdd && addUnder != null && isTeamCode(team) ? <ManualAddButton team={team} teamTitle={title} supervisorId={addUnder} /> : undefined
+        }
+      />
       <CardStats
         stats={{ active: count, inactive, hiringOpenings, currentHours: canOpenCapacity ? currentHours : null, hiringHours }}
         shown={shown}
@@ -225,6 +240,7 @@ export function OrgChart({
   onSelectHiringPosition,
   canAssignHiring,
   onRequestHire,
+  canManualAdd,
   query = "",
 }: {
   chart: OrgChartData;
@@ -241,6 +257,8 @@ export function OrgChart({
   canAssignHiring?: boolean;
   /** Omitted for a viewer who can't request hires: no "Request a hire" on the cards. */
   onRequestHire?: (team: string) => void;
+  /** employees:edit — a "+" in each team card's header adds someone not in Paylocity (ManualAddButton). */
+  canManualAdd?: boolean;
 }) {
   if (!chart.ready) {
     return (
@@ -269,6 +287,7 @@ export function OrgChart({
     onSelectHiring: onSelectHiringPosition,
     canAssignHiring,
     onRequestHire,
+    canManualAdd,
     match,
   };
   const narrow = (nodes: OrgNode[]) => (match ? filterOrgNodes(nodes, match) : nodes);
@@ -317,6 +336,7 @@ export function OrgChart({
               shown={shownOf(heads, c.heads)}
               nodes={c.heads}
               ctx={ctx}
+              addUnder={c.heads.find((h) => isPaylocityId(people.get(h.id)?.paylocityId))?.id ?? b.leader.id}
             >
               {(title) => <CardBody nodes={heads} cardTitle={title} ctx={ctx} />}
             </TeamCard>

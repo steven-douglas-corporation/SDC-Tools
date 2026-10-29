@@ -5,10 +5,6 @@ import {
   WORKFORCE_GROUPS,
   workforceGroupForCardKey,
   workforceGroupTitle,
-  EXECUTION_GROUP_KEYS,
-  isExecutionGroup,
-  groupInScope,
-  DEFAULT_TEAM_SCOPE,
   rollupGroup,
   groupsRollingInto,
 } from "../src/lib/employee-workforce-groups";
@@ -175,84 +171,6 @@ test("Operations and Manufacturing Operations are different departments", () => 
   );
 });
 
-// ── Team scope: Entire Team vs Execution Team (2026-08-24) ──────────────────
-
-test("Execution Team is exactly Engineering, General Engineering, Shop and PM", () => {
-  // The request's definition, asserted against the DERIVED set rather than
-  // against a copy of it — EXECUTION_GROUP_KEYS is computed from which groups
-  // own delivery-team codes, so this is what catches that derivation drifting
-  // away from the spec (e.g. a back-office group accidentally given teamCodes).
-  //
-  // General Engineering joined on 2026-08-24 and did so automatically, without
-  // this list being touched: it owns a delivery-team code, which is the whole
-  // property the derivation reads. That is the derivation earning its keep.
-  assert.deepEqual([...EXECUTION_GROUP_KEYS].sort(), ["engineering", "genEng", "pm", "shop"]);
-});
-
-test("the back-office groups and the catch-all are NOT Execution Team", () => {
-  for (const key of ["growth", "finance", "exec", "operations", "other"] as const) {
-    assert.equal(isExecutionGroup(key), false, `${key} must not be part of the Execution Team`);
-  }
-});
-
-test("every department of the three execution groups is in scope for Execution Team", () => {
-  // Walks the request's own department lists through the real resolution chain,
-  // so "Service Engineering counts under Engineering" and "Manufacturing
-  // Operations counts under Shop" hold for this view too, not just the cards.
-  const executionDepartments = [
-    "Mechanical Engineering",
-    "Controls Engineering",
-    "Service Engineering",
-    "Mechanical Build / Manufacturing",
-    "Electrical Build",
-    "Manufacturing Operations",
-    "Project Execution / Project Management",
-  ];
-  for (const department of executionDepartments) {
-    const card = resolveEmployeeGroup({ department });
-    assert.ok(card, `${department} must resolve to a card`);
-    assert.equal(groupInScope(workforceGroupForCardKey(card.key), "execution"), true, `${department} must be in the Execution Team`);
-  }
-});
-
-test("the back-office departments are excluded from Execution Team but present in Entire Team", () => {
-  for (const department of ["Growth / Business Development", "Business Development", "Sales", "Finance", "Executive Leadership", "Operations"]) {
-    const card = resolveEmployeeGroup({ department });
-    assert.ok(card, `${department} must resolve to a card`);
-    const group = workforceGroupForCardKey(card.key);
-    assert.equal(groupInScope(group, "execution"), false, `${department} must NOT be in the Execution Team`);
-    assert.equal(groupInScope(group, "entire"), true, `${department} must be in the Entire Team`);
-  }
-});
-
-test("Entire Team admits every group, including an unmapped department", () => {
-  // Which is what lets the filter sites call groupInScope unconditionally
-  // instead of branching on the scope themselves.
-  for (const g of WORKFORCE_GROUPS) assert.equal(groupInScope(g.key, "entire"), true);
-  assert.equal(groupInScope(workforceGroupForCardKey("Some Raw Department"), "entire"), true);
-});
-
-test("the default scope is Entire Team", () => {
-  assert.equal(DEFAULT_TEAM_SCOPE, "entire");
-});
-
-test("the requested roster splits into 60 execution and 79 total", () => {
-  // Same census as the per-card test above, partitioned by scope. Engineering
-  // 27 + Shop 29 + PM 4 = 60 execution; the remaining 19 are back-office.
-  let execution = 0;
-  let entire = 0;
-  for (const [department, headcount] of Object.entries(ROSTER_CENSUS)) {
-    const card = resolveEmployeeGroup({ department });
-    assert.ok(card, `${department} must resolve to a card`);
-    const group = workforceGroupForCardKey(card.key);
-    entire += headcount;
-    if (groupInScope(group, "execution")) execution += headcount;
-  }
-  assert.equal(execution, 60, "Engineering 27 + Shop 29 + PM 4");
-  assert.equal(entire, 79);
-  assert.equal(entire - execution, 19, "Growth 9 + Finance 4 + Exec 5 + Operations 1");
-});
-
 // ── General Engineering (2026-08-24) ────────────────────────────────────────
 //
 // Separately selectable for hiring, rolled up into Engineering for totals, part
@@ -280,12 +198,6 @@ test("every other group rolls up to itself, so aggregation sites need no special
     if (g.key === "engineering") continue;
     assert.deepEqual(groupsRollingInto(g.key), [g.key], `nothing should roll into ${g.key}`);
   }
-});
-
-test("General Engineering is part of the Execution Team", () => {
-  assert.equal(isExecutionGroup("genEng"), true);
-  assert.equal(groupInScope("genEng", "execution"), true);
-  assert.deepEqual([...EXECUTION_GROUP_KEYS].sort(), ["engineering", "genEng", "pm", "shop"]);
 });
 
 test("General Engineering cannot capture any existing employee", () => {
@@ -324,14 +236,11 @@ test("adding General Engineering does not disturb the existing Engineering/Shop/
   assert.equal(workforceGroupForCardKey("pm"), "pm");
 });
 
-test("the roster split is unchanged by General Engineering — it holds no employees", () => {
-  let execution = 0;
-  for (const [department, headcount] of Object.entries(ROSTER_CENSUS)) {
+test("no roster department lands in General Engineering — it holds no employees", () => {
+  for (const department of Object.keys(ROSTER_CENSUS)) {
     const group = workforceGroupForCardKey(resolveEmployeeGroup({ department })!.key);
-    if (groupInScope(group, "execution")) execution += headcount;
     assert.notEqual(group, "genEng", `${department} must not land in General Engineering`);
   }
-  assert.equal(execution, 60, "still Engineering 27 + Shop 29 + PM 4");
 });
 
 test("every selectable workforce group offers at least one department, and General Engineering offers exactly its own", () => {

@@ -25,8 +25,6 @@ export type WorkforceGroupKey =
 export type WorkforceGroupDef = {
   key: WorkforceGroupKey;
   title: string;
-  /** Spelled-out name, for the in-place group header only ("PM" the card, "Project Management" the heading above its departments). Defaults to `title`. */
-  longTitle?: string;
   // employee-teams.ts's `schedulerCode` values that belong to this group.
   // "other" has none listed — it is whatever no other group claims.
   teamCodes: string[];
@@ -97,7 +95,7 @@ export const WORKFORCE_GROUPS: WorkforceGroupDef[] = [
   // group exists for openings, not for moving anybody.
   { key: "genEng", title: "General Engineering", teamCodes: ["geneng"], rollsUpTo: "engineering" },
   { key: "shop", title: "Shop", teamCodes: ["build", "wire", "mfgops"] },
-  { key: "pm", title: "PM", longTitle: "Project Management", teamCodes: ["pm"] },
+  { key: "pm", title: "PM", teamCodes: ["pm"] },
   { key: "growth", title: "Growth / Business Development", teamCodes: [], cardKeys: ["growth", "sales"] },
   { key: "finance", title: "Finance", teamCodes: [], cardKeys: ["finance"] },
   { key: "exec", title: "Executive Leadership", teamCodes: [], cardKeys: ["exec"] },
@@ -137,64 +135,6 @@ export function workforceGroupForCardKey(cardKey: string): WorkforceGroupKey {
 
 export function workforceGroupTitle(key: WorkforceGroupKey): string {
   return WORKFORCE_GROUPS.find((g) => g.key === key)?.title ?? "Other";
-}
-
-/**
- * The group heading shown above its departments once a workforce card is
- * opened in place. Same string as workforceGroupTitle() for every group but
- * PM, whose card abbreviation reads oddly as a section heading.
- */
-export function workforceGroupLongTitle(key: WorkforceGroupKey): string {
-  const def = WORKFORCE_GROUPS.find((g) => g.key === key);
-  return def?.longTitle ?? def?.title ?? "Other";
-}
-
-// ── Team scope: Entire Team vs Execution Team (2026-08-24, by request) ──────
-//
-// A view switch on the Employees tab, not a second dataset: "Execution Team"
-// narrows to the three groups that actually execute project work — Engineering,
-// Shop and PM — and "Entire Team" is everything, including the back-office
-// groups added earlier the same day.
-//
-// The execution set is DERIVED, not a fourth hand-written list of group keys.
-// A group belongs to it exactly when it owns delivery-team codes: `teamCodes`
-// holds employee-teams.ts's seven schedulerCodes and only the three execution
-// groups have any, while the back-office groups carry `cardKeys` instead
-// (they are real departments, just not teams Scheduler schedules work through)
-// and "other" carries neither.
-//
-// That derivation is the point. Engineering/Shop/PM already have exactly one
-// definition of which departments they contain, and this reuses it rather than
-// restating it — so adding Service Engineering to Engineering, or a new
-// delivery team to Shop, lands in Execution Team automatically with nothing
-// here to keep in sync. A literal ["engineering", "shop", "pm"] would be a
-// second source of truth that could silently disagree with the first.
-export type TeamScope = "entire" | "execution";
-
-export const DEFAULT_TEAM_SCOPE: TeamScope = "entire";
-
-/** Human label for the toggle. */
-export const TEAM_SCOPE_LABEL: Record<TeamScope, string> = {
-  entire: "Entire Team",
-  execution: "Execution Team",
-};
-
-export const EXECUTION_GROUP_KEYS: readonly WorkforceGroupKey[] = WORKFORCE_GROUPS.filter((g) => g.teamCodes.length > 0).map((g) => g.key);
-
-const EXECUTION_SET = new Set<WorkforceGroupKey>(EXECUTION_GROUP_KEYS);
-
-/** Whether a workforce group is part of the Execution Team. */
-export function isExecutionGroup(key: WorkforceGroupKey): boolean {
-  return EXECUTION_SET.has(key);
-}
-
-/**
- * Whether a workforce group should be shown/counted under the given scope.
- * "entire" admits everything, which is what makes this safe to call
- * unconditionally at every filter site instead of branching on the scope there.
- */
-export function groupInScope(key: WorkforceGroupKey, scope: TeamScope): boolean {
-  return scope === "entire" || isExecutionGroup(key);
 }
 
 // ── Canonical department order (2026-08-31) ─────────────────────────────────
