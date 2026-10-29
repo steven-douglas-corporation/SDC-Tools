@@ -11,6 +11,7 @@ import { PageTitle } from "@/components/ui/Typography";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, GRID_SCROLLER, PAGE_SHELL, TABLE_GRID, TABLE_HEADER_ROW } from "@/components/ui/classnames";
 import { ProjectViewsMenu } from "@/components/ProjectViewsMenu";
 import { ExportMenu } from "@/components/ExportMenu";
+import { ChangeQuotesButton } from "@/components/ChangeQuotesPanel";
 import { listSharedViews } from "@/lib/saved-views-actions";
 import { ProjectsFilterMenu } from "@/components/ProjectsFilterMenu";
 import { ProjectsDateFilter } from "@/components/ProjectsDateFilter";
@@ -706,6 +707,9 @@ export async function ProjectsView({ params }: { params: {
             to /api/export/projects, which builds the WHERE clause with the same code
             this page does (lib/projects-query.ts). See §24. */}
         <ExportMenu report="projects" asOf className={BUTTON_SECONDARY} />
+        {/* Original vs. change-quote hours and parts cost, per job. A self-contained panel with its own
+            actions — outside the grid's <form>, so it can never dirty or post a grid cell. */}
+        <ChangeQuotesButton className={BUTTON_SECONDARY} />
         {/* Show Actuals — last, and visually a switch rather than another dropdown,
             because it is the only binary control here (§47.1).
 
