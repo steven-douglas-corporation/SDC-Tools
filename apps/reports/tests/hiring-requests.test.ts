@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { daysSince, findPostingForRequest, isRequestableTeam, teamLeadOptions, titlesMatch, waitingLabel } from "../src/lib/hiring-requests";
 import type { HiringPosition } from "../src/lib/hiring-positions";
+import { employeeGroupForKey, resolveEmployeeGroup } from "../src/lib/employee-card-theme";
 
 // Hire requests (2026-10-29): a position created in SDC Reports is a manager's
 // request; the Paylocity posting it becomes is the opening. Requests never count
@@ -161,4 +162,13 @@ test("a hire can be requested for a delivery team, not for Leadership or an unkn
 test("the Org chart offers Request a hire on every delivery team's card, for a viewer who can request", () => {
   assert.match(src("components/OrgChart.tsx"), /\{ctx\.onRequestHire && isRequestableTeam\(team\) && \(/);
   assert.match(src("components/EmployeesGrid.tsx"), /onRequestHire=\{HIRING_POSITIONS_ENABLED && canAssignHiring \?/);
+});
+
+test("a hiring card takes the Org chart's title and colors from the position's card key", () => {
+  assert.equal(employeeGroupForKey("mech")?.title, "Mechanical Engineering");
+  assert.deepEqual(employeeGroupForKey("mech")?.colors, resolveEmployeeGroup({ team: "mech" })?.colors);
+  // A back-office card key, not its team code ("ops"): the Org chart titles it Procurement.
+  assert.equal(employeeGroupForKey("operations")?.title, "Procurement");
+  assert.deepEqual(employeeGroupForKey("operations")?.colors, resolveEmployeeGroup({ team: "ops" })?.colors);
+  assert.equal(employeeGroupForKey("nope"), null);
 });

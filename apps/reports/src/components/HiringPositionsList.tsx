@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { HiringVisibilityControl } from "@/components/HiringVisibilityControl";
 import { WORKFORCE_GROUPS, workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
+import { employeeGroupForKey, type CardColors } from "@/lib/employee-card-theme";
 import type { HiringPosition } from "@/lib/hiring-positions";
 import { HiringStatusPill } from "@/components/HiringStatusPill";
 import { hiringStatusStyle } from "@/lib/hiring-position-status";
@@ -21,8 +22,9 @@ import { findPostingForRequest, waitingLabel } from "@/lib/hiring-requests";
 //   Each shows who asked, how long ago, and the hiring manager; one that the app
 //   has matched to a Paylocity posting says "Looks posted", and its panel closes
 //   it in one click. See lib/hiring-requests.ts.
-// - Paylocity postings, bucketed by workforce group (a saved assignment if any,
-//   else the hiring manager's team — see hiring-positions.ts), each with its Job
+// - Paylocity postings, bucketed by team with the Org chart's team titles and
+//   colors (a saved assignment if any, else the hiring manager's team — see
+//   hiring-positions.ts; no team yet = a gray workforce-group card), each with its Job
 //   Status as a pill, left accent and tint from lib/hiring-position-status.ts.
 //
 // The status filter applies to postings, and offers the statuses actually
@@ -35,7 +37,7 @@ import { findPostingForRequest, waitingLabel } from "@/lib/hiring-requests";
 const DEPARTMENT_TITLE = new Map(EMPLOYEE_TEAMS.map((t) => [t.schedulerCode, t.name]));
 const ALL_FILTER = "__all__";
 
-type Bucket = { key: WorkforceGroupKey | "unassigned"; title: string; positions: HiringPosition[] };
+type Bucket = { key: string; title: string; colors?: CardColors; positions: HiringPosition[] };
 
 function TitleButton({ p, onSelect }: { p: HiringPosition; onSelect: (position: HiringPosition) => void }) {
   return (
@@ -72,12 +74,15 @@ function GroupCard({
   subtitle,
   count,
   request = false,
+  colors,
   children,
 }: {
   title: string;
   subtitle?: string;
   count: number;
   request?: boolean;
+  /** A team's Org chart colors; without them the header is plain gray. */
+  colors?: CardColors;
   children: ReactNode;
 }) {
   return (
@@ -88,16 +93,17 @@ function GroupCard({
       style={{ flexBasis: request ? "30rem" : "20rem" }}
     >
       <header
-        className={`flex items-center justify-between gap-2 border-b px-3.5 py-2 ${
-          request ? "border-dashed border-sdc-red-text/30 bg-sdc-red-bg" : "border-sdc-border bg-sdc-gray-50"
+        className={`flex items-center justify-between gap-2 border-b px-3.5 ${
+          request ? "border-dashed border-sdc-red-text/30 bg-sdc-red-bg py-2" : colors ? "border-transparent py-2.5" : "border-sdc-border bg-sdc-gray-50 py-2"
         }`}
+        style={colors ? { background: colors.bg, color: colors.text } : undefined}
       >
-        <h3 className={`text-sm font-bold ${request ? "text-sdc-red-text" : "text-sdc-navy"}`}>
+        <h3 className={`truncate text-sm font-bold ${request ? "text-sdc-red-text" : colors ? "" : "text-sdc-navy"}`}>
           {title}
           {subtitle && <span className="font-normal text-sdc-muted"> · {subtitle}</span>}
         </h3>
         {/* Positions, not rows: a ×2 requisition (or request) counts 2. */}
-        <span className={`text-xs font-semibold tabular-nums ${request ? "text-sdc-red-text" : "text-sdc-muted"}`}>{count}</span>
+        <span className={`text-xs font-semibold tabular-nums ${request ? "text-sdc-red-text" : colors ? "opacity-75" : "text-sdc-muted"}`}>{count}</span>
       </header>
       <ul className="divide-y divide-sdc-border-soft">{children}</ul>
     </section>
@@ -178,23 +184,33 @@ export function HiringPositionsList({
     return postings.filter((p) => p.status === statusFilter);
   }, [postings, statusFilter]);
 
+  // By team (2026-10-29), titled and colored like the Org chart's team cards,
+  // in the roster's team order. A posting with no team yet falls back to a gray
+  // card for its workforce group, or Unassigned.
   const buckets = useMemo<Bucket[]>(() => {
-    const byGroup = new Map<WorkforceGroupKey | "unassigned", HiringPosition[]>();
+    const byKey = new Map<string, HiringPosition[]>();
+    const keyOf = (p: HiringPosition) => (p.department ? `team:${p.department}` : `group:${p.workforceGroup ?? "unassigned"}`);
     for (const p of filtered) {
-      const key = p.workforceGroup ?? "unassigned";
-      const list = byGroup.get(key);
+      const list = byKey.get(keyOf(p));
       if (list) list.push(p);
-      else byGroup.set(key, [p]);
+      else byKey.set(keyOf(p), [p]);
     }
-    const ordered: Bucket[] = WORKFORCE_GROUPS.filter((g) => g.key !== "other").map((g) => ({
-      key: g.key,
-      title: g.title,
-      positions: byGroup.get(g.key) ?? [],
-    }));
-    const other = byGroup.get("other");
-    if (other) ordered.push({ key: "other", title: workforceGroupTitle("other"), positions: other });
-    ordered.push({ key: "unassigned", title: "Unassigned", positions: byGroup.get("unassigned") ?? [] });
-    return ordered.filter((b) => b.positions.length > 0);
+    // Delivery teams in roster order, then back-office teams, then the gray
+    // no-team cards, Unassigned last.
+    const teams = EMPLOYEE_TEAMS.map((t) => `team:${t.schedulerCode}`);
+    const groups = [...WORKFORCE_GROUPS.map((g) => `group:${g.key}`), "group:unassigned"];
+    const rank = (k: string) =>
+      teams.includes(k) ? teams.indexOf(k) : k.startsWith("team:") ? teams.length : teams.length + 1 + groups.indexOf(k);
+    return [...byKey.entries()]
+      .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+      .map(([key, positions]) => {
+        if (key.startsWith("team:")) {
+          const group = employeeGroupForKey(key.slice(5));
+          return { key, title: group?.title ?? key.slice(5), colors: group?.colors, positions };
+        }
+        const g = key.slice(6);
+        return { key, title: g === "unassigned" ? "Unassigned" : workforceGroupTitle(g as WorkforceGroupKey), positions };
+      });
   }, [filtered]);
 
   return (
@@ -272,7 +288,7 @@ export function HiringPositionsList({
           )}
 
           {buckets.map((bucket) => (
-            <GroupCard key={bucket.key} title={bucket.title} count={countOpenings(bucket.positions)}>
+            <GroupCard key={bucket.key} title={bucket.title} colors={bucket.colors} count={countOpenings(bucket.positions)}>
               {bucket.positions.map((p) => {
                 const style = hiringStatusStyle(p.status);
                 return (
@@ -283,7 +299,6 @@ export function HiringPositionsList({
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-sdc-muted">
                       <HiringStatusPill status={p.status} />
-                      {p.department && <span className="truncate">{DEPARTMENT_TITLE.get(p.department)}</span>}
                     </div>
                   </li>
                 );
