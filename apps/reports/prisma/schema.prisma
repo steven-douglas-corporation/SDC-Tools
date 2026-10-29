@@ -273,6 +273,7 @@ model Job {
 
   etcEntries             EtcEntry[]
   estimatedHours         EstimatedHours[]
+  changeQuotes           JobChangeQuote[]
   tasks                  JobTask[]
   monthlyActualHours     JobMonthlyActualHours[]
   hoursDetail            JobHoursDetail[]
@@ -627,6 +628,54 @@ model EstimatedHours {
   updatedAt                 DateTime @updatedAt
 
   @@unique([jobId, section])
+}
+
+// ── Change quotes (2026-10-29) ───────────────────────────────────────────────
+//
+// A change quote is extra budget a customer approves on top of the original
+// quote: a dollar amount made of hours per section plus a parts cost. The Projects
+// grid has always held only the TOTAL (EstimatedHours.quotedHours, Job.costQuoted),
+// which is what every other part of the app reads, so that stays the total and is
+// never split. These tables record what each change quote contributed instead, and
+// "Original" is derived: total minus every APPLIED change quote.
+//
+// status: "Draft" (recorded, not part of the totals) or "Applied" (part of them).
+// addedToTotals says HOW it got there — true when applying added its hours/parts to
+// the totals, false when the manager marked it "already included" because those
+// figures had been typed into the grid by hand earlier. Reversing needs the
+// difference: only an added change quote may be subtracted back out.
+//
+// amount is pricing data and sits behind projects:pricing, like Job.salesPrice.
+model JobChangeQuote {
+  id             Int       @id @default(autoincrement())
+  jobId          Int
+  job            Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  label          String    @db.VarChar(64) // e.g. "CQ4"
+  amount         Decimal?  @db.Decimal(12, 2) // total dollars approved, hours + parts
+  partsCost      Decimal   @default(0) @db.Decimal(12, 2)
+  quoteDate      DateTime?
+  note           String?   @db.VarChar(255)
+  status         String    @default("Draft") @db.VarChar(16)
+  addedToTotals  Boolean   @default(false)
+  appliedAt      DateTime?
+  appliedByEmail String?   @db.VarChar(191)
+  createdByEmail String?   @db.VarChar(191)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  hours          JobChangeQuoteHours[]
+
+  @@unique([jobId, label])
+  @@index([jobId])
+}
+
+model JobChangeQuoteHours {
+  id            Int            @id @default(autoincrement())
+  changeQuoteId Int
+  changeQuote   JobChangeQuote @relation(fields: [changeQuoteId], references: [id], onDelete: Cascade)
+  section       String         @db.VarChar(32) // e.g. "10-312"
+  hours         Int // whole hours, same as the Projects grid
+
+  @@unique([changeQuoteId, section])
 }
 
 // Per-employee task assignment within a job, confirmed from the "ME Name" /
