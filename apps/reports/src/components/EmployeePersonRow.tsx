@@ -15,23 +15,10 @@ export function roleOf(r: EmployeeRow, cardTitle: string): string {
   return DASH;
 }
 
-export function DepartmentCardHeader({
-  title,
-  colors,
-  isAi,
-  className = "",
-  action,
-}: {
-  title: string;
-  colors: CardColors;
-  isAi?: boolean;
-  className?: string;
-  /** A control at the header's right end (the Org chart's Manual add "+"). Anything it drops down anchors to the header. */
-  action?: React.ReactNode;
-}) {
+export function DepartmentCardHeader({ title, colors, isAi, className = "" }: { title: string; colors: CardColors; isAi?: boolean; className?: string }) {
   return (
-    <header className={`relative flex items-center gap-2 px-3.5 py-2.5 ${className}`} style={{ background: colors.bg, color: colors.text }}>
-      <h3 className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm font-bold">
+    <header className={`px-3.5 py-2.5 ${className}`} style={{ background: colors.bg, color: colors.text }}>
+      <h3 className="flex items-center gap-1 truncate text-sm font-bold">
         {title}
         {/* AI department marker (2026-09-22) — a small bot glyph after the
             card name, matching the way the lead star sits beside a person's
@@ -42,7 +29,6 @@ export function DepartmentCardHeader({
           </span>
         )}
       </h3>
-      {action}
     </header>
   );
 }
