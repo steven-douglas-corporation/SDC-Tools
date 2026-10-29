@@ -81,7 +81,7 @@ again. After editing `schema.prisma`, use `npx prisma migrate dev --name <what>`
 | Total ETO parts lines (parts cost, left-to-invoice, parts list) | Live SQL Server over the LAN | **Faked**: generated PO lines (`SDC_DEV_FAKE_ETO=1`, see [DEV-TEST-DATA.md](DEV-TEST-DATA.md#3-faux-eto-and-bom-data)) |
 | Total ETO BOM tree, job mirror, cash-flow queries | Live SQL Server | **Not connected**; BOM dashboard is seeded instead |
 | Power BI / Fabric | Service principal | **Not connected** |
-| DataWarehouse (Postgres) | Hours, roster, position families | **Not connected**; hours are seeded directly |
+| DataWarehouse (Postgres) | Hours, roster, position families, job postings | **Not connected**; hours are seeded directly, job postings are faked (`SDC_DEV_FAKE_HIRING=1`) |
 | Paylocity / inventory workbooks | Files on the share | **Not read**; paths unset |
 | Scheduler integration | Live | **Off**; Scheduler is a separate repo |
 | Hourly auto-refresh + *Refresh Data* | On | **Off** (`SDC_DEV_DISABLE_SYNC=1`) |
@@ -103,6 +103,7 @@ what the seed and [DEV-TEST-DATA.md](DEV-TEST-DATA.md) are for.
 | [`apps/reports/prisma/seed-dev.ts`](../apps/reports/prisma/seed-dev.ts) | Baseline dataset. Deterministic, idempotent, refuses non-local databases |
 | `SDC_DEV_DISABLE_SYNC` | The switch in `instrumentation.ts` and `refresh-service.ts` that stops the auto-refresh |
 | `SDC_DEV_FAKE_ETO` | Serves generated parts lines from [`src/lib/dev-fake-eto.ts`](../apps/reports/src/lib/dev-fake-eto.ts) instead of querying Total ETO |
+| `SDC_DEV_FAKE_HIRING` | Serves sample Paylocity job postings from [`src/lib/dev-fake-hiring.ts`](../apps/reports/src/lib/dev-fake-hiring.ts) instead of reading the DataWarehouse |
 | [`prisma/dev-data/build-readiness.ts`](../apps/reports/prisma/dev-data/build-readiness.ts) | Faux BOM / Build Readiness snapshots |
 
 **Why `--lower-case-table-names=1`.** Reports' migrations were generated on
