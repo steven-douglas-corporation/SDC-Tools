@@ -377,7 +377,7 @@ export type JobCostData = {
 export async function loadJobCostRows(asOf: string | null = null): Promise<JobCostData> {
   const jobs = await prisma.job.findMany({
     where: validJobTypeFilter,
-    select: { id: true, jobId: true, jobName: true, status: true, customer: true, type: true, startDate: true, completeDate: true, costActualHistorical: true, salesPrice: true },
+    select: { id: true, jobId: true, jobName: true, status: true, customer: true, type: true, startDate: true, completeDate: true, costActualHistorical: true, salesPrice: true, changeQuote: true },
   });
   const jobPks = jobs.map((j) => j.id);
 
@@ -429,7 +429,12 @@ export async function loadJobCostRows(asOf: string | null = null): Promise<JobCo
     // stale or blank for several active jobs. A historical as-of view keeps that month's inventory
     // figure — a snapshot must not be rewritten by today's contract value. A job with no Projects
     // price entered falls back to the old sources exactly as before.
-    const projectsPrice = !asOf && j.salesPrice != null ? Number(j.salesPrice) : null;
+    //
+    // All-in sales number (requested): the Projects Sales Price PLUS its Change Quote, so profit and
+    // %-complete weighting run against everything the customer is paying for. Added only to a
+    // Projects-sourced price: an inventory/Power BI fallback figure may already include change
+    // orders, and adding to it could count them twice.
+    const projectsPrice = !asOf && j.salesPrice != null ? Number(j.salesPrice) + Number(j.changeQuote ?? 0) : null;
     const salesPrice = projectsPrice ?? inv?.salesPrice ?? salesFallback.get(j.jobId) ?? null;
 
     return {
