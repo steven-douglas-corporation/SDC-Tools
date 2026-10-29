@@ -64,8 +64,8 @@ function TitleButton({ p, onSelect }: { p: HiringPosition; onSelect: (position: 
 }
 
 // ── Cards, not page-wide tables (2026-10-29) ────────────────────────────────
-// Each group is a card in a grid of equal columns, so cards share a line when
-// they fit and all come out the same width. Requests get a dashed red edge and a
+// Each group is a card in equal-width columns, flowing top to bottom, so cards
+// pack under each other whatever their heights. Requests get a dashed red edge and a
 // red header: the band's red "Requested", and the dashed "not a real seat yet"
 // grammar the team cards use for openings.
 function GroupCard({
@@ -249,7 +249,9 @@ export function HiringPositionsList({
       ) : (
         // Equal columns (2026-10-29): every card the same width, wide enough
         // for a title like "Mechanical Design Engineer" beside Edit / Hide.
-        <div className="grid items-start gap-x-5 gap-y-4 [grid-template-columns:repeat(auto-fill,minmax(min(22rem,100%),1fr))]">
+        // Column flow, not a grid: each card sits right under the one above it,
+        // so a tall Requested card doesn't set the height of a whole row.
+        <div className="gap-x-5 [columns:22rem] *:mb-4 *:break-inside-avoid">
           {requests.length > 0 && (
             <GroupCard title="Requested" subtitle="not in Paylocity yet" count={countOpenings(requests)} request>
               {requests.map((r) => {
