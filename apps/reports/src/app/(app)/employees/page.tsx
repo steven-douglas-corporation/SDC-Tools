@@ -114,22 +114,7 @@ export async function EmployeesView() {
 
   return (
     <div className={PAGE_SHELL}>
-      <div className="mb-1">
-        <div>
-          <PageTitle className="mb-1">Employees</PageTitle>
-          <p className="max-w-4xl text-sm text-sdc-gray-600">
-            Replaces the Project Planner workbook&apos;s Employees tab. The Org chart shows everyone nested by who
-            they report to — a person&apos;s own detail opens in a side panel. Hiring lists the positions published
-            in Paylocity and the hire requests waiting to be posted. Deactivated employees keep all historical hours.
-            New people, supervisors, job titles and
-            position codes sync from Paylocity every hour — change those in Paylocity. Each person&apos;s team follows
-            their reporting line: the person they report up to just below Leadership sets the team for that whole
-            branch, by their Paylocity position family. Leadership is badged and listed first on its card. New
-            people arrive hidden; open one and choose Show to put them on the roster, and people Paylocity marks
-            inactive are hidden for you.
-          </p>
-        </div>
-      </div>
+      <PageTitle className="mb-1">Employees</PageTitle>
 
       <div className="mt-5">
         <EmployeesGrid
