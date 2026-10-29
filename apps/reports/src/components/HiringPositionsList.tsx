@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { HiringVisibilityControl } from "@/components/HiringVisibilityControl";
 import { WORKFORCE_GROUPS, workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
@@ -15,8 +15,8 @@ import { findPostingForRequest, waitingLabel } from "@/lib/hiring-requests";
 // EmployeesCards' own employee list — the task's own "do not mix open positions
 // into the actual employee list as if they are employees".
 //
-// Two kinds of row (2026-10-29):
-// - Hire requests, in their own section at the top, oldest first: what managers
+// Two kinds of row (2026-10-29), each group a card (see GroupCard below):
+// - Hire requests, in their own card first, oldest first: what managers
 //   have asked the recruiter to post. They never count toward hiring totals.
 //   Each shows who asked, how long ago, and the hiring manager; one that the app
 //   has matched to a Paylocity posting says "Looks posted", and its panel closes
@@ -54,11 +54,53 @@ function TitleButton({ p, onSelect }: { p: HiringPosition; onSelect: (position: 
           {p.source === "workbook" && p.filledCount > 0 && <span className="font-normal"> · {p.remainingQuantity} left</span>}
         </span>
       )}
-      {p.department && <span className="ml-2 truncate text-xs font-normal text-sdc-muted">{DEPARTMENT_TITLE.get(p.department)}</span>}
       {!p.isVisible && (
         <span className="ml-2 rounded bg-sdc-yellow-bg px-1.5 py-0.5 text-micro font-bold uppercase tracking-wide text-sdc-yellow-text">Hidden</span>
       )}
     </button>
+  );
+}
+
+// ── Cards, not page-wide tables (2026-10-29) ────────────────────────────────
+// Each group is a card in the same wrapping flow the Employees page uses for its
+// team cards (flex-wrap, gap-x-5 gap-y-4, growing from a base width), so groups
+// share a line when they fit. Requests get a wider card with a dashed red edge
+// and a red header: the band's red "Requested", and the dashed "not a real seat
+// yet" grammar the team cards use for openings.
+function GroupCard({
+  title,
+  subtitle,
+  count,
+  request = false,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  count: number;
+  request?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className={`flex min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-xl border bg-white shadow-sm ${
+        request ? "border-dashed border-sdc-red-text/50" : "border-sdc-border"
+      }`}
+      style={{ flexBasis: request ? "30rem" : "20rem" }}
+    >
+      <header
+        className={`flex items-center justify-between gap-2 border-b px-3.5 py-2 ${
+          request ? "border-dashed border-sdc-red-text/30 bg-sdc-red-bg" : "border-sdc-border bg-sdc-gray-50"
+        }`}
+      >
+        <h3 className={`text-sm font-bold ${request ? "text-sdc-red-text" : "text-sdc-navy"}`}>
+          {title}
+          {subtitle && <span className="font-normal text-sdc-muted"> · {subtitle}</span>}
+        </h3>
+        {/* Positions, not rows: a ×2 requisition (or request) counts 2. */}
+        <span className={`text-xs font-semibold tabular-nums ${request ? "text-sdc-red-text" : "text-sdc-muted"}`}>{count}</span>
+      </header>
+      <ul className="divide-y divide-sdc-border-soft">{children}</ul>
+    </section>
   );
 }
 
@@ -188,81 +230,67 @@ export function HiringPositionsList({
         )}
       </div>
 
-      {requests.length > 0 && (
-        <section className="overflow-hidden rounded-xl border border-sdc-border bg-white shadow-sm">
-          <header className="flex items-center justify-between gap-2 border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-2">
-            <h3 className="text-sm font-bold text-sdc-navy">
-              Requested <span className="font-normal text-sdc-muted">· not in Paylocity yet</span>
-            </h3>
-            {/* Positions, not requests, the same as the posting sections below: a request for 3 counts 3. */}
-            <span className="text-xs font-semibold tabular-nums text-sdc-muted">{countOpenings(requests)}</span>
-          </header>
-          <ul className="divide-y divide-sdc-border-soft">
-            {requests.map((r) => {
-              const posting = postedAs.get(r.sourceId);
-              const manager = r.hiringManagerIds[0] ? managerNames.get(r.hiringManagerIds[0]) : undefined;
-              return (
-                <li key={r.sourceId} className="flex flex-wrap items-center gap-3 px-3.5 py-2.5">
-                  <TitleButton p={r} onSelect={onSelect} />
-                  <span className="min-w-0 shrink text-xs text-sdc-muted">
-                    {[
-                      `Requested ${waitingLabel(r.requestedAt)}`.trim(),
-                      r.createdBy && `by ${r.createdBy}`,
-                      manager && `hiring manager ${manager}`,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                  {posting && (
-                    <span
-                      className="shrink-0 rounded bg-sdc-blue-light px-1.5 py-0.5 text-note font-semibold text-sdc-blue-dark"
-                      title={`Paylocity Job ${posting.sourceId}: ${posting.title}. Open it to close this request.`}
-                    >
-                      Looks posted
-                    </span>
-                  )}
-                  <RowActions p={r} canAssign={canAssign} onSelect={onSelect} onVisibilityChanged={onVisibilityChanged} />
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      {filtered.length === 0 ? (
-        requests.length === 0 && <EmptyState title="No positions match" message="Try a different Job Status filter." />
+      {requests.length === 0 && filtered.length === 0 ? (
+        <EmptyState title="No positions match" message="Try a different Job Status filter." />
       ) : (
-        buckets.map((bucket) => (
-          <section key={bucket.key} className="overflow-hidden rounded-xl border border-sdc-border bg-white shadow-sm">
-            <header className="flex items-center justify-between gap-2 border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-2">
-              <h3 className="text-sm font-bold text-sdc-navy">{bucket.title}</h3>
-              {/* Openings, not rows — a section holding one ×2 requisition is
-                  two openings. The per-row ×N badges below explain any gap
-                  between this figure and the number of rows. */}
-              <span className="text-xs font-semibold tabular-nums text-sdc-muted">{countOpenings(bucket.positions)}</span>
-            </header>
-            {/* Column headers for the rows below. Hidden on narrow widths, where the rows wrap. */}
-            <div className="hidden items-center gap-3 border-b border-sdc-border-soft bg-white px-3.5 py-1.5 text-label font-bold uppercase tracking-wider text-sdc-muted sm:flex">
-              <span className="min-w-0 flex-1">Position</span>
-              <span className="w-28 shrink-0">Status</span>
-              <span className="w-24 shrink-0" aria-hidden />
-            </div>
-            <ul className="divide-y divide-sdc-border-soft">
-              {bucket.positions.map((p) => {
-                const style = hiringStatusStyle(p.status);
+        <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
+          {requests.length > 0 && (
+            <GroupCard title="Requested" subtitle="not in Paylocity yet" count={countOpenings(requests)} request>
+              {requests.map((r) => {
+                const posting = postedAs.get(r.sourceId);
+                const manager = r.hiringManagerIds[0] ? managerNames.get(r.hiringManagerIds[0]) : undefined;
                 return (
-                  <li key={p.sourceId} className={`flex flex-wrap items-center gap-3 border-l-2 px-3.5 py-2.5 ${style.accent} ${style.tint}`}>
-                    <TitleButton p={p} onSelect={onSelect} />
-                    <span className="w-28 shrink-0">
-                      <HiringStatusPill status={p.status} />
-                    </span>
-                    <RowActions p={p} canAssign={canAssign} onSelect={onSelect} onVisibilityChanged={onVisibilityChanged} />
+                  <li key={r.sourceId} className="flex flex-col gap-1 px-3.5 py-2.5">
+                    <div className="flex items-center gap-3">
+                      <TitleButton p={r} onSelect={onSelect} />
+                      <RowActions p={r} canAssign={canAssign} onSelect={onSelect} onVisibilityChanged={onVisibilityChanged} />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-sdc-muted">
+                      <span>
+                        {[
+                          r.department && DEPARTMENT_TITLE.get(r.department),
+                          `Requested ${waitingLabel(r.requestedAt)}`.trim(),
+                          r.createdBy && `by ${r.createdBy}`,
+                          manager && `hiring manager ${manager}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                      {posting && (
+                        <span
+                          className="rounded bg-sdc-blue-light px-1.5 py-0.5 text-note font-semibold text-sdc-blue-dark"
+                          title={`Paylocity Job ${posting.sourceId}: ${posting.title}. Open it to close this request.`}
+                        >
+                          Looks posted
+                        </span>
+                      )}
+                    </div>
                   </li>
                 );
               })}
-            </ul>
-          </section>
-        ))
+            </GroupCard>
+          )}
+
+          {buckets.map((bucket) => (
+            <GroupCard key={bucket.key} title={bucket.title} count={countOpenings(bucket.positions)}>
+              {bucket.positions.map((p) => {
+                const style = hiringStatusStyle(p.status);
+                return (
+                  <li key={p.sourceId} className={`flex flex-col gap-1 border-l-2 px-3.5 py-2.5 ${style.accent} ${style.tint}`}>
+                    <div className="flex items-center gap-3">
+                      <TitleButton p={p} onSelect={onSelect} />
+                      <RowActions p={p} canAssign={canAssign} onSelect={onSelect} onVisibilityChanged={onVisibilityChanged} />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-sdc-muted">
+                      <HiringStatusPill status={p.status} />
+                      {p.department && <span className="truncate">{DEPARTMENT_TITLE.get(p.department)}</span>}
+                    </div>
+                  </li>
+                );
+              })}
+            </GroupCard>
+          ))}
+        </div>
       )}
     </div>
   );
