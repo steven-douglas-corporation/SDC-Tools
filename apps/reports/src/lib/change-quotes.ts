@@ -190,6 +190,27 @@ export function planReverse(totals: TotalsState, cq: CqInput): PlanResult {
   return { ok: true, hours, partsCents, changedSections, partsChanged, addedToTotals: false };
 }
 
+// ── The grid's Change Quote $ column ────────────────────────────────────────
+//
+// Applying a change quote ADDS its amount to Job.changeQuote and reversing takes it
+// back out, so the dollar figure is entered once, in the panel. A change quote
+// recorded as "already in totals" never touches the column: its money was typed there
+// by hand already, and adding it again would count it twice.
+
+export type ColumnPlan = { ok: true; nextCents: number | null; changed: boolean } | { ok: false; error: string };
+
+export function planColumnAmount(columnCents: number | null, amountCents: number | null, op: "apply" | "reverse", addedToTotals: boolean): ColumnPlan {
+  const amount = amountCents ?? 0;
+  if (!addedToTotals || amount <= 0) return { ok: true, nextCents: columnCents, changed: false };
+  if (op === "apply") return { ok: true, nextCents: (columnCents ?? 0) + amount, changed: true };
+  const next = (columnCents ?? 0) - amount;
+  if (next < 0) {
+    return { ok: false, error: "Can't reverse: the grid's Change Quote column is below this change quote's amount. Fix the column first." };
+  }
+  // Back to nothing entered rather than a stored $0.
+  return { ok: true, nextCents: next === 0 ? null : next, changed: true };
+}
+
 // ── The $155,300 = labor + parts check ──────────────────────────────────────
 
 export type Reconciliation = {
