@@ -22,8 +22,7 @@
 // must not be conflated or share an implementation.
 //
 // Also deliberately NOT a reproduction of the SDC Scheduler's own project-
-// assignment/utilization forecast ("N people * N hrs * N wks @ 90%" — see
-// EmployeesCards.tsx's own comment on why that one is NOT computed here).
+// assignment/utilization forecast ("N people * N hrs * N wks @ 90%").
 // This is a different kind of number: company-HR-policy-derived capacity
 // from headcount and a published holiday calendar, not a reproduction of
 // Scheduler's per-project scheduling-engine output.

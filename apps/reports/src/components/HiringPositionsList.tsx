@@ -12,9 +12,10 @@ import { hiringStatusStyle } from "@/lib/hiring-position-status";
 import { countOpenings, openingsSummary } from "@/lib/hiring-openings";
 import { findPostingForRequest, waitingLabel } from "@/lib/hiring-requests";
 
-// Level 2 for the "Hiring Positions" card (2026-08-19). Never mixed into
-// EmployeesCards' own employee list — the task's own "do not mix open positions
-// into the actual employee list as if they are employees".
+// The Employees page's Hiring tab list (2026-08-19; its own tab since
+// 2026-10-29). Never mixed into the people on the Org chart — the task's own
+// "do not mix open positions into the actual employee list as if they are
+// employees".
 //
 // Two kinds of row (2026-10-29), each group a card (see GroupCard below):
 // - Hire requests, in their own card first, oldest first: what managers

@@ -53,7 +53,7 @@ export type HiringPosition = {
   /** "workbook" = from Paylocity's Recruiting export (via the DataWarehouse; the name predates it); "manual" = a hire request made in SDC Reports (HiringPositionCreated). See lib/hiring-requests.ts. */
   source: "workbook" | "manual";
   workforceGroup: WorkforceGroupKey | null;
-  /** A DepartmentCard key (an employee-teams.ts schedulerCode) — the SAME key EmployeesCards' own cards use, so a hiring count slots into the identical card as its real employees. */
+  /** A DepartmentCard key (an employee-teams.ts schedulerCode) — the SAME key the Employees page's team cards use, so a hiring count slots into the identical card as its real employees. */
   department: string | null;
   /** Paylocity employee ids of the hiring managers: what the Org chart places a posting by, and what a request is matched to its posting by. A request carries at most one (the team lead it names). */
   hiringManagerIds: string[];
@@ -269,7 +269,7 @@ export async function getHiringPositionById(sourceId: string): Promise<HiringPos
  * same array regardless of visibility — only what would reveal WHICH
  * position it is gets blanked. Components that want a hidden position to
  * disappear entirely from a browsable list (HiringPositionsList.tsx,
- * EmployeesCards.tsx's per-department hiring list) filter on `isVisible`
+ * OrgChart.tsx's per-team open positions) filter on `isVisible`
  * themselves on top of this — safe to do client-side at that point, since
  * there's no real identity left in the payload to leak either way.
  */

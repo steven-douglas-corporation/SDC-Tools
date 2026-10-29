@@ -7,8 +7,6 @@ import { recordChanges, classifyChange } from "@/lib/change-log";
 import { reconcileSchedulerRoster, type RosterReconciliation } from "@/lib/sync-scheduler-team";
 import type { SupervisorImportResult } from "@/lib/import-employee-supervisors";
 import { assertActionPermission } from "@/lib/require-permission";
-import { DISCIPLINE_LABEL } from "@/lib/disciplines";
-import { pushTeamMemberToScheduler } from "@/lib/scheduler-push";
 import { isPaylocityId } from "@/lib/employee-row";
 import { TEAM_NAME, isTeamCode } from "@/lib/team-names";
 import { applyTeamRule } from "@/lib/paylocity-roster-sync";
@@ -272,39 +270,4 @@ export async function setEmployeeActive(id: number, active: boolean, _formData: 
     { action: active ? "employee.reactivate" : "employee.deactivate" },
   );
   revalidatePath("/employees");
-}
-
-export type AddTeamMemberResult = { ok: true; schedulerSynced: boolean; schedulerReason?: string } | { ok: false; error: string };
-
-// "Add member" from a department card — the write half of matching the
-// Scheduler board exactly. Two phases, deliberately in this order: the LOCAL
-// Reports Employee row first (this is the record that matters if the second
-// phase fails), then a best-effort push to Scheduler's own team_members table
-// so the person shows up there too (see scheduler-push.ts's own header for
-// why this can't just be a direct DB write). A push failure does not roll
-// back the local row — a half-added person who exists in Reports but not yet
-// on the Scheduler board is recoverable with "Reconcile with Scheduler"
-// later; losing the row entirely because a network call to another app
-// timed out would not be.
-export async function addTeamMember(disciplineCode: string, name: string): Promise<AddTeamMemberResult> {
-  await assertActionPermission("employees:edit");
-
-  const trimmedName = name.trim();
-  if (!trimmedName) return { ok: false, error: "Name is required." };
-
-  const label = DISCIPLINE_LABEL[disciplineCode];
-  if (!label) return { ok: false, error: `"${disciplineCode}" is not a department this can add to.` };
-
-  const employee = await prisma.employee.create({ data: { name: trimmedName, discipline: label } });
-  await logAudit({
-    action: "employee.create",
-    entityType: "Employee",
-    entityId: employee.id,
-    summary: `Added ${employee.name} to ${label} (from the Employees card)`,
-    metadata: { name: trimmedName, discipline: label },
-  });
-
-  const push = await pushTeamMemberToScheduler(employee.id, trimmedName, disciplineCode);
-  revalidatePath("/employees");
-  return { ok: true, schedulerSynced: push.ok, schedulerReason: push.ok ? undefined : push.reason };
 }

@@ -32,7 +32,7 @@ import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
 // Open Positions / Planned Headcount. It stays visibly separate where the
 // request asks for that — its own section in the Hiring Positions list, and its
 // own option in the Create/Edit Position form.
-export const CARD_RENDER_ORDER: WorkforceGroupKey[] = [
+const CARD_RENDER_ORDER: WorkforceGroupKey[] = [
   "pm",
   "engineering",
   "shop",
@@ -85,8 +85,7 @@ export function WorkforceSummaryCards({
     }).filter(
       // An empty workforce group (everyone filtered out, or genuinely nobody
       // on it) shows nothing rather than a "0 employees" card with nowhere
-      // useful to drill — matches EmployeesCards' own "no card for an empty
-      // bucket" behavior one level down.
+      // useful to drill.
       (g) => g.cards.length > 0,
     );
   }, [rows, placeholders]);

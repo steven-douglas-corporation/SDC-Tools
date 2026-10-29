@@ -5,7 +5,7 @@
 // Styling comes entirely from hiringStatusStyle() in lib/hiring-position-status.ts,
 // the same lookup that drives the row's left accent and background tint and
 // the status filter's own options, so every place a position appears
-// (HiringPositionsList's table, EmployeesCards' per-department Hiring list,
+// (HiringPositionsList's cards, the Org chart's per-team open positions,
 // the detail drawer) shows identical colors for identical statuses.
 import { hiringStatusStyle } from "@/lib/hiring-position-status";
 

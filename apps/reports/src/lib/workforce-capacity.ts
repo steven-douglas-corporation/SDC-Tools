@@ -6,7 +6,7 @@
 // numbers out, no Prisma/fetch), so it composes with whatever level
 // (company/group/department) the caller is already filtering at, exactly the
 // same way the existing headcount counts (`.filter(p => p.active).length`)
-// do today in WorkforceSummaryCards.tsx/EmployeesCards.tsx.
+// do today in WorkforceSummaryCards.tsx/OrgChart.tsx.
 //
 // "Current" (active employees) vs "Hiring" (open positions) vs "Planned"
 // (their sum) must never be blended into one unlabeled number — see this

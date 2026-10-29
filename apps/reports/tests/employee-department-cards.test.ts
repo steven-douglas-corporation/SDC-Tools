@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDepartmentCards, resolvePlaceholderGroup, ALWAYS_SHOW_CARD_KEYS, alwaysShowKeysForGroup } from "../src/lib/employee-department-cards";
+import { buildDepartmentCards, resolvePlaceholderGroup } from "../src/lib/employee-department-cards";
 import { DASH, type EmployeeRow } from "../src/lib/employee-row";
 import type { SchedulerPlaceholder } from "../src/lib/scheduler-db";
 
@@ -128,49 +128,8 @@ test("Unassigned produces no card, but Operations now gets one", () => {
   assert.equal(opsCards[0].title, "Procurement", "titled Procurement, so it is not read as Manufacturing Operations");
 });
 
-// ── alwaysShow (2026-09-22) ──────────────────────────────────────────────
-//
-// A brand-new team (AI) with nobody on it yet would otherwise never get a
-// card at all — buildDepartmentCards only ever creates one from a real row
-// or placeholder — which means its "Add member" control, the only way
-// anyone ever gets INTO it, would be unreachable. `alwaysShow` opts specific
-// team keys into rendering an empty card instead.
-
-test("a team not present in rows/placeholders still gets a card when opted into alwaysShow", () => {
-  const cards = buildDepartmentCards([], [], ["ai"]);
-  assert.equal(cards.length, 1);
-  assert.equal(cards[0].key, "ai");
-  assert.equal(cards[0].title, "AI");
-  assert.equal(cards[0].people.length, 0);
-  assert.equal(cards[0].placeholders.length, 0);
-});
-
-test("alwaysShow does not duplicate a card that already has real people", () => {
-  const cards = buildDepartmentCards([row({ team: "ai" })], [], ["ai"]);
-  assert.equal(cards.length, 1);
-  assert.equal(cards[0].people.length, 1);
-});
-
-test("without alwaysShow (the default), an empty team gets no card — existing callers are unaffected", () => {
+test("an empty team gets no card", () => {
   assert.equal(buildDepartmentCards([], []).length, 0);
-});
-
-test("ALWAYS_SHOW_CARD_KEYS includes AI, the only team currently opted in", () => {
-  assert.deepEqual([...ALWAYS_SHOW_CARD_KEYS], ["ai"]);
-});
-
-// ── alwaysShowKeysForGroup (2026-09-22) ──────────────────────────────────
-//
-// The actual bug this locks in: EmployeesGrid.tsx renders one EmployeesCards
-// per workforce-group section, so passing the FULL ALWAYS_SHOW_CARD_KEYS to
-// every section injected an empty AI card into PM, Shop, Growth, Finance,
-// Executive Leadership, Operations and Other too — not just Engineering.
-
-test("alwaysShowKeysForGroup gives AI to Engineering only, not any other section", () => {
-  assert.deepEqual(alwaysShowKeysForGroup("engineering"), ["ai"]);
-  for (const key of ["pm", "shop", "growth", "finance", "exec", "operations", "other"] as const) {
-    assert.deepEqual(alwaysShowKeysForGroup(key), [], `${key} must not get an AI card`);
-  }
 });
 
 test("cards come back in the canonical delivery-team order, not insertion order", () => {

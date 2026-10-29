@@ -1,10 +1,9 @@
 import { DASH, type EmployeeRow } from "@/lib/employee-row";
 import type { CardColors } from "@/lib/employee-card-theme";
 
-// The pieces a department card is made of, shared by the Employees page's two
-// views (2026-10-02) so a card looks the same in Cards and in Org chart: the
-// coloured header and one person's row. Moved out of EmployeesCards.tsx
-// unchanged; the Org chart adds only its nesting lines around the rows.
+// The pieces a team card is made of on the Org chart: the coloured header and
+// one person's row. Moved out of the old Cards view (2026-10-02, removed
+// 2026-10-29); the Org chart adds only its nesting lines around the rows.
 
 // Title/discipline, whichever adds information — showing the card's own
 // department name again under every row inside it would just repeat the

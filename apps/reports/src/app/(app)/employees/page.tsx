@@ -3,7 +3,6 @@ import { PAGE_SHELL } from "@/components/ui/classnames";
 import { PageTitle } from "@/components/ui/Typography";
 import { EmployeesGrid } from "@/components/EmployeesGrid";
 import { DISCIPLINE_LABELS } from "@/lib/disciplines";
-import type { EmployeeRow } from "@/components/EmployeesCards";
 import { fetchEmployeeTeams } from "@/lib/employee-team-field";
 import { fetchSchedulerPlaceholders } from "@/lib/scheduler-db";
 import { fetchSchedulerOverlay } from "@/lib/employee-scheduler-overlay";
@@ -14,7 +13,7 @@ import { getHiringPositions, redactHiddenPositions } from "@/lib/hiring-position
 import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
 import { resolveTeams, departmentLeads } from "@/lib/team-resolution";
 import { resolveEmployeeGroup, NO_DEPARTMENT } from "@/lib/employee-card-theme";
-import { isPaylocityId } from "@/lib/employee-row";
+import { isPaylocityId, type EmployeeRow } from "@/lib/employee-row";
 import { buildOrgChart } from "@/lib/org-chart";
 import type { PositionFamilyRow } from "@/lib/position-families-parse";
 
@@ -26,7 +25,7 @@ const DASH = "—";
 // Replaces the "Employees" tab of Project Planner Data Control.xlsx.
 // Soft-delete only: deactivating keeps every historical hour intact.
 //
-// Read-only view — see EmployeesCards. The roster's fields all have upstream
+// Read-only view. The roster's fields all have upstream
 // owners (Scheduler for discipline, Paylocity for name/department/supervisor),
 // so it is maintained through the toolbar's sync and import buttons rather than
 // by typing into cells.

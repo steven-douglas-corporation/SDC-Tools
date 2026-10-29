@@ -1,6 +1,6 @@
 // The one `EmployeeRow` shape shared across the Employees tab's page,
 // filtering, card-building and (2026-08-19) workforce-group/detail-drawer
-// layers. Lived inline in EmployeesCards.tsx originally; pulled out here once
+// layers. Lived inline in the old Cards view originally; pulled out here once
 // a second lib-level consumer (employee-department-cards.ts) needed it too —
 // a component file importing FROM a lib module is normal in this app, a lib
 // module importing a type back out of a component file is not, so this is

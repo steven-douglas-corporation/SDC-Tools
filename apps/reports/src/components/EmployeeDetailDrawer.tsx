@@ -14,7 +14,7 @@ import { TEAM_CODES, TEAM_NAME } from "@/lib/team-names";
 // shell Build Readiness's own drilldowns share (BuildReadinessDrawer) rather
 // than inventing a second drawer pattern, and shows ONLY fields that already
 // exist on `EmployeeRow` — no field here is computed or guessed for this
-// view; see EmployeesCards.tsx / lib/employee-row.ts for where each one
+// view; see lib/employee-row.ts for where each one
 // actually comes from.
 //
 // Show / Hide (2026-09-30): the Paylocity roster sync adds every new person

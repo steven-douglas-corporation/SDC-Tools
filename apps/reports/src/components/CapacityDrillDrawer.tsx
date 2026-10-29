@@ -13,7 +13,7 @@ import type { EmployeeRow } from "@/lib/employee-row";
 import type { HiringPosition } from "@/lib/hiring-positions";
 
 // "How was this total built" for a Current/Hiring/Planned capacity-hours
-// figure clicked on WorkforceSummaryCards.tsx/EmployeesCards.tsx -- the SAME
+// figure clicked on WorkforceSummaryCards.tsx/OrgChart.tsx -- the SAME
 // BuildReadinessDrawer shell every other Level-3 surface in this tab uses,
 // with ui/Drill.tsx's DrillLines (a flat list, not a grouped rollup -- there
 // is nothing to expand here, just every contributor and its own hours,
