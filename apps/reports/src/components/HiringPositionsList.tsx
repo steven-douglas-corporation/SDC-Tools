@@ -64,11 +64,10 @@ function TitleButton({ p, onSelect }: { p: HiringPosition; onSelect: (position: 
 }
 
 // ── Cards, not page-wide tables (2026-10-29) ────────────────────────────────
-// Each group is a card in the same wrapping flow the Employees page uses for its
-// team cards (flex-wrap, gap-x-5 gap-y-4, growing from a base width), so groups
-// share a line when they fit. Requests get a wider card with a dashed red edge
-// and a red header: the band's red "Requested", and the dashed "not a real seat
-// yet" grammar the team cards use for openings.
+// Each group is a card in a grid of equal columns, so cards share a line when
+// they fit and all come out the same width. Requests get a dashed red edge and a
+// red header: the band's red "Requested", and the dashed "not a real seat yet"
+// grammar the team cards use for openings.
 function GroupCard({
   title,
   subtitle,
@@ -87,10 +86,9 @@ function GroupCard({
 }) {
   return (
     <section
-      className={`flex min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-xl border bg-white shadow-sm ${
+      className={`flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm ${
         request ? "border-dashed border-sdc-red-text/50" : "border-sdc-border"
       }`}
-      style={{ flexBasis: request ? "30rem" : "20rem" }}
     >
       <header
         className={`flex items-center justify-between gap-2 border-b px-3.5 ${
@@ -249,7 +247,9 @@ export function HiringPositionsList({
       {requests.length === 0 && filtered.length === 0 ? (
         <EmptyState title="No positions match" message="Try a different Job Status filter." />
       ) : (
-        <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
+        // Equal columns (2026-10-29): every card the same width, wide enough
+        // for a title like "Mechanical Design Engineer" beside Edit / Hide.
+        <div className="grid items-start gap-x-5 gap-y-4 [grid-template-columns:repeat(auto-fill,minmax(min(22rem,100%),1fr))]">
           {requests.length > 0 && (
             <GroupCard title="Requested" subtitle="not in Paylocity yet" count={countOpenings(requests)} request>
               {requests.map((r) => {
