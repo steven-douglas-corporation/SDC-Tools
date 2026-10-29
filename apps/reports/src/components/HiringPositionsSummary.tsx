@@ -25,25 +25,21 @@ import type { CapacityDrillTarget } from "@/components/WorkforceSummaryCards";
 // twice), capacity from hiringCapacityHours, and the same rollup that credits
 // General Engineering's openings to Engineering. Nothing about hiring counts,
 // capacity, quantities, group mappings or open/closed logic changed here.
+//
+// Since 2026-10-29 it heads the Employees page's Hiring tab (which replaced the
+// Cards view), with the full list always open beneath it.
 export function HiringPositionsSummary({
   hiringPositions,
   year,
-  onSelectHiring,
   onSelectCapacity,
-  expanded,
   requestCount,
-  canRequest,
 }: {
   /** Already filtered to OPEN positions by the caller — see EmployeesGrid's `openHiring`. */
   hiringPositions: HiringPosition[];
   year: number;
-  onSelectHiring: () => void;
   onSelectCapacity: (target: CapacityDrillTarget) => void;
-  expanded: boolean;
   /** Positions asked for in hire requests waiting to be posted (2026-10-29): a request for 3 counts 3, like the openings. Shown beside the openings, never added to them. */
   requestCount: number;
-  /** Whether the viewer can request a hire: the band then always shows, since the list it opens is where the button is. */
-  canRequest: boolean;
 }) {
   const byGroup = useMemo(() => {
     const m = new Map<WorkforceGroupKey, number>();
@@ -69,10 +65,8 @@ export function HiringPositionsSummary({
     .map((g) => ({ key: g.key, title: g.title, count: byGroup.get(g.key) ?? 0 }))
     .filter((g) => g.count > 0);
 
-  if (openPositions === 0 && requestCount === 0 && !canRequest) return null;
-
   return (
-    <section className="mt-6">
+    <section>
       {/* Same band heading as Execution and Operations, so this reads as a third
           band rather than a stray card. */}
       <div className="mb-3 flex items-baseline gap-3 border-b-2 border-sdc-navy pb-1.5">
@@ -86,37 +80,28 @@ export function HiringPositionsSummary({
       {/* Dashed border throughout, the same "open seat" grammar the department
           cards use for their own hiring rows — an open requisition is never
           styled like a person. */}
-      <div
-        className={`rounded-xl border border-dashed bg-white ${expanded ? "border-sdc-blue ring-2 ring-sdc-blue/40" : "border-sdc-green"}`}
-      >
+      <div className="rounded-xl border border-dashed border-sdc-green bg-white">
         <div className="flex flex-wrap items-stretch divide-y divide-dashed divide-sdc-border sm:divide-y-0">
-          <button
-            type="button"
-            onClick={onSelectHiring}
-            aria-expanded={expanded}
-            title={expanded ? "Collapse hiring positions" : "Show all hiring positions below"}
-            className="flex min-w-[12rem] flex-col gap-0.5 border-r border-dashed border-sdc-green bg-sdc-green-bg/50 px-4 py-3 text-left motion-interactive hover:brightness-95"
-          >
+          {/* Plain figures, not toggles (2026-10-29): on the Hiring tab the list
+              is always open right below. */}
+          <div className="flex min-w-[12rem] flex-col justify-center border-r border-dashed border-sdc-green bg-sdc-green-bg/50 px-4 py-3">
             <span className="flex items-baseline gap-1.5 text-sdc-green-text">
               <span className="text-lg font-bold tabular-nums">{openPositions}</span>
               <span className="text-xs font-semibold uppercase tracking-wide">published positions</span>
             </span>
-            <span className="text-label text-sdc-muted">{expanded ? "Hide the list" : "Show the full list"}</span>
-          </button>
+          </div>
 
           {/* Requests sit right beside the published positions (2026-10-29), in
               red: asked for, not in Paylocity yet. They never count toward the
               published total or the hours and team tiles that follow. */}
           {requestCount > 0 && (
-            <button
-              type="button"
-              onClick={onSelectHiring}
+            <div
               title="Positions asked for in hire requests, not posted in Paylocity yet"
-              className="flex min-w-[9rem] flex-col justify-center gap-0.5 border-r border-dashed border-sdc-border px-4 py-3 text-left text-sdc-red-text hover:bg-sdc-red-bg/40"
+              className="flex min-w-[9rem] flex-col justify-center gap-0.5 border-r border-dashed border-sdc-border px-4 py-3 text-sdc-red-text"
             >
               <span className="text-lg font-bold tabular-nums">{requestCount}</span>
               <span className="text-label font-semibold uppercase tracking-wide">Requested</span>
-            </button>
+            </div>
           )}
 
           {hasCapacityPolicy && (

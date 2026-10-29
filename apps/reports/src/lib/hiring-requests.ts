@@ -1,4 +1,6 @@
 import type { HiringPosition } from "@/lib/hiring-positions";
+import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
+import { workforceGroupForCardKey } from "@/lib/employee-workforce-groups";
 
 // Hire requests (2026-10-29). A position created in SDC Reports is a manager's
 // request for a hire, not an opening: the recruiter files it in Paylocity, and
@@ -12,6 +14,11 @@ import type { HiringPosition } from "@/lib/hiring-positions";
 // client can run them over the positions it already holds.
 
 export const REQUEST_STATUS = "Requested";
+
+/** Teams a hire can be requested for: those whose hires belong to a workforce group (the delivery teams). The server applies the same rule. */
+export const REQUESTABLE_TEAMS = EMPLOYEE_TEAMS.filter((t) => workforceGroupForCardKey(t.schedulerCode) !== "other");
+export const isRequestableTeam = (code: string | null | undefined): code is string =>
+  !!code && REQUESTABLE_TEAMS.some((t) => t.schedulerCode === code);
 
 /** Lowercase letters and digits only: "Controls Engineer II" and "controls engineer ii " compare equal. */
 function normalizeTitle(title: string): string {

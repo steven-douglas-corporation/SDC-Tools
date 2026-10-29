@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { daysSince, findPostingForRequest, teamLeadOptions, titlesMatch, waitingLabel } from "../src/lib/hiring-requests";
+import { daysSince, findPostingForRequest, isRequestableTeam, teamLeadOptions, titlesMatch, waitingLabel } from "../src/lib/hiring-requests";
 import type { HiringPosition } from "../src/lib/hiring-positions";
 
 // Hire requests (2026-10-29): a position created in SDC Reports is a manager's
@@ -151,4 +151,14 @@ test("only an editor gets the request form; a Paylocity posting never reaches it
   const drawer = src("components/HiringPositionDetailDrawer.tsx");
   assert.match(drawer, /\{isRequest \? \(\s*canAssign \? \(\s*<HiringRequestForm/);
   assert.match(src("components/HiringRequestForm.tsx"), /closeHiringRequest\(request\.sourceId, postedAsJobId\)/);
+});
+
+test("a hire can be requested for a delivery team, not for Leadership or an unknown team", () => {
+  for (const code of ["pm", "mech", "controls", "build", "wire", "service"]) assert.equal(isRequestableTeam(code), true, code);
+  for (const code of ["exec", "nope", "", null, undefined]) assert.equal(isRequestableTeam(code), false, String(code));
+});
+
+test("the Org chart offers Request a hire on every delivery team's card, for a viewer who can request", () => {
+  assert.match(src("components/OrgChart.tsx"), /\{ctx\.onRequestHire && isRequestableTeam\(team\) && \(/);
+  assert.match(src("components/EmployeesGrid.tsx"), /onRequestHire=\{HIRING_POSITIONS_ENABLED && canAssignHiring \?/);
 });

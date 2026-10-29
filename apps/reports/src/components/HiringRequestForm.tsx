@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
 import { workforceGroupForCardKey } from "@/lib/employee-workforce-groups";
 import { createHiringRequest, updateHiringRequest, closeHiringRequest } from "@/lib/hiring-actions";
-import { REQUEST_STATUS, type TeamLead } from "@/lib/hiring-requests";
+import { REQUEST_STATUS, REQUESTABLE_TEAMS, isRequestableTeam, type TeamLead } from "@/lib/hiring-requests";
 import type { HiringPosition } from "@/lib/hiring-positions";
 
 // The hire request form (2026-10-29), for both "Request a hire" and editing a
@@ -15,11 +15,6 @@ import type { HiringPosition } from "@/lib/hiring-positions";
 
 const INPUT = "h-9 w-full rounded-lg border border-sdc-border bg-white px-2.5 text-sm text-sdc-navy outline-none focus:border-sdc-blue";
 const LABEL = "text-xs font-semibold uppercase tracking-wide text-sdc-muted";
-
-// Only teams whose hires belong to a workforce group (the delivery teams); the
-// same rule the server applies.
-const REQUESTABLE_TEAMS = EMPLOYEE_TEAMS.filter((t) => workforceGroupForCardKey(t.schedulerCode) !== "other");
-const isRequestableTeam = (code: string | null | undefined) => !!code && REQUESTABLE_TEAMS.some((t) => t.schedulerCode === code);
 
 function dateInput(d: Date | null): string {
   return d ? d.toISOString().slice(0, 10) : "";
@@ -33,9 +28,12 @@ export function HiringRequestForm({
   onUpdated,
   onClosed,
   onCancel,
+  initialTeam,
 }: {
   /** The request being edited; omitted for a new one. */
   request?: HiringPosition;
+  /** A new request started from a team's card on the Org chart (2026-10-29): that team, and its lead if it has exactly one. */
+  initialTeam?: string | null;
   leads: TeamLead[];
   /** The Paylocity posting this request looks like it became (lib/hiring-requests.ts findPostingForRequest), if any. */
   posting?: HiringPosition | null;
@@ -48,9 +46,13 @@ export function HiringRequestForm({
   const [title, setTitle] = useState(request?.title ?? "");
   // Raw text, parsed on submit, so the field can be briefly empty while typing.
   const [quantity, setQuantity] = useState(String(request?.quantity ?? 1));
-  const [hiringManagerId, setHiringManagerId] = useState(request?.hiringManagerIds[0] ?? "");
-  const [department, setDepartment] = useState(request?.department ?? "");
-  const [teamPicked, setTeamPicked] = useState(!!request);
+  const startTeam = !request && isRequestableTeam(initialTeam) ? initialTeam! : null;
+  const teamLeadsOf = startTeam ? leads.filter((l) => l.team === startTeam) : [];
+  const [hiringManagerId, setHiringManagerId] = useState(
+    request?.hiringManagerIds[0] ?? (teamLeadsOf.length === 1 ? teamLeadsOf[0].paylocityId : ""),
+  );
+  const [department, setDepartment] = useState(request?.department ?? startTeam ?? "");
+  const [teamPicked, setTeamPicked] = useState(!!request || !!startTeam);
   const [neededBy, setNeededBy] = useState(dateInput(request?.expectedStartDate ?? null));
   const [note, setNote] = useState(request?.note ?? "");
   const [error, setError] = useState<string | null>(null);

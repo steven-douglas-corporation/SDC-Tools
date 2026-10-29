@@ -12,16 +12,19 @@ import type { HiringPosition } from "@/lib/hiring-positions";
 
 export function CreateHiringPositionDrawer({
   leads,
+  initialTeam,
   onClose,
   onCreated,
 }: {
   leads: TeamLead[];
+  /** Set when started from a team's card on the Org chart. */
+  initialTeam?: string | null;
   onClose: () => void;
   onCreated: (position: HiringPosition) => void;
 }) {
   return (
     <BuildReadinessDrawer title="Request a hire" breadcrumb={["Hiring Positions", "Request a hire"]} onBreadcrumbClick={() => {}} onClose={onClose}>
-      <HiringRequestForm leads={leads} onCreated={onCreated} onCancel={onClose} />
+      <HiringRequestForm leads={leads} initialTeam={initialTeam} onCreated={onCreated} onCancel={onClose} />
     </BuildReadinessDrawer>
   );
 }
