@@ -295,12 +295,12 @@ export function HiringPositionsList({
           {sections.length > 0 && (
             <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
               {sections.map((s) => (
-                <section key={s.key} className="min-w-0 max-w-full flex-1" style={{ flexBasis: `${Math.max(1, s.buckets.length) * 17}rem` }}>
+                <section key={s.key} className="min-w-0 max-w-full flex-1" style={{ flexBasis: `${Math.max(1, s.buckets.length) * 20}rem` }}>
                   <h3 className="mb-2 border-b border-sdc-border pb-1 text-xs font-bold uppercase tracking-wider text-sdc-muted">
                     {s.title}
                     <span className="ml-2 font-normal normal-case tracking-normal text-sdc-gray-400">{s.published} published</span>
                   </h3>
-                  <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))]">
+                  <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(18rem,1fr))]">
                     {s.buckets.map((bucket) => (
                       <GroupCard key={bucket.key} title={bucket.title} colors={bucket.colors} count={countOpenings(bucket.positions)}>
                         {bucket.positions.map((p) => {
