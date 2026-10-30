@@ -10,6 +10,7 @@ import { sectionName } from "@/lib/off-grid-hours";
 import { VALID_JOB_TYPES, JOB_STATUSES, isSdcCustomer } from "@/lib/job-filters";
 import { assertProjectsEditable } from "@/lib/projects-edit-mode";
 import { CELL_SPECS, parseCell } from "@/lib/cell-rules";
+import { allInCents } from "@/lib/change-quotes";
 
 const HOURS_PREFIX = "quoted__";
 
@@ -21,7 +22,11 @@ const NEW_ROW_HOURS_PREFIX = "newRowHours__";
 // beyond "trim, empty string means null".
 const PLAIN_FIELDS = ["jobName", "customer"] as const;
 const DATE_FIELDS = ["startDate", "completeDate", "quotedDeliveryDate"] as const;
-const MONEY_FIELDS = ["costQuoted", "costActualHistorical", "salesPrice", "changeQuote", "totalPrice"] as const;
+// changeQuote and totalPrice are deliberately NOT editable here: Change Quote is filled only by
+// the Change Quotes panel (apply / reverse) and Total is always Sales Price + Change Quote, so a
+// posted value for either is ignored — the grid renders them read-only, and this is the control
+// (a form post doesn't care what the markup said).
+const MONEY_FIELDS = ["costQuoted", "costActualHistorical", "salesPrice"] as const;
 type PlainField = (typeof PLAIN_FIELDS)[number];
 type DateField = (typeof DATE_FIELDS)[number];
 type MoneyField = (typeof MONEY_FIELDS)[number];
@@ -132,7 +137,9 @@ export async function saveQuotedHours(_prev: SaveQuotedResult | null, formData: 
     // A CREATED row is different: it exists only in the browser until now, and
     // only the server can render it as a real row with an id. That one keeps the
     // round trip, and it is the rare case.
-    if (created > 0) revalidatePath("/quoted");
+    // A Sales Price edit also moves that row's read-only Total, which only the server can compute,
+    // so it takes the round trip too. Rare, and the only pure cell edit that does.
+    if (created > 0 || jobs.salesChanged) revalidatePath("/quoted");
     return {
       ok: true,
       cells: cells.written,
@@ -354,7 +361,7 @@ function parseMoney(raw: string, field: string, label: number | string): number 
   return out.value as number;
 }
 
-async function saveJobFields(formData: FormData): Promise<{ written: number; conflicts: string[]; conflictFields: string[] }> {
+async function saveJobFields(formData: FormData): Promise<{ written: number; conflicts: string[]; conflictFields: string[]; salesChanged: boolean }> {
   // jobId -> field -> raw string value, collected from every jobField__ input present.
   const byJob = new Map<number, Map<string, string>>();
   // The same shape for the `__base__` tokens: what the posting page believed was
@@ -375,7 +382,7 @@ async function saveJobFields(formData: FormData): Promise<{ written: number; con
     const believed = believedBase(formData, key);
     if (believed !== null) baseByJob.get(jobId)!.set(field, believed);
   }
-  if (byJob.size === 0) return { written: 0, conflicts: [], conflictFields: [] };
+  if (byJob.size === 0) return { written: 0, conflicts: [], conflictFields: [], salesChanged: false };
 
   const jobIds = [...byJob.keys()];
   const currentJobs = await prisma.job.findMany({
@@ -504,6 +511,14 @@ async function saveJobFields(formData: FormData): Promise<{ written: number; con
       }
     }
 
+    // Total follows Sales Price (+ the job's Change Quote) in the same write.
+    if ("salesPrice" in data) {
+      const sales = data.salesPrice as number | null;
+      const cq = current.changeQuote != null ? Number(current.changeQuote) : null;
+      const total = allInCents(sales === null ? null : Math.round(sales * 100), cq === null ? null : Math.round(cq * 100));
+      data.totalPrice = total === null ? null : total / 100;
+    }
+
     if (Object.keys(data).length > 0) {
       updates.push({ id: jobId, data });
       changedFieldSummaries.push(`job ${jobId}: ${Object.keys(data).filter((k) => !k.endsWith("ManuallyEdited")).join(", ")}`);
@@ -519,7 +534,7 @@ async function saveJobFields(formData: FormData): Promise<{ written: number; con
         metadata: { conflicts },
       });
     }
-    return { written: 0, conflicts, conflictFields };
+    return { written: 0, conflicts, conflictFields, salesChanged: false };
   }
 
   await prisma.$transaction(updates.map((u) => prisma.job.update({ where: { id: u.id }, data: u.data })));
@@ -559,12 +574,15 @@ async function saveJobFields(formData: FormData): Promise<{ written: number; con
         entityType: "Job",
         entityId: u.id,
         cellKey: `${FIELD_PREFIX}${u.id}__${field}`,
+        // Total is derived from the Sales Price the user just changed: other browsers must refetch
+        // it, but there is nothing for a person to be told about it.
+        ...(field === "totalPrice" ? { system: true } : {}),
       });
     }
   }
   await recordChanges(fieldChanges, { action: "quoted.saveJobFields" });
 
-  return { written: updates.length, conflicts, conflictFields };
+  return { written: updates.length, conflicts, conflictFields, salesChanged: updates.some((u) => "salesPrice" in u.data) };
 }
 
 // Column names as a human reads them on the Projects grid. A field absent from this
@@ -645,8 +663,6 @@ async function saveNewRows(formData: FormData): Promise<number> {
     costQuoted: number | null;
     costActualHistorical: number | null;
     salesPrice: number | null;
-    changeQuote: number | null;
-    totalPrice: number | null;
     hours: { section: string; quotedHours: number }[];
   };
 
@@ -707,8 +723,6 @@ async function saveNewRows(formData: FormData): Promise<number> {
     const costQuoted = parseMoney((fields.get("costQuoted") ?? "").trim(), "Parts Cost Quoted", `new project "${jobId}"`);
     const costActualHistorical = parseMoney((fields.get("costActualHistorical") ?? "").trim(), "Parts Cost Actual", `new project "${jobId}"`);
     const salesPrice = parseMoney((fields.get("salesPrice") ?? "").trim(), "Sales Price", `new project "${jobId}"`);
-    const changeQuote = parseMoney((fields.get("changeQuote") ?? "").trim(), "Change Quote", `new project "${jobId}"`);
-    const totalPrice = parseMoney((fields.get("totalPrice") ?? "").trim(), "Total", `new project "${jobId}"`);
 
     const hoursMap = hoursByTemp.get(tempId) ?? new Map();
     const hours: { section: string; quotedHours: number }[] = [];
@@ -725,7 +739,7 @@ async function saveNewRows(formData: FormData): Promise<number> {
       if (n !== 0) hours.push({ section, quotedHours: n });
     }
 
-    rows.push({ jobId, jobName, customer, type, billable, status, startDate, completeDate, quotedDeliveryDate, costQuoted, costActualHistorical, salesPrice, changeQuote, totalPrice, hours });
+    rows.push({ jobId, jobName, customer, type, billable, status, startDate, completeDate, quotedDeliveryDate, costQuoted, costActualHistorical, salesPrice, hours });
   }
 
   if (rows.length === 0) return 0;
@@ -751,8 +765,8 @@ async function saveNewRows(formData: FormData): Promise<number> {
           costQuoted: r.costQuoted,
           costActualHistorical: r.costActualHistorical,
           salesPrice: r.salesPrice,
-          changeQuote: r.changeQuote,
-          totalPrice: r.totalPrice,
+          // A new project has no change quote yet, so its Total is its Sales Price.
+          totalPrice: r.salesPrice,
           source: "manual",
           estimatedHours: r.hours.length
             ? { create: r.hours.map((h) => ({ section: h.section, quotedHours: h.quotedHours, quotedHoursManuallyEdited: true })) }

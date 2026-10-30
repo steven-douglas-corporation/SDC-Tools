@@ -15,6 +15,7 @@ import {
   planApply,
   planReverse,
   planColumnAmount,
+  allInCents,
   type CqInput,
   type CqStatus,
   type PlanResult,
@@ -314,11 +315,11 @@ export async function saveChangeQuote(input: SaveChangeQuoteInput): Promise<Chan
 type Tx = Prisma.TransactionClient;
 
 async function readTotals(tx: Tx, jobPk: number, allowed: ReadonlySet<string>) {
-  const job = await tx.job.findUnique({ where: { id: jobPk }, select: { jobId: true, costQuoted: true, changeQuote: true, estimatedHours: { select: { section: true, quotedHours: true } } } });
+  const job = await tx.job.findUnique({ where: { id: jobPk }, select: { jobId: true, costQuoted: true, changeQuote: true, salesPrice: true, estimatedHours: { select: { section: true, quotedHours: true } } } });
   if (!job) return fail("That job no longer exists.");
   const hours: Record<string, number> = {};
   for (const e of job!.estimatedHours) hours[e.section] = Number(e.quotedHours);
-  return { jobNumber: job!.jobId, totals: { hours, partsCents: toCents(job!.costQuoted) }, columnCents: toCents(job!.changeQuote), allowed };
+  return { jobNumber: job!.jobId, totals: { hours, partsCents: toCents(job!.costQuoted) }, columnCents: toCents(job!.changeQuote), salesCents: toCents(job!.salesPrice), allowed };
 }
 
 // Writes a plan's totals and returns the cell changes to announce. Sections are
@@ -370,12 +371,21 @@ async function writePlan(tx: Tx, jobPk: number, jobNumber: string, before: { hou
 // The Change Quote $ column (see planColumnAmount). Pricing data, so a viewer without
 // projects:pricing can't move it — refused rather than silently skipped, because skipping
 // would leave Profitability short by this change quote's amount with no sign why.
-async function writeColumn(tx: Tx, role: AppRole | undefined, jobPk: number, jobNumber: string, columnBefore: number | null, amount: Prisma.Decimal | null, op: "apply" | "reverse", addedToTotals: boolean): Promise<CellChange[]> {
+async function writeColumn(tx: Tx, role: AppRole | undefined, jobPk: number, jobNumber: string, columnBefore: number | null, salesCents: number | null, amount: Prisma.Decimal | null, op: "apply" | "reverse", addedToTotals: boolean): Promise<CellChange[]> {
   const plan = planColumnAmount(columnBefore, toCents(amount), op, addedToTotals);
   if (!plan.ok) return fail(plan.error);
   if (!plan.changed) return [];
   if (!hasPermission(role, "projects:pricing")) return fail("This change quote has a dollar amount, and updating the Change Quote column needs the Projects pricing permission.");
-  await tx.job.update({ where: { id: jobPk }, data: { changeQuote: plan.nextCents === null ? null : plan.nextCents / 100 } });
+  // Total (Sales Price + Change Quote) moves in the same write, so the two can never disagree.
+  const totalBefore = allInCents(salesCents, columnBefore);
+  const totalAfter = allInCents(salesCents, plan.nextCents);
+  await tx.job.update({
+    where: { id: jobPk },
+    data: {
+      changeQuote: plan.nextCents === null ? null : plan.nextCents / 100,
+      totalPrice: totalAfter === null ? null : totalAfter / 100,
+    },
+  });
   const previous = columnBefore === null ? null : String(columnBefore / 100);
   const now = plan.nextCents === null ? null : String(plan.nextCents / 100);
   return [{
@@ -388,6 +398,18 @@ async function writeColumn(tx: Tx, role: AppRole | undefined, jobPk: number, job
     entityType: "Job",
     entityId: jobPk,
     cellKey: `jobField__${jobPk}__changeQuote`,
+  }, {
+    tab: "Projects",
+    rowRef: `Job ${jobNumber}`,
+    columnName: "Total",
+    previousValue: totalBefore === null ? null : String(totalBefore / 100),
+    newValue: totalAfter === null ? null : String(totalAfter / 100),
+    changeType: classifyChange(totalBefore === null ? null : String(totalBefore / 100), totalAfter === null ? null : String(totalAfter / 100)),
+    entityType: "Job",
+    entityId: jobPk,
+    cellKey: `jobField__${jobPk}__totalPrice`,
+    // Derived from the Change Quote line above: other browsers refetch it, nobody needs telling.
+    system: true,
   }];
 }
 
@@ -410,7 +432,7 @@ export async function applyChangeQuote(input: { jobPk: number; id: number }): Pr
       if (!cq) return fail("That change quote no longer exists.");
       label = cq!.label;
       for (const h of cq!.hours) if (!allowed.has(h.section)) return fail(`This change quote includes ${sectionName(h.section) ?? h.section}, which you don't have access to.`);
-      const { jobNumber, totals, columnCents } = await readTotals(tx, input.jobPk, allowed);
+      const { jobNumber, totals, columnCents, salesCents } = await readTotals(tx, input.jobPk, allowed);
       const plan = planApply(totals, toCqInput(cq!));
       if (!plan.ok) return fail(plan.error);
       // Claim the Draft → Applied transition first: of two concurrent applies exactly one
@@ -421,7 +443,7 @@ export async function applyChangeQuote(input: { jobPk: number; id: number }): Pr
       });
       if (claimed.count !== 1) return fail("This change quote was already applied by someone else.");
       const cells = await writePlan(tx, input.jobPk, jobNumber, totals, plan);
-      return [...cells, ...(await writeColumn(tx, role, input.jobPk, jobNumber, columnCents, cq!.amount, "apply", plan.addedToTotals))];
+      return [...cells, ...(await writeColumn(tx, role, input.jobPk, jobNumber, columnCents, salesCents, cq!.amount, "apply", plan.addedToTotals))];
     });
     return `${label} applied — added to the totals.`;
   });
@@ -452,7 +474,7 @@ export async function reverseChangeQuote(input: { jobPk: number; id: number }): 
       if (!cq) return fail("That change quote no longer exists.");
       label = cq!.label;
       for (const h of cq!.hours) if (!allowed.has(h.section)) return fail(`This change quote includes ${sectionName(h.section) ?? h.section}, which you don't have access to.`);
-      const { jobNumber, totals, columnCents } = await readTotals(tx, input.jobPk, allowed);
+      const { jobNumber, totals, columnCents, salesCents } = await readTotals(tx, input.jobPk, allowed);
       const plan = planReverse(totals, toCqInput(cq!));
       if (!plan.ok) return fail(plan.error);
       const claimed = await tx.jobChangeQuote.updateMany({
@@ -461,7 +483,7 @@ export async function reverseChangeQuote(input: { jobPk: number; id: number }): 
       });
       if (claimed.count !== 1) return fail("This change quote was already reversed by someone else.");
       const cells = await writePlan(tx, input.jobPk, jobNumber, totals, plan);
-      return [...cells, ...(await writeColumn(tx, role, input.jobPk, jobNumber, columnCents, cq!.amount, "reverse", cq!.addedToTotals))];
+      return [...cells, ...(await writeColumn(tx, role, input.jobPk, jobNumber, columnCents, salesCents, cq!.amount, "reverse", cq!.addedToTotals))];
     });
     return `${label} reversed back to a draft.`;
   });

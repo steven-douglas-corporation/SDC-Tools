@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   parseCents,
   parseWholeHours,
@@ -9,6 +11,7 @@ import {
   planApply,
   planReverse,
   planColumnAmount,
+  allInCents,
   reconcile,
   cleanDraft,
   type CqInput,
@@ -200,4 +203,34 @@ test("a never-added change quote, no amount, or a zero amount never touch the co
 test("reversing is refused when the column is below the change quote's amount", () => {
   assert.equal(planColumnAmount(100, 15_530_000, "reverse", true).ok, false);
   assert.equal(planColumnAmount(null, 15_530_000, "reverse", true).ok, false);
+});
+
+test("Total is Sales Price + Change Quote; blank only when neither is entered", () => {
+  assert.equal(allInCents(49_500_000, 15_530_000), 65_030_000);
+  assert.equal(allInCents(49_500_000, null), 49_500_000);
+  assert.equal(allInCents(null, 15_530_000), 15_530_000);
+  assert.equal(allInCents(null, null), null);
+  assert.equal(allInCents(0, 0), 0);
+});
+
+test("applying then reversing leaves Total back at Sales Price", () => {
+  const sales = 49_500_000;
+  const applied = planColumnAmount(null, 15_530_000, "apply", true);
+  assert.ok(applied.ok);
+  if (!applied.ok) return;
+  assert.equal(allInCents(sales, applied.nextCents), 65_030_000);
+  const reversed = planColumnAmount(applied.nextCents, 15_530_000, "reverse", true);
+  assert.ok(reversed.ok);
+  if (!reversed.ok) return;
+  assert.equal(allInCents(sales, reversed.nextCents), sales);
+});
+
+// The server is the control, not the markup: a hand-built form post for these two columns must
+// be ignored, so neither may be in the list of fields saveJobFields writes.
+test("the Projects save never writes Change Quote or Total from a posted form", () => {
+  const src = readFileSync(join(__dirname, "..", "src", "lib", "quoted-actions.ts"), "utf8");
+  const m = src.match(/const MONEY_FIELDS = \[([^\]]*)\]/);
+  assert.ok(m, "MONEY_FIELDS not found");
+  assert.ok(!/changeQuote|totalPrice/.test(m![1]), "changeQuote/totalPrice must not be editable fields");
+  assert.match(m![1], /salesPrice/);
 });
