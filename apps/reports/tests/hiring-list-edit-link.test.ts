@@ -43,3 +43,9 @@ test("the panel still offers Move to for a Paylocity position", () => {
   const postingBranch = drawer.slice(drawer.indexOf("{isRequest ? ("));
   assert.match(postingBranch, /\) : \(\s*<div className="flex flex-col">[\s\S]{0,400}<HiringMoveToControl/);
 });
+
+test("the Org chart's open positions wrap long titles rather than cutting them off (2026-10-30)", () => {
+  const dropdown = src("components/OpenPositionsDropdown.tsx");
+  assert.doesNotMatch(dropdown, /\btruncate\b/);
+  assert.match(dropdown, /min-w-0 flex-1 break-words/);
+});

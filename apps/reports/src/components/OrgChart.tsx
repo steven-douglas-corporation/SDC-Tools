@@ -185,12 +185,14 @@ function TeamCard({
 // The Cards view's group heading, naming who the group reports to.
 function Group({ title, active, cardCount, children }: { title: string; active: number; cardCount: number; children: React.ReactNode }) {
   return (
-    <div className="min-w-0 max-w-full flex-1" style={{ flexBasis: `${Math.max(1, cardCount) * 17}rem` }}>
+    <div className="min-w-0 max-w-full flex-1" style={{ flexBasis: `${Math.max(1, cardCount) * 20}rem` }}>
       <h3 className="mb-2 border-b border-sdc-border pb-1 text-xs font-bold uppercase tracking-wider text-sdc-muted">
         {title}
         <span className="ml-2 font-normal normal-case tracking-normal text-sdc-gray-400">{active} active</span>
       </h3>
-      <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))]">{children}</div>
+      {/* 18rem at the narrowest (was 15rem until 2026-10-30): room for a wrapped
+          open-position title beside its status pill. */}
+      <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(18rem,1fr))]">{children}</div>
     </div>
   );
 }
