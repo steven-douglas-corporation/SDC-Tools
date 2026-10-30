@@ -4,10 +4,8 @@ import { assertActionPermission } from "@/lib/require-permission";
 import {
   setHiringAssignment,
   setHiringExpectedStartDate,
-  setHiringPositionVisibility as setHiringPositionVisibilityRow,
   insertCreatedHiringPosition,
   updateCreatedHiringPosition as updateCreatedHiringPositionRow,
-  updateCreatedHiringPositionVisibility,
   setHiringQuantity,
   setHiringFilledCount,
   deleteCreatedHiringPosition,
@@ -124,77 +122,6 @@ export async function setHiringPositionExpectedStartDate(positionSourceId: strin
   return { ok: true };
 }
 
-export type SetHiringPositionVisibilityResult = { ok: true } | { ok: false; error: string };
-
-/**
- * Workbook-sourced positions ONLY, same reason as assignHiringPosition/
- * setHiringPositionExpectedStartDate above — a manual position's visibility
- * is set via setCreatedHiringPositionVisibility instead.
- *
- * Display-only: does not touch isOpen/status, so this never affects Open
- * Positions, Planned Headcount, Hiring Capacity Hours, or any workforce-
- * group/department hiring total — see redactHiddenPositions in
- * hiring-positions.ts for how hiding actually takes effect (identity
- * redaction for non-editors, never a change to the position's own data).
- */
-export async function setHiringPositionVisibility(positionSourceId: string, isVisible: boolean): Promise<SetHiringPositionVisibilityResult> {
-  const session = await assertActionPermission("employees:hiring:assign");
-  if (!positionSourceId) return { ok: false, error: "Missing position." };
-  if (positionSourceId.startsWith("manual-")) return { ok: false, error: "This position was created in SDC Reports — use its own Hide/Show control instead." };
-
-  const before = await getHiringPositionById(positionSourceId);
-  if (!before) return { ok: false, error: "This position is no longer open — it may have been filled or removed from the workbook." };
-
-  // Current effective group/department/date -- so a first-ever
-  // HiringPositionAssignment row created here for visibility alone doesn't
-  // also blank them. See setHiringPositionVisibility's own comment in
-  // hiring-positions-store.ts.
-  await setHiringPositionVisibilityRow(positionSourceId, isVisible, before.workforceGroup, before.department, before.expectedStartDate, session.user.email ?? null);
-
-  await logAudit({
-    action: "hiring.visibilityChanged",
-    entityType: "HiringPositionAssignment",
-    entityId: positionSourceId,
-    summary: `${before.title}: ${before.isVisible ? "Shown" : "Hidden"} → ${isVisible ? "Shown" : "Hidden"} (by ${session.user.email ?? "unknown"})`,
-    metadata: {
-      positionSourceId,
-      title: before.title,
-      previousIsVisible: before.isVisible,
-      newIsVisible: isVisible,
-    },
-  });
-
-  return { ok: true };
-}
-
-/** Manually-created positions ONLY — see setHiringPositionVisibility's comment above. */
-export async function setCreatedHiringPositionVisibility(sourceId: string, isVisible: boolean): Promise<SetHiringPositionVisibilityResult> {
-  const session = await assertActionPermission("employees:hiring:assign");
-  const match = /^manual-(\d+)$/.exec(sourceId);
-  if (!match) return { ok: false, error: "Only positions created in SDC Reports can be hidden this way." };
-  const id = Number(match[1]);
-
-  const before = await getHiringPositionById(sourceId);
-  if (!before) return { ok: false, error: "This position no longer exists." };
-
-  await updateCreatedHiringPositionVisibility(id, isVisible, session.user.email ?? null);
-
-  await logAudit({
-    action: "hiring.visibilityChanged",
-    entityType: "HiringPositionCreated",
-    entityId: sourceId,
-    summary: `${before.title}: ${before.isVisible ? "Shown" : "Hidden"} → ${isVisible ? "Shown" : "Hidden"} (by ${session.user.email ?? "unknown"})`,
-    metadata: {
-      sourceId,
-      title: before.title,
-      previousIsVisible: before.isVisible,
-      newIsVisible: isVisible,
-    },
-  });
-
-  return { ok: true };
-}
-
 // ── Hire requests (2026-10-29) ──────────────────────────────────────────────
 //
 // What used to be "Create Position" is a manager's request for a hire: the
@@ -255,9 +182,9 @@ function parseHiringRequest(input: HiringRequestInput):
   return { ok: true, title, workforceGroup, department: input.department, hiringManagerId, quantity: qty.quantity, note };
 }
 
-/** The "Request a hire" form's write path. */
+/** The "Request a hire" form's write path. Its own permission since 2026-10-30; editing and closing a request stay employees:hiring:assign. */
 export async function createHiringRequest(input: HiringRequestInput): Promise<HiringPositionActionResult> {
-  const session = await assertActionPermission("employees:hiring:assign");
+  const session = await assertActionPermission("employees:hiring:request");
   const parsed = parseHiringRequest(input);
   if (!parsed.ok) return { ok: false, error: parsed.error };
 

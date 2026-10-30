@@ -9,7 +9,7 @@ import { fetchSchedulerOverlay } from "@/lib/employee-scheduler-overlay";
 import { normalizeName } from "@/lib/sync-scheduler-team";
 import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";
-import { getHiringPositions, redactHiddenPositions } from "@/lib/hiring-positions";
+import { getHiringPositions } from "@/lib/hiring-positions";
 import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
 import { resolveTeams, departmentLeads } from "@/lib/team-resolution";
 import { resolveEmployeeGroup, NO_DEPARTMENT } from "@/lib/employee-card-theme";
@@ -96,7 +96,10 @@ export async function EmployeesView() {
     const key = resolveEmployeeGroup(r)?.key;
     if (key && key !== NO_DEPARTMENT) cardKeyByPaylocityId.set(r.paylocityId.trim(), key);
   }
-  const hiring = HIRING_POSITIONS_ENABLED ? await getHiringPositions({ cardKeyByPaylocityId }) : { positions: [], error: null };
+  // employees:hiring:view (2026-10-30): without it nothing about hiring is read,
+  // so none of it reaches the browser.
+  const canViewHiring = hasPermission(session.user.role, "employees:hiring:view");
+  const hiring = HIRING_POSITIONS_ENABLED && canViewHiring ? await getHiringPositions({ cardKeyByPaylocityId }) : { positions: [], error: null };
 
   const canAddEmployees = hasPermission(session.user.role, "employees:edit");
   const canAssignHiring = hasPermission(session.user.role, "employees:hiring:assign");
@@ -105,12 +108,9 @@ export async function EmployeesView() {
   // independent of the system clock, and leaves a clean seam for a future
   // year-selector.
   const year = new Date().getFullYear();
-  // The one enforcement point for "users without hiring-edit permission
-  // should only see positions currently marked visible" (2026-08-19) — done
-  // here, server-side, before the array ever reaches EmployeesGrid (a client
-  // component), so a hidden position's real title is never even sent to a
-  // non-editor's browser. See redactHiddenPositions' own comment.
-  const hiringPositions = redactHiddenPositions(hiring.positions, canAssignHiring);
+  // Every position goes to every viewer as-is: hiding positions was removed
+  // (2026-10-30), and the stored isVisible flag is no longer read.
+  const hiringPositions = hiring.positions;
 
   return (
     <div className={PAGE_SHELL}>
@@ -130,6 +130,8 @@ export async function EmployeesView() {
           hiringPositions={hiringPositions}
           hiringError={hiring.error}
           canAssignHiring={canAssignHiring}
+          canViewHiring={canViewHiring}
+          canRequestHire={hasPermission(session.user.role, "employees:hiring:request")}
           year={year}
           orgChart={orgChart}
           orgChartWithInactive={orgChartWithInactive}

@@ -65,6 +65,11 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   { keys: ["feedback:triage"], label: "Feedback — Triage (status, assign, respond)", section: "Feedback" },
   { keys: ["employees:view"], label: "Employees — View", section: "Administration" },
   { keys: ["employees:edit"], label: "Employees — Edit (Add Member)", section: "Administration" },
+  // Seeing hiring and asking for a hire are their own rows (2026-10-30), apart
+  // from managing positions, so a role can be shown the tab or allowed to
+  // request without being handed the editing.
+  { keys: ["employees:hiring:view"], label: "Employees — Hiring tab (open positions and requests)", section: "Administration" },
+  { keys: ["employees:hiring:request"], label: "Employees — Request a hire", section: "Administration" },
   { keys: ["employees:hiring:assign"], label: "Employees — Manage Hiring Positions (Create/Edit/Assign)", section: "Administration" },
   { keys: ["audit-log:view"], label: "Audit Log", section: "Administration" },
   // The Data quality tab lists every punch by employee, and the roster checks name individuals,

@@ -26,7 +26,8 @@ import type { HiringPosition } from "@/lib/hiring-positions";
 // Hiring replaced the Cards view (2026-10-29). Cards drew the same people by
 // department, which the Org chart had taken over almost entirely; its filters
 // (team scope, discipline, department) and its Add employee button went with
-// it. The Org chart offers "Request a hire" on a team's card instead.
+// it. Hire requests start from the Hiring tab (the cards' own "Request a hire"
+// and "Manual add" were removed 2026-10-30).
 
 // The Org chart's search box.
 function SearchBox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -55,6 +56,8 @@ export function EmployeesGrid({
   hiringPositions,
   hiringError,
   canAssignHiring,
+  canViewHiring,
+  canRequestHire,
   year,
   orgChart,
   orgChartWithInactive,
@@ -67,6 +70,10 @@ export function EmployeesGrid({
   hiringPositions: HiringPosition[];
   hiringError: string | null;
   canAssignHiring: boolean;
+  /** employees:hiring:view — the Hiring tab, and any hiring on the page at all (page.tsx doesn't even load it without). */
+  canViewHiring: boolean;
+  /** employees:hiring:request — the Hiring tab's "+ Request a hire". */
+  canRequestHire: boolean;
   /** For workforce-capacity-policy.ts/workforce-capacity.ts — see page.tsx's own note on why this is computed once, server-side. */
   year: number;
   /** The Org chart view (2026-10-02): the same people, nested by reporting line — see lib/org-chart.ts. */
@@ -85,8 +92,7 @@ export function EmployeesGrid({
   // whatever was showing underneath, with the search and tab untouched.
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
   const [selectedHiringPosition, setSelectedHiringPosition] = useState<HiringPosition | null>(null);
-  // A new hire request, and the team it was started from (a card's "Request a
-  // hire"), or null from the Hiring tab's own button.
+  // A new hire request, from the Hiring tab's button (team null: picked in the form).
   const [requestingHire, setRequestingHire] = useState<{ team: string | null } | null>(null);
   // "How was this capacity-hours total built" -- a different question ("which
   // employees/positions, what proration") from "who", so it's its own piece of
@@ -142,6 +148,9 @@ export function EmployeesGrid({
   // either source) never inflates a count, regardless of what
   // HiringPositionsList's own Job Status filter is currently showing.
   const openHiring = useMemo(() => hiring.filter((p) => p.isOpen), [hiring]);
+  // The Org chart lists hire requests in its cards' open positions too
+  // (2026-10-30); it counts only the open ones itself.
+  const chartHiring = useMemo(() => hiring.filter((p) => p.isOpen || p.source === "manual"), [hiring]);
 
   // While searching with inactive hidden, count how many INACTIVE people match
   // so we can offer to reveal them — otherwise a departed employee is
@@ -163,7 +172,10 @@ export function EmployeesGrid({
   }
 
   const selectedEmployeeGroup = selectedEmployee ? resolveEmployeeGroup(selectedEmployee) : null;
-  const views = HIRING_POSITIONS_ENABLED
+  // The feature flag AND employees:hiring:view (2026-10-30): either off, no Hiring
+  // tab, no positions on the chart, no panels.
+  const hiringOn = HIRING_POSITIONS_ENABLED && canViewHiring;
+  const views = hiringOn
     ? ([["chart", "Org chart"], ["hiring", "Hiring"]] as const)
     : ([["chart", "Org chart"]] as const);
 
@@ -214,7 +226,7 @@ export function EmployeesGrid({
         </p>
       )}
 
-      {view === "chart" || !HIRING_POSITIONS_ENABLED ? (
+      {view === "chart" || !hiringOn ? (
         <div className="grid gap-6">
           {/* The headcount strip and group tiles, for the whole organisation. */}
           <WorkforceSummaryCards
@@ -232,11 +244,8 @@ export function EmployeesGrid({
             onSelectPerson={selectEmployee}
             year={year}
             onSelectCapacity={setCapacityDrill}
-            hiringPositions={HIRING_POSITIONS_ENABLED ? openHiring : undefined}
+            hiringPositions={hiringOn ? chartHiring : undefined}
             onSelectHiringPosition={selectHiringPosition}
-            canAssignHiring={canAssignHiring}
-            onRequestHire={HIRING_POSITIONS_ENABLED && canAssignHiring ? (team) => setRequestingHire({ team }) : undefined}
-            canManualAdd={canAddEmployees}
           />
         </div>
       ) : (
@@ -246,15 +255,13 @@ export function EmployeesGrid({
             hiringPositions={openHiring}
             year={year}
             onSelectCapacity={setCapacityDrill}
-            requestCount={countOpenings(hiring.filter((p) => p.source === "manual" && p.isVisible))}
+            requestCount={countOpenings(hiring.filter((p) => p.source === "manual"))}
           />
           <HiringPositionsList
             positions={hiring}
-            canAssign={canAssignHiring}
-            canCreate={canAssignHiring}
+            canCreate={canRequestHire}
             managerNames={nameByPaylocityId}
             onSelect={selectHiringPosition}
-            onVisibilityChanged={(sourceId, isVisible) => applyHiringUpdate(sourceId, { isVisible })}
             onCreate={() => setRequestingHire({ team: null })}
           />
         </div>
@@ -277,7 +284,7 @@ export function EmployeesGrid({
         />
       )}
 
-      {HIRING_POSITIONS_ENABLED && selectedHiringPosition && (
+      {hiringOn && selectedHiringPosition && (
         <HiringPositionDetailDrawer
           position={selectedHiringPosition}
           canAssign={canAssignHiring}
@@ -291,7 +298,7 @@ export function EmployeesGrid({
         />
       )}
 
-      {HIRING_POSITIONS_ENABLED && requestingHire && (
+      {hiringOn && requestingHire && (
         <CreateHiringPositionDrawer
           leads={teamLeads}
           initialTeam={requestingHire.team}
@@ -307,7 +314,6 @@ export function EmployeesGrid({
           employees={capacityDrill.employees}
           hiringPositions={capacityDrill.hiringPositions}
           year={year}
-          canAssignHiring={canAssignHiring}
           onClose={() => setCapacityDrill(null)}
         />
       )}

@@ -76,6 +76,11 @@ export type Permission =
   | "employees:view"
   | "employees:edit"
   | "employees:hiring:assign"
+  // The Employees page's Hiring tab and every hiring figure on the page, and
+  // the "+ Request a hire" button (2026-10-30). Seeded so nobody's access moves
+  // on deploy: view matches employees:view, request matches employees:hiring:assign.
+  | "employees:hiring:view"
+  | "employees:hiring:request"
   | "audit-log:view"
   | "profitability:view"
   | "users:manage"
@@ -148,6 +153,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "monthly-etc:submit",
     "dashboard:view",
     "employees:view",
+    "employees:hiring:view",
     "hours:view",
     "projects:view",
     "tm:view",
@@ -188,6 +194,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "monthly-etc:submit",
     "dashboard:view",
     "employees:view",
+    "employees:hiring:view",
     "hours:view",
     "projects:view",
     "projects:edit",
@@ -202,6 +209,8 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
   ELT: [
     "employees:edit",
     "employees:hiring:assign",
+    "employees:hiring:view",
+    "employees:hiring:request",
     "audit-log:view",
     "users:manage",
     "permissions:manage",
