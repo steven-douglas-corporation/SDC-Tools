@@ -23,7 +23,7 @@ const NEW_ROW_HOURS_PREFIX = "newRowHours__";
 const PLAIN_FIELDS = ["jobName", "customer"] as const;
 const DATE_FIELDS = ["startDate", "completeDate", "quotedDeliveryDate"] as const;
 // changeQuote and totalPrice are deliberately NOT editable here: Change Quote is filled only by
-// the Change Quotes panel (apply / reverse) and Total is always Sales Price + Change Quote, so a
+// the Change Quotes panel (apply / reverse) and Total is Sales Price + Change Quote (empty when there is none), so a
 // posted value for either is ignored — the grid renders them read-only, and this is the control
 // (a form post doesn't care what the markup said).
 const MONEY_FIELDS = ["costQuoted", "costActualHistorical", "salesPrice"] as const;
@@ -765,8 +765,6 @@ async function saveNewRows(formData: FormData): Promise<number> {
           costQuoted: r.costQuoted,
           costActualHistorical: r.costActualHistorical,
           salesPrice: r.salesPrice,
-          // A new project has no change quote yet, so its Total is its Sales Price.
-          totalPrice: r.salesPrice,
           source: "manual",
           estimatedHours: r.hours.length
             ? { create: r.hours.map((h) => ({ section: h.section, quotedHours: h.quotedHours, quotedHoursManuallyEdited: true })) }

@@ -205,15 +205,15 @@ test("reversing is refused when the column is below the change quote's amount", 
   assert.equal(planColumnAmount(null, 15_530_000, "reverse", true).ok, false);
 });
 
-test("Total is Sales Price + Change Quote; blank only when neither is entered", () => {
+test("Total is Sales Price + Change Quote; blank when the job has no change quote", () => {
   assert.equal(allInCents(49_500_000, 15_530_000), 65_030_000);
-  assert.equal(allInCents(49_500_000, null), 49_500_000);
+  assert.equal(allInCents(49_500_000, null), null);
+  assert.equal(allInCents(49_500_000, 0), null);
   assert.equal(allInCents(null, 15_530_000), 15_530_000);
   assert.equal(allInCents(null, null), null);
-  assert.equal(allInCents(0, 0), 0);
 });
 
-test("applying then reversing leaves Total back at Sales Price", () => {
+test("applying then reversing leaves Total empty again", () => {
   const sales = 49_500_000;
   const applied = planColumnAmount(null, 15_530_000, "apply", true);
   assert.ok(applied.ok);
@@ -222,7 +222,7 @@ test("applying then reversing leaves Total back at Sales Price", () => {
   const reversed = planColumnAmount(applied.nextCents, 15_530_000, "reverse", true);
   assert.ok(reversed.ok);
   if (!reversed.ok) return;
-  assert.equal(allInCents(sales, reversed.nextCents), sales);
+  assert.equal(allInCents(sales, reversed.nextCents), null);
 });
 
 // The server is the control, not the markup: a hand-built form post for these two columns must

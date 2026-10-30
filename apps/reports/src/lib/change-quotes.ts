@@ -191,12 +191,13 @@ export function planColumnAmount(columnCents: number | null, amountCents: number
 // ── The all-in contract value: Total = Sales Price + Change Quote ────────────
 //
 // One definition, used by every writer of Job.totalPrice (applying/reversing a change quote,
-// saving a Sales Price, adding a project) so the Projects grid's Total and Profitability's
-// Sales $ cannot disagree. Total and Change Quote are no longer typed into the grid.
-/** Cents; null only when neither figure has been entered. */
+// saving a Sales Price) so the Projects grid's Total and Profitability's Sales $ cannot
+// disagree. Total and Change Quote are no longer typed into the grid. A job with no change
+// quote has no Total: it would only repeat the Sales Price, so the cell stays empty.
+/** Cents; null when the job has no change quote. */
 export function allInCents(salesCents: number | null, changeQuoteCents: number | null): number | null {
-  if (salesCents === null && changeQuoteCents === null) return null;
-  return (salesCents ?? 0) + (changeQuoteCents ?? 0);
+  if (!changeQuoteCents) return null;
+  return (salesCents ?? 0) + changeQuoteCents;
 }
 
 // ── The $155,300 = labor + parts check ──────────────────────────────────────
