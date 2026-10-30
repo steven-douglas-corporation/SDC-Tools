@@ -7,12 +7,14 @@ import {
   applyChangeQuote,
   deleteChangeQuote,
   listChangeQuoteJobs,
+  listDraftChangeQuotes,
   loadChangeQuotes,
   reverseChangeQuote,
   saveChangeQuote,
   type ChangeQuotePanelData,
   type ChangeQuoteResult,
   type ChangeQuoteView,
+  type DraftSummary,
   type JobOption,
 } from "@/lib/change-quote-actions";
 import { parseCents, reconcile, splitBySection, splitParts, totalHours } from "@/lib/change-quotes";
@@ -75,6 +77,8 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
   const { editing, mayEdit } = useProjectsEditMode();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [jobs, setJobs] = useState<JobOption[] | null>(null);
+  const [draftList, setDraftList] = useState<DraftSummary[] | null>(null);
+  const [draftsOnly, setDraftsOnly] = useState(false);
   const [filter, setFilter] = useState("");
   const [jobPk, setJobPk] = useState<number | null>(null);
   const [data, setData] = useState<ChangeQuotePanelData | null>(null);
@@ -99,10 +103,26 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose, ask]);
 
+  // The picker's counts and the saved-drafts list. Re-read after every successful change, and
+  // whenever the panel returns to "no job selected", so neither can show a draft that is gone.
+  const refreshLists = useCallback(async () => {
+    try {
+      const [j, d] = await Promise.all([listChangeQuoteJobs(), listDraftChangeQuotes()]);
+      setJobs(j);
+      setDraftList(d);
+    } catch {
+      setNotice({ kind: "error", text: "Couldn't load the job list." });
+    }
+  }, []);
+
   useEffect(() => {
     let live = true;
-    listChangeQuoteJobs()
-      .then((j) => live && setJobs(j))
+    Promise.all([listChangeQuoteJobs(), listDraftChangeQuotes()])
+      .then(([j, d]) => {
+        if (!live) return;
+        setJobs(j);
+        setDraftList(d);
+      })
       .catch(() => live && setNotice({ kind: "error", text: "Couldn't load the job list." }));
     return () => {
       live = false;
@@ -131,14 +151,17 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
       setAsk(null);
       setData(null);
       setDrafts([]);
-      if (pk === null) return;
+      if (pk === null) {
+        void refreshLists();
+        return;
+      }
       setBusy("load");
       const r = await loadChangeQuotes(pk);
       setBusy(null);
       if (r.ok) adopt(r.data, false);
       else setNotice({ kind: "error", text: r.error });
     },
-    [adopt],
+    [adopt, refreshLists],
   );
 
   async function act(key: string, call: () => Promise<ChangeQuoteResult>, after?: (r: Extract<ChangeQuoteResult, { ok: true }>) => void) {
@@ -148,6 +171,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
       const r = await call();
       if (r.ok) {
         adopt(r.data, true);
+        void refreshLists();
         if (r.message) setNotice({ kind: "ok", text: r.message });
         after?.(r);
       } else {
@@ -175,10 +199,14 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
     return showAll ? data.sections : data.sections.filter((s) => used.has(s.code));
   }, [data, quotes, drafts, showAll]);
 
-  const shownJobs = (jobs ?? []).filter((j) => {
-    const f = filter.trim().toLowerCase();
-    return f === "" || j.jobId.toLowerCase().includes(f) || j.jobName.toLowerCase().includes(f);
-  });
+  // Jobs with a saved draft first, then by job number — the ones you may have forgotten about.
+  const shownJobs = (jobs ?? [])
+    .filter((j) => {
+      const f = filter.trim().toLowerCase();
+      return (f === "" || j.jobId.toLowerCase().includes(f) || j.jobName.toLowerCase().includes(f)) && (!draftsOnly || j.draftCount > 0);
+    })
+    .sort((a, b) => Number(b.draftCount > 0) - Number(a.draftCount > 0) || a.jobId.localeCompare(b.jobId, undefined, { numeric: true }));
+  const jobsWithDrafts = (jobs ?? []).filter((j) => j.draftCount > 0).length;
 
   function patchDraft(key: string, patch: Partial<Draft>) {
     setDrafts((prev) => prev.map((d) => (d.key === key ? { ...d, ...patch } : d)));
@@ -224,10 +252,14 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
             {shownJobs.map((j) => (
               <option key={j.pk} value={j.pk}>
                 {j.jobId} — {j.jobName}
-                {j.changeQuoteCount > 0 ? `  (${j.changeQuoteCount} CQ)` : ""}
+                {j.draftCount > 0 ? `  · ${j.draftCount} draft${j.draftCount === 1 ? "" : "s"}` : ""}
+                {j.appliedCount > 0 ? `  · ${j.appliedCount} applied` : ""}
               </option>
             ))}
           </select>
+          <label className="flex items-center gap-1.5 text-sm text-sdc-navy" title="Only jobs with a saved, not-yet-applied change quote">
+            <input type="checkbox" checked={draftsOnly} onChange={(e) => setDraftsOnly(e.target.checked)} /> Drafts only{jobsWithDrafts > 0 ? ` (${jobsWithDrafts})` : ""}
+          </label>
           {data && (
             <label className="ml-2 flex items-center gap-1.5 text-sm text-sdc-navy">
               <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> Show all sections
@@ -261,7 +293,44 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
               {notice.text}
             </p>
           )}
-          {jobPk === null && <p className="text-sm text-sdc-muted">Pick a job to see its original budget and change quotes.</p>}
+          {jobPk === null && (
+            <div>
+              <p className="mb-2 text-sm font-semibold text-sdc-navy">Saved drafts</p>
+              {draftList === null && <p className="text-sm text-sdc-muted">Loading…</p>}
+              {draftList !== null && draftList.length === 0 && <p className="text-sm text-sdc-muted">No saved drafts. Pick a job above to see its original budget and change quotes.</p>}
+              {draftList !== null && draftList.length > 0 && (
+                <>
+                  <p className="mb-2 text-note text-sdc-muted">Saved but not applied yet. Click one to open its job.</p>
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-sdc-gray-100 text-left text-xs text-sdc-navy">
+                        <th className="px-2 py-1.5 font-semibold">Job</th>
+                        <th className="px-2 py-1.5 font-semibold">Change quote</th>
+                        <th className="px-2 py-1.5 text-right font-semibold">Hours</th>
+                        <th className="px-2 py-1.5 text-right font-semibold">Parts cost</th>
+                        {draftList.some((d) => d.amountCents !== null) && <th className="px-2 py-1.5 text-right font-semibold">Amount</th>}
+                        <th className="px-2 py-1.5 font-semibold">Saved</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {draftList.map((d) => (
+                        <tr key={d.id} className="cursor-pointer border-t border-sdc-border hover:bg-sdc-blue-light/40" onClick={() => void select(d.jobPk)}>
+                          <td className="px-2 py-1.5">
+                            <span className="font-semibold text-sdc-blue-dark">{d.jobId}</span> <span className="text-sdc-muted">{d.jobName}</span>
+                          </td>
+                          <td className="px-2 py-1.5 font-semibold text-sdc-navy">{d.label}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{hrs(d.hours)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{usd(d.partsCents)}</td>
+                          {draftList.some((x) => x.amountCents !== null) && <td className="px-2 py-1.5 text-right tabular-nums">{d.amountCents === null ? "—" : usd(d.amountCents)}</td>}
+                          <td className="px-2 py-1.5 text-sdc-muted">{d.createdAt.slice(0, 10)}{d.createdByEmail ? ` · ${d.createdByEmail.split("@")[0]}` : ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </div>
+          )}
           {busy === "load" && <p className="text-sm text-sdc-muted">Loading…</p>}
 
           {data && split && partsSplit && (

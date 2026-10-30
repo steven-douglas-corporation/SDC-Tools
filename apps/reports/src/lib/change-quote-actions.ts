@@ -63,7 +63,23 @@ export type ChangeQuoteResult =
   | { ok: true; data: ChangeQuotePanelData; message?: string }
   | { ok: false; error: string };
 
-export type JobOption = { pk: number; jobId: string; jobName: string; status: string; changeQuoteCount: number };
+export type JobOption = { pk: number; jobId: string; jobName: string; status: string; draftCount: number; appliedCount: number };
+
+/** One saved, not-yet-applied change quote — for "what did I leave unfinished?" before any job is picked. */
+export type DraftSummary = {
+  id: number;
+  jobPk: number;
+  jobId: string;
+  jobName: string;
+  label: string;
+  /** Hours across the sections this viewer may see. */
+  hours: number;
+  partsCents: number;
+  /** null without projects:pricing. */
+  amountCents: number | null;
+  createdAt: string;
+  createdByEmail: string | null;
+};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -164,11 +180,43 @@ export async function listChangeQuoteJobs(): Promise<JobOption[]> {
   const role = await sessionRole();
   if (!hasPermission(role, "projects:view")) return [];
   const jobs = await prisma.job.findMany({
-    select: { id: true, jobId: true, jobName: true, status: true, _count: { select: { changeQuotes: true } } },
+    select: { id: true, jobId: true, jobName: true, status: true, changeQuotes: { select: { status: true } } },
   });
   return jobs
-    .map((j) => ({ pk: j.id, jobId: j.jobId, jobName: j.jobName, status: j.status, changeQuoteCount: j._count.changeQuotes }))
+    .map((j) => ({
+      pk: j.id,
+      jobId: j.jobId,
+      jobName: j.jobName,
+      status: j.status,
+      draftCount: j.changeQuotes.filter((q) => q.status !== "Applied").length,
+      appliedCount: j.changeQuotes.filter((q) => q.status === "Applied").length,
+    }))
     .sort((a, b) => a.jobId.localeCompare(b.jobId, undefined, { numeric: true }));
+}
+
+/** Every saved draft across all jobs, newest first. */
+export async function listDraftChangeQuotes(): Promise<DraftSummary[]> {
+  const role = await sessionRole();
+  if (!hasPermission(role, "projects:view")) return [];
+  const canSeePricing = hasPermission(role, "projects:pricing");
+  const allowed = new Set(allowedSections(role).map((s) => s.code));
+  const rows = await prisma.jobChangeQuote.findMany({
+    where: { status: { not: "Applied" } },
+    include: { hours: true, job: { select: { jobId: true, jobName: true } } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  return rows.map((q) => ({
+    id: q.id,
+    jobPk: q.jobId,
+    jobId: q.job.jobId,
+    jobName: q.job.jobName,
+    label: q.label,
+    hours: q.hours.filter((h) => allowed.has(h.section)).reduce((a, h) => a + h.hours, 0),
+    partsCents: toCents(q.partsCost) ?? 0,
+    amountCents: canSeePricing ? toCents(q.amount) : null,
+    createdAt: q.createdAt.toISOString(),
+    createdByEmail: q.createdByEmail,
+  }));
 }
 
 export async function loadChangeQuotes(jobPk: number): Promise<ChangeQuoteResult> {
