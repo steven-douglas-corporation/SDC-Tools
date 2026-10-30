@@ -7,12 +7,14 @@ import {
   applyChangeQuote,
   deleteChangeQuote,
   listChangeQuoteJobs,
+  listDraftChangeQuotes,
   loadChangeQuotes,
   reverseChangeQuote,
   saveChangeQuote,
   type ChangeQuotePanelData,
   type ChangeQuoteResult,
   type ChangeQuoteView,
+  type DraftSummary,
   type JobOption,
 } from "@/lib/change-quote-actions";
 import { parseCents, reconcile, splitBySection, splitParts, totalHours } from "@/lib/change-quotes";
@@ -75,6 +77,8 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
   const { editing, mayEdit } = useProjectsEditMode();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [jobs, setJobs] = useState<JobOption[] | null>(null);
+  const [draftList, setDraftList] = useState<DraftSummary[] | null>(null);
+  const [draftsOnly, setDraftsOnly] = useState(false);
   const [filter, setFilter] = useState("");
   const [jobPk, setJobPk] = useState<number | null>(null);
   const [data, setData] = useState<ChangeQuotePanelData | null>(null);
@@ -82,19 +86,43 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  // In-panel confirmation. The panel used to call window.confirm(), and in the desktop app a
+  // native dialog leaves the window's text boxes un-typeable (the job filter included) until
+  // it loses and regains focus — which read as "locked for a couple of minutes". Nothing
+  // native is opened now, so focus never leaves the page.
+  const [ask, setAsk] = useState<{ text: string; label: string; danger: boolean; run: () => void } | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // Escape backs out of a pending confirmation first, and only then closes the panel.
+      if (ask) setAsk(null);
+      else onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, ask]);
+
+  // The picker's counts and the saved-drafts list. Re-read after every successful change, and
+  // whenever the panel returns to "no job selected", so neither can show a draft that is gone.
+  const refreshLists = useCallback(async () => {
+    try {
+      const [j, d] = await Promise.all([listChangeQuoteJobs(), listDraftChangeQuotes()]);
+      setJobs(j);
+      setDraftList(d);
+    } catch {
+      setNotice({ kind: "error", text: "Couldn't load the job list." });
+    }
+  }, []);
 
   useEffect(() => {
     let live = true;
-    listChangeQuoteJobs()
-      .then((j) => live && setJobs(j))
+    Promise.all([listChangeQuoteJobs(), listDraftChangeQuotes()])
+      .then(([j, d]) => {
+        if (!live) return;
+        setJobs(j);
+        setDraftList(d);
+      })
       .catch(() => live && setNotice({ kind: "error", text: "Couldn't load the job list." }));
     return () => {
       live = false;
@@ -120,16 +148,20 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
     async (pk: number | null) => {
       setJobPk(pk);
       setNotice(null);
+      setAsk(null);
       setData(null);
       setDrafts([]);
-      if (pk === null) return;
+      if (pk === null) {
+        void refreshLists();
+        return;
+      }
       setBusy("load");
       const r = await loadChangeQuotes(pk);
       setBusy(null);
       if (r.ok) adopt(r.data, false);
       else setNotice({ kind: "error", text: r.error });
     },
-    [adopt],
+    [adopt, refreshLists],
   );
 
   async function act(key: string, call: () => Promise<ChangeQuoteResult>, after?: (r: Extract<ChangeQuoteResult, { ok: true }>) => void) {
@@ -139,6 +171,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
       const r = await call();
       if (r.ok) {
         adopt(r.data, true);
+        void refreshLists();
         if (r.message) setNotice({ kind: "ok", text: r.message });
         after?.(r);
       } else {
@@ -166,10 +199,14 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
     return showAll ? data.sections : data.sections.filter((s) => used.has(s.code));
   }, [data, quotes, drafts, showAll]);
 
-  const shownJobs = (jobs ?? []).filter((j) => {
-    const f = filter.trim().toLowerCase();
-    return f === "" || j.jobId.toLowerCase().includes(f) || j.jobName.toLowerCase().includes(f);
-  });
+  // Jobs with a saved draft first, then by job number — the ones you may have forgotten about.
+  const shownJobs = (jobs ?? [])
+    .filter((j) => {
+      const f = filter.trim().toLowerCase();
+      return (f === "" || j.jobId.toLowerCase().includes(f) || j.jobName.toLowerCase().includes(f)) && (!draftsOnly || j.draftCount > 0);
+    })
+    .sort((a, b) => Number(b.draftCount > 0) - Number(a.draftCount > 0) || a.jobId.localeCompare(b.jobId, undefined, { numeric: true }));
+  const jobsWithDrafts = (jobs ?? []).filter((j) => j.draftCount > 0).length;
 
   function patchDraft(key: string, patch: Partial<Draft>) {
     setDrafts((prev) => prev.map((d) => (d.key === key ? { ...d, ...patch } : d)));
@@ -215,10 +252,14 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
             {shownJobs.map((j) => (
               <option key={j.pk} value={j.pk}>
                 {j.jobId} — {j.jobName}
-                {j.changeQuoteCount > 0 ? `  (${j.changeQuoteCount} CQ)` : ""}
+                {j.draftCount > 0 ? `  · ${j.draftCount} draft${j.draftCount === 1 ? "" : "s"}` : ""}
+                {j.appliedCount > 0 ? `  · ${j.appliedCount} applied` : ""}
               </option>
             ))}
           </select>
+          <label className="flex items-center gap-1.5 text-sm text-sdc-navy" title="Only jobs with a saved, not-yet-applied change quote">
+            <input type="checkbox" checked={draftsOnly} onChange={(e) => setDraftsOnly(e.target.checked)} /> Drafts only{jobsWithDrafts > 0 ? ` (${jobsWithDrafts})` : ""}
+          </label>
           {data && (
             <label className="ml-2 flex items-center gap-1.5 text-sm text-sdc-navy">
               <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> Show all sections
@@ -227,13 +268,69 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
           {!canEdit && data && <span className="ml-auto text-note text-sdc-muted">{mayEdit ? "Turn on Editing in the toolbar to change these." : "Read-only for your role."}</span>}
         </div>
 
+        {ask && (
+          <div role="alertdialog" aria-label="Confirm" className="flex flex-wrap items-center gap-3 border-b border-sdc-border bg-sdc-yellow/10 px-5 py-3">
+            <p className="min-w-[16rem] flex-1 text-sm text-sdc-navy">{ask.text}</p>
+            <button type="button" className={BUTTON_SECONDARY} onClick={() => setAsk(null)}>Cancel</button>
+            <button
+              type="button"
+              className={ask.danger ? BUTTON_COMPACT_DANGER : BUTTON_PRIMARY}
+              autoFocus
+              onClick={() => {
+                const run = ask.run;
+                setAsk(null);
+                run();
+              }}
+            >
+              {ask.label}
+            </button>
+          </div>
+        )}
+
         <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
           {notice && (
             <p role={notice.kind === "error" ? "alert" : "status"} className={`mb-3 rounded-lg border px-3 py-2 text-sm ${notice.kind === "error" ? "border-sdc-red-text/30 bg-sdc-red-bg text-sdc-red-text" : "border-sdc-green-text/30 bg-sdc-green-bg text-sdc-green-text"}`}>
               {notice.text}
             </p>
           )}
-          {jobPk === null && <p className="text-sm text-sdc-muted">Pick a job to see its original budget and change quotes.</p>}
+          {jobPk === null && (
+            <div>
+              <p className="mb-2 text-sm font-semibold text-sdc-navy">Saved drafts</p>
+              {draftList === null && <p className="text-sm text-sdc-muted">Loading…</p>}
+              {draftList !== null && draftList.length === 0 && <p className="text-sm text-sdc-muted">No saved drafts. Pick a job above to see its original budget and change quotes.</p>}
+              {draftList !== null && draftList.length > 0 && (
+                <>
+                  <p className="mb-2 text-note text-sdc-muted">Saved but not applied yet. Click one to open its job.</p>
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-sdc-gray-100 text-left text-xs text-sdc-navy">
+                        <th className="px-2 py-1.5 font-semibold">Job</th>
+                        <th className="px-2 py-1.5 font-semibold">Change quote</th>
+                        <th className="px-2 py-1.5 text-right font-semibold">Hours</th>
+                        <th className="px-2 py-1.5 text-right font-semibold">Parts cost</th>
+                        {draftList.some((d) => d.amountCents !== null) && <th className="px-2 py-1.5 text-right font-semibold">Amount</th>}
+                        <th className="px-2 py-1.5 font-semibold">Saved</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {draftList.map((d) => (
+                        <tr key={d.id} className="cursor-pointer border-t border-sdc-border hover:bg-sdc-blue-light/40" onClick={() => void select(d.jobPk)}>
+                          <td className="px-2 py-1.5">
+                            <span className="font-semibold text-sdc-blue-dark">{d.jobId}</span> <span className="text-sdc-muted">{d.jobName}</span>
+                          </td>
+                          <td className="px-2 py-1.5 font-semibold text-sdc-navy">{d.label}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{hrs(d.hours)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{usd(d.partsCents)}</td>
+                          {draftList.some((x) => x.amountCents !== null) && <td className="px-2 py-1.5 text-right tabular-nums">{d.amountCents === null ? "—" : usd(d.amountCents)}</td>}
+                          <td className="px-2 py-1.5 text-sdc-muted">{d.createdAt.slice(0, 10)}{d.createdByEmail ? ` · ${d.createdByEmail.split("@")[0]}` : ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </div>
+          )}
           {busy === "load" && <p className="text-sm text-sdc-muted">Loading…</p>}
 
           {data && split && partsSplit && (
@@ -287,7 +384,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                       const amountCents = parseCents(d.amount);
                       const partsCents = parseCents(d.parts);
                       const rec = reconcile(typeof amountCents === "number" ? amountCents : null, typeof partsCents === "number" ? partsCents : 0, h);
-                      const rowBusy = busy !== null;
+                      const rowBusy = busy !== null || ask !== null;
                       return (
                         <Fragment key={d.key}>
                           <tr className="border-t border-sdc-border align-middle">
@@ -384,9 +481,12 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                                 const amt = data.canSeePricing ? (q?.amountCents ?? 0) : 0;
                                                 const col = data.gridChangeQuoteCents ?? 0;
                                                 const colNote = amt > 0 ? ` Its ${usd(amt)} will also be ADDED to the Change Quote column (${usd(col)} now → ${usd(col + amt)}).${col > 0 ? " That column already has a figure — make sure this change quote isn't already counted in it." : ""}` : "";
-                                                if (window.confirm(`Add ${hrs(totalHours(h))} hours${q && q.partsCents > 0 ? ` and ${usd(q.partsCents)} parts cost` : ""} from ${d.label} to Job ${data.job.jobId}'s quoted totals on the grid?${colNote}`)) {
-                                                  void act(`apply-${d.key}`, () => applyChangeQuote({ jobPk: data.job.pk, id: d.id! }));
-                                                }
+                                                setAsk({
+                                                  text: `Add ${hrs(totalHours(h))} hours${q && q.partsCents > 0 ? ` and ${usd(q.partsCents)} parts cost` : ""} from ${d.label} to Job ${data.job.jobId}'s quoted totals on the grid?${colNote}`,
+                                                  label: "Apply to totals",
+                                                  danger: false,
+                                                  run: () => void act(`apply-${d.key}`, () => applyChangeQuote({ jobPk: data.job.pk, id: d.id! })),
+                                                });
                                               }}
                                             >
                                               {busy === `apply-${d.key}` ? "Applying…" : "Apply to totals"}
@@ -399,7 +499,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                           disabled={rowBusy}
                                           onClick={() => {
                                             if (d.id === undefined) return setDrafts((prev) => prev.filter((x) => x.key !== d.key));
-                                            if (window.confirm(`Delete draft ${d.label}?`)) void act(`del-${d.key}`, () => deleteChangeQuote({ jobPk: data.job.pk, id: d.id! }));
+                                            setAsk({ text: `Delete draft ${d.label}?`, label: "Delete", danger: true, run: () => void act(`del-${d.key}`, () => deleteChangeQuote({ jobPk: data.job.pk, id: d.id! })) });
                                           }}
                                         >
                                           Delete
@@ -416,7 +516,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                           const msg = q?.addedToTotals
                                             ? `Reverse ${d.label}? Its hours, parts cost${data.canSeePricing && (q?.amountCents ?? 0) > 0 ? ` and ${usd(q!.amountCents!)} amount (from the Change Quote column)` : ""} will be SUBTRACTED from Job ${data.job.jobId}'s grid.`
                                             : `Return ${d.label} to a draft? The grid totals are not changed.`;
-                                          if (window.confirm(msg)) void act(`rev-${d.key}`, () => reverseChangeQuote({ jobPk: data.job.pk, id: d.id! }));
+                                          setAsk({ text: msg, label: "Reverse", danger: true, run: () => void act(`rev-${d.key}`, () => reverseChangeQuote({ jobPk: data.job.pk, id: d.id! })) });
                                         }}
                                       >
                                         {busy === `rev-${d.key}` ? "Reversing…" : "Reverse"}
