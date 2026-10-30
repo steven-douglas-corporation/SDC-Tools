@@ -51,10 +51,11 @@ export function OpenPositionsDropdown({
                 type="button"
                 onClick={onSelect ? () => onSelect(p) : undefined}
                 disabled={!onSelect}
-                className={`flex w-full items-center gap-1.5 rounded-md border-l-2 px-2 py-1.5 text-left text-sm text-sdc-navy hover:brightness-95 disabled:cursor-default ${style.accent} ${style.tint}`}
+                className={`flex w-full items-start gap-1.5 rounded-md border-l-2 px-2 py-1.5 text-left text-sm text-sdc-navy hover:brightness-95 disabled:cursor-default ${style.accent} ${style.tint}`}
                 title={p.title}
               >
-                <span className="min-w-0 flex-1 truncate">
+                {/* Wraps rather than truncates (2026-10-30), as on the Hiring tab; the pill stays on the first line. */}
+                <span className="min-w-0 flex-1 break-words">
                   {p.title}
                   {openingsSuffix(p.quantity)}
                 </span>
