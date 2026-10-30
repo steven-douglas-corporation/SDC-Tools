@@ -82,14 +82,22 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  // In-panel confirmation. The panel used to call window.confirm(), and in the desktop app a
+  // native dialog leaves the window's text boxes un-typeable (the job filter included) until
+  // it loses and regains focus — which read as "locked for a couple of minutes". Nothing
+  // native is opened now, so focus never leaves the page.
+  const [ask, setAsk] = useState<{ text: string; label: string; danger: boolean; run: () => void } | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // Escape backs out of a pending confirmation first, and only then closes the panel.
+      if (ask) setAsk(null);
+      else onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, ask]);
 
   useEffect(() => {
     let live = true;
@@ -120,6 +128,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
     async (pk: number | null) => {
       setJobPk(pk);
       setNotice(null);
+      setAsk(null);
       setData(null);
       setDrafts([]);
       if (pk === null) return;
@@ -227,6 +236,25 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
           {!canEdit && data && <span className="ml-auto text-note text-sdc-muted">{mayEdit ? "Turn on Editing in the toolbar to change these." : "Read-only for your role."}</span>}
         </div>
 
+        {ask && (
+          <div role="alertdialog" aria-label="Confirm" className="flex flex-wrap items-center gap-3 border-b border-sdc-border bg-sdc-yellow/10 px-5 py-3">
+            <p className="min-w-[16rem] flex-1 text-sm text-sdc-navy">{ask.text}</p>
+            <button type="button" className={BUTTON_SECONDARY} onClick={() => setAsk(null)}>Cancel</button>
+            <button
+              type="button"
+              className={ask.danger ? BUTTON_COMPACT_DANGER : BUTTON_PRIMARY}
+              autoFocus
+              onClick={() => {
+                const run = ask.run;
+                setAsk(null);
+                run();
+              }}
+            >
+              {ask.label}
+            </button>
+          </div>
+        )}
+
         <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
           {notice && (
             <p role={notice.kind === "error" ? "alert" : "status"} className={`mb-3 rounded-lg border px-3 py-2 text-sm ${notice.kind === "error" ? "border-sdc-red-text/30 bg-sdc-red-bg text-sdc-red-text" : "border-sdc-green-text/30 bg-sdc-green-bg text-sdc-green-text"}`}>
@@ -287,7 +315,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                       const amountCents = parseCents(d.amount);
                       const partsCents = parseCents(d.parts);
                       const rec = reconcile(typeof amountCents === "number" ? amountCents : null, typeof partsCents === "number" ? partsCents : 0, h);
-                      const rowBusy = busy !== null;
+                      const rowBusy = busy !== null || ask !== null;
                       return (
                         <Fragment key={d.key}>
                           <tr className="border-t border-sdc-border align-middle">
@@ -384,9 +412,12 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                                 const amt = data.canSeePricing ? (q?.amountCents ?? 0) : 0;
                                                 const col = data.gridChangeQuoteCents ?? 0;
                                                 const colNote = amt > 0 ? ` Its ${usd(amt)} will also be ADDED to the Change Quote column (${usd(col)} now → ${usd(col + amt)}).${col > 0 ? " That column already has a figure — make sure this change quote isn't already counted in it." : ""}` : "";
-                                                if (window.confirm(`Add ${hrs(totalHours(h))} hours${q && q.partsCents > 0 ? ` and ${usd(q.partsCents)} parts cost` : ""} from ${d.label} to Job ${data.job.jobId}'s quoted totals on the grid?${colNote}`)) {
-                                                  void act(`apply-${d.key}`, () => applyChangeQuote({ jobPk: data.job.pk, id: d.id! }));
-                                                }
+                                                setAsk({
+                                                  text: `Add ${hrs(totalHours(h))} hours${q && q.partsCents > 0 ? ` and ${usd(q.partsCents)} parts cost` : ""} from ${d.label} to Job ${data.job.jobId}'s quoted totals on the grid?${colNote}`,
+                                                  label: "Apply to totals",
+                                                  danger: false,
+                                                  run: () => void act(`apply-${d.key}`, () => applyChangeQuote({ jobPk: data.job.pk, id: d.id! })),
+                                                });
                                               }}
                                             >
                                               {busy === `apply-${d.key}` ? "Applying…" : "Apply to totals"}
@@ -399,7 +430,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                           disabled={rowBusy}
                                           onClick={() => {
                                             if (d.id === undefined) return setDrafts((prev) => prev.filter((x) => x.key !== d.key));
-                                            if (window.confirm(`Delete draft ${d.label}?`)) void act(`del-${d.key}`, () => deleteChangeQuote({ jobPk: data.job.pk, id: d.id! }));
+                                            setAsk({ text: `Delete draft ${d.label}?`, label: "Delete", danger: true, run: () => void act(`del-${d.key}`, () => deleteChangeQuote({ jobPk: data.job.pk, id: d.id! })) });
                                           }}
                                         >
                                           Delete
@@ -416,7 +447,7 @@ function ChangeQuotesDialog({ onClose }: { onClose: () => void }) {
                                           const msg = q?.addedToTotals
                                             ? `Reverse ${d.label}? Its hours, parts cost${data.canSeePricing && (q?.amountCents ?? 0) > 0 ? ` and ${usd(q!.amountCents!)} amount (from the Change Quote column)` : ""} will be SUBTRACTED from Job ${data.job.jobId}'s grid.`
                                             : `Return ${d.label} to a draft? The grid totals are not changed.`;
-                                          if (window.confirm(msg)) void act(`rev-${d.key}`, () => reverseChangeQuote({ jobPk: data.job.pk, id: d.id! }));
+                                          setAsk({ text: msg, label: "Reverse", danger: true, run: () => void act(`rev-${d.key}`, () => reverseChangeQuote({ jobPk: data.job.pk, id: d.id! })) });
                                         }}
                                       >
                                         {busy === `rev-${d.key}` ? "Reversing…" : "Reverse"}
