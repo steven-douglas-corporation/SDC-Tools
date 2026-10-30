@@ -13,9 +13,6 @@ import { OpenPositionsDropdown } from "@/components/OpenPositionsDropdown";
 import type { HiringPosition } from "@/lib/hiring-positions";
 import { countOpenings } from "@/lib/hiring-openings";
 import { cardId, LEADERS_CARD, placeHiringOnChart } from "@/lib/org-chart-hiring";
-import { isRequestableTeam } from "@/lib/hiring-requests";
-import { isTeamCode } from "@/lib/team-names";
-import { ManualAddButton } from "@/components/ManualAddButton";
 
 // The Employees page's Org chart view (2026-10-02): the same department cards
 // as the Cards view — same header, same "N active" line, same person rows
@@ -42,12 +39,6 @@ type Ctx = {
   /** Open positions placed on each card (lib/org-chart-hiring.ts), by card id. */
   hiringByCard: Map<string, HiringPosition[]>;
   onSelectHiring?: (position: HiringPosition) => void;
-  /** A viewer who can assign hiring also sees positions hidden from everyone else. */
-  canAssignHiring?: boolean;
-  /** Starts a hire request for a team: offered at the foot of every delivery team's card. */
-  onRequestHire?: (team: string) => void;
-  /** employees:edit — each team card's foot offers Manual add (a contractor). */
-  canManualAdd?: boolean;
   /** While searching: whether a person matches. Anyone drawn who doesn't is a manager shown for context, and is dimmed. */
   match?: (id: number) => boolean;
 };
@@ -124,10 +115,6 @@ function Tree({ nodes, cardTitle, ctx, nested }: { nodes: OrgNode[]; cardTitle: 
   );
 }
 
-function visibleTo(positions: HiringPosition[], ctx: Ctx): HiringPosition[] {
-  return positions.filter((p) => p.isVisible || ctx.canAssignHiring);
-}
-
 // The Cards view's card, with its open positions as a dropdown at the foot
 // (the positions placed on THIS card by lib/org-chart-hiring.ts).
 // Not overflow-hidden like Cards': a hover note on the first row would be clipped.
@@ -139,13 +126,10 @@ function TeamCard({
   shown = null,
   nodes,
   ctx,
-  addUnder,
   children,
 }: {
   /** cardId() — which positions are placed here. */
   id: string;
-  /** Who a manually added person reports to, which is what puts them on this card; omitted, no Manual add (Leadership). */
-  addUnder?: number;
   team: string | null;
   /** ACTIVE people only: it is the headcount, and the capacity hours are built on it. */
   count: number;
@@ -166,13 +150,13 @@ function TeamCard({
   // Hours are shown only when there is a policy for the year AND a breakdown to
   // open: nothing to click, nothing offered.
   const canOpenCapacity = hasCapacityPolicy && !!ctx.onSelectCapacity;
-  // Counts and hours take every open position placed here; the dropdown lists
-  // only what the viewer may see — the same split the Cards view makes.
-  const cardHiring = ctx.hiringByCard.get(id) ?? [];
+  // The dropdown lists every position placed here, hire requests included
+  // (2026-10-30); counts and hours take only the open ones, never a request.
+  const listedHiring = ctx.hiringByCard.get(id) ?? [];
+  const cardHiring = listedHiring.filter((p) => p.isOpen);
   const hiringOpenings = countOpenings(cardHiring);
   const hiringHours = hasCapacityPolicy ? hiringCapacityHours(cardHiring, ctx.year!) : 0;
   const currentHours = hasCapacityPolicy ? employeeCapacityHours(count, ctx.year!) : 0;
-  const listedHiring = visibleTo(cardHiring, ctx);
   return (
     <section className="flex flex-col rounded-xl border border-sdc-border bg-white shadow-sm">
       <DepartmentCardHeader
@@ -191,23 +175,9 @@ function TeamCard({
         }
       />
       {children(title)}
-      {/* After the people and Contractors, above the open positions. */}
-      {ctx.canManualAdd && addUnder != null && isTeamCode(team) && <ManualAddButton team={team} teamTitle={title} supervisorId={addUnder} />}
+      {/* No Manual add / Request a hire on the cards (removed 2026-10-30):
+          hire requests start from the Hiring tab. */}
       <OpenPositionsDropdown positions={listedHiring} onSelect={ctx.onSelectHiring} />
-      {/* Where Cards had "Add employee" (2026-10-29): people now come from the
-          Paylocity roster, so a team's card offers a hire request instead, under
-          its open positions if it has any. */}
-      {ctx.onRequestHire && isRequestableTeam(team) && (
-        <button
-          type="button"
-          onClick={() => ctx.onRequestHire!(team)}
-          title={`Ask the recruiter to post a position for ${title}`}
-          className="flex w-full items-center gap-1.5 rounded-b-[11px] border-t border-dashed border-sdc-border px-3 py-1.5 text-left text-xs font-semibold text-sdc-muted hover:bg-sdc-gray-50 hover:text-sdc-navy"
-        >
-          <span aria-hidden="true">+</span>
-          <span>Request a hire</span>
-        </button>
-      )}
     </section>
   );
 }
@@ -237,9 +207,6 @@ export function OrgChart({
   onSelectCapacity,
   hiringPositions,
   onSelectHiringPosition,
-  canAssignHiring,
-  onRequestHire,
-  canManualAdd,
   query = "",
 }: {
   chart: OrgChartData;
@@ -250,14 +217,9 @@ export function OrgChart({
   /** With onSelectCapacity: each card shows its current hrs/yr and opens the breakdown. */
   year?: number;
   onSelectCapacity?: (target: CapacityDrillTarget) => void;
-  /** Open positions, placed on the hiring manager's card or under Not placed. Omitted, the chart draws no hiring. */
+  /** Open positions and hire requests, placed on the hiring manager's card or under Not placed; only open ones count. Omitted, the chart draws no hiring. */
   hiringPositions?: HiringPosition[];
   onSelectHiringPosition?: (position: HiringPosition) => void;
-  canAssignHiring?: boolean;
-  /** Omitted for a viewer who can't request hires: no "Request a hire" on the cards. */
-  onRequestHire?: (team: string) => void;
-  /** employees:edit — a "Manual add" row at each team card's foot adds someone not in Paylocity (ManualAddButton). */
-  canManualAdd?: boolean;
 }) {
   if (!chart.ready) {
     return (
@@ -284,9 +246,6 @@ export function OrgChart({
     onSelectCapacity,
     hiringByCard: placement.byCard,
     onSelectHiring: onSelectHiringPosition,
-    canAssignHiring,
-    onRequestHire,
-    canManualAdd,
     match,
   };
   const narrow = (nodes: OrgNode[]) => (match ? filterOrgNodes(nodes, match) : nodes);
@@ -300,7 +259,7 @@ export function OrgChart({
     .filter((x) => x.cards.length > 0);
   const unplaced = match ? chart.unplaced.filter((u) => match(u.id)) : chart.unplaced;
   // Open positions aren't searched, so a search hides the ones that have no card.
-  const unplacedHiring = match ? [] : visibleTo(placement.unplaced, ctx);
+  const unplacedHiring = match ? [] : placement.unplaced;
   if (match && leaders.length === 0 && bands.length === 0 && unplaced.length === 0) {
     return <EmptyState title="No one matches" message={`Nothing on the chart matches “${needle}”. Inactive people only show with Show inactive.`} />;
   }
@@ -335,7 +294,6 @@ export function OrgChart({
               shown={shownOf(heads, c.heads)}
               nodes={c.heads}
               ctx={ctx}
-              addUnder={c.heads.find((h) => isPaylocityId(people.get(h.id)?.paylocityId))?.id ?? b.leader.id}
             >
               {(title) => <CardBody nodes={heads} cardTitle={title} ctx={ctx} />}
             </TeamCard>

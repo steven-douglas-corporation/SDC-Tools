@@ -63,8 +63,9 @@ export function isManualJobStatus(value: string): value is ManualJobStatus {
  * looks like — the request's "same centralized status configuration".
  *
  * Every colour is an EXISTING palette token (globals.css) rather than a new
- * hue: green = Open, blue = Published, the palette's yellow = the requested
- * amber for On Hold, gray = Filled. Tints are those same tokens at low alpha,
+ * hue: green = Published, blue = Open (swapped 2026-10-30 so Published reads
+ * green and a hire request blue), the palette's yellow = the requested amber
+ * for On Hold, gray = Filled. Tints are those same tokens at low alpha,
  * so a tinted row is a wash of its status colour and never a solid band.
  */
 export type HiringStatusStyle = {
@@ -83,17 +84,17 @@ export type HiringStatusStyle = {
 const STATUS_STYLES: Record<ManualJobStatus, HiringStatusStyle> = {
   Open: {
     label: "Open",
-    tint: "bg-sdc-green-bg/40",
-    accent: "border-l-sdc-green",
-    pill: "bg-sdc-green-bg text-sdc-green-text",
-    dot: "bg-sdc-green",
-  },
-  Published: {
-    label: "Published",
     tint: "bg-sdc-blue-light/40",
     accent: "border-l-sdc-blue",
     pill: "bg-sdc-blue-light text-sdc-blue-dark",
     dot: "bg-sdc-blue",
+  },
+  Published: {
+    label: "Published",
+    tint: "bg-sdc-green-bg/40",
+    accent: "border-l-sdc-green",
+    pill: "bg-sdc-green-bg text-sdc-green-text",
+    dot: "bg-sdc-green",
   },
   "On Hold": {
     label: "On Hold",
@@ -129,6 +130,8 @@ export function manualJobStatusOf(raw: string): ManualJobStatus | null {
  * obviously not one of the four rather than being silently coerced into one.
  */
 export function hiringStatusStyle(raw: string): HiringStatusStyle {
+  // A hire request (hiring-requests.ts' REQUEST_STATUS) in blue, published in green (2026-10-30).
+  if (raw.trim().toLowerCase() === "requested") return { ...STATUS_STYLES.Open, label: "Requested" };
   const key = manualJobStatusOf(raw);
   if (key) return STATUS_STYLES[key];
   return { ...STATUS_STYLES.Filled, label: raw.trim() || "Unknown" };
