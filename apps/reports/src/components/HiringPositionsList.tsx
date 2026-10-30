@@ -2,8 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { HiringVisibilityControl } from "@/components/HiringVisibilityControl";
-import { WORKFORCE_GROUPS, workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
+import { WORKFORCE_GROUPS, rollupGroup, workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 import { EMPLOYEE_TEAMS } from "@/lib/employee-teams";
 import { employeeGroupForKey, type CardColors } from "@/lib/employee-card-theme";
 import type { HiringPosition } from "@/lib/hiring-positions";
@@ -32,22 +31,20 @@ import { findPostingForRequest, waitingLabel } from "@/lib/hiring-requests";
 // present. Like the rest of this list it is DISPLAY only: hiring totals come
 // from the full set filtered by `isOpen` (see EmployeesGrid.tsx's openHiring).
 //
-// Every row ends in the same "Edit" link (2026-10-27). A posting's group and
-// department dropdowns live in its panel ("Move to"), one click away.
+// A click anywhere on a row opens its panel (2026-10-30; rows used to end in
+// an "Edit" link). A posting's group and department dropdowns live in its
+// panel ("Move to"), one click away.
 
 const DEPARTMENT_TITLE = new Map(EMPLOYEE_TEAMS.map((t) => [t.schedulerCode, t.name]));
 const ALL_FILTER = "__all__";
 
 type Bucket = { key: string; title: string; colors?: CardColors; positions: HiringPosition[] };
 
-function TitleButton({ p, onSelect }: { p: HiringPosition; onSelect: (position: HiringPosition) => void }) {
+// The whole row is one button (2026-10-30), so the title is plain text inside
+// it. Titles wrap, never truncate.
+function RowTitle({ p }: { p: HiringPosition }) {
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(p)}
-      className="min-w-0 flex-1 truncate text-left text-sm font-medium text-sdc-navy hover:text-sdc-blue hover:underline"
-      title={openingsSummary(p) ? `${p.title} — ${openingsSummary(p)}` : p.title}
-    >
+    <span className="block break-words text-sm font-medium text-sdc-navy">
       {p.title}
       {/* One row per requisition, never duplicated for display — the count
           rides the title as a badge instead, hidden at quantity 1. */}
@@ -57,17 +54,39 @@ function TitleButton({ p, onSelect }: { p: HiringPosition; onSelect: (position: 
           {p.source === "workbook" && p.filledCount > 0 && <span className="font-normal"> · {p.remainingQuantity} left</span>}
         </span>
       )}
-      {!p.isVisible && (
-        <span className="ml-2 rounded bg-sdc-yellow-bg px-1.5 py-0.5 text-micro font-bold uppercase tracking-wide text-sdc-yellow-text">Hidden</span>
-      )}
+    </span>
+  );
+}
+
+// A row: one full-width button that opens the position's panel.
+function RowButton({
+  p,
+  onSelect,
+  className,
+  children,
+}: {
+  p: HiringPosition;
+  onSelect: (position: HiringPosition) => void;
+  /** Padding stays here; the caller adds the row's edge, tint and hover. */
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(p)}
+      title={openingsSummary(p) ? `${p.title} — ${openingsSummary(p)}` : p.title}
+      className={`flex w-full flex-col gap-1 px-3.5 py-2.5 text-left motion-interactive focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sdc-blue ${className}`}
+    >
+      {children}
     </button>
   );
 }
 
 // ── Cards, not page-wide tables (2026-10-29) ────────────────────────────────
 // Each group is a card in equal-width columns, flowing top to bottom, so cards
-// pack under each other whatever their heights. Requests get a dashed red edge and a
-// red header: the band's red "Requested", and the dashed "not a real seat yet"
+// pack under each other whatever their heights. Requests get a dashed blue edge and a
+// blue header (red until 2026-10-30): the band's blue "Requested", and the dashed "not a real seat yet"
 // grammar the team cards use for openings.
 function GroupCard({
   title,
@@ -88,92 +107,52 @@ function GroupCard({
   return (
     <section
       className={`flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm ${
-        request ? "border-dashed border-sdc-red-text/50" : "border-sdc-border"
+        request ? "border-dashed border-sdc-blue/50" : "border-sdc-border"
       }`}
     >
       <header
         className={`flex items-center justify-between gap-2 border-b px-3.5 ${
-          request ? "border-dashed border-sdc-red-text/30 bg-sdc-red-bg py-2" : colors ? "border-transparent py-2.5" : "border-sdc-border bg-sdc-gray-50 py-2"
+          request ? "border-dashed border-sdc-blue/30 bg-sdc-blue-light py-2" : colors ? "border-transparent py-2.5" : "border-sdc-border bg-sdc-gray-50 py-2"
         }`}
         style={colors ? { background: colors.bg, color: colors.text } : undefined}
       >
-        <h3 className={`truncate text-sm font-bold ${request ? "text-sdc-red-text" : colors ? "" : "text-sdc-navy"}`}>
+        <h3 className={`truncate text-sm font-bold ${request ? "text-sdc-blue-dark" : colors ? "" : "text-sdc-navy"}`}>
           {title}
           {subtitle && <span className="font-normal text-sdc-muted"> · {subtitle}</span>}
         </h3>
         {/* Positions, not rows: a ×2 requisition (or request) counts 2. */}
-        <span className={`text-xs font-semibold tabular-nums ${request ? "text-sdc-red-text" : colors ? "opacity-75" : "text-sdc-muted"}`}>{count}</span>
+        <span className={`text-xs font-semibold tabular-nums ${request ? "text-sdc-blue-dark" : colors ? "opacity-75" : "text-sdc-muted"}`}>{count}</span>
       </header>
       <ul className="divide-y divide-sdc-border-soft">{children}</ul>
     </section>
   );
 }
 
-function RowActions({
-  p,
-  canAssign,
-  onSelect,
-  onVisibilityChanged,
-}: {
-  p: HiringPosition;
-  canAssign: boolean;
-  onSelect: (position: HiringPosition) => void;
-  onVisibilityChanged: (positionSourceId: string, isVisible: boolean) => void;
-}) {
-  return (
-    <span className="flex w-24 shrink-0 items-center justify-end gap-2.5">
-      <button type="button" onClick={() => onSelect(p)} className="text-note font-medium text-sdc-blue hover:underline" title="Edit this position">
-        Edit
-      </button>
-      <HiringVisibilityControl position={p} canAssign={canAssign} onToggled={onVisibilityChanged} />
-    </span>
-  );
-}
-
 export function HiringPositionsList({
   positions,
-  canAssign,
   canCreate,
   managerNames,
   onSelect,
-  onVisibilityChanged,
   onCreate,
 }: {
   positions: HiringPosition[];
-  canAssign: boolean;
   canCreate: boolean;
   /** Paylocity id → name, for a request's hiring manager. */
   managerNames: ReadonlyMap<string, string>;
   onSelect: (position: HiringPosition) => void;
-  onVisibilityChanged: (positionSourceId: string, isVisible: boolean) => void;
   onCreate: () => void;
 }) {
   const [statusFilter, setStatusFilter] = useState<string>(ALL_FILTER);
-  // Unchecked by default, same as EmployeesGrid's "Show inactive" — only
-  // meaningful for an editor (a non-editor's `positions` prop was already
-  // redacted server-side, see hiring-positions.ts's redactHiddenPositions, so
-  // they'd never have anything to reveal by checking it).
-  const [showHidden, setShowHidden] = useState(false);
-
-  // Non-editors never see a hidden position here regardless of this
-  // checkbox — display visibility ≠ hiring status, so this filter must never
-  // touch `positions` itself, only what THIS list renders.
-  const visibilityFiltered = useMemo(() => {
-    if (canAssign && showHidden) return positions;
-    return positions.filter((p) => p.isVisible);
-  }, [positions, canAssign, showHidden]);
 
   const requests = useMemo(
     () =>
-      visibilityFiltered
+      positions
         .filter((p) => p.source === "manual")
         .sort((a, b) => (a.requestedAt?.getTime() ?? 0) - (b.requestedAt?.getTime() ?? 0)),
-    [visibilityFiltered],
+    [positions],
   );
-  const postings = useMemo(() => visibilityFiltered.filter((p) => p.source === "workbook"), [visibilityFiltered]);
+  const postings = useMemo(() => positions.filter((p) => p.source === "workbook"), [positions]);
 
-  // Matched against every posting, hidden ones included: hiding a posting
-  // doesn't make the request any less posted.
   const postedAs = useMemo(() => new Map(requests.map((r) => [r.sourceId, findPostingForRequest(r, positions)])), [requests, positions]);
 
   const statuses = useMemo(() => [...new Set(postings.map((p) => p.status))].filter(Boolean).sort(), [postings]);
@@ -212,6 +191,29 @@ export function HiringPositionsList({
       });
   }, [filtered]);
 
+  // The team cards under the summary band's own groups (2026-10-30): Engineering,
+  // Shop, PM… in band order, General Engineering rolled into Engineering, then
+  // Unassigned. A group's count is its OPEN positions, the summary tile's number.
+  const sections = useMemo(() => {
+    const byGroup = new Map<string, Bucket[]>();
+    for (const b of buckets) {
+      const wg = b.positions[0]?.workforceGroup;
+      const key = wg ? rollupGroup(wg) : "unassigned";
+      const list = byGroup.get(key);
+      if (list) list.push(b);
+      else byGroup.set(key, [b]);
+    }
+    const order = [...WORKFORCE_GROUPS.map((g) => g.key as string), "unassigned"];
+    return [...byGroup.entries()]
+      .sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
+      .map(([key, list]) => ({
+        key,
+        title: key === "unassigned" ? "Unassigned" : workforceGroupTitle(key as WorkforceGroupKey),
+        published: countOpenings(list.flatMap((b) => b.positions).filter((p) => p.isOpen)),
+        buckets: list,
+      }));
+  }, [buckets]);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -228,12 +230,6 @@ export function HiringPositionsList({
             </option>
           ))}
         </select>
-        {canAssign && (
-          <label className="flex items-center gap-2 text-xs font-medium text-sdc-gray-600">
-            <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} className="h-3.5 w-3.5" />
-            Show hidden
-          </label>
-        )}
         {canCreate && (
           <button
             type="button"
@@ -248,66 +244,85 @@ export function HiringPositionsList({
       {requests.length === 0 && filtered.length === 0 ? (
         <EmptyState title="No positions match" message="Try a different Job Status filter." />
       ) : (
-        // Equal columns (2026-10-29): every card the same width, wide enough
-        // for a title like "Mechanical Design Engineer" beside Edit / Hide.
-        // Column flow, not a grid: each card sits right under the one above it,
-        // so a tall Requested card doesn't set the height of a whole row.
-        <div className="gap-x-5 [columns:22rem] *:mb-4 *:break-inside-avoid">
+        // Requested on its own full-width row, the Paylocity postings below it
+        // (2026-10-30). Titles wrap rather than truncate.
+        <div className="flex flex-col gap-4">
           {requests.length > 0 && (
             <GroupCard title="Requested" subtitle="not in Paylocity yet" count={countOpenings(requests)} request>
               {requests.map((r) => {
                 const posting = postedAs.get(r.sourceId);
                 const manager = r.hiringManagerIds[0] ? managerNames.get(r.hiringManagerIds[0]) : undefined;
                 return (
-                  <li key={r.sourceId} className="flex flex-col gap-1 px-3.5 py-2.5">
-                    <div className="flex items-center gap-3">
-                      <TitleButton p={r} onSelect={onSelect} />
-                      <RowActions p={r} canAssign={canAssign} onSelect={onSelect} onVisibilityChanged={onVisibilityChanged} />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-sdc-muted">
-                      <span>
-                        {[
-                          r.department && DEPARTMENT_TITLE.get(r.department),
-                          `Requested ${waitingLabel(r.requestedAt)}`.trim(),
-                          r.createdBy && `by ${r.createdBy}`,
-                          manager && `hiring manager ${manager}`,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                      {posting && (
-                        <span
-                          className="rounded bg-sdc-blue-light px-1.5 py-0.5 text-note font-semibold text-sdc-blue-dark"
-                          title={`Paylocity Job ${posting.sourceId}: ${posting.title}. Open it to close this request.`}
-                        >
-                          Looks posted
+                  <li key={r.sourceId}>
+                    <RowButton p={r} onSelect={onSelect} className="hover:bg-sdc-gray-50">
+                      <RowTitle p={r} />
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-sdc-muted">
+                        {/* "Requested N days ago" in the Requested header's blue (2026-10-30); the rest stays muted. */}
+                        <span>
+                          {[
+                            { key: "team", text: r.department && DEPARTMENT_TITLE.get(r.department) },
+                            { key: "asked", text: `Requested ${waitingLabel(r.requestedAt)}`.trim(), accent: true },
+                            { key: "by", text: r.createdBy && `by ${r.createdBy}` },
+                            { key: "manager", text: manager && `hiring manager ${manager}` },
+                          ]
+                            .filter((m) => m.text)
+                            .map((m, i) => (
+                              <span key={m.key}>
+                                {i > 0 && " · "}
+                                <span className={m.accent ? "font-medium text-sdc-blue-dark" : undefined}>{m.text}</span>
+                              </span>
+                            ))}
                         </span>
-                      )}
-                    </div>
+                        {posting && (
+                          <span
+                            className="rounded bg-sdc-green-bg px-1.5 py-0.5 text-note font-semibold text-sdc-green-text"
+                            title={`Paylocity Job ${posting.sourceId}: ${posting.title}. Open it to close this request.`}
+                          >
+                            Looks posted
+                          </span>
+                        )}
+                      </span>
+                    </RowButton>
                   </li>
                 );
               })}
             </GroupCard>
           )}
 
-          {buckets.map((bucket) => (
-            <GroupCard key={bucket.key} title={bucket.title} colors={bucket.colors} count={countOpenings(bucket.positions)}>
-              {bucket.positions.map((p) => {
-                const style = hiringStatusStyle(p.status);
-                return (
-                  <li key={p.sourceId} className={`flex flex-col gap-1 border-l-2 px-3.5 py-2.5 ${style.accent} ${style.tint}`}>
-                    <div className="flex items-center gap-3">
-                      <TitleButton p={p} onSelect={onSelect} />
-                      <RowActions p={p} canAssign={canAssign} onSelect={onSelect} onVisibilityChanged={onVisibilityChanged} />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-sdc-muted">
-                      <HiringStatusPill status={p.status} />
-                    </div>
-                  </li>
-                );
-              })}
-            </GroupCard>
-          ))}
+          {/* One section per group, headed like the Org chart's groups, its team
+              cards side by side. Groups share a line when they fit, the same
+              flow and sizing as OrgChart.tsx's Group. */}
+          {sections.length > 0 && (
+            <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
+              {sections.map((s) => (
+                <section key={s.key} className="min-w-0 max-w-full flex-1" style={{ flexBasis: `${Math.max(1, s.buckets.length) * 17}rem` }}>
+                  <h3 className="mb-2 border-b border-sdc-border pb-1 text-xs font-bold uppercase tracking-wider text-sdc-muted">
+                    {s.title}
+                    <span className="ml-2 font-normal normal-case tracking-normal text-sdc-gray-400">{s.published} published</span>
+                  </h3>
+                  <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))]">
+                    {s.buckets.map((bucket) => (
+                      <GroupCard key={bucket.key} title={bucket.title} colors={bucket.colors} count={countOpenings(bucket.positions)}>
+                        {bucket.positions.map((p) => {
+                          const style = hiringStatusStyle(p.status);
+                          return (
+                            <li key={p.sourceId}>
+                              <RowButton p={p} onSelect={onSelect} className={`border-l-2 hover:brightness-95 ${style.accent} ${style.tint}`}>
+                                <RowTitle p={p} />
+                                <span className="flex flex-wrap items-center gap-2 text-xs text-sdc-muted">
+                                  <HiringStatusPill status={p.status} />
+                                </span>
+                              </RowButton>
+                            </li>
+                          );
+                        })}
+                      </GroupCard>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -86,3 +86,10 @@ test("hiringStatusStyle falls back to the neutral treatment and keeps the raw te
   assert.equal(hiringStatusStyle("  ").label, "Unknown");
   assert.equal(hiringStatusStyle("Cancelled").pill, hiringStatusStyle("Filled").pill);
 });
+
+test("Published reads green and a hire request blue (2026-10-30)", () => {
+  assert.match(hiringStatusStyle("Published").pill, /sdc-green/);
+  const requested = hiringStatusStyle("Requested");
+  assert.equal(requested.label, "Requested");
+  assert.match(requested.pill, /sdc-blue/);
+});

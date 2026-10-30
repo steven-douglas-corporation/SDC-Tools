@@ -32,7 +32,6 @@ type Row = {
   name: string;
   detail: string;
   hours: number;
-  hidden?: boolean;
 };
 
 const COLUMNS: SortColumns<Row, SortKey> = {
@@ -48,7 +47,6 @@ export function CapacityDrillDrawer({
   employees,
   hiringPositions,
   year,
-  canAssignHiring,
   onClose,
 }: {
   title: string;
@@ -56,8 +54,6 @@ export function CapacityDrillDrawer({
   employees: EmployeeRow[];
   hiringPositions: HiringPosition[];
   year: number;
-  /** Whether the viewer can see positions hidden via HiringVisibilityControl. Never gates whether a hidden position's HOURS count here — those always do, regardless — only whether its identity is shown as its own row vs. folded into one aggregate "Hidden positions" row. */
-  canAssignHiring: boolean;
   onClose: () => void;
 }) {
   const sort = useColumnSort<SortKey>({ key: "hours", direction: "desc" });
@@ -72,44 +68,16 @@ export function CapacityDrillDrawer({
       hours: employeeHours,
     }));
 
-    // Every position's hours count toward the total below regardless of
-    // visibility -- display visibility ≠ hiring status. For a non-editor,
-    // individual hidden positions are folded into one aggregate row instead
-    // of appearing separately, so the total stays exact without exposing
-    // "there are exactly N separate hidden things" one row at a time.
-    const shown = hiringPositions.filter((p) => p.isVisible);
-    const hidden = hiringPositions.filter((p) => !p.isVisible);
-
-    const hiringRows: Row[] = shown.map((p) => ({
+    // One row per position (2026-10-30: hiding positions was removed).
+    const hiringRows: Row[] = hiringPositions.map((p) => ({
       kind: "Hiring",
       name: p.title,
       detail: p.expectedStartDate ? `Starts ${p.expectedStartDate.toLocaleDateString("en-US")}` : "Not set — counted in full",
       hours: hiringPositionCapacityHours(p.expectedStartDate, year),
     }));
 
-    if (hidden.length > 0) {
-      if (canAssignHiring) {
-        for (const p of hidden) {
-          hiringRows.push({
-            kind: "Hiring",
-            name: p.title,
-            detail: p.expectedStartDate ? `Starts ${p.expectedStartDate.toLocaleDateString("en-US")}` : "Not set — counted in full",
-            hours: hiringPositionCapacityHours(p.expectedStartDate, year),
-            hidden: true,
-          });
-        }
-      } else {
-        hiringRows.push({
-          kind: "Hiring",
-          name: `Hidden positions (${hidden.length})`,
-          detail: "—",
-          hours: hidden.reduce((sum, p) => sum + hiringPositionCapacityHours(p.expectedStartDate, year), 0),
-        });
-      }
-    }
-
     return [...employeeRows, ...hiringRows];
-  }, [employees, hiringPositions, year, canAssignHiring]);
+  }, [employees, hiringPositions, year]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -161,14 +129,7 @@ export function CapacityDrillDrawer({
                 {sorted.map((r, i) => (
                   <tr key={`${r.kind}-${r.name}-${i}`}>
                     <td className={r.kind === "Hiring" ? "text-sdc-green-text" : "text-sdc-muted"}>{r.kind}</td>
-                    <td className="text-sdc-gray-700">
-                      {r.name}
-                      {r.hidden && (
-                        <span className="ml-2 rounded bg-sdc-yellow-bg px-1.5 py-0.5 text-micro font-bold uppercase tracking-wide text-sdc-yellow-text">
-                          Hidden
-                        </span>
-                      )}
-                    </td>
+                    <td className="text-sdc-gray-700">{r.name}</td>
                     <td className="text-sdc-muted">{r.detail}</td>
                     <td className={DRILL_NUM} title={r.hours.toFixed(1)}>
                       {fmtHours(r.hours)}

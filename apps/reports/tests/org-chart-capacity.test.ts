@@ -63,7 +63,7 @@ test("a card with an open position shows current, hiring and planned", () => {
   const position = {
     sourceId: "p1", title: "ME", status: "Published", subStatus: null, isOpen: true, quantity: 2, filledCount: 0, remainingQuantity: 2,
     source: "workbook", workforceGroup: null, department: null, hiringManagerIds: ["100002"], isManuallyAssigned: false,
-    expectedStartDate: null, isVisible: true,
+    expectedStartDate: null,
   } as unknown as HiringPosition;
   const html = render2({ hiringPositions: [position] });
   for (const word of ["Current", "+ Hiring", "Planned", "People", "Hrs/yr"]) assert.ok(html.includes(word), word);

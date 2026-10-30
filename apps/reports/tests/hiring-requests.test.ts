@@ -29,7 +29,6 @@ function position(overrides: Partial<HiringPosition>): HiringPosition {
     note: null,
     isManuallyAssigned: false,
     expectedStartDate: null,
-    isVisible: true,
     functionDescription: null,
     sectionDescription: null,
     workLocDescription: null,
@@ -159,9 +158,10 @@ test("a hire can be requested for a delivery team, not for Leadership or an unkn
   for (const code of ["exec", "nope", "", null, undefined]) assert.equal(isRequestableTeam(code), false, String(code));
 });
 
-test("the Org chart offers Request a hire on every delivery team's card, for a viewer who can request", () => {
-  assert.match(src("components/OrgChart.tsx"), /\{ctx\.onRequestHire && isRequestableTeam\(team\) && \(/);
-  assert.match(src("components/EmployeesGrid.tsx"), /onRequestHire=\{HIRING_POSITIONS_ENABLED && canAssignHiring \?/);
+test("the Org chart cards offer no Request a hire (removed 2026-10-30); it starts from the Hiring tab", () => {
+  assert.doesNotMatch(src("components/OrgChart.tsx"), /onRequestHire|Request a hire<\/span>/);
+  assert.doesNotMatch(src("components/EmployeesGrid.tsx"), /onRequestHire=/);
+  assert.match(src("components/EmployeesGrid.tsx"), /onCreate=\{\(\) => setRequestingHire\(\{ team: null \}\)\}/);
 });
 
 test("a hiring card takes the Org chart's title and colors from the position's card key", () => {
@@ -171,4 +171,28 @@ test("a hiring card takes the Org chart's title and colors from the position's c
   assert.equal(employeeGroupForKey("operations")?.title, "Procurement");
   assert.deepEqual(employeeGroupForKey("operations")?.colors, resolveEmployeeGroup({ team: "ops" })?.colors);
   assert.equal(employeeGroupForKey("nope"), null);
+});
+
+test("the Org chart lists hire requests in a card's open positions but counts only open ones (2026-10-30)", () => {
+  assert.match(src("components/EmployeesGrid.tsx"), /hiring\.filter\(\(p\) => p\.isOpen \|\| p\.source === "manual"\)/);
+  const chart = src("components/OrgChart.tsx");
+  assert.match(chart, /const cardHiring = listedHiring\.filter\(\(p\) => p\.isOpen\);/);
+  assert.match(chart, /<OpenPositionsDropdown positions=\{listedHiring\}/);
+});
+
+test("the Hiring tab and Request a hire are their own permissions (2026-10-30)", () => {
+  const page = src("app/(app)/employees/page.tsx");
+  assert.match(page, /const canViewHiring = hasPermission\(session\.user\.role, "employees:hiring:view"\);/);
+  // Without the view permission, positions aren't read at all, so none reach the browser.
+  assert.match(page, /HIRING_POSITIONS_ENABLED && canViewHiring \? await getHiringPositions/);
+  assert.match(page, /canRequestHire=\{hasPermission\(session\.user\.role, "employees:hiring:request"\)\}/);
+  const grid = src("components/EmployeesGrid.tsx");
+  assert.match(grid, /const hiringOn = HIRING_POSITIONS_ENABLED && canViewHiring;/);
+  assert.match(grid, /canCreate=\{canRequestHire\}/);
+  const actions = src("lib/hiring-actions.ts");
+  const create = actions.slice(actions.indexOf("export async function createHiringRequest"));
+  assert.match(create.slice(0, 200), /assertActionPermission\("employees:hiring:request"\)/);
+  const catalog = src("lib/permission-catalog.ts");
+  assert.match(catalog, /keys: \["employees:hiring:view"\]/);
+  assert.match(catalog, /keys: \["employees:hiring:request"\]/);
 });

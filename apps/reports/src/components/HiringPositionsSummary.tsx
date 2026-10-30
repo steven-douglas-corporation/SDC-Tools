@@ -92,12 +92,12 @@ export function HiringPositionsSummary({
           </div>
 
           {/* Requests sit right beside the published positions (2026-10-29), in
-              red: asked for, not in Paylocity yet. They never count toward the
+              blue (red until 2026-10-30): asked for, not in Paylocity yet. They never count toward the
               published total or the hours and team tiles that follow. */}
           {requestCount > 0 && (
             <div
               title="Positions asked for in hire requests, not posted in Paylocity yet"
-              className="flex min-w-[9rem] flex-col justify-center gap-0.5 border-r border-dashed border-sdc-border px-4 py-3 text-sdc-red-text"
+              className="flex min-w-[9rem] flex-col justify-center gap-0.5 border-r border-dashed border-sdc-border bg-sdc-blue-light/50 px-4 py-3 text-sdc-blue-dark"
             >
               <span className="text-lg font-bold tabular-nums">{requestCount}</span>
               <span className="text-label font-semibold uppercase tracking-wide">Requested</span>

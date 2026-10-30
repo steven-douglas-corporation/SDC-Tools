@@ -64,8 +64,6 @@ export type HiringPosition = {
   isManuallyAssigned: boolean;
   /** Prorates this position's Hiring Capacity hours (workforce-capacity.ts) — null means "unknown," which counts as full-year, not zero. */
   expectedStartDate: Date | null;
-  /** Display-only — never affects isOpen or any hiring/headcount/capacity total. See redactHiddenPositions below for how this is enforced against non-editors. */
-  isVisible: boolean;
   functionDescription: string | null;
   sectionDescription: string | null;
   workLocDescription: string | null;
@@ -131,7 +129,6 @@ function toWorkbookPosition(
     note: null,
     isManuallyAssigned: !!manual,
     expectedStartDate: manual?.expectedStartDate ?? null,
-    isVisible: manual?.isVisible ?? true,
     functionDescription: row.functionDescription,
     sectionDescription: row.sectionDescription,
     workLocDescription: row.workLocDescription,
@@ -164,7 +161,6 @@ function toManualPosition(row: CreatedHiringPositionRow): HiringPosition {
     note: row.note,
     isManuallyAssigned: true,
     expectedStartDate: row.expectedStartDate,
-    isVisible: row.isVisible,
     functionDescription: null,
     sectionDescription: null,
     workLocDescription: row.workLocDescription,
@@ -249,44 +245,4 @@ export async function getHiringPositions(options: HiringPositionsOptions = {}): 
 export async function getHiringPositionById(sourceId: string): Promise<HiringPosition | null> {
   const { positions } = await getHiringPositions();
   return positions.find((p) => p.sourceId === sourceId) ?? null;
-}
-
-/**
- * The server-side enforcement point for "users without hiring-edit
- * permission should only see positions currently marked visible" (2026-08-19)
- * — called once, in employees/page.tsx, BEFORE the array is ever handed to
- * the client component tree (EmployeesGrid.tsx and everything under it).
- * Doing this client-side instead (e.g. a `.filter()` inside a component)
- * would not be enough: the full array — including a hidden position's real
- * title — would still be serialized into the RSC/Flight payload and sit in
- * the browser's React state/DevTools regardless of what any component's own
- * render logic does with it.
- *
- * Deliberately redacts identity fields rather than removing the position
- * outright: every field business math depends on (isOpen, workforceGroup,
- * department, expectedStartDate) is left untouched, so Open Positions/
- * Planned Headcount/Hiring Capacity Hours keep summing correctly over this
- * same array regardless of visibility — only what would reveal WHICH
- * position it is gets blanked. Components that want a hidden position to
- * disappear entirely from a browsable list (HiringPositionsList.tsx,
- * OrgChart.tsx's per-team open positions) filter on `isVisible`
- * themselves on top of this — safe to do client-side at that point, since
- * there's no real identity left in the payload to leak either way.
- */
-export function redactHiddenPositions(positions: HiringPosition[], canSeeHidden: boolean): HiringPosition[] {
-  if (canSeeHidden) return positions;
-  return positions.map((p) =>
-    p.isVisible
-      ? p
-      : {
-          ...p,
-          title: "Hidden position",
-          functionDescription: null,
-          sectionDescription: null,
-          workLocDescription: null,
-          createdBy: null,
-          modifiedBy: null,
-          note: null,
-        },
-  );
 }
