@@ -116,7 +116,6 @@ export function HiringRequestForm({
         note: input.note,
         isManuallyAssigned: true,
         expectedStartDate: input.expectedStartDate,
-        isVisible: true,
         functionDescription: null,
         sectionDescription: null,
         workLocDescription: null,
@@ -134,7 +133,7 @@ export function HiringRequestForm({
     if (!request) return;
     const question = postedAsJobId
       ? `Close the request for "${request.title}"? Paylocity's posting (Job ${postedAsJobId}) takes its place.`
-      : `Withdraw the request for "${request.title}"? Use this when the hire is no longer needed.`;
+      : `Remove the request for "${request.title}"? Use this when the hire is no longer needed.`;
     if (!window.confirm(question)) return;
     setError(null);
     startTransition(async () => {
@@ -246,7 +245,7 @@ export function HiringRequestForm({
       <div className="flex items-center justify-between gap-2">
         {request ? (
           <button type="button" disabled={pending} onClick={() => close()} className="text-sm font-semibold text-sdc-red-text hover:underline disabled:opacity-60">
-            Withdraw request
+            Remove
           </button>
         ) : (
           <span />

@@ -60,7 +60,6 @@ function position(overrides: Partial<HiringPosition>): HiringPosition {
     note: null,
     isManuallyAssigned: false,
     expectedStartDate: null,
-    isVisible: true,
     functionDescription: null,
     sectionDescription: null,
     workLocDescription: null,

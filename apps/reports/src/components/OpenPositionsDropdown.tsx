@@ -59,11 +59,6 @@ export function OpenPositionsDropdown({
                   {openingsSuffix(p.quantity)}
                 </span>
                 <HiringStatusPill status={p.status} />
-                {!p.isVisible && (
-                  <span className="shrink-0 rounded bg-sdc-yellow-bg px-1.5 py-0.5 text-micro font-bold uppercase tracking-wide text-sdc-yellow-text">
-                    Hidden
-                  </span>
-                )}
               </button>
             </li>
           );
