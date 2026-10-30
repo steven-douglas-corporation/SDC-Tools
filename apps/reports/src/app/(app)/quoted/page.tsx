@@ -1309,15 +1309,27 @@ export async function ProjectsView({ params }: { params: {
                       style={{ width: "var(--price-col-width, 100px)", minWidth: "var(--price-col-width, 100px)", maxWidth: "var(--price-col-width, 100px)" }}
                       className="overflow-hidden whitespace-nowrap px-1 py-1.5 text-left align-middle text-label text-sdc-muted"
                     >
-                      <span className="inline-flex items-center gap-0.5">
-                        <span>$</span>
-                        <MoneyCell
-                          name={`jobField__${job.id}__${c.field}`}
-                          defaultValue={job[c.field] != null ? Number(job[c.field]).toString() : ""}
-                          ariaLabel={`${c.label}, ${job.jobName}`}
-                          className="w-[5.5rem] min-w-0 border-none bg-transparent text-left tabular-nums outline-none"
-                        />
-                      </span>
+                      {c.field === "salesPrice" ? (
+                        <span className="inline-flex items-center gap-0.5">
+                          <span>$</span>
+                          <MoneyCell
+                            name={`jobField__${job.id}__${c.field}`}
+                            defaultValue={job[c.field] != null ? Number(job[c.field]).toString() : ""}
+                            ariaLabel={`${c.label}, ${job.jobName}`}
+                            className="w-[5.5rem] min-w-0 border-none bg-transparent text-left tabular-nums outline-none"
+                          />
+                        </span>
+                      ) : (
+                        // Change Quote is filled by the Change Quotes panel and Total is Sales Price +
+                        // Change Quote — neither is typed, so no input is rendered (and nothing is posted).
+                        <span
+                          className="inline-flex items-center gap-0.5 tabular-nums"
+                          title={c.field === "changeQuote" ? "Filled by the Change Quotes panel when a change quote is applied" : "Sales Price + Change Quote"}
+                        >
+                          <span>$</span>
+                          <span className="w-[5.5rem] min-w-0">{job[c.field] != null ? Number(job[c.field]).toLocaleString("en-US", { maximumFractionDigits: 2 }) : ""}</span>
+                        </span>
+                      )}
                     </td>
                   ))}
                   {PHASE_GROUPS.map((g) => {

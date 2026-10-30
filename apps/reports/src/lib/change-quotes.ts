@@ -188,6 +188,17 @@ export function planColumnAmount(columnCents: number | null, amountCents: number
   return { ok: true, nextCents: next === 0 ? null : next, changed: true };
 }
 
+// ── The all-in contract value: Total = Sales Price + Change Quote ────────────
+//
+// One definition, used by every writer of Job.totalPrice (applying/reversing a change quote,
+// saving a Sales Price, adding a project) so the Projects grid's Total and Profitability's
+// Sales $ cannot disagree. Total and Change Quote are no longer typed into the grid.
+/** Cents; null only when neither figure has been entered. */
+export function allInCents(salesCents: number | null, changeQuoteCents: number | null): number | null {
+  if (salesCents === null && changeQuoteCents === null) return null;
+  return (salesCents ?? 0) + (changeQuoteCents ?? 0);
+}
+
 // ── The $155,300 = labor + parts check ──────────────────────────────────────
 
 export type Reconciliation = {
