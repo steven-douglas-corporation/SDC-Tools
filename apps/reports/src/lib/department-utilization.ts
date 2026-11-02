@@ -4,6 +4,8 @@ import { workingDaysInMonth } from "@/lib/etc";
 import { resolveEmployeeGroup } from "@/lib/employee-card-theme";
 import { workforceGroupForCardKey, workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
 import { ETC_CAPACITY_DEPARTMENTS } from "@/lib/etc-capacity-departments";
+import { poolCategoryForPunch } from "@/lib/sections";
+import { classifyPunch } from "@/lib/paylocity-standard-rules";
 
 // ── Department / Employee Utilization (2026-08-28) ──────────────────────────
 //
@@ -110,6 +112,34 @@ import { ETC_CAPACITY_DEPARTMENTS } from "@/lib/etc-capacity-departments";
 // The single foot became two, Engineering and Shop, each summing exactly the
 // rows of its own billing group. Service counts under Engineering, the same
 // place employee-workforce-groups.ts puts it.
+//
+// ── "Count hours by: Section code" totals (2026-11-02) ──────────────────────
+//
+// The feet above answer "how did these departments' PEOPLE spend their time".
+// The Monthly ETC answers a different question, "how many hours were booked to
+// Engineering vs Shop CODES, by anyone", and the two never agreed on warranty:
+// the Standard sheet's warranty pools count 70-211/311/312/313 as Engineering
+// and 70-411/412 as Shop, for every employee and every job.
+//
+// `sectionCodeTotals` is that second view, side by side with `totals` so the
+// card can switch between them without another read. Every punch in the month
+// counts, whoever booked it, and lands in Engineering or Shop by its own code:
+//
+//   1. A Standard Fees pool code decides first (poolCategoryForPunch, the exact
+//      function the Standard sheet tallies with), and the Standard sheet's own
+//      grouping applies: PM and Warranty Engineering under Engineering,
+//      Manufacturing and Warranty Shop under Shop.
+//   2. Anything else goes through the approved rule book (classifyPunch), the
+//      same Engineering/Shop split the Hours tab uses. A code it does not list
+//      (phase 90, 70-414, 80-516, ...) is in neither total.
+//
+// A pool WARRANTY punch is always counted as Warranty here, overhead job and
+// Bellco included, because the Standard sheet counts it on every job. That is
+// what makes this Warranty figure equal the Standard sheet's "Hours Worked This
+// Month". Every other punch keeps classifyUtilizationPunch's bucket.
+//
+// Headcount, theoretical hours, Available % and overtime are about people, and a
+// section code has none: they are left at zero/null here and the card shows "—".
 
 /**
  * The team codes whose people the report counts as billable-utilization staff —
@@ -141,6 +171,29 @@ const CARD_GROUP = new Map(CARD_DEPARTMENTS.map((d) => [d.cardKey, d.group]));
 /** Which total a department card key foots into, or null when the card does not show it. */
 export function utilizationCardGroup(cardKey: string): UtilizationCardGroup | null {
   return CARD_GROUP.get(cardKey) ?? null;
+}
+
+/**
+ * Which section-code total a punch foots into, or null when its code is neither
+ * Engineering nor Shop. See "Count hours by: Section code" in this file's header.
+ */
+export function sectionCodeGroup(rawSection: string, rawFunction: string): UtilizationCardGroup | null {
+  switch (poolCategoryForPunch(rawSection, rawFunction)) {
+    case "ENGINEERING_PM":
+    case "ENGINEERING_WARRANTY":
+      return "Engineering";
+    case "SHOP_MANUFACTURING":
+    case "SHOP_WARRANTY":
+      return "Shop";
+  }
+  const { department } = classifyPunch(rawSection, rawFunction);
+  return department === "Engineering" || department === "Shop" ? department : null;
+}
+
+/** True for a punch the Standard sheet counts in one of its two warranty pools. */
+function isPoolWarranty(rawSection: string, rawFunction: string): boolean {
+  const pool = poolCategoryForPunch(rawSection, rawFunction);
+  return pool === "ENGINEERING_WARRANTY" || pool === "SHOP_WARRANTY";
 }
 
 /** Overhead jobs the report excludes from every billable measure. Bellco (6000) is handled separately. */
@@ -243,6 +296,12 @@ export type DepartmentUtilizationResult = {
    * `departments` rows in that group. NOT the report's grand total. See the header.
    */
   totals: UtilizationGroupTotal[];
+  /**
+   * The same two feet counted the Monthly ETC's way: every punch, Engineering or
+   * Shop by its section-function code. Headcount-based measures stay zero/null.
+   * See "Count hours by: Section code" in the header.
+   */
+  sectionCodeTotals: UtilizationGroupTotal[];
 };
 
 export type UtilizationGroupTotal = UtilizationMeasures & { group: UtilizationCardGroup };
@@ -325,12 +384,16 @@ export function classifyUtilizationPunch(p: {
   return "billableActive";
 }
 
-/** Adds one punch's hours into a measures accumulator. */
-function accumulate(m: UtilizationMeasures, p: PunchRow): void {
+/**
+ * Adds one punch's hours into a measures accumulator. `bucket` is the punch's own
+ * classification unless a caller overrides it (the section-code totals do, for
+ * pool warranty punches).
+ */
+function accumulate(m: UtilizationMeasures, p: PunchRow, bucket: PunchBucket = classifyUtilizationPunch(p)): void {
   m.actualHours += p.hours;
   if (p.travelHours !== null) m.travelHours = (m.travelHours ?? 0) + p.travelHours;
 
-  switch (classifyUtilizationPunch(p)) {
+  switch (bucket) {
     case "bellco":
       m.bellco += p.hours;
       break;
@@ -455,6 +518,7 @@ export async function getDepartmentUtilization(month: string): Promise<Departmen
       select: {
         employeeId: true,
         rawSection: true,
+        rawFunction: true,
         workDate: true,
         hours: true,
         travelHours: true,
@@ -485,6 +549,7 @@ export type UtilizationInputs = {
   punches: {
     employeeId: string;
     rawSection: string;
+    rawFunction: string;
     workDate: Date;
     hours: unknown;
     travelHours: unknown;
@@ -656,6 +721,11 @@ export function computeDepartmentUtilization({ month, workingDays, employees, cl
     Shop: emptyMeasures(),
   };
   const totalHeadcount: Record<UtilizationCardGroup, number> = { Engineering: 0, Shop: 0 };
+  // The section-code feet: every punch, by its own code. See the header.
+  const sectionAcc: Record<UtilizationCardGroup, UtilizationMeasures> = {
+    Engineering: emptyMeasures(),
+    Shop: emptyMeasures(),
+  };
 
   for (const row of punches) {
     const person = personFor(row.employeeId);
@@ -677,6 +747,11 @@ export function computeDepartmentUtilization({ month, workingDays, employees, cl
     // and Service Engineering).
     const group = utilizationCardGroup(person.departmentKey);
     if (group) accumulate(totalAcc[group], p);
+
+    const codeGroup = sectionCodeGroup(row.rawSection, row.rawFunction);
+    if (codeGroup) {
+      accumulate(sectionAcc[codeGroup], p, isPoolWarranty(row.rawSection, row.rawFunction) ? "warranty" : classifyUtilizationPunch(p));
+    }
   }
 
   // Overtime rolls up as a sum of the employee figures — it is already a per-person
@@ -723,6 +798,13 @@ export function computeDepartmentUtilization({ month, workingDays, employees, cl
     finalize(totalAcc[group], { employees: totalHeadcount[group], workingDays, inScope: true });
     return { ...totalAcc[group], group };
   });
+  const sectionCodeTotals: UtilizationGroupTotal[] = (["Engineering", "Shop"] as const).map((group) => {
+    // No headcount: a section code has none, so theoretical hours and Available %
+    // come out 0/null and overtime stays 0. Utilization % is billable / actual,
+    // which needs no people, so it is still computed.
+    finalize(sectionAcc[group], { employees: 0, workingDays, inScope: true });
+    return { ...sectionAcc[group], group };
+  });
 
   return {
     month,
@@ -731,5 +813,6 @@ export function computeDepartmentUtilization({ month, workingDays, employees, cl
     departments,
     employees: employeeRows,
     totals,
+    sectionCodeTotals,
   };
 }

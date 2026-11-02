@@ -147,13 +147,66 @@ function UtilCell({ pct, muted }: { pct: number | null; muted?: boolean }) {
   );
 }
 
+// ── Count hours by: Department | Section code (2026-11-02) ─────────────────
+//
+// Switches only the two total rows. "Department" foots the rows above (who did
+// the work). "Section code" counts every punch company-wide by its own code, the
+// way the Monthly ETC does, so its Warranty matches the Standard sheet's warranty
+// "Hours Worked This Month". The rows themselves stay by department, so in that
+// mode they do not add up to the totals — the note under the table says so.
+// See department-utilization.ts's header for the exact rule.
+type CountBy = "department" | "sectionCode";
+
+const COUNT_BY_OPTIONS: { key: CountBy; label: string; title: string }[] = [
+  {
+    key: "department",
+    label: "Department",
+    title: "Totals add up the departments above, by who did the work",
+  },
+  {
+    key: "sectionCode",
+    label: "Section code",
+    title: "Totals count every punch company-wide, Engineering or Shop by its section code, as the Monthly ETC does",
+  },
+];
+
+// A section code has no headcount, so these show "—" on the section-code totals.
+const HEADCOUNT_KEYS: ReadonlySet<DeptSortKey> = new Set(["employees", "theoreticalHours", "availablePct", "overtimeHours"]);
+
+function CountByToggle({ value, onChange }: { value: CountBy; onChange: (v: CountBy) => void }) {
+  return (
+    <div role="group" aria-label="Count hours by" className="inline-flex items-center gap-2 text-sm">
+      <span className="text-label font-semibold uppercase tracking-[0.06em] text-sdc-gray-600">Count hours by</span>
+      <span className="inline-flex overflow-hidden rounded-lg border border-sdc-border bg-white shadow-sm">
+        {COUNT_BY_OPTIONS.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            aria-pressed={value === o.key}
+            title={o.title}
+            onClick={() => onChange(o.key)}
+            className={`motion-interactive px-3 py-1 font-medium ${
+              value === o.key ? "bg-sdc-blue text-white" : "text-sdc-gray-600 hover:bg-sdc-gray-50"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </span>
+    </div>
+  );
+}
+
 function DepartmentTable({
   result,
   drill,
+  countBy,
 }: {
   result: DepartmentUtilizationResult;
   drill: ReturnType<typeof useEmployeePunchDrill>;
+  countBy: CountBy;
 }) {
+  const footTotals = countBy === "sectionCode" ? result.sectionCodeTotals : result.totals;
   // ── Columns with nothing in them are not drawn (2026-10-15) ───────────────
   //
   // Bellco, Spare Parts and friends are zero for every department in most months,
@@ -162,17 +215,18 @@ function DepartmentTable({
   // exactly when some row is. Core columns and Billable always stay, and what was
   // left out is NAMED under the table rather than silently dropped — a column
   // that vanishes with no explanation reads as a bug. With two feet (Engineering
-  // and Shop), a column stays when EITHER has something in it.
+  // and Shop), a column stays when EITHER has something in it — in either count,
+  // so flipping "Count hours by" never makes columns appear or disappear.
   const { headers, hiddenLabels } = useMemo(() => {
     const keep = (h: (typeof DEPT_HEADERS)[number]) =>
       h.core ||
       h.key === "billableTotal" ||
-      result.totals.some((t) => !isEmptyMeasure(t, h.key as keyof UtilizationMeasures));
+      [...result.totals, ...result.sectionCodeTotals].some((t) => !isEmptyMeasure(t, h.key as keyof UtilizationMeasures));
     return {
       headers: DEPT_HEADERS.filter(keep),
       hiddenLabels: DEPT_HEADERS.filter((h) => !keep(h)).map((h) => h.label),
     };
-  }, [result.totals]);
+  }, [result.totals, result.sectionCodeTotals]);
   // ── null, not { utilizationPct, desc } (2026-08-31) ──────────────────────
   //
   // null means "the order the server already put them in", which sortRows()
@@ -372,7 +426,7 @@ function DepartmentTable({
               only the rows of its own group. Neither is the Power BI report's
               grand total — see department-utilization.ts's header. The rule above
               the first one marks where the departments end. */}
-          {result.totals.map((t, i) => (
+          {footTotals.map((t, i) => (
             <tr
               key={t.group}
               className={`${i === 0 ? "border-t-2 border-sdc-blue/30" : "border-t border-sdc-blue/20"} bg-sdc-blue-light font-semibold text-sdc-navy`}
@@ -392,12 +446,22 @@ function DepartmentTable({
                   // what is on screen; saying so here is cheaper than letting
                   // somebody derive it and conclude it is a bug.
                   title={
-                    h.key === "utilizationPct"
-                      ? `Billable hours / hours worked across every ${t.group} department shown`
-                      : undefined
+                    countBy === "sectionCode"
+                      ? HEADCOUNT_KEYS.has(h.key)
+                        ? "Not counted by section code: a section code has no headcount"
+                        : h.key === "utilizationPct"
+                          ? `Billable hours / hours worked, every punch booked to ${t.group} section codes`
+                          : undefined
+                      : h.key === "utilizationPct"
+                        ? `Billable hours / hours worked across every ${t.group} department shown`
+                        : undefined
                   }
                 >
-                  {h.key === "utilizationPct" ? <UtilCell pct={t.utilizationPct} /> : numeric(t, h.key)}
+                  {countBy === "sectionCode" && HEADCOUNT_KEYS.has(h.key)
+                    ? "—"
+                    : h.key === "utilizationPct"
+                      ? <UtilCell pct={t.utilizationPct} />
+                      : numeric(t, h.key)}
                 </td>
               ))}
             </tr>
@@ -405,6 +469,12 @@ function DepartmentTable({
         </tfoot>
       </table>
     </div>
+    {countBy === "sectionCode" && (
+      <p className="border-t border-sdc-border-soft px-4 py-1.5 text-label text-sdc-gray-400">
+        Totals count every punch company-wide by section code, as the Monthly ETC does. The department rows above
+        still count by person, so they will not add up to these totals.
+      </p>
+    )}
     {hiddenLabels.length > 0 && (
       <p className="border-t border-sdc-border-soft px-4 py-1.5 text-label text-sdc-gray-400">
         Not shown because they are zero or blank for every department this month: {hiddenLabels.join(", ")}.
@@ -577,6 +647,7 @@ function EmployeeUtilization({
 
 export function UtilizationPanel({ result, monthLabel }: { result: DepartmentUtilizationResult; monthLabel: string }) {
   const hasHours = result.totals.some((t) => t.actualHours > 0);
+  const [countBy, setCountBy] = useState<CountBy>("department");
   // ONE punch drill for the whole section, scoped to the same month the table
   // is showing — so clicking a second person replaces the panel rather than
   // stacking two, and the panel can never be showing a different month from the
@@ -629,8 +700,9 @@ export function UtilizationPanel({ result, monthLabel }: { result: DepartmentUti
           note={`${monthLabel} · ${result.workingDays} working days · theoretical = headcount × ${result.workingDays} × 8h${
             result.travelKnown ? "" : " · travel not recorded for this month"
           }`}
+          action={<CountByToggle value={countBy} onChange={setCountBy} />}
         />
-        <DepartmentTable result={result} drill={drill} />
+        <DepartmentTable result={result} drill={drill} countBy={countBy} />
       </Panel>
 
       {/* Directly under the table the click came from, so the punches and the
