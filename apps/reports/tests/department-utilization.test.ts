@@ -221,8 +221,50 @@ test("the synthetic person is not an ETC department row and does not move the ca
   assert.ok(mech);
   assert.equal(mech.actualHours, 8);
   assert.equal(mech.employees, 1);
-  assert.equal(result.total.actualHours, 8);
-  assert.equal(result.total.employees, 1);
+  const eng = result.totals.find((t) => t.group === "Engineering");
+  assert.equal(eng?.actualHours, 8);
+  assert.equal(eng?.employees, 1);
+});
+
+// ── Service Engineering row, and Engineering / Shop totals (2026-11-02) ─────
+
+const roster = (paylocityId: string, department: string, team: string, billingGroup: string) => ({
+  paylocityId,
+  name: `Person ${paylocityId}`,
+  department,
+  discipline: null,
+  team,
+  billingGroup,
+  active: true,
+});
+
+test("Service Engineering is a row at the end of the Engineering block, footed into Engineering", () => {
+  const result = computeDepartmentUtilization({
+    month: "2026-07",
+    workingDays: 22,
+    employees: [
+      mechEngineer("1", "Mech Person"),
+      roster("2", "Service Engineering", "service", "Engineering"),
+      roster("3", "Mechanical Build", "build", "Shop"),
+    ],
+    closeDates: new Map([["1130", null]]),
+    punches: [punch("1", 8), punch("2", 5, "70"), punch("2", 3, "80"), punch("3", 6)],
+  });
+
+  assert.deepEqual(result.departments.map((d) => d.key), ["mech", "service", "build"]);
+  const service = result.departments.find((d) => d.key === "service");
+  assert.equal(service?.warranty, 5);
+  assert.equal(service?.billableService, 3);
+  assert.equal(service?.utilizationPct, null, "outside the report's five, so no Utilization %");
+
+  assert.deepEqual(result.totals.map((t) => t.group), ["Engineering", "Shop"]);
+  const [eng, shop] = result.totals;
+  assert.equal(eng.actualHours, 16);
+  assert.equal(eng.employees, 2);
+  assert.equal(eng.warranty, 5);
+  assert.equal(eng.billableService, 3);
+  assert.equal(shop.actualHours, 6);
+  assert.equal(shop.employees, 1);
 });
 
 test("a known employee is untouched by the synthetic pass", () => {

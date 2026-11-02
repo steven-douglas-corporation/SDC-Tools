@@ -161,15 +161,18 @@ function DepartmentTable({
   // test is the TOTAL row: it is the sum of the rows above it, so it is non-zero
   // exactly when some row is. Core columns and Billable always stay, and what was
   // left out is NAMED under the table rather than silently dropped — a column
-  // that vanishes with no explanation reads as a bug.
+  // that vanishes with no explanation reads as a bug. With two feet (Engineering
+  // and Shop), a column stays when EITHER has something in it.
   const { headers, hiddenLabels } = useMemo(() => {
     const keep = (h: (typeof DEPT_HEADERS)[number]) =>
-      h.core || h.key === "billableTotal" || !isEmptyMeasure(result.total, h.key as keyof UtilizationMeasures);
+      h.core ||
+      h.key === "billableTotal" ||
+      result.totals.some((t) => !isEmptyMeasure(t, h.key as keyof UtilizationMeasures));
     return {
       headers: DEPT_HEADERS.filter(keep),
       hiddenLabels: DEPT_HEADERS.filter((h) => !keep(h)).map((h) => h.label),
     };
-  }, [result.total]);
+  }, [result.totals]);
   // ── null, not { utilizationPct, desc } (2026-08-31) ──────────────────────
   //
   // null means "the order the server already put them in", which sortRows()
@@ -365,38 +368,40 @@ function DepartmentTable({
           })}
         </tbody>
         <tfoot>
-          <tr className="border-t-2 border-sdc-blue/30 bg-sdc-blue-light font-semibold text-sdc-navy">
-            <th scope="row" className={`${DEPT_CELL} bg-sdc-blue-light py-2 pl-3 pr-3 text-left`}>
-              Total
-              {/* NOT "billable departments" any more: this foots the ETC
-                  Engineering + Shop departments the card shows, which differ from
-                  the report's five by Manufacturing Operations. See
-                  department-utilization.ts's header — the figure legitimately
-                  differs from the Power BI report's grand total, and the label has
-                  to say which one it is. */}
-              <span className="ml-1.5 text-xs font-normal text-sdc-muted">Engineering &amp; Shop</span>
-            </th>
-            {headers.map((h) => (
-              <td
-                key={h.key}
-                className="py-2 px-2 text-right tabular-nums whitespace-nowrap"
-                // The foot's Utilization % is billable / actual across EVERY row
-                // above, Service Engineering and Project Management included —
-                // even though those two rows show "—" for their own Utilization %
-                // (they sit outside the report's billable departments). Their
-                // hours are in both halves of the ratio, so the foot stays a
-                // true total of what is on screen; saying so here is cheaper
-                // than letting somebody derive it and conclude it is a bug.
-                title={
-                  h.key === "utilizationPct"
-                    ? "Billable hours / hours worked across every ETC Engineering and Shop department shown"
-                    : undefined
-                }
-              >
-                {h.key === "utilizationPct" ? <UtilCell pct={result.total.utilizationPct} /> : numeric(result.total, h.key)}
-              </td>
-            ))}
-          </tr>
+          {/* One foot per billing group (2026-11-02, by request), each summing
+              only the rows of its own group. Neither is the Power BI report's
+              grand total — see department-utilization.ts's header. The rule above
+              the first one marks where the departments end. */}
+          {result.totals.map((t, i) => (
+            <tr
+              key={t.group}
+              className={`${i === 0 ? "border-t-2 border-sdc-blue/30" : "border-t border-sdc-blue/20"} bg-sdc-blue-light font-semibold text-sdc-navy`}
+            >
+              <th scope="row" className={`${DEPT_CELL} bg-sdc-blue-light py-2 pl-3 pr-3 text-left`}>
+                {t.group} total
+              </th>
+              {headers.map((h) => (
+                <td
+                  key={h.key}
+                  className="py-2 px-2 text-right tabular-nums whitespace-nowrap"
+                  // A foot's Utilization % is billable / actual across EVERY row
+                  // of its group, Service Engineering included in Engineering —
+                  // even though that row shows "—" for its own Utilization % (it
+                  // sits outside the report's billable departments). Its hours are
+                  // in both halves of the ratio, so the foot stays a true total of
+                  // what is on screen; saying so here is cheaper than letting
+                  // somebody derive it and conclude it is a bug.
+                  title={
+                    h.key === "utilizationPct"
+                      ? `Billable hours / hours worked across every ${t.group} department shown`
+                      : undefined
+                  }
+                >
+                  {h.key === "utilizationPct" ? <UtilCell pct={t.utilizationPct} /> : numeric(t, h.key)}
+                </td>
+              ))}
+            </tr>
+          ))}
         </tfoot>
       </table>
     </div>
@@ -571,7 +576,7 @@ function EmployeeUtilization({
 }
 
 export function UtilizationPanel({ result, monthLabel }: { result: DepartmentUtilizationResult; monthLabel: string }) {
-  const hasHours = result.total.actualHours > 0;
+  const hasHours = result.totals.some((t) => t.actualHours > 0);
   // ONE punch drill for the whole section, scoped to the same month the table
   // is showing — so clicking a second person replaces the panel rather than
   // stacking two, and the panel can never be showing a different month from the
