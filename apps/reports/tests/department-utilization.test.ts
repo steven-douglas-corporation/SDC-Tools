@@ -165,9 +165,10 @@ test("a blank Travel cell stays blank — \"not known\", never \"Concord\"", () 
 import { computeDepartmentUtilization, UNASSIGNED_DEPARTMENT_KEY, UNASSIGNED_DEPARTMENT_TITLE } from "../src/lib/department-utilization";
 
 const JULY_15 = day("2026-07-15");
-const punch = (employeeId: string, hours: number, rawSection = "10", jobId = "1130") => ({
+const punch = (employeeId: string, hours: number, rawSection = "10", jobId = "1130", rawFunction = "211") => ({
   employeeId,
   rawSection,
+  rawFunction,
   workDate: JULY_15,
   hours,
   travelHours: null,
@@ -265,6 +266,89 @@ test("Service Engineering is a row at the end of the Engineering block, footed i
   assert.equal(eng.billableService, 3);
   assert.equal(shop.actualHours, 6);
   assert.equal(shop.employees, 1);
+});
+
+// ── "Count hours by: Section code" totals (2026-11-02) ─────────────────────
+
+import { sectionCodeGroup } from "../src/lib/department-utilization";
+import { poolCategoryForPunch } from "../src/lib/sections";
+
+test("sectionCodeGroup follows the Standard sheet's pools first, then the rule book", () => {
+  assert.equal(sectionCodeGroup("70", "211"), "Engineering");
+  assert.equal(sectionCodeGroup("70", "313"), "Engineering", "a pool code the rule book does not list for phase 70");
+  assert.equal(sectionCodeGroup("70", "411"), "Shop");
+  assert.equal(sectionCodeGroup("70", "412"), "Shop");
+  assert.equal(sectionCodeGroup("10", "111"), "Engineering", "PM sits under Engineering on the Standard sheet");
+  assert.equal(sectionCodeGroup("10", "414"), "Shop");
+  assert.equal(sectionCodeGroup("10", "211"), "Engineering");
+  assert.equal(sectionCodeGroup("80", "411"), "Shop");
+  assert.equal(sectionCodeGroup("70", "414"), null, "no pool and not in the rule book");
+  assert.equal(sectionCodeGroup("90", "411"), null);
+});
+
+const SECTION_MODE_PUNCHES = [
+  punch("10", 4, "70", "1130", "211"), // PM person, Engineering warranty code
+  punch("1", 3, "70", "1130", "411"), // engineer booking a Shop warranty code
+  punch("1", 2, "70", "4000", "211"), // warranty on an overhead job
+  punch("3", 1, "70", "1130", "414"), // a warranty code neither pool counts
+  punch("10", 6, "10", "1130", "111"), // PM
+  punch("4", 5, "10", "1130", "414"), // Manufacturing
+  punch("3", 2, "90", "1130", "411"), // spare parts, not in the rule book
+  punch("999999", 2, "70", "1130", "412"), // no roster row
+];
+
+const sectionModeResult = () =>
+  computeDepartmentUtilization({
+    month: "2026-07",
+    workingDays: 22,
+    employees: [
+      mechEngineer("1", "Mech Person"),
+      roster("3", "Mechanical Build", "build", "Shop"),
+      roster("4", "Manufacturing Operations", "mfgops", "Shop"),
+      roster("10", "Project Management", "pm", "PM"),
+    ],
+    closeDates: new Map([
+      ["1130", null],
+      ["4000", null],
+    ]),
+    punches: SECTION_MODE_PUNCHES,
+  });
+
+test("section-code totals count every punch by its own code, whoever booked it", () => {
+  const [eng, shop] = sectionModeResult().sectionCodeTotals;
+  assert.equal(eng.group, "Engineering");
+  assert.equal(eng.warranty, 6, "PM's 70-211 and the overhead-job 70-211");
+  assert.equal(eng.actualHours, 12, "plus PM's 10-111");
+  assert.equal(shop.group, "Shop");
+  assert.equal(shop.warranty, 5, "the engineer's 70-411 and the unmatched id's 70-412");
+  assert.equal(shop.actualHours, 10, "plus Manufacturing's 10-414; 70-414 and phase 90 are in neither");
+});
+
+test("section-code Warranty equals the Standard sheet's warranty pool tally for the same punches", () => {
+  const pool = { ENGINEERING_WARRANTY: 0, SHOP_WARRANTY: 0 } as Record<string, number>;
+  for (const p of SECTION_MODE_PUNCHES) {
+    const c = poolCategoryForPunch(p.rawSection, p.rawFunction);
+    if (c && c in pool) pool[c] += p.hours;
+  }
+  const [eng, shop] = sectionModeResult().sectionCodeTotals;
+  assert.equal(eng.warranty, pool.ENGINEERING_WARRANTY);
+  assert.equal(shop.warranty, pool.SHOP_WARRANTY);
+});
+
+test("section-code totals carry no headcount, and the department totals are unchanged", () => {
+  const result = sectionModeResult();
+  for (const t of result.sectionCodeTotals) {
+    assert.equal(t.employees, 0);
+    assert.equal(t.theoreticalHours, 0);
+    assert.equal(t.availablePct, null);
+    assert.equal(t.overtimeHours, 0);
+  }
+  // By department, the engineer's 70-411 is Engineering warranty and the
+  // overhead-job punch is Non-Billable — the existing rule, untouched.
+  const [eng, shop] = result.totals;
+  assert.equal(eng.warranty, 3);
+  assert.equal(eng.nonBillable, 2);
+  assert.equal(shop.warranty, 1, "Mechanical Build's 70-414");
 });
 
 test("a known employee is untouched by the synthetic pass", () => {
