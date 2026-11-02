@@ -52,7 +52,7 @@ import { savePools } from "@/lib/standard-sheet-actions";
 // ONE submission and ONE reopen for the whole month — see lib/monthly-report.ts.
 import { reopenMonthlyReport, checkMonthlyReport } from "@/lib/monthly-report-actions";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, currentMonth, round2, workingDaysInMonth, effectiveNewEtc, newEtcDiff, newEtcSeedText, isNewEtcCellDecided, rollupNewEtc, confirmedNewEtc, partsCostCellState, partsCostEffectiveNewEtc, type NewEtcCellState, type NewEtcRollupCell, type PartsCostLive } from "@/lib/etc";
+import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, currentMonth, round2, hoursCompleteThrough, workingDaysInMonth, effectiveNewEtc, newEtcDiff, newEtcSeedText, isNewEtcCellDecided, rollupNewEtc, confirmedNewEtc, partsCostCellState, partsCostEffectiveNewEtc, type NewEtcCellState, type NewEtcRollupCell, type PartsCostLive } from "@/lib/etc";
 import { ReopenMonthButton } from "@/components/ReopenMonthButton";
 import { EtcAutosave } from "@/components/EtcAutosave";
 import { EtcLiveTotals } from "@/components/EtcLiveTotals";
@@ -1121,8 +1121,8 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
   // which an IIFE inside this file is not.
   const cutoffLabel = monthEndLabel(month);
 
-  const [completeYear, completeMonthNum] = month.split("-").map(Number);
-  const monthEndDate = new Date(Date.UTC(completeYear, completeMonthNum, 0)); // last day of the month
+  // Last WEEKDAY of the month, not the last calendar day — see hoursCompleteThrough.
+  const monthEndDate = hoursCompleteThrough(month);
   const hoursRefreshedThrough = hoursActualFreshness?.refreshedThrough ?? null;
   const monthComplete =
     locked || isHistoricalMonth || (hoursRefreshedThrough != null && hoursRefreshedThrough >= monthEndDate);

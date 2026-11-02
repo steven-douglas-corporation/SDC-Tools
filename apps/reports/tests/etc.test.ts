@@ -710,3 +710,12 @@ test("redrivenDraft: an overspent cell's clamped zero follows the new Prior", ()
   // suggestion. Prior 800 − spent 7481 → 0; a corrected Prior of 9000 → 1519.
   assert.equal(redrivenDraft({ draft: 0, oldPriorEtc: 800, newPriorEtc: 9000, hoursWorked: 7481 }), 1519);
 });
+
+test("hoursCompleteThrough: a weekend month-end falls back to the last weekday", async () => {
+  const { hoursCompleteThrough } = await import("../src/lib/etc");
+  const iso = (m: string) => hoursCompleteThrough(m).toISOString().slice(0, 10);
+  assert.equal(iso("2026-10"), "2026-10-30"); // Oct 31 is a Saturday
+  assert.equal(iso("2026-09"), "2026-09-30"); // Wednesday
+  assert.equal(iso("2026-07"), "2026-07-31"); // Friday
+  assert.equal(iso("2027-01"), "2027-01-29"); // Jan 31 is a Sunday
+});
