@@ -1053,3 +1053,16 @@ export function groupStandardFeesRows<Row>(
 //
 // `partsCostRisk`, `partsCostRiskTitle`, `partsRiskStyle` and `paintPartsRisk` are all
 // gone with it rather than left as dead code behind a flag.
+
+// The date the hours feed must reach before a month's actuals count as complete:
+// the month's last WEEKDAY, not its last calendar day. The feed's "refreshed
+// through" is the latest work date in the punch file, and nobody punches on a
+// weekend — so a month ending on Saturday/Sunday (October 2026) could never be
+// "complete" until the following Monday's punches landed, leaving every
+// zero-hours New ETC cell blank. Returns UTC midnight, like refreshedThrough.
+export function hoursCompleteThrough(month: string): Date {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m, 0)); // last day of the month
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() - 1);
+  return d;
+}
