@@ -180,9 +180,13 @@ const codeOf = (src: string): string =>
     .join("\n");
 
 test("the utilization module filters and orders through the ETC mapping", () => {
-  const src = read("lib", "department-utilization.ts");
-  assert.match(src, /isEtcCapacityCardKey\(/, "must filter through the ETC mapping");
-  assert.match(src, /etcCapacityOrderRank\(/, "must order through the ETC mapping");
+  // Since 2026-11-02 the card's row list is the ETC departments plus Service
+  // Engineering, built from ETC_CAPACITY_DEPARTMENTS — still the ETC mapping,
+  // with one row added on top rather than a hand-written list.
+  const code = codeOf(read("lib", "department-utilization.ts"));
+  assert.match(code, /ETC_CAPACITY_DEPARTMENTS\.filter\(/, "the rows must come from the ETC mapping");
+  assert.match(code, /utilizationCardGroup\(row\.key\)/, "must filter through the card's mapping");
+  assert.match(code, /CARD_RANK\.get\(/, "must order through the card's mapping");
 });
 
 test("the utilization module does NOT filter by team or workforce group", () => {

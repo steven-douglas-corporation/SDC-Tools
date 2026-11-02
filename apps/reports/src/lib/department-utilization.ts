@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { workingDaysInMonth } from "@/lib/etc";
 import { resolveEmployeeGroup } from "@/lib/employee-card-theme";
 import { workforceGroupForCardKey, workforceGroupTitle, type WorkforceGroupKey } from "@/lib/employee-workforce-groups";
-import { isEtcCapacityCardKey, etcCapacityOrderRank } from "@/lib/etc-capacity-departments";
+import { ETC_CAPACITY_DEPARTMENTS } from "@/lib/etc-capacity-departments";
 
 // ── Department / Employee Utilization (2026-08-28) ──────────────────────────
 //
@@ -54,17 +54,18 @@ import { isEtcCapacityCardKey, etcCapacityOrderRank } from "@/lib/etc-capacity-d
 //
 // ── ROWS: the ETC tab's own departments (2026-08-31, by request) ─────────
 //
-// `departments` and `total` cover the departments the ETC/execution workflow
+// `departments` and `totals` cover the departments the ETC/execution workflow
 // actually books hours through — Engineering AND Shop:
 //
 //   Mechanical Engineering, Controls Engineering, General Engineering,
 //   Mechanical Build, Electrical Build
 //
 // in the ETC tab's own column order. The back office is out (Finance, Sales,
-// Executive Leadership, Growth, Operations, No department), and so are the three
+// Executive Leadership, Growth, Operations, No department), and so are the
 // departments the ETC grid itself has no column for (PM, Manufacturing
-// Operations, Service Engineering) — see etc-capacity-departments.ts, which
-// derives all of this from ETC_SECTIONS rather than listing it.
+// Operations) — see etc-capacity-departments.ts, which derives all of this from
+// ETC_SECTIONS rather than listing it. Service Engineering, the third such
+// department, was added back on 2026-11-02; see the section below.
 //
 // This got it wrong once in the other direction: a first pass filtered on the
 // app's ORGANISATIONAL grouping (Engineering + PM, excluding Shop because Shop
@@ -94,9 +95,21 @@ import { isEtcCapacityCardKey, etcCapacityOrderRank } from "@/lib/etc-capacity-d
 // disagree about scope.
 //
 // The filter and the row order both come from etc-capacity-departments.ts
-// (isEtcCapacityCardKey / etcCapacityOrderRank), which derives them from the ETC
-// grid's own columns — so there is no dashboard-specific department list here to
-// drift from the ETC tab.
+// (ETC_CAPACITY_DEPARTMENTS), which derives them from the ETC grid's own columns
+// — so there is no dashboard-specific department list here to drift from the ETC
+// tab. Service Engineering is the one addition on top; see below.
+//
+// ── Service Engineering row, and Engineering / Shop totals (2026-11-02) ─────
+//
+// By request, Service Engineering gets its own row, at the end of the
+// Engineering block. It has no ETC column, but it books most of the company's
+// warranty (70) and service (80) hours, and leaving it off made the card's
+// Warranty/Service columns look short next to the Standard sheet. It stays
+// outside UTILIZATION_TEAM_CODES, so its row shows hours and no Utilization %.
+//
+// The single foot became two, Engineering and Shop, each summing exactly the
+// rows of its own billing group. Service counts under Engineering, the same
+// place employee-workforce-groups.ts puts it.
 
 /**
  * The team codes whose people the report counts as billable-utilization staff —
@@ -104,6 +117,31 @@ import { isEtcCapacityCardKey, etcCapacityOrderRank } from "@/lib/etc-capacity-d
  * and `pm` are deliberately absent (see this file's header).
  */
 export const UTILIZATION_TEAM_CODES: readonly string[] = ["mech", "controls", "build", "wire", "mfgops"];
+
+export type UtilizationCardGroup = "Engineering" | "Shop";
+
+/** Service Engineering's card key — the one row the card shows beyond the ETC departments. */
+export const SERVICE_CARD_KEY = "service";
+
+/**
+ * The card's rows in display order: the ETC Engineering departments, then Service
+ * Engineering, then the ETC Shop departments. Derived from ETC_CAPACITY_DEPARTMENTS,
+ * so the ETC grid's own column order still decides everything but Service's slot.
+ */
+const CARD_DEPARTMENTS: readonly { cardKey: string; group: UtilizationCardGroup }[] = [
+  ...ETC_CAPACITY_DEPARTMENTS.filter((d) => d.billingGroup === "Engineering").map((d) => ({ cardKey: d.cardKey, group: d.billingGroup })),
+  { cardKey: SERVICE_CARD_KEY, group: "Engineering" },
+  ...ETC_CAPACITY_DEPARTMENTS.filter((d) => d.billingGroup === "Shop").map((d) => ({ cardKey: d.cardKey, group: d.billingGroup })),
+];
+/** Just the card keys, in display order. */
+export const UTILIZATION_CARD_KEYS: readonly string[] = CARD_DEPARTMENTS.map((d) => d.cardKey);
+const CARD_RANK = new Map(UTILIZATION_CARD_KEYS.map((key, i) => [key, i]));
+const CARD_GROUP = new Map(CARD_DEPARTMENTS.map((d) => [d.cardKey, d.group]));
+
+/** Which total a department card key foots into, or null when the card does not show it. */
+export function utilizationCardGroup(cardKey: string): UtilizationCardGroup | null {
+  return CARD_GROUP.get(cardKey) ?? null;
+}
 
 /** Overhead jobs the report excludes from every billable measure. Bellco (6000) is handled separately. */
 export const OVERHEAD_JOB_IDS: readonly string[] = ["4000", "1083", "7000", "10000"];
@@ -187,10 +225,11 @@ export type DepartmentUtilizationResult = {
   /** True once at least one punch in the month carried travel data — drives "—" vs 0 in the UI. */
   travelKnown: boolean;
   /**
-   * The ETC tab's departments only, in the ETC tab's own column order
-   * (Mechanical Engineering → Controls Engineering → General Engineering →
-   * Mechanical Build → Electrical Build). Never sorted alphabetically — see this
-   * file's header.
+   * The ETC tab's departments plus Service Engineering, in the ETC tab's own
+   * column order with Service at the end of the Engineering block (Mechanical
+   * Engineering → Controls Engineering → General Engineering → Service
+   * Engineering → Mechanical Build → Electrical Build). Never sorted
+   * alphabetically — see this file's header.
    */
   departments: DepartmentUtilizationRow[];
    /**
@@ -199,9 +238,14 @@ export type DepartmentUtilizationResult = {
    * narrowed: that panel is a separate card with its own department selector.
    */
   employees: EmployeeUtilizationRow[];
-  /** The total across `departments` — the ETC department set, NOT the report's grand total. See the header. */
-  total: UtilizationMeasures;
+  /**
+   * One foot per billing group, Engineering then Shop, each over exactly the
+   * `departments` rows in that group. NOT the report's grand total. See the header.
+   */
+  totals: UtilizationGroupTotal[];
 };
+
+export type UtilizationGroupTotal = UtilizationMeasures & { group: UtilizationCardGroup };
 
 type PunchRow = {
   employeeId: string;
@@ -602,13 +646,16 @@ export function computeDepartmentUtilization({ month, workingDays, employees, cl
     entry.row.employeeRows.push(er);
   }
 
-  // The foot of the card, so it sums exactly the rows the card renders — the ETC
-  // Engineering + Shop departments — rather than the report's five billable ones.
+  // The two feet of the card, Engineering and Shop, so each sums exactly the rows
+  // of its group the card renders — rather than the report's five billable ones.
   // Accumulated from the PUNCHES like every department row, not by adding
   // the finalized rows up, for the same reason stated above: summing rounded
   // ratios is how a total disagrees with its own rows.
-  const totalAcc = emptyMeasures();
-  let totalHeadcount = 0;
+  const totalAcc: Record<UtilizationCardGroup, UtilizationMeasures> = {
+    Engineering: emptyMeasures(),
+    Shop: emptyMeasures(),
+  };
+  const totalHeadcount: Record<UtilizationCardGroup, number> = { Engineering: 0, Shop: 0 };
 
   for (const row of punches) {
     const person = personFor(row.employeeId);
@@ -624,11 +671,12 @@ export function computeDepartmentUtilization({ month, workingDays, employees, cl
     };
     const entry = deptAcc.get(person.departmentKey);
     if (entry) accumulate(entry.row, p);
-    // isEtcCapacityCardKey, not `person.inScope`: inScope is the report's five
+    // The card's own group, not `person.inScope`: inScope is the report's five
     // billable departments, which is a different question from "is this a row the
-    // card shows" (they differ by Manufacturing Operations and General
-    // Engineering).
-    if (isEtcCapacityCardKey(person.departmentKey)) accumulate(totalAcc, p);
+    // card shows" (they differ by Manufacturing Operations, General Engineering
+    // and Service Engineering).
+    const group = utilizationCardGroup(person.departmentKey);
+    if (group) accumulate(totalAcc[group], p);
   }
 
   // Overtime rolls up as a sum of the employee figures — it is already a per-person
@@ -637,20 +685,21 @@ export function computeDepartmentUtilization({ month, workingDays, employees, cl
   for (const er of employeeRows) {
     const entry = deptAcc.get(er.departmentKey);
     if (entry) entry.row.overtimeHours += er.overtimeHours;
-    if (isEtcCapacityCardKey(er.departmentKey)) {
-      totalAcc.overtimeHours += er.overtimeHours;
+    const group = utilizationCardGroup(er.departmentKey);
+    if (group) {
+      totalAcc[group].overtimeHours += er.overtimeHours;
       // Headcount for the foot's Employees count and its theoretical hours, so
       // Available % at the foot is over the same people the rows above cover.
-      totalHeadcount += 1;
+      totalHeadcount[group] += 1;
     }
   }
 
   const departments = [...deptAcc.values()]
-    // Everything the ETC grid has no column for leaves the card here — one
-    // filter, on the shared ETC mapping, applied before anything is finalized.
-    // The nested employeeRows go with their department, so an expanded row can
-    // never show a back-office employee under an ETC department.
-    .filter(({ row }) => isEtcCapacityCardKey(row.key))
+    // Everything the card does not show leaves here — one filter, on the
+    // card's department list, applied before anything is finalized. The nested
+    // employeeRows go with their department, so an expanded row can never show
+    // a back-office employee under an ETC department.
+    .filter(({ row }) => utilizationCardGroup(row.key) !== null)
     .map(({ row, headcount }) => {
       finalize(row, { employees: headcount, workingDays, inScope: row.inUtilizationScope });
       row.employeeRows.sort((a, b) => a.name.localeCompare(b.name));
@@ -658,7 +707,8 @@ export function computeDepartmentUtilization({ month, workingDays, employees, cl
     });
 
   // The ETC tab's own column order — Mechanical Engineering → Controls
-  // Engineering → General Engineering → Mechanical Build → Electrical Build.
+  // Engineering → General Engineering → (Service Engineering) → Mechanical
+  // Build → Electrical Build.
   //
   // Was "in-scope first, then billing group, then title A→Z", which put Controls
   // Engineering above Mechanical Engineering and split the Engineering block. The
@@ -666,9 +716,13 @@ export function computeDepartmentUtilization({ month, workingDays, employees, cl
   // these rows with them and there is nothing here to update. The title tiebreak
   // survives only for a key the ETC order does not know, which all rank
   // equal-last — and the filter above means none reach the sort today.
-  departments.sort((a, b) => etcCapacityOrderRank(a.key) - etcCapacityOrderRank(b.key) || a.title.localeCompare(b.title));
+  const rank = (key: string) => CARD_RANK.get(key) ?? Number.MAX_SAFE_INTEGER;
+  departments.sort((a, b) => rank(a.key) - rank(b.key) || a.title.localeCompare(b.title));
 
-  finalize(totalAcc, { employees: totalHeadcount, workingDays, inScope: true });
+  const totals: UtilizationGroupTotal[] = (["Engineering", "Shop"] as const).map((group) => {
+    finalize(totalAcc[group], { employees: totalHeadcount[group], workingDays, inScope: true });
+    return { ...totalAcc[group], group };
+  });
 
   return {
     month,
@@ -676,6 +730,6 @@ export function computeDepartmentUtilization({ month, workingDays, employees, cl
     travelKnown,
     departments,
     employees: employeeRows,
-    total: totalAcc,
+    totals,
   };
 }
