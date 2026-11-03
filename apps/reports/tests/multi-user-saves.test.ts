@@ -181,6 +181,42 @@ test("rebaseline still clears the fields that DID save", () => {
   forgetEtcField("newEtcOverride__2");
 });
 
+// ── 4. Typing while the save is in flight (2026-11-03) ──────────────────────
+
+test("a cell typed over mid-save stays dirty, against the value that DID save", () => {
+  // Autosave posts "12"; the manager keeps typing to "125" before it lands. The
+  // follow-up save must still see the cell as unsaved, or "125" is shown but never
+  // written and a reload puts 12 back.
+  registerEtcField("newEtcOverride__1", "");
+  updateEtcField("newEtcOverride__1", "12");
+  const fd = new FormData();
+  fd.append("newEtcOverride__1", "12");
+  updateEtcField("newEtcOverride__1", "125"); // during the round trip
+  rebaselineEtcFields(fd);
+  assert.deepEqual(dirtyEtcFieldNames(), ["newEtcOverride__1"]);
+  // The follow-up posts 125 against a base of 12 — what the server now holds — so
+  // the stale-write guard accepts it rather than calling it a conflict.
+  const followUp = changedEtcFormData(fakeForm({ newEtcOverride__1: "125" }));
+  assert.equal(followUp.get("newEtcOverride__1"), "125");
+  assert.equal(followUp.get("newEtcBase__1"), "12");
+  // Typing back to the saved figure is clean again.
+  updateEtcField("newEtcOverride__1", "12");
+  assert.equal(isEtcDirty(), false);
+  forgetEtcField("newEtcOverride__1");
+});
+
+test("a cell typed away and back mid-save is clean once the save lands", () => {
+  registerEtcField("newEtcOverride__1", "40");
+  updateEtcField("newEtcOverride__1", "48");
+  const fd = new FormData();
+  fd.append("newEtcOverride__1", "48");
+  updateEtcField("newEtcOverride__1", "4");
+  updateEtcField("newEtcOverride__1", "48");
+  rebaselineEtcFields(fd);
+  assert.equal(isEtcDirty(), false);
+  forgetEtcField("newEtcOverride__1");
+});
+
 // ── Adopting a colleague's value ────────────────────────────────────────────
 
 test("adopting a new server value leaves the cell clean", () => {

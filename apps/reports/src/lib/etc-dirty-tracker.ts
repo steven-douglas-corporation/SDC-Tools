@@ -33,6 +33,10 @@
 const baselines = new Map<string, string>();
 // The subset of registered fields whose current value differs from baseline.
 const dirtyFields = new Set<string>();
+// field name -> the value the field last reported (normalized). Absent means the
+// field has not changed since it registered or adopted a value, i.e. it shows its
+// baseline. Read by rebaselineEtcFields to tell "saved" from "typed over mid-save".
+const currentValues = new Map<string, string>();
 
 // "5", "5.0", " 5 " and "5.00" are the same number typed four ways, and a
 // <input type="number"> hands back whichever one was keyed. Comparing raw
@@ -72,6 +76,7 @@ export function adoptEtcFieldBaseline(name: string, value: string): void {
   baselines.set(name, normalize(value));
   dirtyFields.delete(name);
   refusedFields.delete(name);
+  currentValues.delete(name);
 }
 
 // Call on unmount. Removing the baseline as well as the dirty entry is what
@@ -80,6 +85,7 @@ export function forgetEtcField(name: string): void {
   baselines.delete(name);
   dirtyFields.delete(name);
   refusedFields.delete(name);
+  currentValues.delete(name);
 }
 
 // Call on every change. Deliberately two-way: a field that returns to its
@@ -88,6 +94,8 @@ export function updateEtcField(name: string, value: string): void {
   // Typing in a refused cell is the manager dealing with the conflict, so it stops
   // being one — and the background refresh is free to resume once it saves.
   refusedFields.delete(name);
+  const normalized = normalize(value);
+  currentValues.set(name, normalized);
   const baseline = baselines.get(name);
   // Unregistered field — nothing to compare against, so treat any value as an
   // edit rather than silently ignoring it.
@@ -95,7 +103,7 @@ export function updateEtcField(name: string, value: string): void {
     dirtyFields.add(name);
     return;
   }
-  if (normalize(value) === baseline) dirtyFields.delete(name);
+  if (normalized === baseline) dirtyFields.delete(name);
   else dirtyFields.add(name);
 }
 
@@ -115,15 +123,35 @@ export function updateEtcField(name: string, value: string): void {
 // which the server rejected — would sit on screen looking persisted until the next
 // reload silently replaced it. Leaving them dirty is what keeps the unsaved-changes
 // warning honest.
+//
+// ── Typed over while the save was in flight (2026-11-03) ────────────────────
+//
+// The posted value is what the SERVER now holds, not necessarily what the box
+// shows. Autosave reads the form, awaits the round trip, then calls this — and
+// keystrokes in that window land in the same cell. This used to clear the cell's
+// dirty flag unconditionally, so "12" saved, "125" typed during the save, and the
+// follow-up save found nothing dirty: the chip said "All changes saved", the box
+// said 125, the database said 12, and a reload put 12 back.
+//
+// So the baseline always moves to what was posted (that is what is stored), but
+// the cell is clean only if its current value still matches it. Otherwise it stays
+// dirty and useAutosave's follow-up pass sends the newer figure.
+//
+// Walks the posted fields, not every registered one: the payload is the handful of
+// cells this user edited, the grid is ~1,180.
 export function rebaselineEtcFields(formData: FormData, refused?: Iterable<string>): void {
   const skip = refused ? new Set(refused) : null;
-  for (const name of baselines.keys()) {
+  for (const name of new Set(formData.keys())) {
+    // Only names already registered — unrelated form fields (hours, passwords,
+    // the newEtcBase__ companions) must not create phantom baselines.
+    if (!baselines.has(name)) continue;
     if (skip?.has(name)) continue;
-    const posted = formData.get(name);
-    if (posted === null) continue; // not in this submission (a filtered-out column)
-    baselines.set(name, normalize(String(posted)));
-    dirtyFields.delete(name);
+    const posted = normalize(String(formData.get(name)));
+    baselines.set(name, posted);
     refusedFields.delete(name);
+    const current = currentValues.get(name);
+    if (current === undefined || current === posted) dirtyFields.delete(name);
+    else dirtyFields.add(name);
   }
 }
 
