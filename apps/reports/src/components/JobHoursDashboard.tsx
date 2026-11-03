@@ -222,7 +222,17 @@ export function JobHoursDashboard({
    */
   allowedPoolCodes?: string[];
 }) {
-  const [hoursType, setHoursType] = useState<HoursType>("ETC");
+  // Default basis: Quoted for closed (Complete) jobs, ETC for active ones. Re-applied
+  // whenever the job selection changes, since this component stays mounted across
+  // job switches and a plain useState initialiser would only run once.
+  const defaultType: HoursType = data.allComplete ? "Quoted" : "ETC";
+  const selectionId = data.jobRefs.map((r) => r.id).join(",");
+  const [hoursType, setHoursType] = useState<HoursType>(defaultType);
+  const [typeSelection, setTypeSelection] = useState(selectionId);
+  if (typeSelection !== selectionId) {
+    setTypeSelection(selectionId);
+    setHoursType(defaultType);
+  }
   const planned = (s: { quoted: number; etc: number }) => (hoursType === "Quoted" ? s.quoted : s.etc);
   const plannedLabel = hoursType === "Quoted" ? "Quoted" : "ETC";
   // ETC (unlike Quoted) is scoped to ONE month — `s.etc` above is the New ETC from the
