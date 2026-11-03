@@ -87,6 +87,9 @@ export type JobHoursDashboard = {
   job: { id: number; jobId: string; jobName: string; customer: string | null; status: string };
   // The individual jobs this view aggregates (1+). Used to pull parts cost.
   jobRefs: { id: number; jobId: string }[];
+  // True when every selected job is Complete (closed). The Quoted/ETC toggle opens on Quoted
+  // for those — a finished job has no ETC left to plan — and on ETC otherwise.
+  allComplete: boolean;
   kpis: {
     hoursRefreshedThru: string | null;
     latestEtcMonth: string | null;
@@ -268,6 +271,7 @@ export async function getJobHoursDashboard(jobIdOrIds: number | number[]): Promi
   return {
     job,
     jobRefs,
+    allComplete: jobs.every((j) => j.status === "Complete"),
     kpis: {
       hoursRefreshedThru: freshness?.refreshedThrough ? freshness.refreshedThrough.toISOString().slice(0, 10) : null,
       latestEtcMonth: latestMonth,
