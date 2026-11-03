@@ -68,3 +68,12 @@ require('../SDC_Scheduler/scripts/server-auto-update.js');
 require('../apps/state-logic/scripts/server-auto-update.js');
 
 log('All 3 updaters started (assemblies/readiness/calendar/vendor monorepo, scheduler, statelogic).');
+
+// Internal update feed for the desktop shell (see scripts/sdc-shell-feed.js).
+// Not an updater of this server, so a failure here must never stop the three
+// above: it is loaded last and any startup error is only logged.
+try {
+  require('./sdc-shell-feed.js');
+} catch (err) {
+  log(`Shell update feed failed to start (updaters unaffected): ${err && err.stack || err}`);
+}
