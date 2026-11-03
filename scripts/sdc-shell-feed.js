@@ -29,6 +29,8 @@ const fs     = require('fs');
 const path   = require('path');
 const http   = require('http');
 const crypto = require('crypto');
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 
 const REPO        = process.env.SDC_FEED_REPO || 'steven-douglas-corporation/SDC-Tools';
 const FEED_DIR    = process.env.SDC_FEED_DIR  || 'D:\\SDC-Updates';
@@ -67,11 +69,15 @@ async function download(asset, dest) {
     signal: AbortSignal.timeout(10 * 60 * 1000),
   });
   if (!res.ok) throw new Error(`download ${asset.name}: HTTP ${res.status}`);
-  fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+  // Stream to disk: the installer is ~90 MB and this runs inside the updater
+  // hub, which PM2 restarts at 350 MB.
+  await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(dest));
 }
 
-function sha512b64(file) {
-  return crypto.createHash('sha512').update(fs.readFileSync(file)).digest('base64');
+async function sha512b64(file) {
+  const hash = crypto.createHash('sha512');
+  await pipeline(fs.createReadStream(file), hash);
+  return hash.digest('base64');
 }
 
 function readState() {
@@ -113,7 +119,7 @@ async function sync() {
     // latest.yml carries the installer's sha512 (base64). Refuse a mismatch.
     const ymlText = fs.readFileSync(path.join(tmp, 'latest.yml'), 'utf8');
     const want = (ymlText.match(/^\s*sha512:\s*(\S+)/m) || [])[1];
-    if (!want || want !== sha512b64(path.join(tmp, exe.name))) {
+    if (!want || want !== await sha512b64(path.join(tmp, exe.name))) {
       throw new Error(`release ${rel.tag_name}: installer sha512 does not match latest.yml, feed NOT updated`);
     }
 
