@@ -177,7 +177,15 @@ export function ChangeNotifications() {
   // also what lets the last card animate out instead of the container disappearing from
   // under it.
   const cards = useExitList(shown, (g) => `${g.head.tab}|${g.head.rowRef}|${g.head.columnName}`);
-  if (cards.length === 0 && !offline) return null;
+  // ── The per-cell cards are suppressed, not removed (requested 2026-11-04) ───
+  //
+  // Reported as the "X changed Y from A to B" cards popping up on screen every time
+  // anyone edits a cell — too frequent, distracting during normal use. The dedup,
+  // auto-dismiss and system-event filtering above are untouched and still run (so
+  // nothing here needs to change if the cards come back), but `cards` is no longer
+  // rendered below. None of this touches lib/change-log.ts: every edit still writes
+  // its row to the persisted AuditLog table and still shows up on the Audit Log page.
+  if (!offline) return null;
 
   // ── No fixed wrapper here any more (2026-08-10) ─────────────────────────────
   //
@@ -205,53 +213,10 @@ export function ChangeNotifications() {
         </div>
       )}
 
-      {cards.map(({ key, item: g, leaving }) => {
-        const c = g.head;
-        const tone = TONE[c.changeType] ?? TONE.edited;
-        const repeats = g.members.length;
-        return (
-          <div
-            key={key}
-            className={`pointer-events-auto rounded-lg border border-sdc-border bg-white px-3.5 py-2.5 shadow-lg ${
-              leaving ? "motion-toast-out" : "motion-toast-in"
-            }`}
-          >
-            <div className="flex items-start gap-2">
-              <span className={`mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
-              <div className="min-w-0 flex-1">
-                <p className="text-note leading-snug text-sdc-navy">{c.message}</p>
-                <p className="mt-0.5 text-label text-sdc-muted">
-                  {tone.label} · {clockTime(c.at)}
-                  {/* The events this card stands for. Without it, collapsing would hide
-                      that a cell was changed repeatedly — which is exactly the thing
-                      somebody watching this stack would want to know. */}
-                  {repeats > 1 && <> · {repeats} changes to this cell</>}
-                </p>
-              </div>
-              <button
-                type="button"
-                // Dismisses every event behind the card, not just the one being shown —
-                // otherwise it would reappear a frame later showing the next-newest.
-                onClick={() => g.members.forEach((m) => dismissChange(m.changeId, m.rowRef, m.columnName))}
-                aria-label="Dismiss notification"
-                className="motion-interactive shrink-0 rounded px-1 text-sm leading-none text-sdc-gray-400 hover:text-sdc-navy"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-        );
-      })}
-
-      {hidden > 0 && (
-        <button
-          type="button"
-          onClick={dismissAllChanges}
-          className="motion-interactive motion-toast-in pointer-events-auto rounded-lg border border-sdc-border bg-sdc-gray-100 px-3 py-1.5 text-label tabular-nums text-sdc-gray-600 shadow hover:bg-white"
-        >
-          + {hidden} more cell{hidden === 1 ? "" : "s"} changed — clear all
-        </button>
-      )}
+      {/* The per-cell "X changed Y from A to B" cards and the "+N more — clear all"
+          chip are intentionally not rendered — see the note above `if (!offline)`.
+          `cards`, `hidden`, TONE and clockTime() stay in the module so the cards can
+          come straight back by restoring this block; nothing above this point moved. */}
     </>
   );
 }
