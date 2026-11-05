@@ -128,7 +128,7 @@ export function NewProjectRows({
               <input {...dateCellProps({ name: `newRow__${tempId}__completeDate`, defaultValue: "", ariaLabel: "New project Complete Date" })} />
             </td>
           )}
-          {(["salesPrice", "changeQuote", "totalPrice"] as const).map((field) =>
+          {(["salesPrice", "changeQuote", "totalPrice", "netTerms"] as const).map((field) =>
             show(field) ? (
               <td key={field} className="overflow-hidden whitespace-nowrap px-1 py-1.5 text-left align-middle text-label text-sdc-muted">
                 {/* Only Sales Price is typed. Change Quote comes from the Change Quotes panel and Total is
@@ -143,6 +143,17 @@ export function NewProjectRows({
                       className="w-[5.5rem] min-w-0 border-none bg-transparent text-left tabular-nums outline-none"
                     />
                   </span>
+                )}
+                {field === "netTerms" && (
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    name={`newRow__${tempId}__netTerms`}
+                    defaultValue="30"
+                    aria-label="New project Net Terms (days)"
+                    className="w-[5.5rem] min-w-0 border-none bg-transparent text-left tabular-nums outline-none"
+                  />
                 )}
               </td>
             ) : null

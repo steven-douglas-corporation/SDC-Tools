@@ -11,6 +11,8 @@ import { VALID_JOB_TYPES, JOB_STATUSES, isSdcCustomer } from "@/lib/job-filters"
 import { assertProjectsEditable } from "@/lib/projects-edit-mode";
 import { CELL_SPECS, parseCell } from "@/lib/cell-rules";
 import { allInCents } from "@/lib/change-quotes";
+import { auth } from "@/lib/auth";
+import { hasPermission, type AppRole } from "@/lib/permissions";
 
 const HOURS_PREFIX = "quoted__";
 
@@ -27,6 +29,22 @@ const DATE_FIELDS = ["startDate", "completeDate", "quotedDeliveryDate"] as const
 // posted value for either is ignored — the grid renders them read-only, and this is the control
 // (a form post doesn't care what the markup said).
 const MONEY_FIELDS = ["costQuoted", "costActualHistorical", "salesPrice"] as const;
+// Net Terms (payment terms, days) is a whole number >= 0 stored non-null, default 30. It sits behind
+// projects:pricing like the other price columns, and that is enforced HERE, not just by hiding the cell.
+const DEFAULT_NET_TERMS = 30;
+async function canEditPricing(): Promise<boolean> {
+  const session = await auth();
+  return !!session?.user && hasPermission(session.user.role as AppRole, "projects:pricing");
+}
+function parseNetTerms(raw: string, label: number | string): number {
+  const t = raw.trim();
+  if (!/^\d+$/.test(t)) {
+    throw new Error(`Net Terms must be a whole number of days, 0 or more (${typeof label === "number" ? `job ${label}` : label}).`);
+  }
+  const n = Number(t);
+  if (n > 3650) throw new Error(`Net Terms is too large — ${n} days (${typeof label === "number" ? `job ${label}` : label}).`);
+  return n;
+}
 type PlainField = (typeof PLAIN_FIELDS)[number];
 type DateField = (typeof DATE_FIELDS)[number];
 type MoneyField = (typeof MONEY_FIELDS)[number];
@@ -384,6 +402,7 @@ async function saveJobFields(formData: FormData): Promise<{ written: number; con
   }
   if (byJob.size === 0) return { written: 0, conflicts: [], conflictFields: [], salesChanged: false };
 
+  const pricingAllowed = [...byJob.values()].some((f) => f.has("netTerms")) ? await canEditPricing() : false;
   const jobIds = [...byJob.keys()];
   const currentJobs = await prisma.job.findMany({
     where: { id: { in: jobIds } },
@@ -404,6 +423,7 @@ async function saveJobFields(formData: FormData): Promise<{ written: number; con
       salesPrice: true,
       changeQuote: true,
       totalPrice: true,
+      netTerms: true,
       billable: true,
     },
   });
@@ -511,6 +531,14 @@ async function saveJobFields(formData: FormData): Promise<{ written: number; con
       }
     }
 
+    if (fields.has("netTerms")) {
+      if (!pricingAllowed) throw new Error("Editing Net Terms needs the Projects pricing permission.");
+      const nextValue = parseNetTerms(fields.get("netTerms")!, jobId);
+      if (!stale("netTerms", current.netTerms, (r) => parseNetTerms(r, jobId)) && nextValue !== current.netTerms) {
+        data.netTerms = nextValue;
+      }
+    }
+
     // Total follows Sales Price (+ the job's Change Quote) in the same write.
     if ("salesPrice" in data) {
       const sales = data.salesPrice as number | null;
@@ -601,6 +629,7 @@ const JOB_FIELD_LABELS: Record<string, string> = {
   salesPrice: "Sales Price",
   changeQuote: "Change Quote",
   totalPrice: "Total",
+  netTerms: "Net Terms",
 };
 
 // Stringify a job field the way its CELL displays it, so a `previousValue`/`newValue`
@@ -650,6 +679,8 @@ async function saveNewRows(formData: FormData): Promise<number> {
 
   if (fieldsByTemp.size === 0) return 0;
 
+  const pricingAllowed = await canEditPricing();
+
   type NewRow = {
     jobId: string;
     jobName: string;
@@ -663,6 +694,7 @@ async function saveNewRows(formData: FormData): Promise<number> {
     costQuoted: number | null;
     costActualHistorical: number | null;
     salesPrice: number | null;
+    netTerms: number;
     hours: { section: string; quotedHours: number }[];
   };
 
@@ -724,6 +756,14 @@ async function saveNewRows(formData: FormData): Promise<number> {
     const costActualHistorical = parseMoney((fields.get("costActualHistorical") ?? "").trim(), "Parts Cost Actual", `new project "${jobId}"`);
     const salesPrice = parseMoney((fields.get("salesPrice") ?? "").trim(), "Sales Price", `new project "${jobId}"`);
 
+    // Blank or absent (no pricing permission, so the cell was never rendered) = the default.
+    const netTermsRaw = (fields.get("netTerms") ?? "").trim();
+    let netTerms = DEFAULT_NET_TERMS;
+    if (netTermsRaw !== "" && Number(netTermsRaw) !== DEFAULT_NET_TERMS) {
+      if (!pricingAllowed) throw new Error("Editing Net Terms needs the Projects pricing permission.");
+      netTerms = parseNetTerms(netTermsRaw, `new project "${jobId}"`);
+    }
+
     const hoursMap = hoursByTemp.get(tempId) ?? new Map();
     const hours: { section: string; quotedHours: number }[] = [];
     for (const [section, raw] of hoursMap) {
@@ -739,7 +779,7 @@ async function saveNewRows(formData: FormData): Promise<number> {
       if (n !== 0) hours.push({ section, quotedHours: n });
     }
 
-    rows.push({ jobId, jobName, customer, type, billable, status, startDate, completeDate, quotedDeliveryDate, costQuoted, costActualHistorical, salesPrice, hours });
+    rows.push({ jobId, jobName, customer, type, billable, status, startDate, completeDate, quotedDeliveryDate, costQuoted, costActualHistorical, salesPrice, netTerms, hours });
   }
 
   if (rows.length === 0) return 0;
@@ -765,6 +805,7 @@ async function saveNewRows(formData: FormData): Promise<number> {
           costQuoted: r.costQuoted,
           costActualHistorical: r.costActualHistorical,
           salesPrice: r.salesPrice,
+          netTerms: r.netTerms,
           source: "manual",
           estimatedHours: r.hours.length
             ? { create: r.hours.map((h) => ({ section: h.section, quotedHours: h.quotedHours, quotedHoursManuallyEdited: true })) }

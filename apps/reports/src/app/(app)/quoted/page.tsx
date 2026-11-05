@@ -280,6 +280,8 @@ const PRICE_COLUMNS = [
   { key: "salesPrice", field: "salesPrice", label: "Sales Price" },
   { key: "changeQuote", field: "changeQuote", label: "Change Quote" },
   { key: "totalPrice", field: "totalPrice", label: "Total" },
+  // Payment terms in days — typed per job (defaults to 30). Same projects:pricing gate.
+  { key: "netTerms", field: "netTerms", label: "Net Terms" },
 ] as const;
 
 // Same three keys PRICE_COLUMNS uses, as a Set — for filtering them out of
@@ -1319,6 +1321,18 @@ export async function ProjectsView({ params }: { params: {
                             className="w-[5.5rem] min-w-0 border-none bg-transparent text-left tabular-nums outline-none"
                           />
                         </span>
+                      ) : c.field === "netTerms" ? (
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          name={`jobField__${job.id}__netTerms`}
+                          data-remote-adopt=""
+                          defaultValue={String(job.netTerms)}
+                          data-baseline={String(job.netTerms)}
+                          aria-label={`Net Terms (days), ${job.jobName}`}
+                          className="w-[5.5rem] min-w-0 border-none bg-transparent text-left tabular-nums outline-none"
+                        />
                       ) : (
                         // Change Quote is filled by the Change Quotes panel and Total is Sales Price +
                         // Change Quote — neither is typed, so no input is rendered (and nothing is posted).

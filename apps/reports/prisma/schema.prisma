@@ -229,7 +229,9 @@ model Job {
   salesPrice               Decimal?  @db.Decimal(12, 2)
   changeQuote              Decimal?  @db.Decimal(12, 2)
   totalPrice               Decimal?  @db.Decimal(12, 2)
-  includeInTypeCalc       Boolean   @default(false)
+  // Payment terms in days (Projects grid, after Total). Editable per job; gated by projects:pricing.
+  netTerms                 Int       @default(30)
+  includeInTypeCalc      Boolean   @default(false)
   billable                 Boolean   @default(true) // Billable vs. Non-Billable — manager-set, no upstream sync touches this
   // Drops the job from the Standard Fees allocation (Total ETC pool share)
   // without hiding it from the ETC grid — the sheet's job list was manually

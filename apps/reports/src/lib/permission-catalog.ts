@@ -40,7 +40,7 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   // of projects:edit — a role could in principle see pricing without being
   // able to edit the grid, or vice versa, the same relationship Standard Fees
   // already has with Projects — Edit (see quoted/page.tsx's sectionAllowed).
-  { keys: ["projects:pricing"], label: "Projects — Sales Price / Change Quote / Total columns", section: "Projects" },
+  { keys: ["projects:pricing"], label: "Projects — Sales Price / Change Quote / Total / Net Terms columns", section: "Projects" },
   { keys: ["monthly-etc:view"], label: "Monthly ETC — View", section: "Monthly ETC" },
   { keys: ["monthly-etc:edit"], label: "Monthly ETC — Edit (enter/save New ETC)", section: "Monthly ETC" },
   { keys: ["monthly-etc:submit"], label: "Monthly ETC — Submit Monthly Report", section: "Monthly ETC" },
