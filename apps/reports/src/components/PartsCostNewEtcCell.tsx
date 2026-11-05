@@ -273,7 +273,9 @@ export function PartsCostNewEtcCell({
       prior: priorEtc,
       spent,
       left,
-      newEtc: decidedNow ? Math.max(effective, 0) : 0,
+      // Unclamped: the footer is the plain sum of the figures the column shows
+      // (a displayed -$99 must subtract $99, not silently count as $0).
+      newEtc: decidedNow ? effective : 0,
       diff: diffNow,
       decided: decidedNow,
     });
