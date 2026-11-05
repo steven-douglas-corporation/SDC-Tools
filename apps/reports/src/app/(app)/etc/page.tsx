@@ -2143,7 +2143,11 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                         const diffCost = decidedCost ? moneyLeft - Math.max(effectiveNewEtcCost, 0) : 0;
                         partsCostGrandTotal.prior += prior;
                         partsCostGrandTotal.worked += spent;
-                        partsCostGrandTotal.newEtc += effectiveNewEtcCost;
+                        // The footer is the plain sum of what the column DISPLAYS. This used to
+                        // add effectiveNewEtcCost, which for an undecided (blank / "—") row is
+                        // the hidden carry-forward suggestion — so the footer counted dollars
+                        // no cell showed. Negative figures are summed as shown, not clamped.
+                        partsCostGrandTotal.newEtc += decidedCost ? effectiveNewEtcCost : 0;
                         // A blank cell contributes nothing — the same rule the column
                         // itself uses, so entering $1 moves the footer by $1 and a footer
                         // total is never made partly of figures nobody can see.
