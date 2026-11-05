@@ -31,6 +31,7 @@ export const PROJECTS_INFO_COLUMNS = [
   { key: "salesPrice", label: "Sales Price" },
   { key: "changeQuote", label: "Change Quote" },
   { key: "totalPrice", label: "Total" },
+  { key: "netTerms", label: "Net Terms" },
 ] as const;
 
 /**
