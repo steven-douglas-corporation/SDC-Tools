@@ -15,7 +15,7 @@ import { VALID_JOB_TYPES, etcActiveJobFilter } from "@/lib/job-filters";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION, JOB_DASHBOARD_HOURS_CODES, mapPunchToColumns } from "@/lib/sections";
 import { calcHoursLeft, round2, isMonthLocked, latestPriorEtcByKey, priorEtcForMonth, redrivenDraft, monthWindowUtc, startsInMonth } from "@/lib/etc";
 import { getPartsCostBookedByJob, getUnclassifiedFlaggedSpend } from "@/lib/sync-totaleto";
-import { isDerivedPartsDraft } from "@/lib/parts-breakout-scope";
+import { isDerivedPartsDraft, showsPartsBreakout } from "@/lib/parts-breakout-scope";
 import {
   hoursByJobSection,
   latestWorkDate,
@@ -1072,7 +1072,11 @@ export async function syncPartsCost(month: string): Promise<{ rowsUpserted: numb
       // entry could have been submitted since the loop started.
       if (!existing.needsReview) continue;
     } else {
-      if (priorEtc === 0 && moneySpent === 0) continue; // nothing worth a row yet
+      // Nothing worth a row yet — EXCEPT on months with the Left to Invoice / Left to
+      // Purchase columns. A job with no row renders "—" in every Parts Cost cell and
+      // nothing can be typed there, so a manager could not enter Left to Purchase for it.
+      // The row has to exist for the cell to have somewhere to save to.
+      if (priorEtc === 0 && moneySpent === 0 && !showsPartsBreakout(month)) continue;
       // A brand-new needsReview:true row would silently "unlock" an otherwise
       // fully-locked month — refuse if the month is locked right now.
       const monthEntriesNow = await prisma.etcEntry.findMany({ where: { month }, select: { needsReview: true } });
