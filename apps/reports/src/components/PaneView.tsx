@@ -5,6 +5,7 @@ import { ProjectsView } from "@/app/(app)/quoted/page";
 import { HoursView } from "@/app/(app)/hours/page";
 import { TmView } from "@/app/(app)/tm/page";
 import { BuildReadinessView } from "@/app/(app)/build-readiness/page";
+import { OpenPosView } from "@/app/(app)/open-pos/page";
 import { JobsView } from "@/app/(app)/jobs/page";
 import { ProfitabilityView } from "@/app/(app)/job-cost-explorer/page";
 import { CashFlowView } from "@/app/(app)/cash-flow/page";
@@ -67,6 +68,7 @@ const PANE_VIEWS = {
   "/hours": HoursView,
   "/tm": TmView,
   "/build-readiness": BuildReadinessView,
+  "/open-pos": OpenPosView,
   "/jobs": JobsView,
   "/job-cost-explorer": ProfitabilityView,
   "/cash-flow": CashFlowView,

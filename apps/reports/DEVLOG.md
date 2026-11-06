@@ -7089,6 +7089,33 @@ is empty, so the file is archived and deleted from the SFTP share like every oth
 Paylocity file. Both need a hand step on the server: re-run the SQL file, and carry the
 `keep_on_server` change into the live `D:\DataWarehouse\ingest\settings.toml`.
 
+## 82. Open POs: a page for procurement and supply chain (2026-11-06)
+
+New sidebar page `/open-pos` (Planning, after Build Readiness), gated on a new
+`open-pos:view` permission. Every purchase order that still owes an invoice, today, across
+Active and HeadStart projects: totals, one row per project, then every open PO with its
+status (Past due, Awaiting delivery, Received awaiting invoice, Invoiced more than ordered).
+
+**No second formula.** Built on `getPartsCostForJobs` and the per-line `lineLeftToInvoice`,
+the same lines and money as the Parts List and Monthly ETC. "Open" is the Parts List's
+"Left to invoice" filter applied per PO (`hasInvoiceBalance` on the signed PO balance).
+Receipts only decide the status; a PO invoiced in full but not logged as received is not
+listed. Extra Costs (freight, fees) are not POs and are left out, which is the one way a
+project's figure here can differ from Job Details' Left to Invoice (with the aggregate
+floor at 0).
+
+**Received quantity** is now on `PartsCostLine` (`receivedQty`, from the receiver-log view
+`partsDetailSql` already joined). Display only; no money figure uses it. The dev fake feed
+carries it and `requiredDate`, derived without new random draws so existing fake figures
+do not move.
+
+Permission seeded from the live `job-hour-details:view` rows (Job Details > Procurement
+already shows those roles the same money), so nobody's access changes on deploy.
+
+Files: `lib/open-pos-rules.ts`, `lib/open-pos.ts`, `app/(app)/open-pos/page.tsx`,
+`components/open-pos/*`, migration `20261106120000_add_open_pos_permission`, tests in
+`tests/open-pos.test.ts`. Not yet: an as-of date, a parts-budget comparison per project.
+
 ## 83. DataTable replaces AG Grid on the Audit Log and Feedback (2026-11-06)
 
 Both lists were hard to use. Root cause of the small text: the shared AG Grid theme set
