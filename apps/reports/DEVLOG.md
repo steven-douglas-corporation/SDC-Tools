@@ -7133,8 +7133,8 @@ Left to invoice (= every open PO, the default). All delivery figures are by VALU
 (`moneyOf`), per PO and per job share (`shares`, which sum to the PO). The project table shows
 all five as columns, the chosen one tinted; its Total row equals the chosen tile. Also: a chart
 of value not yet received by week expected (`weeks`, sums to Not yet received), a collapsible
-Late POs table (worst first), an "Only partially received" toggle, By supplier, and the old
-grid as "All POs". Links go to Job Details and to the Scheduler's `?view=vendor-pos`.
+Late POs table (worst first), an "Only partially received" toggle, By supplier, and "All POs"
+on the shared DataTable (§83). Links go to Job Details and to the Scheduler's `?view=vendor-pos`.
 Not built: job milestones (would need the Scheduler's dates) and on-time % (needs closed POs).
 
 ## 83. DataTable replaces AG Grid on the Audit Log and Feedback (2026-11-06)

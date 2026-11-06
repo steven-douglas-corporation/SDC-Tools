@@ -5,7 +5,7 @@ import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } fr
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
 import type { OpenPoMoney, OpenPoRow, OpenPosResult, OpenPoWeek } from "@/lib/open-pos-rules";
-import { OpenPosGrid } from "@/components/open-pos/OpenPosGrid";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 
 // For managers first (the Scheduler's Vendor POs page is the buyers' worklist).
 //
@@ -103,6 +103,64 @@ function WeekChart({ weeks }: { weeks: OpenPoWeek[] }) {
 }
 
 const jobHref = (jobId: string) => `/job-hours?jobs=${encodeURIComponent(jobId)}`;
+
+function JobLinks({ jobIds }: { jobIds: string[] }) {
+  return (
+    <>
+      {jobIds.map((j, i) => (
+        <Fragment key={j}>
+          {i > 0 && ", "}
+          <a href={jobHref(j)} onClick={(e) => e.stopPropagation()} className="text-sdc-blue hover:underline">
+            {j}
+          </a>
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+// "All POs": every shown PO, whole-PO amounts. Same measures as the project table.
+const LIST_COLUMNS: DataTableColumn<OpenPoRow>[] = [
+  { id: "po", header: "PO #", value: (r) => r.poNumber, width: "150px", className: "font-semibold" },
+  {
+    id: "status",
+    header: "Status",
+    value: (r) => statusChip(r).text,
+    width: "190px",
+    render: (r) => {
+      const chip = statusChip(r);
+      return <span className={`rounded-full px-2 py-0.5 font-semibold ${chip.cls}`}>{chip.text}</span>;
+    },
+  },
+  { id: "jobs", header: "Job", value: (r) => r.jobIds.join(", "), width: "110px", render: (r) => <JobLinks jobIds={r.jobIds} /> },
+  { id: "supplier", header: "Supplier", value: (r) => r.suppliers.join(", ") },
+  { id: "ordered", header: "Ordered", value: (r) => r.purchaseDate, width: "110px", render: (r) => fmtDate(r.purchaseDate), searchable: false },
+  {
+    id: "expected",
+    header: "Expected",
+    value: (r) => r.nextDue,
+    width: "120px",
+    searchable: false,
+    headerTitle: "Earliest date still expected on lines not yet received. ↻ = re-promised by the vendor.",
+    title: (r) => (r.revised && r.originalDue ? `Re-promised. Originally due ${fmtDate(r.originalDue)}` : undefined),
+    render: (r) => (
+      <>
+        {r.nextDue ? fmtDate(r.nextDue) : r.money.notReceived > 0 ? "No date" : "Received"}
+        {r.revised && <span className="text-sdc-blue"> ↻</span>}
+      </>
+    ),
+  },
+  {
+    id: "received",
+    header: "Received (by value)",
+    value: (r) => (r.money.ordered > 0 ? r.money.received / r.money.ordered : null),
+    width: "250px",
+    searchable: false,
+    render: (r) => <ReceivedBar received={r.money.received} ordered={r.money.ordered} late={r.money.late > 0} />,
+  },
+  { id: "notReceived", header: "Not received", value: (r) => r.money.notReceived, align: "right", width: "120px", searchable: false, render: (r) => usd(r.money.notReceived) },
+  { id: "lti", header: "Left to invoice", value: (r) => r.money.leftToInvoice, align: "right", width: "130px", searchable: false, render: (r) => usd(r.money.leftToInvoice) },
+];
 
 export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosResult; schedulerVendorPosUrl?: string }) {
   const [metric, setMetric] = useState<MetricId>("leftToInvoice");
@@ -488,9 +546,18 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       )}
 
       {view === "list" && (
-        <section className="flex flex-col gap-2">
+        <section className="flex flex-col gap-2" aria-label="All POs">
           <p className="text-note text-sdc-gray-400">Amounts are the whole PO. A PO split across jobs lists every job it charges.</p>
-          <OpenPosGrid rows={shown} />
+          <DataTable
+            rows={shown}
+            columns={LIST_COLUMNS}
+            rowKey={(r) => r.poNumber}
+            label="Open POs"
+            defaultSort={{ id: metric === "leftToInvoice" ? "lti" : "notReceived", dir: "desc" }}
+            paging="pages"
+            searchPlaceholder="Search PO, supplier or job…"
+            emptyText="No POs match."
+          />
         </section>
       )}
 
