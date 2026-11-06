@@ -3,6 +3,7 @@ import { PAGE_SHELL } from "@/components/ui/classnames";
 import { PageTitle } from "@/components/ui/Typography";
 import { AuditLogGrid } from "@/components/AuditLogGrid";
 import { requirePagePermission } from "@/lib/require-permission";
+import { formatAuditWhen } from "@/lib/audit-time";
 
 // How many recent entries to load into the grid (AG Grid then sorts/filters/
 // paginates them client-side).
@@ -26,7 +27,7 @@ export async function AuditLogView() {
   ]);
 
   const rows = logs.map((log) => ({
-    when: log.createdAt.toISOString().slice(0, 16).replace("T", " "),
+    when: formatAuditWhen(log.createdAt),
     userEmail: log.userEmail ?? "—",
     action: log.action,
     entity: log.entityType ? `${log.entityType}${log.entityId ? ` #${log.entityId}` : ""}` : "—",
