@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { loadJobAnalysis } from "@/lib/job-analysis-actions";
+import { loadJobAnalysis, verifyJobAnalysis } from "@/lib/job-analysis-actions";
 import type { JobAnalysis } from "@/lib/job-analysis";
+import type { ParityReport } from "@/lib/parts-parity";
 import { card, TABLE_GRID, TABLE_HEADER_ROW } from "@/components/ui/classnames";
 import { usd } from "@/components/ui/format";
 
@@ -23,9 +24,25 @@ export function JobAnalysisDropdown() {
   const [data, setData] = useState<JobAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [report, setReport] = useState<ParityReport | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [verifying, startVerify] = useTransition();
+
+  const verify = () => {
+    setVerifyError(null);
+    setReport(null);
+    startVerify(async () => {
+      try {
+        setReport(await verifyJobAnalysis());
+      } catch (e) {
+        setVerifyError(e instanceof Error ? e.message : "Could not run the check.");
+      }
+    });
+  };
 
   const load = () => {
     setError(null);
+    setReport(null);
     startTransition(async () => {
       try {
         setData(await loadJobAnalysis());
@@ -129,6 +146,39 @@ export function JobAnalysisDropdown() {
                     </tfoot>
                   )}
                 </table>
+              </div>
+
+              <div className="mt-3 text-xs">
+                <button
+                  type="button"
+                  onClick={verify}
+                  disabled={verifying}
+                  className="rounded-md border border-sdc-border-soft px-3 py-1.5 font-medium text-sdc-navy hover:bg-sdc-blue-light/40 disabled:opacity-60"
+                >
+                  {verifying ? "Checking every job…" : "Verify against Parts List"}
+                </button>
+                <span className="ml-2 text-sdc-muted">Rebuilds each job&apos;s Parts List and compares. Takes a minute.</span>
+                {verifyError && <p className="mt-2 text-sdc-red-text">{verifyError}</p>}
+                {report && report.mismatches.length === 0 && report.unchecked.length === 0 && (
+                  <p className="mt-2 text-sdc-green-text">
+                    All {report.checkedJobs} jobs match the Parts List (and Monthly ETC&apos;s stored Money Spent) to the cent.
+                  </p>
+                )}
+                {report && (report.mismatches.length > 0 || report.unchecked.length > 0) && (
+                  <div className="mt-2 rounded-md border border-sdc-yellow bg-sdc-yellow-bg/40 px-3 py-2 text-sdc-yellow-text">
+                    <p className="font-medium">
+                      {report.mismatches.length} difference{report.mismatches.length === 1 ? "" : "s"} across {report.checkedJobs} jobs checked:
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {report.mismatches.map((x, i) => (
+                        <li key={i}>
+                          Job {x.jobId} · {x.figure}: Analysis {usd(x.shared)} vs {x.against} {usd(x.other)}
+                        </li>
+                      ))}
+                    </ul>
+                    {report.unchecked.length > 0 && <p className="mt-1">Could not check: {report.unchecked.join(", ")}.</p>}
+                  </div>
+                )}
               </div>
             </>
           )}

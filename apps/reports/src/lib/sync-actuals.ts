@@ -14,7 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES, etcActiveJobFilter } from "@/lib/job-filters";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION, JOB_DASHBOARD_HOURS_CODES, mapPunchToColumns } from "@/lib/sections";
 import { calcHoursLeft, round2, isMonthLocked, latestPriorEtcByKey, priorEtcForMonth, redrivenDraft, monthWindowUtc, startsInMonth } from "@/lib/etc";
-import { getPartsCostBookedByJob, getUnclassifiedFlaggedSpend } from "@/lib/sync-totaleto";
+import { bookedNetFor, getPartsCostBookedByJob, getUnclassifiedFlaggedSpend } from "@/lib/sync-totaleto";
 import { isDerivedPartsDraft, showsPartsBreakout } from "@/lib/parts-breakout-scope";
 import {
   hoursByJobSection,
@@ -1060,7 +1060,7 @@ export async function syncPartsCost(month: string): Promise<{ rowsUpserted: numb
       carried: latestPartsByKey.get(`${job.id}-${PARTS_COST_SECTION}`),
       quoted: Number(job.costQuoted ?? 0),
     });
-    const moneySpent = spentByJobId.get(job.jobId) ?? 0;
+    const moneySpent = bookedNetFor(spentByJobId, job.jobId);
 
     const existing = await prisma.etcEntry.findUnique({
       where: { jobId_section_month: { jobId: job.id, section: PARTS_COST_SECTION, month } },

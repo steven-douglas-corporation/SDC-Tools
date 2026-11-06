@@ -507,6 +507,16 @@ export async function getPartsCostBookedByJob(
   }, { requestTimeout: 180_000, feed: "parts_cost.booked_by_job" });
 }
 
+/**
+ * One job's net from `getPartsCostBookedByJob`. THE lookup — Monthly ETC's sync and the
+ * Job Details Analysis both call it, so a job number is keyed one way in both
+ * (`net` is keyed by String(Number(ProjectID)); "1101" and "01101" are the same job).
+ * Absent = nothing booked = 0, which is only a real answer when the query succeeded.
+ */
+export function bookedNetFor(net: ReadonlyMap<string, number>, jobNumber: string): number {
+  return net.get(String(Number(jobNumber))) ?? net.get(jobNumber) ?? 0;
+}
+
 // ── Row-count baseline, for detecting a join fan-out (§82) ──────────────────
 //
 // A one-to-many join anywhere in getJobPartsInvoicedInMonth's LEFT JOIN chain
