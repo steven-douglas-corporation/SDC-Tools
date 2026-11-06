@@ -7088,3 +7088,22 @@ Warehouse: `"Paylocity"."PositionFamilyOverride"` is dropped (`DROP VIEW IF EXIS
 is empty, so the file is archived and deleted from the SFTP share like every other
 Paylocity file. Both need a hand step on the server: re-run the SQL file, and carry the
 `keep_on_server` change into the live `D:\DataWarehouse\ingest\settings.toml`.
+
+## 83. DataTable replaces AG Grid on the Audit Log and Feedback (2026-11-06)
+
+Both lists were hard to use. Root cause of the small text: the shared AG Grid theme set
+`fontSize: 8`, with a comment saying the app's zoom made that look right. It did not: the
+80% zoom on `<html>` shrinks the grid exactly like everything else, so the grid read at
+about 6.4px next to tables at about 11px. The other half: `floatingFilter` on every column
+(a filter box under each header) and menu icons always shown.
+
+`components/ui/DataTable.tsx` is the replacement, styled like the app's other tables: click a
+header to sort (blanks always last), one search box over the columns a page marks
+searchable (every word must match), optional row click and custom cells, and a `paging`
+setting per page: `"pages"` (Audit Log), `"more"` (Feedback) or `"none"`. The logic is pure
+in `lib/data-table.ts` and tested. Feedback no longer shows Field, Shows, Should be and
+Response as columns; the drawer a row opens shows them.
+
+AG Grid (`ag-grid-community`, `ag-grid-react`) and `ag-grid-theme.ts` are removed, about
+1 MB off the client bundle (docs/PERFORMANCE.md). The two theme tests in
+`typography.test.ts` became one guard: no component imports `ag-grid-*`.
