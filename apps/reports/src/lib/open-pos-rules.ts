@@ -46,14 +46,21 @@ export type OpenPoRow = {
   suppliers: string[];
   /** Earliest purchase date on the PO, `YYYY-MM-DD`. */
   purchaseDate: string | null;
-  /** Earliest required date among lines not yet fully received; null when none are outstanding or none carry a date. */
+  /**
+   * Earliest EXPECTED date among lines not yet fully received (re-promised date when a buyer
+   * entered one, see `lineDue`); null when none are outstanding or none carry a date.
+   */
   nextDue: string | null;
+  /** Earliest ORIGINAL required date among the same lines, before any re-promise. */
+  originalDue: string | null;
+  /** True when any outstanding line's expected date differs from its original one (shown as ↻). */
+  revised: boolean;
   lines: number;
   /** Lines with a positive quantity that are fully received. */
   linesReceived: number;
   /** Lines with a positive quantity (the ones that can be received at all). */
   linesReceivable: number;
-  /** Lines not fully received whose required date is before today. */
+  /** Lines not fully received whose expected date is before today. */
   linesPastDue: number;
   /** False when the feed carried no receipt data for this PO; Status then reads "Open". */
   receiptsKnown: boolean;
@@ -92,6 +99,13 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const receivable = (l: PartsCostLine) => l.lineId.startsWith("pod:") && l.quantity > 0;
 const receiptKnown = (l: PartsCostLine) => typeof l.receivedQty === "number";
 const fullyReceived = (l: PartsCostLine) => receiptKnown(l) && (l.receivedQty as number) >= l.quantity;
+
+/**
+ * When a line is due, for "late" and "next due": the re-promised date when Total ETO has one,
+ * else the original required date. Matches the Scheduler's Vendor POs ETA order, so a PO the
+ * vendor has re-promised for next week is not called late here while the Scheduler says on time.
+ */
+export const lineDue = (l: PartsCostLine): string | null => dayOf(l.expectedDate ?? l.requiredDate ?? null);
 
 function minDay(a: string | null, b: string | null): string | null {
   if (!a) return b;
@@ -141,6 +155,8 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
     if (!hasInvoiceBalance(leftToInvoice)) continue;
 
     let nextDue: string | null = null;
+    let originalDue: string | null = null;
+    let revised = false;
     let linesReceived = 0;
     let linesReceivable = 0;
     let linesPastDue = 0;
@@ -153,8 +169,11 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
         linesReceived++;
         continue;
       }
-      const due = dayOf(l.requiredDate ?? null);
+      const due = lineDue(l);
+      const original = dayOf(l.requiredDate ?? null);
       nextDue = minDay(nextDue, due);
+      originalDue = minDay(originalDue, original);
+      if (due && original && due !== original) revised = true;
       if (due && due < today && receiptKnown(l)) linesPastDue++;
     }
     const receiptsKnown = lines.some((l) => receivable(l) && receiptKnown(l)) || linesReceivable === 0;
@@ -165,6 +184,8 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
       suppliers: [...new Set(lines.map((l) => l.supplier).filter((s): s is string => !!s))],
       purchaseDate,
       nextDue,
+      originalDue,
+      revised,
       lines: lines.length,
       linesReceived,
       linesReceivable,

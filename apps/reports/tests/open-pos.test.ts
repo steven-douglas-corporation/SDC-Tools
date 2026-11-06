@@ -94,6 +94,31 @@ test("a line due today is not past due", () => {
   assert.equal(r.rows[0].status, "awaiting-delivery");
 });
 
+test("a re-promised date decides late, like the Scheduler's ETA; the original is kept for the ↻ mark", () => {
+  const lines = new Map([
+    [
+      "1101",
+      [
+        // Originally due Oct 1, vendor re-promised Nov 20: not late today.
+        line({ po: "MOVED", total: 100, requiredDate: "2026-10-01", expectedDate: "2026-11-20", receivedQty: 0 }),
+        // Re-promised, and the new date has passed too: late.
+        line({ po: "SLIPPED", total: 100, requiredDate: "2026-09-01", expectedDate: "2026-10-15", receivedQty: 0 }),
+        // A feed with no expected date falls back to the required date.
+        line({ po: "PLAIN", total: 100, requiredDate: "2026-10-01", receivedQty: 0 }),
+      ],
+    ],
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY);
+  const by = Object.fromEntries(r.rows.map((x) => [x.poNumber, x]));
+  assert.equal(by.MOVED.status, "awaiting-delivery");
+  assert.equal(by.MOVED.nextDue, "2026-11-20");
+  assert.equal(by.MOVED.originalDue, "2026-10-01");
+  assert.equal(by.MOVED.revised, true);
+  assert.equal(by.SLIPPED.status, "past-due");
+  assert.equal(by.PLAIN.status, "past-due");
+  assert.equal(by.PLAIN.revised, false);
+});
+
 test("no receipt data reads as Open, never as past due", () => {
   const r = buildOpenPos(new Map([["1101", [line({ po: "U", total: 10, requiredDate: "2026-01-01", receivedQty: undefined })]]]), JOBS, TODAY);
   assert.equal(r.rows[0].status, "open");

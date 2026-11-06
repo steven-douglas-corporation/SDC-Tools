@@ -59,10 +59,11 @@ export default function OpenPosGridInner({ rows }: { rows: OpenPoRow[] }) {
     { field: "purchaseDate", headerName: "Ordered", width: 120, valueFormatter: (p) => fmtDate(p.value) },
     {
       field: "nextDue",
-      headerName: "Next due",
-      headerTooltip: "Earliest required date among lines not yet fully received",
-      width: 120,
-      valueFormatter: (p) => (p.value ? fmtDate(p.value) : ""),
+      headerName: "Expected",
+      headerTooltip: "Earliest date still expected among lines not yet fully received. Uses the vendor's re-promised date when Total ETO has one (↻), like the Scheduler's Vendor POs ETA.",
+      width: 130,
+      valueFormatter: (p) => (p.value ? `${fmtDate(p.value)}${p.data?.revised ? " ↻" : ""}` : ""),
+      tooltipValueGetter: (p) => (p.data?.revised && p.data.originalDue ? `Re-promised. Originally due ${fmtDate(p.data.originalDue)}` : undefined),
     },
     {
       colId: "received",

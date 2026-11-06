@@ -7116,6 +7116,16 @@ Files: `lib/open-pos-rules.ts`, `lib/open-pos.ts`, `app/(app)/open-pos/page.tsx`
 `components/open-pos/*`, migration `20261106120000_add_open_pos_permission`, tests in
 `tests/open-pos.test.ts`. Not yet: an as-of date, a parts-budget comparison per project.
 
+**Due date = the re-promised one.** "Past due" and the Expected column judge each line on
+`expectedDate`: `COALESCE(POD.DateRevised, POD.DateRequired, POH.PurchaseDateRevised,
+POH.PurchaseDateRequired)`, the order the Scheduler's Vendor POs ETA already uses (buyers
+enter `DateRevised` when a vendor re-promises). Before this the page read only the required
+date, so a PO re-promised for next week showed as late here and on time in the Scheduler.
+The original date is kept (`originalDue`) and a re-promised PO shows ↻. `requiredDate` is
+unchanged, so Monthly ETC's Left to Invoice by month and Cash Flow do not move; they still
+ignore re-promises. One difference from the Scheduler remains: it calls a PO late when its
+LATEST outstanding line is past due, this page when ANY outstanding line is.
+
 ## 83. DataTable replaces AG Grid on the Audit Log and Feedback (2026-11-06)
 
 Both lists were hard to use. Root cause of the small text: the shared AG Grid theme set

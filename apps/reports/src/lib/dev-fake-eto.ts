@@ -83,6 +83,9 @@ export function fakePartsLines(jobId: string): PartsCostLine[] {
     const required = new Date(purchased.getFullYear(), purchased.getMonth(), purchased.getDate() + 10 + ((i * 7) % 35));
     const receivedQty =
       scenario === 3 && canInvoice ? Math.floor(qty / 2) : scenario === 4 || (invoiced !== 0 && scenario !== 3) ? qty : 0;
+    // Every fourth line the vendor has re-promised three weeks later (Total ETO's DateRevised),
+    // so the dev page shows POs that are past their original date but not late.
+    const expected = i % 4 === 1 ? new Date(required.getFullYear(), required.getMonth(), required.getDate() + 21) : required;
 
     out.push({
       lineId: `pod:${n * 1000 + i}`,
@@ -91,6 +94,7 @@ export function fakePartsLines(jobId: string): PartsCostLine[] {
       purchaseDate: ymd(purchased),
       invoicedDate: invDate,
       requiredDate: ymd(required),
+      expectedDate: ymd(expected),
       receivedQty,
       supplier: SUPPLIERS[Math.floor(rand() * SUPPLIERS.length)],
       manufacturer: null,
