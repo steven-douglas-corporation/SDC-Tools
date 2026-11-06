@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { loadJobAnalysis } from "@/lib/job-analysis-actions";
 import type { JobAnalysis } from "@/lib/job-analysis";
 import { card, TABLE_GRID, TABLE_HEADER_ROW } from "@/components/ui/classnames";
-import { usdExact } from "@/components/ui/format";
+import { usd } from "@/components/ui/format";
 
 // Job Details → Analysis: a collapsible panel above the page body. The figures are
 // fetched on first open (one batched Total ETO read for every active job), not on every
@@ -16,7 +16,7 @@ function monthLabel(month: string): string {
   return `${MONTH_NAMES[m - 1]} ${y}`;
 }
 
-const money = (n: number | null) => (n === null ? "—" : usdExact(n));
+const money = (n: number | null) => (n === null ? "—" : usd(n));
 
 export function JobAnalysisDropdown() {
   const [open, setOpen] = useState(false);

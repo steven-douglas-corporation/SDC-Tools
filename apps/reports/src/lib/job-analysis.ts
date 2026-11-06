@@ -42,7 +42,9 @@ export type JobAnalysis = {
 export async function getJobAnalysis(today: Date = new Date()): Promise<JobAnalysis> {
   const month = previousMonth(today);
   const jobs = await prisma.job.findMany({
-    where: { ...ACTIVE_JOB_WHERE },
+    // TEMPORARY: these have no Parts Cost row in Monthly ETC, so they are left out
+    // until the two views are reconciled.
+    where: { ...ACTIVE_JOB_WHERE, jobId: { notIn: ["1083", "1155", "2025", "2026"] } },
     select: { id: true, jobId: true, jobName: true },
   });
   // Numeric order from 1101 upward; anything below 1101 (or non-numeric) follows at the end.
