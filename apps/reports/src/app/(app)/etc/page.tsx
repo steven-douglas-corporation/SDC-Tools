@@ -912,11 +912,12 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
       partsLiveSums.set(job.id, partsNewEtc(invoice, purchase));
     }
   }
-  // The Analysis dropdown: one row per VISIBLE job (the grid's own rows) with the two figures the
-  // Parts Cost block shows — Left to Invoice as resolved above for this month's cutoff, and Money
-  // Spent Month straight off the Parts Cost entry. Same inputs, same resolver: it cannot drift.
+  // The Analysis dropdown: one row per job in the FULL month set (`jobs`, not `visibleJobs`), so the
+  // Billable filter below never changes it. Two figures the Parts Cost block shows — Left to Invoice
+  // as resolved above for this month's cutoff, and Money Spent Month straight off the Parts Cost
+  // entry. Same inputs, same resolver: per-job values cannot drift from the grid.
   const analysisRows: EtcAnalysisRow[] = [];
-  for (const job of visibleJobs) {
+  for (const job of jobs) {
     const entry = job.etcEntries.find((e) => e.section === PARTS_COST_SECTION);
     if (!entry) continue;
     const b = partsRowBreakout.get(job.id) ?? null;
