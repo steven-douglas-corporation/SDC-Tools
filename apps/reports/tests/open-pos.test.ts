@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import { lineLeftToInvoice } from "../src/lib/left-to-invoice";
-import { buildOpenPos, poStatus, type OpenPoJob } from "../src/lib/open-pos-rules";
+import { buildOpenPos, moneyOf, poStatus, type OpenPoJob } from "../src/lib/open-pos-rules";
 
 // Open POs: a PO is open when its signed Left to Invoice is not $0.00, the Parts List's own
 // filter applied per PO. Receipts only decide the Status column.
@@ -144,6 +144,41 @@ test("a PO split across jobs is one row, and each job counts only its own lines"
 test("still to arrive is the unreceived quantity at PO price", () => {
   const r = buildOpenPos(new Map([["1101", [line({ po: "Q", total: 100, quantity: 10, unitPrice: 10, receivedQty: 3 })]]]), JOBS, TODAY);
   assert.equal(r.jobs[0].awaitingDeliveryValue, 70);
+});
+
+test("the five tile measures, by value at PO price", () => {
+  const ls = [
+    // 10 × $10: 4 received, the rest late (expected Oct 1). $25 posted against it.
+    line({ po: "M", total: 100, quantity: 10, unitPrice: 10, receivedQty: 4, requiredDate: "2026-10-01", posted: 25 }),
+    // 5 × $20, nothing received, expected in 2 weeks.
+    line({ po: "M", total: 100, quantity: 5, unitPrice: 20, receivedQty: 0, requiredDate: "2026-11-20" }),
+    // 2 × $50, nothing received, expected in 6 weeks: outside the 4-week window.
+    line({ po: "M", total: 100, quantity: 2, unitPrice: 50, receivedQty: 0, requiredDate: "2026-12-18" }),
+  ];
+  const m = moneyOf(ls, TODAY);
+  assert.deepEqual(m, { ordered: 300, received: 40, notReceived: 260, late: 60, next4Weeks: 100, receivedNotInvoiced: 15, leftToInvoice: 275 });
+  const r = buildOpenPos(new Map([["1101", ls]]), JOBS, TODAY);
+  assert.equal(r.rows[0].partiallyReceived, true);
+  assert.equal(r.rows[0].lateSince, "2026-10-01");
+  assert.equal(r.rows[0].daysLate, 36);
+});
+
+test("job shares add up to the PO, and the chart adds up to Not yet received", () => {
+  const lines = new Map([
+    ["1101", [line({ po: "S", total: 300, quantity: 3, unitPrice: 100, receivedQty: 1, requiredDate: "2026-10-01" })]],
+    ["1102", [line({ po: "S", total: 200, quantity: 2, unitPrice: 100, receivedQty: 0, requiredDate: "2026-11-10" }), line({ po: "T", total: 50, receivedQty: 0 })]],
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY);
+  const s = r.rows.find((x) => x.poNumber === "S")!;
+  for (const k of Object.keys(s.money) as (keyof typeof s.money)[]) {
+    assert.equal(Math.round(s.shares.reduce((a, x) => a + x.money[k], 0) * 100) / 100, s.money[k], k);
+  }
+  const chart = r.weeks.reduce((a, w) => a + w.notReceived, 0);
+  const notReceived = r.rows.reduce((a, x) => a + x.money.notReceived, 0);
+  assert.equal(chart, notReceived);
+  assert.equal(r.weeks.find((w) => w.key === "late")!.notReceived, 200);
+  assert.equal(r.weeks.find((w) => w.key === TODAY)!.notReceived, 200);
+  assert.equal(r.weeks.find((w) => w.key === "no-date")!.notReceived, 50);
 });
 
 test("jobs not in the loaded set are ignored", () => {

@@ -7126,6 +7126,17 @@ unchanged, so Monthly ETC's Left to Invoice by month and Cash Flow do not move; 
 ignore re-promises. One difference from the Scheduler remains: it calls a PO late when its
 LATEST outstanding line is past due, this page when ANY outstanding line is.
 
+**Manager-first layout (design board I).** The Scheduler's Vendor POs page is the buyers'
+worklist (ETA, tracking, notes), so this page leads with projects and money. Five tiles, each a
+filter and a sort: Late, Not yet received, Expected in the next 4 weeks, Received not invoiced,
+Left to invoice (= every open PO, the default). All delivery figures are by VALUE at PO price
+(`moneyOf`), per PO and per job share (`shares`, which sum to the PO). The project table shows
+all five as columns, the chosen one tinted; its Total row equals the chosen tile. Also: a chart
+of value not yet received by week expected (`weeks`, sums to Not yet received), a collapsible
+Late POs table (worst first), an "Only partially received" toggle, By supplier, and the old
+grid as "All POs". Links go to Job Details and to the Scheduler's `?view=vendor-pos`.
+Not built: job milestones (would need the Scheduler's dates) and on-time % (needs closed POs).
+
 ## 83. DataTable replaces AG Grid on the Audit Log and Feedback (2026-11-06)
 
 Both lists were hard to use. Root cause of the small text: the shared AG Grid theme set

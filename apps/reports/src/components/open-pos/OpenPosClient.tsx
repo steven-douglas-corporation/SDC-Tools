@@ -1,139 +1,510 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { SectionTitle } from "@/components/ui/Typography";
+import { Fragment, useMemo, useState } from "react";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
-import { OPEN_PO_STATUS_LABEL, type OpenPoStatus, type OpenPosResult } from "@/lib/open-pos-rules";
+import type { OpenPoMoney, OpenPoRow, OpenPosResult, OpenPoWeek } from "@/lib/open-pos-rules";
 import { OpenPosGrid } from "@/components/open-pos/OpenPosGrid";
 
-// Three layers, top to bottom: the totals, one row per job (how each project stands on
-// open commitments), then every open PO. Clicking a job narrows the PO list to it;
-// the status buttons narrow it by what each PO is waiting on. All client-side: the
-// server already sent every open PO.
+// For managers first (the Scheduler's Vendor POs page is the buyers' worklist).
+//
+// Five tiles, one per money measure. Clicking a tile lists the POs that carry that measure
+// and sorts by it; the project table shows all five as columns, the chosen one tinted, and
+// its Total row always equals the chosen tile. "Left to invoice" is every open PO, so it is
+// the default and the "show all" state. All client-side: the server sent every open PO.
 
-const STATUS_ORDER: OpenPoStatus[] = ["past-due", "awaiting-delivery", "awaiting-invoice", "over-invoiced", "open"];
+type MetricId = "late" | "notReceived" | "next4Weeks" | "receivedNotInvoiced" | "leftToInvoice";
+type View = "projects" | "suppliers" | "list";
 
-function Kpi({ label, value, title }: { label: string; value: string; title?: string }) {
+const METRICS: { id: MetricId; label: string; short: string; hint: string }[] = [
+  { id: "late", label: "Late", short: "Late", hint: "Not yet received, on lines past their expected date" },
+  { id: "notReceived", label: "Not yet received", short: "Not yet received", hint: "Ordered quantity not yet received, at PO price" },
+  { id: "next4Weeks", label: "Expected in the next 4 weeks", short: "Next 4 weeks", hint: "Not yet received, expected from today through the next 28 days" },
+  { id: "receivedNotInvoiced", label: "Received, not invoiced", short: "Received, not invoiced", hint: "Received at PO price, less what has been invoiced on that line" },
+  { id: "leftToInvoice", label: "Left to invoice", short: "Left to invoice", hint: "Every open PO. Same figure as Job Details' Left to Invoice" },
+];
+
+const inMetric = (r: OpenPoRow, id: MetricId) => (id === "leftToInvoice" ? true : r.money[id] > 0);
+const sumMoney = (ms: OpenPoMoney[], id: MetricId) => Math.round(ms.reduce((s, m) => s + m[id], 0) * 100) / 100;
+const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
+
+function dayLabel(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function ReceivedBar({ received, ordered, late }: { received: number; ordered: number; late?: boolean }) {
+  const p = pct(received, ordered);
   return (
-    <div className={card("p-4")} title={title}>
-      <div className="text-note text-sdc-gray-400">{label}</div>
-      <div className="mt-1 font-heading text-xl font-bold text-sdc-navy">{value}</div>
-    </div>
+    <span className="flex items-center gap-2">
+      <span role="img" aria-label={`${p}% of PO value received`} className="block h-1.5 w-20 shrink-0 overflow-hidden rounded bg-sdc-border">
+        <span className={`block h-full ${p >= 100 ? "bg-green-600" : late ? "bg-sdc-navy" : "bg-sdc-blue"}`} style={{ width: `${p}%` }} />
+      </span>
+      <span className="whitespace-nowrap text-note text-sdc-gray-600">
+        {p}% · {usd(received)} of {usd(ordered)}
+      </span>
+    </span>
   );
 }
 
-export function OpenPosClient({ data }: { data: OpenPosResult }) {
-  const [job, setJob] = useState<string | null>(null);
-  const [status, setStatus] = useState<OpenPoStatus | null>(null);
+function statusChip(r: OpenPoRow): { text: string; cls: string } {
+  if (r.status === "over-invoiced") return { text: "Invoiced more than ordered", cls: "bg-amber-100 text-amber-900" };
+  if (r.money.late > 0) return { text: `Late ${r.daysLate} days`, cls: "bg-sdc-navy text-white" };
+  if (r.money.ordered > 0 && r.money.notReceived <= 0) return { text: "Received, not invoiced", cls: "bg-green-100 text-green-900" };
+  if (r.partiallyReceived) return { text: "Partly received", cls: "bg-sdc-blue-light text-sdc-blue-dark" };
+  if (!r.receiptsKnown) return { text: "Open", cls: "bg-slate-100 text-slate-600" };
+  return { text: "On schedule", cls: "bg-slate-100 text-slate-600" };
+}
 
-  const counts = useMemo(() => {
-    const c = new Map<OpenPoStatus, number>();
-    for (const r of data.rows) if (!job || r.jobIds.includes(job)) c.set(r.status, (c.get(r.status) ?? 0) + 1);
-    return c;
-  }, [data.rows, job]);
+function WeekChart({ weeks }: { weeks: OpenPoWeek[] }) {
+  const bars = weeks.filter((w) => w.key !== "no-date");
+  const noDate = weeks.find((w) => w.key === "no-date")?.notReceived ?? 0;
+  const max = Math.max(...bars.map((w) => w.notReceived), 1);
+  const label = (k: string) => (k === "late" ? "Late" : k === "later" ? "Later" : `Wk of ${dayLabel(k)}`);
+  return (
+    <section className={card("p-4")} aria-labelledby="op-weeks">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="op-weeks" className="text-sm font-bold text-sdc-navy">
+          Value not yet received, by week expected
+        </h2>
+        <span className="flex gap-4 text-note text-sdc-gray-600">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-sdc-navy" />
+            Late
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-sdc-blue" />
+            Expected
+          </span>
+        </span>
+      </div>
+      <div className="mt-3 grid h-36 items-end gap-2" style={{ gridTemplateColumns: `repeat(${bars.length}, minmax(0, 1fr))` }}>
+        {bars.map((w) => (
+          <div key={w.key} className="flex h-full flex-col justify-end gap-1" title={`${label(w.key)}: ${usdExact(w.notReceived)} not yet received`}>
+            <span className="text-center text-note font-semibold tabular-nums text-sdc-navy">{w.notReceived ? usd(w.notReceived) : "–"}</span>
+            <div
+              className={`rounded-t ${w.key === "late" ? "bg-sdc-navy" : "bg-sdc-blue"}`}
+              style={{ height: `${Math.round((w.notReceived / max) * 100)}px`, minHeight: 2 }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 grid gap-2 border-t border-sdc-border pt-1" style={{ gridTemplateColumns: `repeat(${bars.length}, minmax(0, 1fr))` }}>
+        {bars.map((w) => (
+          <span key={w.key} className={`text-center text-note ${w.key === "late" ? "font-bold text-red-700" : "text-sdc-gray-600"}`}>
+            {label(w.key)}
+          </span>
+        ))}
+      </div>
+      {noDate > 0 && <p className="mt-2 text-note text-sdc-gray-400">Plus {usd(noDate)} on lines Total ETO has no date for.</p>}
+    </section>
+  );
+}
 
-  const rows = useMemo(
-    () => data.rows.filter((r) => (!job || r.jobIds.includes(job)) && (!status || r.status === status)),
-    [data.rows, job, status],
+const jobHref = (jobId: string) => `/job-hours?jobs=${encodeURIComponent(jobId)}`;
+
+export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosResult; schedulerVendorPosUrl?: string }) {
+  const [metric, setMetric] = useState<MetricId>("leftToInvoice");
+  const [partialOnly, setPartialOnly] = useState(false);
+  const [view, setView] = useState<View>("projects");
+  const [lateOpen, setLateOpen] = useState(false);
+  const [openJob, setOpenJob] = useState<string | null>(null);
+
+  const cur = METRICS.find((m) => m.id === metric)!;
+  const jobName = useMemo(() => new Map(data.jobs.map((j) => [j.jobId, j.jobName])), [data.jobs]);
+
+  const shown = useMemo(
+    () => data.rows.filter((r) => inMetric(r, metric) && (!partialOnly || r.partiallyReceived)),
+    [data.rows, metric, partialOnly],
   );
 
-  const { totals } = data;
+  const tiles = useMemo(
+    () =>
+      METRICS.map((m) => {
+        const rows = data.rows.filter((r) => inMetric(r, m.id));
+        return { ...m, value: sumMoney(rows.map((r) => r.money), m.id), pos: rows.length, jobs: new Set(rows.flatMap((r) => r.jobIds)).size };
+      }),
+    [data.rows],
+  );
+
+  // One row per job: its own share of each shown PO.
+  const projects = useMemo(() => {
+    const by = new Map<string, { pos: { row: OpenPoRow; money: OpenPoMoney }[] }>();
+    for (const row of shown)
+      for (const s of row.shares) {
+        const e = by.get(s.jobId) ?? { pos: [] };
+        e.pos.push({ row, money: s.money });
+        by.set(s.jobId, e);
+      }
+    return [...by]
+      .map(([jobId, e]) => {
+        const ms = e.pos.map((p) => p.money);
+        return {
+          jobId,
+          name: jobName.get(jobId) ?? "",
+          pos: e.pos.sort((a, b) => b.money[metric] - a.money[metric]),
+          ordered: ms.reduce((s, m) => s + m.ordered, 0),
+          received: ms.reduce((s, m) => s + m.received, 0),
+          totals: Object.fromEntries(METRICS.map((m) => [m.id, sumMoney(ms, m.id)])) as Record<MetricId, number>,
+        };
+      })
+      .sort((a, b) => b.totals[metric] - a.totals[metric]);
+  }, [shown, metric, jobName]);
+
+  const suppliers = useMemo(() => {
+    const by = new Map<string, OpenPoRow[]>();
+    for (const r of shown) {
+      const k = r.suppliers.join(", ") || "No supplier";
+      by.set(k, [...(by.get(k) ?? []), r]);
+    }
+    const list = [...by].map(([name, rows]) => ({
+      name,
+      pos: rows.length,
+      jobs: new Set(rows.flatMap((r) => r.jobIds)).size,
+      value: sumMoney(rows.map((r) => r.money), metric),
+      oldestLate: Math.max(0, ...rows.map((r) => r.daysLate ?? 0)),
+    }));
+    return list.sort((a, b) => b.value - a.value);
+  }, [shown, metric]);
+
+  const lateRows = useMemo(() => data.rows.filter((r) => r.money.late > 0).sort((a, b) => (b.daysLate ?? 0) - (a.daysLate ?? 0)), [data.rows]);
+  const lateTile = tiles[0];
 
   if (data.rows.length === 0) {
     return <div className={card()}>No open purchase orders on Active or HeadStart projects as of {fmtDate(data.asOf)}.</div>;
   }
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Open POs" value={totals.openPos.toLocaleString()} />
-        <Kpi label="Left to invoice on open POs" value={usd(totals.openValue)} title={usdExact(totals.openValue)} />
-        <Kpi label="Past due POs" value={totals.pastDuePos.toLocaleString()} title="Open POs with a line not fully received after its required date" />
-        <Kpi
-          label="Still to arrive (at PO price)"
-          value={usd(totals.awaitingDeliveryValue)}
-          title={`${usdExact(totals.awaitingDeliveryValue)}: quantity not yet received × unit price, on open POs`}
-        />
-      </div>
+  const filtered = metric !== "leftToInvoice" || partialOnly;
+  const shownJobs = new Set(shown.flatMap((r) => r.jobIds)).size;
+  const supplierMax = Math.max(1, ...suppliers.map((s) => s.value));
+  const totalsRow = Object.fromEntries(METRICS.map((m) => [m.id, sumMoney(shown.map((r) => r.money), m.id)])) as Record<MetricId, number>;
+  const gridCols = "24px minmax(0,1.6fr) minmax(0,0.4fr) minmax(0,1.6fr) repeat(5, minmax(0,1fr))";
 
-      <section className="flex flex-col gap-2">
-        <SectionTitle>By project</SectionTitle>
-        <div className="overflow-x-auto rounded-xl border border-sdc-border bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-sdc-navy text-left text-white">
-              <tr>
-                <th className="px-3 py-2 font-semibold">Job</th>
-                <th className="px-3 py-2 font-semibold">Status</th>
-                <th className="px-3 py-2 text-right font-semibold">Open POs</th>
-                <th className="px-3 py-2 text-right font-semibold">Past due</th>
-                <th className="px-3 py-2 text-right font-semibold">Left to invoice</th>
-                <th className="px-3 py-2 text-right font-semibold">Still to arrive</th>
-                <th className="px-3 py-2 font-semibold">Oldest open PO</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.jobs.map((j) => {
-                const active = job === j.jobId;
-                return (
-                  <tr
-                    key={j.jobId}
-                    onClick={() => setJob(active ? null : j.jobId)}
-                    className={`cursor-pointer border-t border-sdc-border ${active ? "bg-sdc-blue-light" : "hover:bg-sdc-blue-light/40"}`}
-                    title={active ? "Show every project's POs" : "Show only this project's POs"}
-                  >
-                    <td className="px-3 py-1.5">
-                      <a
-                        href={`/job-hours?jobs=${encodeURIComponent(j.jobId)}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-sdc-blue hover:underline"
-                      >
-                        {j.jobId}
-                      </a>{" "}
-                      <span className="text-sdc-navy">{j.jobName}</span>
-                    </td>
-                    <td className="px-3 py-1.5 text-sdc-gray-600">{j.jobStatus}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{j.openPos}</td>
-                    <td className={`px-3 py-1.5 text-right tabular-nums ${j.pastDuePos > 0 ? "font-semibold text-red-700" : "text-sdc-gray-400"}`}>{j.pastDuePos}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums" title={usdExact(j.openValue)}>{usd(j.openValue)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums" title={usdExact(j.awaitingDeliveryValue)}>{usd(j.awaitingDeliveryValue)}</td>
-                    <td className="px-3 py-1.5 text-sdc-gray-600">{fmtDate(j.oldestOpen)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+  return (
+    <div className="flex flex-col gap-5">
+      <section aria-label="Totals. Choose one to list those POs" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        {tiles.map((t) => {
+          const on = t.id === metric;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setMetric(t.id)}
+              title={`${t.hint}. ${usdExact(t.value)}`}
+              className={`flex flex-col gap-0.5 rounded-xl p-4 text-left motion-interactive ${
+                on ? "border-2 border-sdc-navy bg-sdc-blue-light/50" : "border border-sdc-border bg-white hover:border-sdc-gray-400"
+              }`}
+            >
+              <span className="text-note font-semibold text-sdc-gray-600">{t.label}</span>
+              <span className={`font-heading text-xl font-bold tabular-nums ${t.id === "late" ? "text-red-700" : "text-sdc-navy"}`}>{usd(t.value)}</span>
+              <span className="text-note text-sdc-gray-400">
+                {t.pos} POs · {t.jobs} jobs
+              </span>
+              <span className={`mt-1 text-note font-semibold ${on ? "text-sdc-navy" : "text-sdc-blue"}`}>{on ? "Showing below" : "Show these"}</span>
+            </button>
+          );
+        })}
       </section>
 
-      <section className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <SectionTitle className="mr-2">Purchase orders{job ? ` on job ${job}` : ""}</SectionTitle>
-          <button type="button" onClick={() => setStatus(null)} className={`${TOOLBAR_BTN_COMPACT} ${status === null ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}>
-            All
+      <WeekChart weeks={data.weeks} />
+
+      <section className="overflow-hidden rounded-xl border border-sdc-border bg-white">
+        <h2>
+          <button
+            type="button"
+            onClick={() => setLateOpen((v) => !v)}
+            aria-expanded={lateOpen}
+            className="flex min-h-12 w-full flex-wrap items-center gap-2.5 bg-sdc-navy px-4 py-2.5 text-left text-white"
+          >
+            <span className="w-3">{lateOpen ? "▾" : "▸"}</span>
+            <span className="font-heading font-bold">Late POs</span>
+            <span className="rounded-full bg-white px-2 text-note font-bold text-sdc-navy">{lateRows.length}</span>
+            <span className="text-sm text-slate-300">
+              {usd(lateTile.value)} not received · {lateTile.jobs} jobs · oldest {lateRows[0]?.daysLate ?? 0} days
+            </span>
           </button>
-          {STATUS_ORDER.filter((s) => (counts.get(s) ?? 0) > 0).map((s) => (
+        </h2>
+        {lateOpen && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead className="bg-slate-100 text-left text-note text-sdc-gray-600">
+                <tr>
+                  <th className="px-4 py-2 text-right font-semibold">Days late ▼</th>
+                  <th className="px-3 py-2 font-semibold">PO #</th>
+                  <th className="px-3 py-2 font-semibold">Supplier</th>
+                  <th className="px-3 py-2 font-semibold">Job</th>
+                  <th className="px-3 py-2 font-semibold">Was expected</th>
+                  <th className="px-3 py-2 font-semibold">Received (by value)</th>
+                  <th className="px-4 py-2 text-right font-semibold">Late, not received</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lateRows.map((r) => (
+                  <tr key={r.poNumber} className="border-t border-sdc-border">
+                    <td className="px-4 py-1.5 text-right font-bold tabular-nums text-red-700">{r.daysLate}</td>
+                    <td className="px-3 py-1.5 font-semibold">{r.poNumber}</td>
+                    <td className="px-3 py-1.5">{r.suppliers.join(", ")}</td>
+                    <td className="px-3 py-1.5">
+                      {r.jobIds.map((j, i) => (
+                        <Fragment key={j}>
+                          {i > 0 && ", "}
+                          <a href={jobHref(j)} className="text-sdc-blue hover:underline">
+                            {j}
+                          </a>
+                        </Fragment>
+                      ))}
+                    </td>
+                    <td className="px-3 py-1.5" title={r.revised && r.originalDue ? `Re-promised. Originally due ${fmtDate(r.originalDue)}` : undefined}>
+                      {fmtDate(r.lateSince)}
+                      {r.revised && <span className="text-sdc-blue"> ↻</span>}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <ReceivedBar received={r.money.received} ordered={r.money.ordered} late />
+                    </td>
+                    <td className="px-4 py-1.5 text-right font-semibold tabular-nums" title={usdExact(r.money.late)}>
+                      {usd(r.money.late)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div role="status" className="flex min-h-10 flex-1 flex-wrap items-center gap-2.5 text-sm">
+          <span className="font-bold text-sdc-navy">
+            Showing: {cur.label}
+            {partialOnly ? ", partially received only" : ""}
+          </span>
+          <span className="text-sdc-gray-600">
+            {shown.length} POs on {shownJobs} jobs{filtered ? ` · ${data.rows.length - shown.length} other open POs hidden` : ""}
+          </span>
+          {filtered && (
             <button
-              key={s}
               type="button"
-              onClick={() => setStatus(status === s ? null : s)}
-              className={`${TOOLBAR_BTN_COMPACT} ${status === s ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+              onClick={() => {
+                setMetric("leftToInvoice");
+                setPartialOnly(false);
+              }}
+              className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
             >
-              {OPEN_PO_STATUS_LABEL[s]} ({counts.get(s)})
-            </button>
-          ))}
-          {job && (
-            <button type="button" onClick={() => setJob(null)} className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}>
-              Clear job
+              Show all open POs
             </button>
           )}
         </div>
-        <p className="text-note text-sdc-gray-400">
-          Amounts are the whole PO. A PO split across jobs lists every job it charges; the project table above counts only each job&apos;s own lines.
-        </p>
-        <OpenPosGrid rows={rows} />
-      </section>
+        <button
+          type="button"
+          aria-pressed={partialOnly}
+          onClick={() => setPartialOnly((v) => !v)}
+          className={`${TOOLBAR_BTN_COMPACT} ${partialOnly ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+        >
+          {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inMetric(r, metric) && r.partiallyReceived).length})
+        </button>
+        <div role="group" aria-label="Group by" className="flex gap-1">
+          {(
+            [
+              ["projects", "By project"],
+              ["suppliers", "By supplier"],
+              ["list", "All POs"],
+            ] as [View, string][]
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={view === id}
+              onClick={() => setView(id)}
+              className={`${TOOLBAR_BTN_COMPACT} ${view === id ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {view === "projects" && (
+        <section className="overflow-x-auto rounded-xl border border-sdc-border bg-white" aria-label="By project">
+          <div className="min-w-[1100px] text-sm">
+            <div className="grid gap-2.5 bg-slate-100 px-4 text-note font-semibold text-sdc-gray-600" style={{ gridTemplateColumns: gridCols }}>
+              <span />
+              <span className="py-2">Job</span>
+              <span className="py-2 text-right">POs</span>
+              <span className="py-2">Received (by value)</span>
+              {METRICS.map((m) => (
+                <span
+                  key={m.id}
+                  title={m.hint}
+                  className={`px-1.5 py-2 text-right ${m.id === metric ? "border-b-2 border-sdc-navy bg-sdc-blue-light text-sdc-navy" : ""}`}
+                >
+                  {m.short}
+                </span>
+              ))}
+            </div>
+            {projects.map((p) => {
+              const expanded = openJob === p.jobId;
+              return (
+                <div key={p.jobId} className="border-t border-sdc-border">
+                  <button
+                    type="button"
+                    onClick={() => setOpenJob(expanded ? null : p.jobId)}
+                    aria-expanded={expanded}
+                    className={`grid w-full items-stretch gap-2.5 px-4 text-left ${expanded ? "bg-sdc-blue-light/40" : "bg-white hover:bg-slate-50"}`}
+                    style={{ gridTemplateColumns: gridCols }}
+                  >
+                    <span className="py-2.5 text-sdc-gray-400">{expanded ? "▾" : "▸"}</span>
+                    <span className="flex flex-col py-2.5 leading-tight">
+                      <span className="font-bold text-sdc-navy">{p.jobId}</span>
+                      <span className="text-note text-sdc-gray-600">{p.name}</span>
+                    </span>
+                    <span className="py-2.5 text-right tabular-nums">{p.pos.length}</span>
+                    <span className="flex items-center py-2.5">
+                      <ReceivedBar received={p.received} ordered={p.ordered} />
+                    </span>
+                    {METRICS.map((m) => {
+                      const v = p.totals[m.id];
+                      return (
+                        <span
+                          key={m.id}
+                          title={usdExact(v)}
+                          className={`flex items-center justify-end px-1.5 py-2.5 tabular-nums ${m.id === metric ? "bg-sdc-blue-light/40 font-bold" : ""} ${
+                            v === 0 ? "text-sdc-gray-400" : m.id === "late" ? "text-red-700" : "text-sdc-navy"
+                          }`}
+                        >
+                          {v === 0 ? "–" : usd(v)}
+                        </span>
+                      );
+                    })}
+                  </button>
+                  {expanded && (
+                    <div className="flex flex-col bg-sdc-blue-light/20 py-2 pl-12 pr-4">
+                      <table className="w-full text-sm">
+                        <thead className="text-left text-note text-sdc-gray-400">
+                          <tr>
+                            <th className="py-1 font-semibold">Status</th>
+                            <th className="py-1 font-semibold">PO #</th>
+                            <th className="py-1 font-semibold">Supplier</th>
+                            <th className="py-1 font-semibold">Expected</th>
+                            <th className="py-1 font-semibold">Received (by value)</th>
+                            <th className="py-1 text-right font-semibold">Not received</th>
+                            <th className="py-1 text-right font-semibold">Left to invoice</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {p.pos.map(({ row, money }) => {
+                            const chip = statusChip(row);
+                            return (
+                              <tr key={row.poNumber} className="border-t border-sdc-border/60">
+                                <td className="py-1.5">
+                                  <span className={`rounded-full px-2 py-0.5 text-note font-semibold ${chip.cls}`}>{chip.text}</span>
+                                </td>
+                                <td className="py-1.5 font-semibold">
+                                  {row.poNumber}
+                                  {row.jobIds.length > 1 && <span className="ml-1 text-note font-normal text-sdc-gray-400">(this job&apos;s share)</span>}
+                                </td>
+                                <td className="py-1.5">{row.suppliers.join(", ")}</td>
+                                <td className="py-1.5" title={row.revised && row.originalDue ? `Re-promised. Originally due ${fmtDate(row.originalDue)}` : undefined}>
+                                  {row.nextDue ? fmtDate(row.nextDue) : money.notReceived > 0 ? "No date" : "Received"}
+                                  {row.revised && <span className="text-sdc-blue"> ↻</span>}
+                                </td>
+                                <td className="py-1.5">
+                                  <ReceivedBar received={money.received} ordered={money.ordered} late={money.late > 0} />
+                                </td>
+                                <td className="py-1.5 text-right tabular-nums">{money.notReceived ? usd(money.notReceived) : "–"}</td>
+                                <td className="py-1.5 text-right font-semibold tabular-nums" title={usdExact(money.leftToInvoice)}>
+                                  {usd(money.leftToInvoice)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <a href={jobHref(p.jobId)} className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}>
+                          Open in Job Details
+                        </a>
+                        {schedulerVendorPosUrl && (
+                          <a href={schedulerVendorPosUrl} target="_blank" rel="noreferrer" className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}>
+                            Chase in Scheduler › Vendor POs ↗
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div className="grid gap-2.5 border-t-2 border-sdc-border bg-slate-50 px-4 font-bold" style={{ gridTemplateColumns: gridCols }}>
+              <span />
+              <span className="py-2.5">Total</span>
+              <span className="py-2.5 text-right tabular-nums">{shown.length}</span>
+              <span />
+              {METRICS.map((m) => (
+                <span key={m.id} title={usdExact(totalsRow[m.id])} className={`px-1.5 py-2.5 text-right tabular-nums ${m.id === metric ? "bg-sdc-blue-light" : ""}`}>
+                  {usd(totalsRow[m.id])}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {view === "suppliers" && (
+        <section className="overflow-x-auto rounded-xl border border-sdc-border bg-white" aria-label="By supplier">
+          <table className="w-full min-w-[800px] text-sm">
+            <thead className="bg-slate-100 text-left text-note text-sdc-gray-600">
+              <tr>
+                <th className="px-4 py-2 font-semibold">Supplier</th>
+                <th className="px-3 py-2 text-right font-semibold">POs</th>
+                <th className="px-3 py-2 text-right font-semibold">Jobs</th>
+                <th className="w-80 bg-sdc-blue-light px-3 py-2 font-semibold text-sdc-navy">{cur.label}</th>
+                <th className="px-4 py-2 text-right font-semibold">Oldest late</th>
+              </tr>
+            </thead>
+            <tbody>
+              {suppliers.map((s) => (
+                <tr key={s.name} className="border-t border-sdc-border">
+                  <td className="px-4 py-2 font-semibold">{s.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{s.pos}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{s.jobs}</td>
+                  <td className="bg-sdc-blue-light/30 px-3 py-2">
+                    <span className="flex items-center gap-2">
+                      <span className="block h-2 flex-1 overflow-hidden rounded bg-sdc-border">
+                        <span className={`block h-full ${metric === "late" ? "bg-sdc-navy" : "bg-sdc-blue"}`} style={{ width: `${pct(Math.max(0, s.value), supplierMax)}%` }} />
+                      </span>
+                      <span className="min-w-20 text-right font-bold tabular-nums" title={usdExact(s.value)}>
+                        {usd(s.value)}
+                      </span>
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-right font-semibold text-red-700">{s.oldestLate ? `${s.oldestLate} days` : "–"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {view === "list" && (
+        <section className="flex flex-col gap-2">
+          <p className="text-note text-sdc-gray-400">Amounts are the whole PO. A PO split across jobs lists every job it charges.</p>
+          <OpenPosGrid rows={shown} />
+        </section>
+      )}
+
+      <p className="text-note text-sdc-gray-400">
+        This page shows where the money stands. To chase a PO, add tracking or notes, use{" "}
+        {schedulerVendorPosUrl ? (
+          <a href={schedulerVendorPosUrl} target="_blank" rel="noreferrer" className="text-sdc-blue hover:underline">
+            Scheduler › Vendor POs ↗
+          </a>
+        ) : (
+          "the Scheduler's Vendor POs page"
+        )}
+        .
+      </p>
     </div>
   );
 }

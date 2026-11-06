@@ -39,6 +39,29 @@ export const OPEN_PO_STATUS_LABEL: Record<OpenPoStatus, string> = {
 
 export type OpenPoJob = { jobId: string; jobName: string; status: string };
 
+/**
+ * The page's five money measures (the tiles), for any set of PO lines: a whole PO, or one
+ * job's share of it. Delivery figures are at PO price (quantity × unit price) and only count
+ * lines whose receipts are known; `leftToInvoice` is the shared per-line formula, signed.
+ */
+export type OpenPoMoney = {
+  /** Receivable lines' quantity × unit price: the base of the "Received (by value)" bar. */
+  ordered: number;
+  received: number;
+  notReceived: number;
+  /** Not received, on lines whose expected date is before today. */
+  late: number;
+  /** Not received, on lines expected from today through the next 4 weeks (28 days). */
+  next4Weeks: number;
+  /** Received at PO price, less what has been invoiced (GL-posted) on that line; never negative. */
+  receivedNotInvoiced: number;
+  leftToInvoice: number;
+};
+
+export const NEXT_WEEKS_DAYS = 28;
+/** Weekly buckets shown in the chart after "Late". */
+export const CHART_WEEKS = 8;
+
 export type OpenPoRow = {
   poNumber: string;
   /** Every job (of the ones loaded) this PO charges, ascending. */
@@ -70,6 +93,21 @@ export type OpenPoRow = {
   /** Signed, NOT floored: an over-invoiced PO reads negative. */
   leftToInvoice: number;
   status: OpenPoStatus;
+  /** The whole PO's five measures. */
+  money: OpenPoMoney;
+  /** Each loaded job's own share of the PO (its lines only); the shares sum to `money`. */
+  shares: { jobId: string; money: OpenPoMoney }[];
+  /** Some value received and some still outstanding. */
+  partiallyReceived: boolean;
+  /** Earliest expected date among late lines, and how many days ago that was; null when nothing is late. */
+  lateSince: string | null;
+  daysLate: number | null;
+};
+
+export type OpenPoWeek = {
+  /** "late", a week's first day (`YYYY-MM-DD`), "later", or "no-date". */
+  key: string;
+  notReceived: number;
 };
 
 export type OpenPoJobSummary = {
@@ -91,7 +129,51 @@ export type OpenPosResult = {
   rows: OpenPoRow[];
   jobs: OpenPoJobSummary[];
   totals: { openPos: number; openValue: number; pastDuePos: number; awaitingDeliveryValue: number; suppliers: number };
+  /** Value not yet received on open POs, by when it is expected: late, CHART_WEEKS weeks from today, later, no date. */
+  weeks: OpenPoWeek[];
 };
+
+/** `YYYY-MM-DD` plus `days`, UTC date arithmetic only. */
+export function addDays(day: string, days: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** Whole days from `a` to `b` (both `YYYY-MM-DD`). */
+export function daysBetween(a: string, b: string): number {
+  const t = (s: string) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return Date.UTC(y, m - 1, d);
+  };
+  return Math.round((t(b) - t(a)) / 86_400_000);
+}
+
+const zeroMoney = (): OpenPoMoney => ({ ordered: 0, received: 0, notReceived: 0, late: 0, next4Weeks: 0, receivedNotInvoiced: 0, leftToInvoice: 0 });
+
+/** The five measures for a set of lines. Pure; `today` is `YYYY-MM-DD`. */
+export function moneyOf(lines: readonly PartsCostLine[], today: string): OpenPoMoney {
+  const m = zeroMoney();
+  const horizon = addDays(today, NEXT_WEEKS_DAYS - 1);
+  for (const l of lines) {
+    m.leftToInvoice += lineLeftToInvoice(l);
+    if (!receivable(l) || !receiptKnown(l)) continue;
+    const rec = Math.min(l.receivedQty as number, l.quantity);
+    const ordered = l.quantity * l.unitPrice;
+    const received = rec * l.unitPrice;
+    const outstanding = ordered - received;
+    m.ordered += ordered;
+    m.received += received;
+    m.notReceived += outstanding;
+    m.receivedNotInvoiced += Math.max(0, received - l.actualAmount);
+    if (outstanding > 0) {
+      const due = lineDue(l);
+      if (due && due < today) m.late += outstanding;
+      else if (due && due <= horizon) m.next4Weeks += outstanding;
+    }
+  }
+  for (const k of Object.keys(m) as (keyof OpenPoMoney)[]) m[k] = r2(m[k]);
+  return m;
+}
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -157,6 +239,7 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
     let nextDue: string | null = null;
     let originalDue: string | null = null;
     let revised = false;
+    let lateSince: string | null = null;
     let linesReceived = 0;
     let linesReceivable = 0;
     let linesPastDue = 0;
@@ -174,13 +257,19 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
       nextDue = minDay(nextDue, due);
       originalDue = minDay(originalDue, original);
       if (due && original && due !== original) revised = true;
-      if (due && due < today && receiptKnown(l)) linesPastDue++;
+      if (due && due < today && receiptKnown(l)) {
+        linesPastDue++;
+        lateSince = minDay(lateSince, due);
+      }
     }
+    const jobIds = [...new Set(acc.lines.map((x) => x.job))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const money = moneyOf(lines, today);
+    const shares = jobIds.map((jobId) => ({ jobId, money: moneyOf(acc.lines.filter((x) => x.job === jobId).map((x) => x.line), today) }));
     const receiptsKnown = lines.some((l) => receivable(l) && receiptKnown(l)) || linesReceivable === 0;
 
     const row: OpenPoRow = {
       poNumber,
-      jobIds: [...new Set(acc.lines.map((x) => x.job))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+      jobIds,
       suppliers: [...new Set(lines.map((l) => l.supplier).filter((s): s is string => !!s))],
       purchaseDate,
       nextDue,
@@ -195,6 +284,11 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
       invoiced: r2(lines.reduce((s, l) => s + l.actualAmount, 0)),
       leftToInvoice: r2(leftToInvoice),
       status: "open",
+      money,
+      shares,
+      partiallyReceived: money.received > 0 && money.notReceived > 0,
+      lateSince,
+      daysLate: lateSince ? daysBetween(lateSince, today) : null,
     };
     row.status = poStatus(row);
     rows.push(row);
@@ -236,9 +330,28 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
     })
     .sort((a, b) => b.openValue - a.openValue);
 
+  // The chart: every open PO's not-yet-received value, by the week it is expected.
+  const weekStarts = Array.from({ length: CHART_WEEKS }, (_, i) => addDays(today, i * 7));
+  const after = addDays(today, CHART_WEEKS * 7);
+  const weekTotals = new Map<string, number>([["late", 0], ...weekStarts.map((w) => [w, 0] as [string, number]), ["later", 0], ["no-date", 0]]);
+  const open = new Set(rows.map((r) => r.poNumber));
+  for (const [poNumber, acc] of byPo) {
+    if (!open.has(poNumber)) continue;
+    for (const { line: l } of acc.lines) {
+      if (!receivable(l) || !receiptKnown(l)) continue;
+      const outstanding = (l.quantity - Math.min(l.receivedQty as number, l.quantity)) * l.unitPrice;
+      if (outstanding <= 0) continue;
+      const due = lineDue(l);
+      const key = !due ? "no-date" : due < today ? "late" : due >= after ? "later" : weekStarts[Math.floor(daysBetween(today, due) / 7)];
+      weekTotals.set(key, (weekTotals.get(key) ?? 0) + outstanding);
+    }
+  }
+  const weeks: OpenPoWeek[] = [...weekTotals].map(([key, v]) => ({ key, notReceived: r2(v) }));
+
   return {
     asOf: today,
     rows,
+    weeks,
     jobs: jobSummaries,
     totals: {
       openPos: rows.length,
