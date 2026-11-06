@@ -844,7 +844,14 @@ export function flattenBomParts(bom: JobBom, partsLines: PartsCostLine[], active
       // whose only purchase the "Rewind to" cutoff removed — was the gap: job 1161 at 09/30
       // read $23 here against ETC's $11,243. Its estimate stays in Total $ and in the
       // footer's "not bought yet" line, and is never reported as spend.
-      leftToSpend: activeAttribution ? null : p.source === "process" || p.source === "stock" ? 0 : pnLines ? splitSum((l) => (isSdcBillingLine(l) ? 0 : lineLeftToInvoice(l))) : 0,
+      // A row's purchase lines decide its figure whatever its source (2026-11-06, by request).
+      // This used to force `process` and `stock` rows to $0 outright. That was written for
+      // rows with NO lines, where the old `totalPrice - invoicedAmount` fallback read the BOM
+      // estimate as owed — and the "no lines → $0" branch below now covers exactly that. For a
+      // row that DOES have lines it only hid money: job 1106's KQ2L07-34A was bought and
+      // invoiced ($1,186.56), then reversed and re-sourced from stock, so its lines net to
+      // −$1,186.56 — Monthly ETC and Analysis showed that, the Parts List showed $0.
+      leftToSpend: activeAttribution ? null : pnLines ? splitSum((l) => (isSdcBillingLine(l) ? 0 : lineLeftToInvoice(l))) : 0,
       matchReason,
       nonBom: false,
       // A BOM part bought three times is three lines under one row, same as below.
