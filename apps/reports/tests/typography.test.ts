@@ -232,27 +232,13 @@ test("nothing names a font face except the theme and the loader", () => {
   assert.deepEqual(offenders, [], "resolve the family from the document instead of naming it");
 });
 
-test("a third-party grid is told to inherit the app font, not given one", () => {
-  // §39.16's "table libraries applying their own font styles". AG Grid takes a theme
-  // parameter; the right value is `inherit`, so it cannot drift from the rest of the app.
-  //
-  // The theme moved out of AuditLogGridInner.tsx on 2026-09-17, when the feedback
-  // queue became the app's second grid — see components/ui/ag-grid-theme.ts.
-  const theme = readFileSync(join(SRC, "components", "ui", "ag-grid-theme.ts"), "utf8");
-  assert.match(theme, /fontFamily:\s*"inherit"/, "the grid theme must inherit the app font");
-});
-
-test("there is exactly ONE ag-grid theme definition", () => {
-  // The other half of §39.16, and the reason the theme was lifted rather than
-  // copied: two "identical" theme objects drift, and the symptom is one grid
-  // quietly rendering at a different font size from its neighbour — which is
-  // precisely how the charts ended up on a different family (see Drill.tsx's
-  // header). Asserted structurally so a third grid cannot reintroduce it by
-  // pasting the block it found in a sibling file.
-  const definers = FILES.filter((f) => /themeQuartz\s*\.withParams/.test(code(f))).map((f) =>
-    f.replace(SRC, "src").replace(/\\/g, "/"),
-  );
-  assert.deepEqual(definers, ["src/components/ui/ag-grid-theme.ts"], "import sdcTheme instead of defining another one");
+test("record lists use DataTable, not a third-party grid with its own type", () => {
+  // §39.16's "table libraries applying their own font styles", which is exactly how AG
+  // Grid ended up: its theme set 8px, so the Audit Log and Feedback rendered at about
+  // half the size of every other table in the app. Removed 2026-11-06; lists use
+  // components/ui/DataTable.tsx, which is styled with the app's own type tokens.
+  const offenders = COMPONENT_FILES.filter((f) => /from\s+["']ag-grid-/.test(code(f))).map((f) => f.replace(SRC, "src").replace(/\\/g, "/"));
+  assert.deepEqual(offenders, [], "use components/ui/DataTable.tsx for a list of records");
 });
 
 // ── The root size, and the shift it used to cause (§39.18, §45) ─────────────
