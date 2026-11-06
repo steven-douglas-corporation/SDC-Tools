@@ -262,10 +262,12 @@ test("read == freeze for a Parts Cost row on a breakout month, live halves inclu
       }
     }
   }
-  // The headline case: a reopened month, no new edit, invoices drifted. The manager's
-  // $59,000 is what the snapshot stores AND what the freeze writes — not $61,705.
+  // A reopened month, no new edit, invoices drifted: both halves answered, so New ETC is
+  // their live sum (2026-11-06) — and the snapshot and the freeze agree on it. With a
+  // half unknown, the manager's signed $59,000 stands.
   const reopened = partsRow({ submittedAt: AT });
-  assert.equal(partsCostEffectiveNewEtc(reopened, { breakoutInScope: true, breakoutSum: 61_705 }), 59_000);
+  assert.equal(partsCostEffectiveNewEtc(reopened, { breakoutInScope: true, breakoutSum: 61_705 }), 61_705);
+  assert.equal(partsCostEffectiveNewEtc(reopened, { breakoutInScope: true, breakoutSum: null }), 59_000);
 });
 
 test("a frozen row is its stored figure, whatever the other columns say", () => {

@@ -264,14 +264,22 @@ export function partsCostCellState(
   const draft = entry.newEtcDraft != null ? round2(Number(entry.newEtcDraft)) : null;
   const confirmed = confirmedNewEtc(entry);
   const cleared = entry.newEtcClearedAt != null;
-  const undecided = entry.needsReview && draft === null && !cleared && confirmed === null;
-  const liveDraft = undecided && live.breakoutInScope && live.breakoutSum !== null ? round2(live.breakoutSum) : null;
+  // ── The live sum WINS whenever both halves are answered (2026-11-06, by request) ──
+  //
+  // On an open row of a breakout month, New ETC IS Left to Invoice + Left to Purchase, so
+  // it follows them: if Left to Invoice moves later (Total ETO invoices), New ETC moves
+  // with it rather than sitting on the sum as of the last save. A saved draft or a
+  // confirmed figure only stands in while a half is blank/unknown (live sum null).
+  // Frozen rows (needsReview false) never reach here with a live figure — they are their
+  // stored newEtc, handled by the callers above.
+  const liveDraft = entry.needsReview && live.breakoutInScope && live.breakoutSum !== null ? round2(live.breakoutSum) : null;
   return {
     priorEtc: Number(entry.priorEtc),
     hoursWorked: round2(Number(entry.hoursWorked)),
-    draft: draft ?? liveDraft,
+    draft: liveDraft ?? draft,
     confirmed,
-    cleared,
+    // A deliberate clear cannot hide a figure the halves now make.
+    cleared: cleared && liveDraft === null,
     locked: opts.locked,
     monthComplete: opts.monthComplete,
     // MONEY — keeps its cents. See NewEtcCellState.precision.
@@ -306,7 +314,9 @@ export function isPartsCostDecided(entry: NewEtcEntryLike, live: PartsCostLive):
 // nothing, exactly as for an hours cell.
 export function partsCostDiff(entry: NewEtcEntryLike, live: PartsCostLive): number {
   if (!isPartsCostDecided(entry, live)) return 0;
-  return calcHoursLeft(Number(entry.priorEtc), Number(entry.hoursWorked)) - Math.max(partsCostEffectiveNewEtc(entry, live), 0);
+  // Plain Money Left − New ETC. NOT clamped at 0 (2026-11-06): a displayed −$99 New ETC
+  // must give a Diff of 0 against a −$99 Money Left, not −$99.
+  return calcHoursLeft(Number(entry.priorEtc), Number(entry.hoursWorked)) - partsCostEffectiveNewEtc(entry, live);
 }
 
 // Diff — "how far is the manager's New ETC from the hours actually remaining?" —
