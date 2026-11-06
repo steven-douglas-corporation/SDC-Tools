@@ -2124,8 +2124,8 @@ function PartsListTab({
             so the group does not make the row taller. */}
         {/* Presets sit directly under the date group (PM, then Default). Default: back to the
             stock view (default filters + default columns + All scope). PM: Default, then Left to
-            invoice + Rewind to last month's end for prior-month close figures; pressed again, it
-            clears just those two. The month can still be changed afterwards in Rewind to. */}
+            invoice + every status + Rewind to last month's end for prior-month close figures;
+            pressed again, it clears those and restores the default statuses. The month can still be changed afterwards in Rewind to. */}
         <div className="flex shrink-0 flex-col items-start gap-1.5">
         <div className="-my-1 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md bg-sdc-gray-100 px-2 py-1">
           <Segmented
@@ -2151,6 +2151,7 @@ function PartsListTab({
               if (onlyLeftToInvoice && rewind !== "") {
                 setOnlyLeftToInvoice(false);
                 setRewind("");
+                setStatus(() => new Set(DEFAULT_STATUS_KEYS));
                 return;
               }
               clearFilters();
@@ -2158,8 +2159,11 @@ function PartsListTab({
               setHidden(() => new Set(DEFAULT_HIDDEN_COLS));
               setOnlyLeftToInvoice(true);
               setRewind(previousMonth(new Date()));
+              // Every status, not the default six: the default hides some rows, so the footer
+              // came out smaller than Monthly ETC and Job Details → Analysis, which count all rows.
+              setStatus(() => new Set(ALL_STATUS_KEYS));
             }}
-            title="Left to invoice, rewound to the end of last month. Click again to clear both."
+            title="Left to invoice, all statuses, rewound to the end of last month. Click again to clear."
             className={`flex h-8 items-center rounded-md border px-3 text-xs font-medium ${
               onlyLeftToInvoice && rewind !== "" ? "border-sdc-blue bg-sdc-blue-light text-sdc-blue-dark" : "border-sdc-border bg-white text-sdc-navy hover:bg-sdc-blue-light"
             }`}
