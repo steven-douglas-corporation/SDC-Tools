@@ -29,6 +29,7 @@ import { PartsBreakoutCell } from "@/components/PartsBreakoutCell";
 import { readPartsEtcBreakout, type PartsEtcBreakout } from "@/lib/parts-etc-breakout";
 import { buildOverview, describeBuckets, pickBuckets, type JobBuckets, type LeftToInvoiceBuckets } from "@/lib/left-to-invoice-by-month";
 import { EtcLeftToInvoiceByMonth } from "@/components/EtcLeftToInvoiceByMonth";
+import { EtcAnalysis, type EtcAnalysisRow } from "@/components/EtcAnalysis";
 import { monthEndLabel } from "@/lib/left-to-invoice";
 import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
 import { resolveLeftToInvoice, partsNewEtc } from "@/lib/left-to-invoice";
@@ -911,6 +912,26 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
       partsLiveSums.set(job.id, partsNewEtc(invoice, purchase));
     }
   }
+  // The Analysis dropdown: one row per VISIBLE job (the grid's own rows) with the two figures the
+  // Parts Cost block shows — Left to Invoice as resolved above for this month's cutoff, and Money
+  // Spent Month straight off the Parts Cost entry. Same inputs, same resolver: it cannot drift.
+  const analysisRows: EtcAnalysisRow[] = [];
+  for (const job of visibleJobs) {
+    const entry = job.etcEntries.find((e) => e.section === PARTS_COST_SECTION);
+    if (!entry) continue;
+    const b = partsRowBreakout.get(job.id) ?? null;
+    const resolved = resolveLeftToInvoice({
+      computed: b?.rawLeftToInvoice == null ? null : round2(b.rawLeftToInvoice),
+      stored: entry.leftToInvoice != null ? round2(Number(entry.leftToInvoice)) : null,
+    });
+    analysisRows.push({
+      jobId: job.jobId,
+      jobName: job.jobName,
+      leftToInvoice: showBreakout ? resolved.value : null,
+      moneySpent: Number(entry.hoursWorked),
+    });
+  }
+  analysisRows.sort((a, b) => a.jobId.localeCompare(b.jobId, undefined, { numeric: true }));
   const monthKpis = await getEtcMonthKpis(month, visibleJobs, partsLiveSums);
   const detailJobIds = visibleJobs.map((j) => j.id);
 
@@ -1389,6 +1410,17 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
           payOverview={buildOverview(pickBuckets(partsSplitJobs, (j) => j.payBuckets))}
           overriddenJobs={partsSplitOverridden}
           cutoffLabel={cutoffLabel}
+        />
+      )}
+
+      {/* Analysis: every active job's Left to Invoice and Money Spent Month for this month, from the grid's own figures. */}
+      {started && (
+        <EtcAnalysis
+          rows={analysisRows}
+          monthLabel={monthHeading.charAt(0) + monthHeading.slice(1).toLowerCase()}
+          rangeLabel={`${monthNameOnly} 1 – ${cutoffLabel}`}
+          cutoffLabel={cutoffLabel}
+          hasLeftToInvoice={showBreakout}
         />
       )}
 
