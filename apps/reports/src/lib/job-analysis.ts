@@ -45,7 +45,10 @@ export async function getJobAnalysis(today: Date = new Date()): Promise<JobAnaly
     where: { ...ACTIVE_JOB_WHERE },
     select: { id: true, jobId: true, jobName: true },
   });
-  jobs.sort((a, b) => compareJobIds(a.jobId, b.jobId));
+  // Numeric order from 1101 upward; anything below 1101 (or non-numeric) follows at the end.
+  const FIRST_JOB = 1101;
+  const rank = (id: string) => (/^\d+$/.test(id) && Number(id) >= FIRST_JOB ? 0 : 1);
+  jobs.sort((a, b) => rank(a.jobId) - rank(b.jobId) || compareJobIds(a.jobId, b.jobId));
 
   const { start, endExclusive } = monthWindowUtc(month);
   const [breakout, booked] = await Promise.all([

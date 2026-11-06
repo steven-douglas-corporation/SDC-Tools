@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { loadJobAnalysis } from "@/lib/job-analysis-actions";
 import type { JobAnalysis } from "@/lib/job-analysis";
-import { card, TABLE_CARD, TABLE_GRID, TABLE_HEADER_ROW } from "@/components/ui/classnames";
+import { card, TABLE_GRID, TABLE_HEADER_ROW } from "@/components/ui/classnames";
 import { usdExact } from "@/components/ui/format";
 
 // Job Details → Analysis: a collapsible panel above the page body. The figures are
@@ -49,7 +49,7 @@ export function JobAnalysisDropdown() {
     : null;
 
   return (
-    <div className={`${card("p-0")} mb-5 overflow-hidden`}>
+    <div className={`${card("p-0")} mb-5`}>
       <button
         type="button"
         onClick={toggle}
@@ -92,7 +92,7 @@ export function JobAnalysisDropdown() {
                   </button>
                 </p>
               )}
-              <div className={`${TABLE_CARD} max-h-[420px] overflow-auto`}>
+              <div className="max-h-[420px] overflow-y-auto border border-[#808080] bg-white">
                 <table className={`w-full text-sm ${TABLE_GRID}`}>
                   <thead className="sticky top-0 z-10 bg-white">
                     <tr className={TABLE_HEADER_ROW}>
