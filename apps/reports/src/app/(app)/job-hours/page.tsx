@@ -2,6 +2,8 @@ import { PageTitle } from "@/components/ui/Typography";
 import { PAGE_SHELL, card } from "@/components/ui/classnames";
 import { JobHoursDashboard } from "@/components/JobHoursDashboard";
 import { IndicatorCard } from "@/components/charts/IndicatorCard";
+import { EtcAnalysis } from "@/components/EtcAnalysis";
+import { getEtcAnalysis } from "@/lib/etc-analysis";
 import { JobSelect } from "@/components/JobSelect";
 import { JobSwitchProvider, JobSwitchBody } from "@/components/JobSwitch";
 import { ProcurementSkeleton } from "@/components/JobDetailsSkeletons";
@@ -33,6 +35,11 @@ const EMPTY_HOURS_DETAIL: JobHoursDetail = { rows: [], total: 0, sections: [], t
 export async function JobHoursView({ params }: { params: { jobs?: string; job?: string; section?: string } }) {
   const pageSession = await requirePagePermission("job-hour-details:view");
   const { jobs: jobsParam, job: legacyJobParam, section } = params;
+  // Analysis dropdown data (all active jobs, previous month) — started now, awaited with the page's other reads.
+  const analysisPromise = getEtcAnalysis().catch((e) => {
+    console.error("getEtcAnalysis failed:", e);
+    return null;
+  });
   const jobs = await listDashboardJobs();
   const idByJobId = new Map(jobs.map((j) => [j.jobId, j.id]));
 
@@ -199,7 +206,7 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
   // skeleton in the same commit as the hours.
   const selectionKey = selectedJobIds.join(",");
 
-  const [hoursDetail, schedulerLink] = await Promise.all([hoursDetailPromise, schedulerPromise]);
+  const [hoursDetail, schedulerLink, analysis] = await Promise.all([hoursDetailPromise, schedulerPromise, analysisPromise]);
   const { baseUrl: schedulerBaseUrl, jobNumbers: schedulerJobNumbers, ssoEmail: schedulerSsoEmail } = schedulerLink;
 
   // ── Which Standard Fees sections this role may see (2026-09-02) ───────────
@@ -230,6 +237,15 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
           click at once and JobSwitchBody dims the previous job's figures until the new
           ones land. See components/JobSwitch.tsx. */}
       <JobSwitchProvider selected={selectedJobIds}>
+      {analysis && (
+        <EtcAnalysis
+          rows={analysis.rows}
+          monthLabel={analysis.monthLabel}
+          rangeLabel={analysis.rangeLabel}
+          cutoffLabel={analysis.cutoffLabel}
+          hasLeftToInvoice={analysis.hasLeftToInvoice}
+        />
+      )}
       <div className="mb-1 flex flex-wrap items-end justify-between gap-4">
         <PageTitle>Job Details</PageTitle>
         <div className="flex items-center gap-2">

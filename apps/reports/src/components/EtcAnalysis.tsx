@@ -1,7 +1,7 @@
 import { usd } from "@/components/ui/format";
 
-// Monthly ETC → "Analysis": every active job on one screen with just the two month-end figures
-// (2026-11-06, by request): Left to Invoice and Money Spent Month.
+// Job Details → "Analysis": every active job on one screen with just the two month-end figures
+// (2026-11-06, by request): Left to Invoice and Money Spent Month, for the previous month.
 //
 // Nothing here is computed separately. The page hands in the SAME two values each row of the
 // Job Details grid renders for its Parts Cost block — Left to Invoice as resolved for the selected
@@ -12,13 +12,7 @@ import { usd } from "@/components/ui/format";
 //
 // A plain <details>: no client state, costs nothing until opened.
 
-export type EtcAnalysisRow = {
-  jobId: string;
-  jobName: string;
-  /** null when Total ETO could not be reached for the job (the grid shows "—"). */
-  leftToInvoice: number | null;
-  moneySpent: number;
-};
+import type { EtcAnalysisRow } from "@/lib/etc-analysis";
 
 const NUM = "px-3 py-1 text-right font-mono tabular-nums";
 const fmt = (n: number | null) => (n == null ? "—" : usd(n));
@@ -42,10 +36,10 @@ export function EtcAnalysis({
 }) {
   if (rows.length === 0) return null;
   const totalLti = rows.reduce((a, r) => a + (r.leftToInvoice ?? 0), 0);
-  const totalSpent = rows.reduce((a, r) => a + r.moneySpent, 0);
+  const totalSpent = rows.reduce((a, r) => a + (r.moneySpent ?? 0), 0);
 
   return (
-    <details className="mb-3 rounded-md border border-sdc-border bg-white text-xs">
+    <details className="mb-5 rounded-md border border-sdc-border bg-white text-xs">
       <summary className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-sdc-navy">
         <span className="font-semibold">Analysis — all active jobs, {monthLabel}</span>
         {hasLeftToInvoice && (
@@ -62,9 +56,9 @@ export function EtcAnalysis({
       </summary>
       <div className="border-t border-sdc-border">
         <p className="px-4 py-2 text-note leading-relaxed text-sdc-gray-600">
-          Both figures are for <span className="font-semibold">{monthLabel}</span> and are the same numbers the Job Details grid shows for the Parts Cost
+          Both figures are for <span className="font-semibold">{monthLabel}</span> and are the same numbers the Monthly ETC grid shows for the Parts Cost
           columns. <span className="font-semibold">Left to Invoice</span> is what is on purchase orders and not yet invoiced as of {cutoffLabel}.{" "}
-          <span className="font-semibold">Money Spent Month</span> is what was invoiced from {rangeLabel}. Change the month at the top and this table follows.
+          <span className="font-semibold">Money Spent Month</span> is what was invoiced from {rangeLabel}. It always shows the previous month, and is not affected by the job picker.
         </p>
         <div className="max-h-[28rem] overflow-auto">
           <table className="w-full border-collapse text-left">

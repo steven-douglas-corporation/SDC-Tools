@@ -29,7 +29,6 @@ import { PartsBreakoutCell } from "@/components/PartsBreakoutCell";
 import { readPartsEtcBreakout, type PartsEtcBreakout } from "@/lib/parts-etc-breakout";
 import { buildOverview, describeBuckets, pickBuckets, type JobBuckets, type LeftToInvoiceBuckets } from "@/lib/left-to-invoice-by-month";
 import { EtcLeftToInvoiceByMonth } from "@/components/EtcLeftToInvoiceByMonth";
-import { EtcAnalysis, type EtcAnalysisRow } from "@/components/EtcAnalysis";
 import { monthEndLabel } from "@/lib/left-to-invoice";
 import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
 import { resolveLeftToInvoice, partsNewEtc } from "@/lib/left-to-invoice";
@@ -53,7 +52,7 @@ import { savePools } from "@/lib/standard-sheet-actions";
 // ONE submission and ONE reopen for the whole month — see lib/monthly-report.ts.
 import { reopenMonthlyReport, checkMonthlyReport } from "@/lib/monthly-report-actions";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, currentMonth, round2, hoursCompleteThrough, workingDaysInMonth, effectiveNewEtc, newEtcDiff, newEtcSeedText, isNewEtcCellDecided, rollupNewEtc, confirmedNewEtc, partsCostCellState, partsCostEffectiveNewEtc, type NewEtcCellState, type NewEtcRollupCell, type PartsCostLive } from "@/lib/etc";
+import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, currentMonth, round2, workingDaysInMonth, effectiveNewEtc, newEtcDiff, newEtcSeedText, isNewEtcCellDecided, rollupNewEtc, confirmedNewEtc, partsCostCellState, partsCostEffectiveNewEtc, type NewEtcCellState, type NewEtcRollupCell, type PartsCostLive } from "@/lib/etc";
 import { ReopenMonthButton } from "@/components/ReopenMonthButton";
 import { EtcAutosave } from "@/components/EtcAutosave";
 import { EtcLiveTotals } from "@/components/EtcLiveTotals";
@@ -912,27 +911,6 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
       partsLiveSums.set(job.id, partsNewEtc(invoice, purchase));
     }
   }
-  // The Analysis dropdown: one row per job in the FULL month set (`jobs`, not `visibleJobs`), so the
-  // Billable filter below never changes it. Two figures the Parts Cost block shows — Left to Invoice
-  // as resolved above for this month's cutoff, and Money Spent Month straight off the Parts Cost
-  // entry. Same inputs, same resolver: per-job values cannot drift from the grid.
-  const analysisRows: EtcAnalysisRow[] = [];
-  for (const job of jobs) {
-    const entry = job.etcEntries.find((e) => e.section === PARTS_COST_SECTION);
-    if (!entry) continue;
-    const b = partsRowBreakout.get(job.id) ?? null;
-    const resolved = resolveLeftToInvoice({
-      computed: b?.rawLeftToInvoice == null ? null : round2(b.rawLeftToInvoice),
-      stored: entry.leftToInvoice != null ? round2(Number(entry.leftToInvoice)) : null,
-    });
-    analysisRows.push({
-      jobId: job.jobId,
-      jobName: job.jobName,
-      leftToInvoice: showBreakout ? resolved.value : null,
-      moneySpent: Number(entry.hoursWorked),
-    });
-  }
-  analysisRows.sort((a, b) => a.jobId.localeCompare(b.jobId, undefined, { numeric: true }));
   const monthKpis = await getEtcMonthKpis(month, visibleJobs, partsLiveSums);
   const detailJobIds = visibleJobs.map((j) => j.id);
 
@@ -1143,8 +1121,8 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
   // which an IIFE inside this file is not.
   const cutoffLabel = monthEndLabel(month);
 
-  // Last WEEKDAY of the month, not the last calendar day — see hoursCompleteThrough.
-  const monthEndDate = hoursCompleteThrough(month);
+  const [completeYear, completeMonthNum] = month.split("-").map(Number);
+  const monthEndDate = new Date(Date.UTC(completeYear, completeMonthNum, 0)); // last day of the month
   const hoursRefreshedThrough = hoursActualFreshness?.refreshedThrough ?? null;
   const monthComplete =
     locked || isHistoricalMonth || (hoursRefreshedThrough != null && hoursRefreshedThrough >= monthEndDate);
@@ -1411,17 +1389,6 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
           payOverview={buildOverview(pickBuckets(partsSplitJobs, (j) => j.payBuckets))}
           overriddenJobs={partsSplitOverridden}
           cutoffLabel={cutoffLabel}
-        />
-      )}
-
-      {/* Analysis: every active job's Left to Invoice and Money Spent Month for this month, from the grid's own figures. */}
-      {started && (
-        <EtcAnalysis
-          rows={analysisRows}
-          monthLabel={monthHeading.charAt(0) + monthHeading.slice(1).toLowerCase()}
-          rangeLabel={`${monthNameOnly} 1 – ${cutoffLabel}`}
-          cutoffLabel={cutoffLabel}
-          hasLeftToInvoice={showBreakout}
         />
       )}
 
@@ -2173,14 +2140,10 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                         // §29.2/§29.3 — undecided contributes NOTHING, like every hours
                         // Diff beside it. See the note on the cell below and the matching
                         // change in PartsCostNewEtcCell (the client half of this cell).
-                        const diffCost = decidedCost ? moneyLeft - effectiveNewEtcCost : 0;
+                        const diffCost = decidedCost ? moneyLeft - Math.max(effectiveNewEtcCost, 0) : 0;
                         partsCostGrandTotal.prior += prior;
                         partsCostGrandTotal.worked += spent;
-                        // The footer is the plain sum of what the column DISPLAYS. This used to
-                        // add effectiveNewEtcCost, which for an undecided (blank / "—") row is
-                        // the hidden carry-forward suggestion — so the footer counted dollars
-                        // no cell showed. Negative figures are summed as shown, not clamped.
-                        partsCostGrandTotal.newEtc += decidedCost ? effectiveNewEtcCost : 0;
+                        partsCostGrandTotal.newEtc += effectiveNewEtcCost;
                         // A blank cell contributes nothing — the same rule the column
                         // itself uses, so entering $1 moves the footer by $1 and a footer
                         // total is never made partly of figures nobody can see.
