@@ -60,7 +60,7 @@ export function JobAnalysisDropdown() {
           Analysis
           <span className="ml-2 text-xs font-normal text-sdc-muted">All active jobs · last month&apos;s Left to Invoice and Money Spent</span>
         </span>
-        <span className={`text-sdc-gray-400 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden>
+        <span className={`text-sdc-gray-400 ${open ? "rotate-180" : ""}`} aria-hidden>
           ▾
         </span>
       </button>
