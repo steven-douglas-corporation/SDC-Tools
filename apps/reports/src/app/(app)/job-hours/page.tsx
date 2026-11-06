@@ -3,6 +3,7 @@ import { PAGE_SHELL, card } from "@/components/ui/classnames";
 import { JobHoursDashboard } from "@/components/JobHoursDashboard";
 import { IndicatorCard } from "@/components/charts/IndicatorCard";
 import { JobSelect } from "@/components/JobSelect";
+import { JobAnalysisDropdown } from "@/components/JobAnalysisDropdown";
 import { JobSwitchProvider, JobSwitchBody } from "@/components/JobSwitch";
 import { ProcurementSkeleton } from "@/components/JobDetailsSkeletons";
 import { Suspense } from "react";
@@ -242,6 +243,9 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
       <p className="mb-5 text-sm text-sdc-gray-600">
         Quoted vs actual vs estimate-to-complete hours by section and billing group, per job.
       </p>
+
+      {/* Analysis: every active job's Left to Invoice + Money Spent for last month. Loads on open. */}
+      <JobAnalysisDropdown />
 
       <JobSwitchBody>
       {data ? (
