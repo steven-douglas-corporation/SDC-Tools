@@ -1323,10 +1323,10 @@ function PartsDetailTable({
 // The default-VISIBLE set is deliberately the 13 columns named in the request
 // (2026-08-14): Qty, Part No, Desc, Mfr, Supplier, PO #, Purchased, Required
 // Date, Expected Date, Unit $, Total $, Invoiced $, Status — everything else
-// in ALL_COLS is hidden by default, including "invoiceddate" (the Invoiced
-// DATE column, "Invoiced" — not to be confused with "invoiced", the Invoiced
-// $ money column, which stays visible) and "req"/"exp" (Required/Expected
-// Date), which are NOW in the default-visible 13 rather than hidden.
+// in ALL_COLS was hidden by default (see the 2026-11-06 note below for the one
+// that has since been shown: "invoiceddate", the Invoiced DATE column, "Invoiced" —
+// not to be confused with "invoiced", the Invoiced $ money column). "req"/"exp"
+// (Required/Expected Date) are in the default-visible 13 rather than hidden.
 // "leftspend" (Left to Invoice) left this list 2026-09-02 — it is one of the
 // financial columns now, beside Total $ and Invoiced $, rather than an optional
 // extra behind the Columns menu.
@@ -1343,7 +1343,11 @@ function PartsDetailTable({
 // "leftspend" did: a stored `hiddenPartCols` lists what is HIDDEN, so a key that
 // did not exist when it was written is simply absent, and the column shows up for
 // existing users as well as new ones.
-const DEFAULT_HIDDEN_COLS: ColKey[] = ["parent", "category", "invoiceddate", "lead", "due", "pctinv"];
+//
+// "invoiceddate" (the Invoiced DATE column) joined the default-VISIBLE set 2026-11-06, by
+// request. Like "delivered" above it needs no migration: a stored `hiddenPartCols` lists
+// what is hidden, so anyone who has already saved a column choice keeps theirs.
+const DEFAULT_HIDDEN_COLS: ColKey[] = ["parent", "category", "lead", "due", "pctinv"];
 
 // Invoiced+range window fetch status — passed down so PartsListTab can show a
 // fail-soft status message and PartsTableView can render the reconciliation
