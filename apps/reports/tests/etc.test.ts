@@ -425,13 +425,19 @@ const AUG = { breakoutInScope: true, breakoutSum: 61_705 };
 const AT = new Date("2026-09-11T19:09:35Z");
 const partsBase = { newEtc: 59_000, priorEtc: 80_000, hoursWorked: 12_500 };
 
-test("parts rule: a confirmed Parts figure does not drift with live invoices", () => {
+test("parts rule: a confirmed Parts figure stands only while a half is blank; both halves answered -> live sum", () => {
   // The manager signed $59,000; since the reopen the halves add to $61,705.
   const r = row({ ...partsBase, needsReview: true, newEtcDraft: null, submittedAt: AT });
-  assert.equal(partsCostEffectiveNewEtc(r, AUG), 59_000);
-  assert.equal(newEtcSeedText(partsCostCellState(r, AUG, { locked: false, monthComplete: true })), "59000");
+  const none = { breakoutInScope: true, breakoutSum: null };
+  // A half is blank/unknown: nothing to derive from, the confirmed figure stands.
+  assert.equal(partsCostEffectiveNewEtc(r, none), 59_000);
+  assert.equal(newEtcSeedText(partsCostCellState(r, none, { locked: false, monthComplete: true })), "59000");
+  assert.equal(partsCostDiff(r, none), 80_000 - 12_500 - 59_000);
+  // Both halves answered (2026-11-06, by request): New ETC IS their live sum.
+  assert.equal(partsCostEffectiveNewEtc(r, AUG), 61_705);
+  assert.equal(newEtcSeedText(partsCostCellState(r, AUG, { locked: false, monthComplete: true })), "61705");
   assert.equal(isPartsCostDecided(r, AUG), true);
-  assert.equal(partsCostDiff(r, AUG), 80_000 - 12_500 - 59_000);
+  assert.equal(partsCostDiff(r, AUG), 80_000 - 12_500 - 61_705);
 });
 
 test("parts rule: a frozen row is its stored figure, whatever the halves add to", () => {
@@ -457,19 +463,32 @@ test("parts rule: an OPEN undecided row shows the live breakout, and blank when 
   assert.equal(partsCostEffectiveNewEtc(r, { breakoutInScope: false, breakoutSum: 61_705 }), 67_500);
 });
 
-test("parts rule: a saved draft wins over the live sum, and a clear beats a confirmed figure", () => {
-  // The save writes the halves' sum into the draft; the draft is the manager's last
-  // edit and holds until a half moves again (the client re-derives on movement only).
-  assert.equal(partsCostEffectiveNewEtc(row({ ...partsBase, needsReview: true, newEtcDraft: 60_000 }), AUG), 60_000);
-  // A pre-breakout typed New ETC (both halves null) is a figure a manager typed: the
-  // grid seeds it, validation counts it, the freeze writes it — the same answer
-  // everywhere, where the grid used to render it blank/yellow.
-  assert.equal(newEtcSeedText(partsCostCellState(row({ ...partsBase, needsReview: true, newEtcDraft: 60_000 }), { breakoutInScope: true, breakoutSum: null }, { locked: false, monthComplete: true })), "60000");
-  // Cleared after a reopen: blank on screen, submits as the suggestion.
+test("parts rule: the live sum beats a saved draft, so New ETC follows a half that moves later", () => {
+  const saved = row({ ...partsBase, needsReview: true, newEtcDraft: 60_000 });
+  // Draft saved at $60,000; Left to Invoice has since moved, so the halves add to $61,705.
+  assert.equal(partsCostEffectiveNewEtc(saved, AUG), 61_705);
+  assert.equal(partsCostEffectiveNewEtc(saved, { breakoutInScope: true, breakoutSum: 62_000 }), 62_000);
+  // A half unknown: the saved draft is all there is. A pre-breakout typed New ETC (both
+  // halves null) is a figure a manager typed — seeded, counted and frozen the same way.
+  assert.equal(partsCostEffectiveNewEtc(saved, { breakoutInScope: true, breakoutSum: null }), 60_000);
+  assert.equal(newEtcSeedText(partsCostCellState(saved, { breakoutInScope: true, breakoutSum: null }, { locked: false, monthComplete: true })), "60000");
+  // Cleared after a reopen: blank while a half is unknown (submits as the suggestion)...
   const cleared = row({ ...partsBase, needsReview: true, newEtcDraft: null, submittedAt: AT, newEtcClearedAt: AT });
-  assert.equal(newEtcSeedText(partsCostCellState(cleared, AUG, { locked: false, monthComplete: true })), "");
-  assert.equal(isPartsCostDecided(cleared, AUG), false);
-  assert.equal(partsCostEffectiveNewEtc(cleared, AUG), 67_500);
+  const none = { breakoutInScope: true, breakoutSum: null };
+  assert.equal(newEtcSeedText(partsCostCellState(cleared, none, { locked: false, monthComplete: true })), "");
+  assert.equal(isPartsCostDecided(cleared, none), false);
+  assert.equal(partsCostEffectiveNewEtc(cleared, none), 67_500);
+  // ...but it cannot hide a figure the two halves now make.
+  assert.equal(newEtcSeedText(partsCostCellState(cleared, AUG, { locked: false, monthComplete: true })), "61705");
+  assert.equal(partsCostEffectiveNewEtc(cleared, AUG), 61_705);
+});
+
+test("parts rule: Diff is plain Money Left − New ETC, with no clamp at zero", () => {
+  // Prior −99, spent 0: Money Left −99, New ETC −99 -> Diff 0, not −99.
+  const neg = row({ newEtc: -99, priorEtc: -99, hoursWorked: 0, needsReview: true, newEtcDraft: -99 });
+  const none = { breakoutInScope: false, breakoutSum: null };
+  assert.equal(partsCostEffectiveNewEtc(neg, none), -99);
+  assert.equal(partsCostDiff(neg, none), 0);
 });
 
 test("parts rule: what the freeze writes is what the cell shows, for every state that shows a figure", () => {

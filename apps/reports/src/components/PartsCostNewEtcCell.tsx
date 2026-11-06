@@ -241,7 +241,7 @@ export function PartsCostNewEtcCell({
     // the KPI card said the same until §28 stopped it deriving from this number.
     // Fixing it here fixes the cell, the row, the footer and the export at once,
     // because they all read this one published value.
-    const diffNow = decidedNow ? left - Math.max(effective, 0) : 0;
+    const diffNow = decidedNow ? left - effective : 0;
     // ── A total is the sum of the column above it (§44, 2026-08-05) ──────────
     //
     // This published `effective`, which for a BLANK box is the suggestion — Money Left.

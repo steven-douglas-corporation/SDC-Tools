@@ -2140,7 +2140,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                         // §29.2/§29.3 — undecided contributes NOTHING, like every hours
                         // Diff beside it. See the note on the cell below and the matching
                         // change in PartsCostNewEtcCell (the client half of this cell).
-                        const diffCost = decidedCost ? moneyLeft - Math.max(effectiveNewEtcCost, 0) : 0;
+                        const diffCost = decidedCost ? moneyLeft - effectiveNewEtcCost : 0;
                         partsCostGrandTotal.prior += prior;
                         partsCostGrandTotal.worked += spent;
                         partsCostGrandTotal.newEtc += effectiveNewEtcCost;
