@@ -230,6 +230,8 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
       {/* Picking a job and loading it are separate steps: the picker answers the
           click at once and JobSwitchBody dims the previous job's figures until the new
           ones land. See components/JobSwitch.tsx. */}
+      {/* Analysis sits above the Job Details heading. Loads its figures on open. */}
+      <JobAnalysisDropdown />
       <JobSwitchProvider selected={selectedJobIds}>
       <div className="mb-1 flex flex-wrap items-end justify-between gap-4">
         <PageTitle>Job Details</PageTitle>
@@ -243,9 +245,6 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
       <p className="mb-5 text-sm text-sdc-gray-600">
         Quoted vs actual vs estimate-to-complete hours by section and billing group, per job.
       </p>
-
-      {/* Analysis: every active job's Left to Invoice + Money Spent for last month. Loads on open. */}
-      <JobAnalysisDropdown />
 
       <JobSwitchBody>
       {data ? (
