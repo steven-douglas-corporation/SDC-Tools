@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { pageOf, searchRows, sortRows, type SortDir, type TableColumnLogic } from "@/lib/data-table";
 
@@ -111,10 +111,10 @@ export function DataTable<T>({
               }}
               placeholder={searchPlaceholder}
               aria-label={`Search ${label}`}
-              className="min-h-9 w-full max-w-sm rounded-lg border border-sdc-border bg-white px-3 py-1.5 text-sm text-sdc-navy placeholder:text-sdc-gray-400"
+              className="min-h-10 w-full max-w-sm rounded-lg border border-sdc-border bg-white px-3 py-1.5 text-base text-sdc-navy placeholder:text-sdc-gray-400"
             />
           )}
-          <span className="text-note text-sdc-gray-600" role="status">
+          <span className="text-sm text-sdc-gray-600" role="status">
             {query ? `${total.toLocaleString()} of ${rows.length.toLocaleString()} match` : `${rows.length.toLocaleString()} total`}
           </span>
           {toolbar && <div className="ml-auto flex flex-wrap items-center gap-2">{toolbar}</div>}
@@ -122,13 +122,16 @@ export function DataTable<T>({
       )}
 
       <div className="overflow-x-auto rounded-xl border border-sdc-border bg-white">
-        <table className="w-full table-fixed text-sm" aria-label={label}>
+        {/* globals.css sizes every <table> from --table-font-size (about 10px, !important),
+            so a size class here would do nothing. A record list is read row by row rather
+            than scanned as a dense grid, so it asks for 13px through that variable. */}
+        <table className="w-full table-fixed" aria-label={label} style={{ "--table-font-size": "0.8667rem" } as CSSProperties}>
           <colgroup>
             {columns.map((c) => (
               <col key={c.id} style={c.width ? { width: c.width } : undefined} />
             ))}
           </colgroup>
-          <thead className="bg-slate-100 text-left text-note text-sdc-gray-600">
+          <thead className="bg-slate-100 text-left text-sdc-gray-600">
             <tr>
               {columns.map((c) => {
                 const sortable = c.sortable !== false;
@@ -151,7 +154,7 @@ export function DataTable<T>({
                         }`}
                       >
                         <span>{c.header}</span>
-                        <span aria-hidden className="w-2.5 text-micro">
+                        <span aria-hidden className="w-3">
                           {arrow}
                         </span>
                       </button>
@@ -211,7 +214,7 @@ export function DataTable<T>({
       </div>
 
       {paging !== "none" && total > 0 && (
-        <div className="flex flex-wrap items-center justify-end gap-3 text-note text-sdc-gray-600">
+        <div className="flex flex-wrap items-center justify-end gap-3 text-sm text-sdc-gray-600">
           <span>
             Showing {view.from.toLocaleString()}–{view.to.toLocaleString()} of {total.toLocaleString()}
           </span>
