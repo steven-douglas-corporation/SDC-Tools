@@ -32,6 +32,7 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   { keys: ["job-hour-details:view"], label: "Job Details", section: "General" },
   { keys: ["job-hour-details:schedule"], label: "Schedule button in Job Details", section: "General" },
   { keys: ["build-readiness:view"], label: "Build Readiness", section: "General" },
+  { keys: ["open-pos:view"], label: "Open POs", section: "General" },
   { keys: ["dashboard:view"], label: "Dashboard", section: "General" },
   { keys: ["tm:view"], label: "T&M", section: "General" },
   { keys: ["projects:view"], label: "Projects — View", section: "Projects" },

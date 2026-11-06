@@ -151,6 +151,7 @@ export const SPLIT_ROUTES: readonly {
   },
   { path: "/tm", label: "T&M", params: ["jobs", "start", "end"], instanceParam: "jobs" },
   { path: "/build-readiness", label: "Build Readiness", params: [] },
+  { path: "/open-pos", label: "Open POs", params: [] },
   { path: "/jobs", label: "Jobs", params: ["q", "status", "type", "customer"] },
   { path: "/job-cost-explorer", label: "Profitability", params: ["asOf"], instanceParam: "asOf" },
   { path: "/cash-flow", label: "Cash Flow", params: ["as", "compare"], instanceParam: "as" },

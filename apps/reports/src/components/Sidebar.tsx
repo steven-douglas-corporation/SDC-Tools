@@ -240,6 +240,18 @@ const GROUPS: NavGroup[] = [
         ),
       },
       {
+        // Procurement / supply chain: every PO still owing an invoice (2026-11-06).
+        href: "/open-pos",
+        label: "Open POs",
+        isActive: (p) => p === "/open-pos",
+        icon: (
+          <Icon>
+            <path d="M3.5 1.5 H10 L12.5 4 V14.5 H3.5 Z" strokeLinejoin="round" />
+            <path d="M5.75 7 H10.25 M5.75 9.5 H10.25 M5.75 12 H8.5" strokeLinecap="round" />
+          </Icon>
+        ),
+      },
+      {
         // Gated on cash-flow:view like every other link here (2026-09-01).
         // Was ELT-only via a hardcoded role check in layout.tsx; the permission
         // is seeded ELT-only, so what shows up here has not changed.

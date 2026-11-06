@@ -19,8 +19,6 @@
     "@azure/msal-node": "^5.3.1",
     "@azure/msal-node-extensions": "^5.3.1",
     "@prisma/client": "6.19.3",
-    "ag-grid-community": "^36.0.2",
-    "ag-grid-react": "^36.0.2",
     "bcryptjs": "^3.0.3",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
