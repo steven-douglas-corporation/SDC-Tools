@@ -76,12 +76,22 @@ export function fakePartsLines(jobId: string): PartsCostLine[] {
     }
     // scenarios 4 and 7 (and anything not yet invoiceable): purchased, nothing invoiced
 
+    // Delivery side, for Open POs. Derived from i and the scenario WITHOUT calling rand(),
+    // so every value generated above (and every figure a test pins) is unchanged.
+    //   invoiced in full / refund -> received; partial -> half received;
+    //   scenario 4 -> received, waiting on the invoice; scenario 7 and not-yet-invoiceable -> not received.
+    const required = new Date(purchased.getFullYear(), purchased.getMonth(), purchased.getDate() + 10 + ((i * 7) % 35));
+    const receivedQty =
+      scenario === 3 && canInvoice ? Math.floor(qty / 2) : scenario === 4 || (invoiced !== 0 && scenario !== 3) ? qty : 0;
+
     out.push({
       lineId: `pod:${n * 1000 + i}`,
       // Fake lines carry no item id, so they take the part-number fallback join.
       itemId: null,
       purchaseDate: ymd(purchased),
       invoicedDate: invDate,
+      requiredDate: ymd(required),
+      receivedQty,
       supplier: SUPPLIERS[Math.floor(rand() * SUPPLIERS.length)],
       manufacturer: null,
       category: CATEGORIES[Math.floor(rand() * CATEGORIES.length)],
