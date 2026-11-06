@@ -1,87 +1,88 @@
+import "server-only";
 import { prisma } from "@/lib/prisma";
-import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
-import { readPartsEtcBreakout } from "@/lib/parts-etc-breakout";
-import { resolveLeftToInvoice, previousMonth, monthEndLabel } from "@/lib/left-to-invoice";
-import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
-import { round2 } from "@/lib/etc";
-import { PARTS_COST_SECTION } from "@/lib/sections";
+import { ACTIVE_JOB_WHERE, compareJobIds } from "@/lib/job-filters";
+import { getPartsCostForJobs, loadAllTransfers } from "@/lib/sync-totaleto";
+import { summarizeTransfersForJobs } from "@/lib/parts-transfer-netting";
+import { readPriorEtcByJob, type PriorEtcResolution } from "@/lib/parts-prior-etc";
+import { readLeftToPurchaseLastMonth } from "@/lib/parts-left-to-purchase";
+import { assemblePartsCostFinancials } from "@/lib/parts-cost-financials";
+import { leftToInvoiceForLines } from "@/lib/left-to-invoice";
+import { withTimeoutOrNull } from "@/lib/with-timeout";
 
-// Job Details → "Analysis": every active job's Left to Invoice and Money Spent Month for the
-// PREVIOUS calendar month (in November: October), like the Procurement "PM" rewind.
+// Job Details → "Analysis": every ACTIVE job's Left to Invoice and Money Spent Month, side by side.
 //
-// Nothing is computed separately from the Monthly ETC grid. Per job it is the same two reads the
-// grid's Parts Cost block uses for that month: the Parts Cost entry's `hoursWorked` (Money Spent
-// Month) and Left to Invoice through resolveLeftToInvoice at that month's cutoff. The job set is
-// the grid's own universe for the month (getEtcMonthJobWhere), so the two screens list the same jobs.
+// Pulled ONLY from what the Job Details tab itself shows. Each job is assembled by the same
+// function the page's Parts Cost card uses (assemblePartsCostFinancials), from the same inputs the
+// card reads, so a job reads here exactly as it does on its own card and drill-through:
+//   Left to Invoice    = financials.leftToInvoice      (the card's Left to Invoice)
+//   Money Spent Month  = financials.partsSpentThisMonth (the drill-through's Money Spent Month)
+// Each job's month is the card's rule for a single job — its latest Monthly ETC month — so in
+// November, before November's ETC is started, that is October. The selection of jobs on the page
+// does not affect this: it always covers every active job. Same loading pattern as
+// parts-budget-analysis.ts (one Total ETO round trip for all jobs, then one assembly per job).
 
 export type EtcAnalysisRow = {
   jobId: string;
   jobName: string;
-  /** null when Total ETO could not be reached for the job. */
-  leftToInvoice: number | null;
-  /** null when the job has no Parts Cost row for that month. */
-  moneySpent: number | null;
+  /** The ETC month this job's figures describe (its latest). Null when it has no ETC month. */
+  month: string | null;
+  leftToInvoice: number;
+  moneySpent: number;
 };
 
-export type EtcAnalysisData = {
-  month: string;
-  monthLabel: string;
-  rangeLabel: string;
-  cutoffLabel: string;
-  hasLeftToInvoice: boolean;
-  rows: EtcAnalysisRow[];
-};
+export type EtcAnalysisData = { rows: EtcAnalysisRow[]; unavailable: boolean };
 
-export async function getEtcAnalysis(today: Date = new Date()): Promise<EtcAnalysisData> {
-  const month = previousMonth(today);
-  const { where } = await getEtcMonthJobWhere(month);
+const BUDGET_MS = 120_000;
+
+export async function getEtcAnalysis(): Promise<EtcAnalysisData> {
   const jobs = await prisma.job.findMany({
-    where,
-    select: {
-      id: true,
-      jobId: true,
-      jobName: true,
-      etcEntries: { where: { month, section: PARTS_COST_SECTION }, select: { hoursWorked: true, leftToInvoice: true } },
-    },
+    where: ACTIVE_JOB_WHERE,
+    select: { id: true, jobId: true, jobName: true, costQuoted: true, costActualHistorical: true, status: true },
   });
+  if (jobs.length === 0) return { rows: [], unavailable: false };
+  jobs.sort((a, b) => compareJobIds(a.jobId, b.jobId));
 
-  const hasLeftToInvoice = showsPartsBreakout(month);
-  const breakout = hasLeftToInvoice
-    ? await readPartsEtcBreakout(
-        jobs.filter((j) => j.jobId).map((j) => ({ pk: j.id, jobNumber: j.jobId })),
-        month,
-      ).catch((e) => {
-        console.error("[etc-analysis] parts breakout failed; Left to Invoice will read —:", e);
-        return null;
-      })
-    : null;
+  const byJob = await withTimeoutOrNull(
+    `TotalETO parts (${jobs.length} jobs)`,
+    BUDGET_MS,
+    () => getPartsCostForJobs(jobs.map((j) => j.jobId)),
+    (e) => console.error("etc-analysis: getPartsCostForJobs failed:", e),
+  );
+  // All-or-nothing, like the card: a failed read must not turn every job into "$0".
+  if (!byJob) return { rows: [], unavailable: true };
+  const allTransfers = await withTimeoutOrNull("TotalETO transfers", BUDGET_MS, () => loadAllTransfers(null), (e) =>
+    console.error("etc-analysis: loadAllTransfers failed:", e),
+  );
+  if (!allTransfers) return { rows: [], unavailable: true };
 
-  const rows: EtcAnalysisRow[] = jobs.map((job) => {
-    const entry = job.etcEntries[0] ?? null;
-    const b = breakout?.byJobPk.get(job.id) ?? null;
-    const leftToInvoice = hasLeftToInvoice
-      ? resolveLeftToInvoice({
-          computed: b?.rawLeftToInvoice == null ? null : round2(b.rawLeftToInvoice),
-          stored: entry?.leftToInvoice != null ? round2(Number(entry.leftToInvoice)) : null,
-        }).value
-      : null;
-    return {
-      jobId: job.jobId,
-      jobName: job.jobName,
-      leftToInvoice,
-      moneySpent: entry ? Number(entry.hoursWorked) : null,
-    };
+  const latest = await prisma.etcEntry.groupBy({ by: ["jobId"], where: { jobId: { in: jobs.map((j) => j.id) } }, _max: { month: true } });
+  const monthOf = new Map(latest.map((l) => [l.jobId, l._max.month ?? null]));
+  const pksByMonth = new Map<string, number[]>();
+  for (const j of jobs) {
+    const m = monthOf.get(j.id);
+    if (m) pksByMonth.set(m, [...(pksByMonth.get(m) ?? []), j.id]);
+  }
+  const priorByMonth = new Map<string, Map<number, PriorEtcResolution> | null>();
+  const ltpByMonth = new Map<string, Map<number, number | null>>();
+  for (const [m, pks] of pksByMonth) {
+    priorByMonth.set(m, await readPriorEtcByJob(pks, m).catch(() => null));
+    ltpByMonth.set(m, await readLeftToPurchaseLastMonth(pks, m).catch(() => new Map<number, number | null>()));
+  }
+
+  const rows: EtcAnalysisRow[] = jobs.map((j) => {
+    const month = monthOf.get(j.id) ?? null;
+    const f = assemblePartsCostFinancials({
+      jobs: [j],
+      byJob,
+      failedJobs: 0,
+      transfers: summarizeTransfersForJobs(allTransfers, [j.jobId]),
+      transfersUnavailable: false,
+      etcMonth: month,
+      priorByJob: month ? (priorByMonth.get(month) ?? null) : new Map<number, PriorEtcResolution>(),
+      ltpLastMonth: month ? (ltpByMonth.get(month) ?? new Map<number, number | null>()) : new Map<number, number | null>(),
+      leftToInvoice: leftToInvoiceForLines(byJob.get(j.jobId) ?? []),
+    });
+    return { jobId: j.jobId, jobName: j.jobName, month, leftToInvoice: f.leftToInvoice, moneySpent: f.partsSpentThisMonth };
   });
-  rows.sort((a, b) => a.jobId.localeCompare(b.jobId, undefined, { numeric: true }));
-
-  const monthName = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1).toLocaleString("en-US", { month: "long" });
-  const cutoffLabel = monthEndLabel(month);
-  return {
-    month,
-    monthLabel: `${monthName} ${month.slice(0, 4)}`,
-    rangeLabel: `${monthName} 1 – ${cutoffLabel}`,
-    cutoffLabel,
-    hasLeftToInvoice,
-    rows,
-  };
+  return { rows, unavailable: false };
 }

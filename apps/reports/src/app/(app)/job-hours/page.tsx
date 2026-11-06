@@ -206,7 +206,7 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
   // skeleton in the same commit as the hours.
   const selectionKey = selectedJobIds.join(",");
 
-  const [hoursDetail, schedulerLink, analysis] = await Promise.all([hoursDetailPromise, schedulerPromise, analysisPromise]);
+  const [hoursDetail, schedulerLink] = await Promise.all([hoursDetailPromise, schedulerPromise]);
   const { baseUrl: schedulerBaseUrl, jobNumbers: schedulerJobNumbers, ssoEmail: schedulerSsoEmail } = schedulerLink;
 
   // ── Which Standard Fees sections this role may see (2026-09-02) ───────────
@@ -237,15 +237,10 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
           click at once and JobSwitchBody dims the previous job's figures until the new
           ones land. See components/JobSwitch.tsx. */}
       <JobSwitchProvider selected={selectedJobIds}>
-      {analysis && (
-        <EtcAnalysis
-          rows={analysis.rows}
-          monthLabel={analysis.monthLabel}
-          rangeLabel={analysis.rangeLabel}
-          cutoffLabel={analysis.cutoffLabel}
-          hasLeftToInvoice={analysis.hasLeftToInvoice}
-        />
-      )}
+      {/* Streams in behind the page: it waits on Total ETO, and the hours must not. */}
+      <Suspense fallback={null}>
+        <AnalysisSlot promise={analysisPromise} />
+      </Suspense>
       <div className="mb-1 flex flex-wrap items-end justify-between gap-4">
         <PageTitle>Job Details</PageTitle>
         <div className="flex items-center gap-2">
@@ -384,6 +379,12 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
       </JobSwitchProvider>
     </div>
   );
+}
+
+// The Analysis dropdown, awaited on its own so a slow Total ETO never holds the page.
+async function AnalysisSlot({ promise }: { promise: Promise<Awaited<ReturnType<typeof getEtcAnalysis>> | null> }) {
+  const data = await promise;
+  return data ? <EtcAnalysis data={data} /> : null;
 }
 
 // The Procurement drawer's body — a separate async server component so the page can
