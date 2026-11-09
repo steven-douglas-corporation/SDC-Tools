@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import { lineLeftToInvoice } from "../src/lib/left-to-invoice";
-import { buildOpenPos, moneyOf, poStatus, type OpenPoJob } from "../src/lib/open-pos-rules";
+import { buildOpenPos, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
 
 // Open POs: a PO is open when its signed Left to Invoice is not $0.00, the Parts List's own
 // filter applied per PO. Receipts only decide the Status column.
@@ -177,7 +177,8 @@ test("job shares add up to the PO, and the chart adds up to Not yet received", (
   const notReceived = r.rows.reduce((a, x) => a + x.money.notReceived, 0);
   assert.equal(chart, notReceived);
   assert.equal(r.weeks.find((w) => w.key === "late")!.notReceived, 200);
-  assert.equal(r.weeks.find((w) => w.key === TODAY)!.notReceived, 200);
+  // TODAY is Friday Nov 6; Nov 10 falls in the calendar week of Monday Nov 9.
+  assert.equal(r.weeks.find((w) => w.key === "2026-11-09")!.notReceived, 200);
   assert.equal(r.weeks.find((w) => w.key === "no-date")!.notReceived, 50);
 });
 
@@ -194,6 +195,34 @@ test("each PO carries its lines for the PO panel, and they add up to the PO", ()
   // The re-promised date is what the panel shows as expected; the original is kept for ↻.
   assert.equal(r.items[0].expected, "2026-11-20");
   assert.equal(r.items[0].original, "2026-10-01");
+});
+
+test("the chart's weeks are calendar weeks, Monday to Sunday, starting with this one", () => {
+  assert.equal(mondayOf("2026-11-06"), "2026-11-02"); // Friday
+  assert.equal(mondayOf("2026-11-09"), "2026-11-09"); // Monday
+  assert.equal(mondayOf("2026-11-15"), "2026-11-09"); // Sunday
+  const lines = new Map([
+    [
+      "1101",
+      [
+        line({ po: "THIS", total: 10, receivedQty: 0, requiredDate: "2026-11-08" }), // Sunday of this week
+        line({ po: "NEXT", total: 20, receivedQty: 0, requiredDate: "2026-11-09" }), // Monday of next week
+        line({ po: "PAST", total: 40, receivedQty: 0, requiredDate: "2026-11-03" }), // earlier this week: late
+      ],
+    ],
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY);
+  const w = Object.fromEntries(r.weeks.map((x) => [x.key, x.notReceived]));
+  assert.equal(r.weeks[1].key, "2026-11-02");
+  assert.equal(w["2026-11-02"], 10);
+  assert.equal(w["2026-11-09"], 20);
+  assert.equal(w.late, 40);
+});
+
+test("week labels are date ranges", () => {
+  assert.equal(weekRange("2026-11-09"), "Nov 9–15");
+  assert.equal(weekRange("2026-11-30"), "Nov 30–Dec 6");
+  assert.equal(weekRange("2026-12-28"), "Dec 28–Jan 3");
 });
 
 test("jobs not in the loaded set are ignored", () => {

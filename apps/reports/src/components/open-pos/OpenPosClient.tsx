@@ -7,7 +7,7 @@ import { OpenPoPanel } from "@/components/open-pos/OpenPoPanel";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
-import type { OpenPoMoney, OpenPoRow, OpenPosResult, OpenPoWeek } from "@/lib/open-pos-rules";
+import { addDays, weekRange, type OpenPoMoney, type OpenPoRow, type OpenPosResult, type OpenPoWeek } from "@/lib/open-pos-rules";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 
 // For managers first (the Scheduler's Vendor POs page is the buyers' worklist).
@@ -36,7 +36,6 @@ function dayLabel(day: string): string {
   const [y, m, d] = day.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
-
 // Hover text, one place for the words each column and control uses everywhere on the page.
 const TIP = {
   po: "Purchase order number in Total ETO",
@@ -109,13 +108,13 @@ function WeekChart({ weeks }: { weeks: OpenPoWeek[] }) {
   const bars = weeks.filter((w) => w.key !== "no-date");
   const noDate = weeks.find((w) => w.key === "no-date")?.notReceived ?? 0;
   const max = Math.max(...bars.map((w) => w.notReceived), 1);
-  const label = (k: string) => (k === "late" ? "Late" : k === "later" ? "Later" : `Wk of ${dayLabel(k)}`);
+  const label = (k: string) => (k === "late" ? "Late" : k === "later" ? "Later" : weekRange(k));
   const axisTip = (k: string) =>
     k === "late"
       ? "Expected before today and still not here"
       : k === "later"
         ? "Expected after the weeks shown"
-        : `Expected in the week starting ${dayLabel(k)}`;
+        : `Expected ${dayLabel(k)} to ${dayLabel(addDays(k, 6))} (Monday to Sunday)`;
   return (
     <section className={card("p-4")} aria-labelledby="op-weeks">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
