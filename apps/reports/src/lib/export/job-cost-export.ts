@@ -40,17 +40,18 @@ const COL_DEFS: Record<string, { header: string; type: SheetColumn["type"] }> = 
   etcPartsCost: { header: "ETC Parts", type: "currency" },
   partInvoiced: { header: "Parts Invoiced", type: "currency" },
   percentComplete: { header: "% Complete", type: "number" },
-  salesPrice: { header: "Sales $", type: "currency" },
-  startDate: { header: "Start", type: "date" },
-  completeDate: { header: "Complete", type: "date" },
+  salesPrice: { header: "Sold Price", type: "currency" },
+  startDate: { header: "Sold Date", type: "date" },
+  completeDate: { header: "Complete Date", type: "date" },
   profit: { header: "Profit", type: "currency" },
   margin: { header: "Margin", type: "number" },
 };
 
 function cell(row: JobCostComputed, key: string): string | number | Date | null {
+  if (key === "startDate") return null; // Sold Date has no source yet — exported blank
   const v = (row as unknown as Record<string, unknown>)[key];
   if (v == null) return null;
-  if (key === "startDate" || key === "completeDate") return new Date(String(v));
+  if (key === "completeDate") return new Date(String(v));
   if (typeof v === "number") return v;
   return String(v);
 }
