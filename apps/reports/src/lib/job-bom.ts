@@ -22,6 +22,8 @@ import {
   rollUp,
   statsForRoots,
 } from "./job-bom-rules";
+import { devFakeEtoEnabled } from "@/lib/dev-fake-eto";
+import { fakeBomRecordsets } from "@/lib/dev-fake-bom";
 
 // Native procurement BOM — ported from the Build Readiness report
 // (Centrailized library/Build_Readiness_Report). Instead of the cost-only
@@ -305,6 +307,16 @@ type PullRow = {
   FulfilledDate: Date | null;
 };
 type ProcessRow = { ItemID: number };
+
+/** The six result sets one BOM walk reads. Exported for the dev fake (dev-fake-bom.ts). */
+export type JobBomRecordsets = {
+  specs: SpecRow[];
+  tops: TopRow[];
+  bomRows: BomRow[];
+  poRows: PoRow[];
+  pullRows: PullRow[];
+  processRows: ProcessRow[];
+};
 type PoRow = {
   PurchaseOrderID: string | number | null;
   PurchaseDate: Date | null;
@@ -435,6 +447,8 @@ export async function getJobBomResult(jobId: string): Promise<JobBomResult> {
 
   const numericJob = Number(String(jobId).replace(/[^0-9]/g, ""));
   if (!Number.isFinite(numericJob) || numericJob === 0) return { ok: true, bom: empty };
+  // Local development: generated result sets, the same tree building below. Never in production.
+  if (devFakeEtoEnabled()) return { ok: true, bom: buildJobBom(jobId, fakeBomRecordsets(numericJob)) };
   if (!config.user || !config.password) {
     // Not a Total ETO fault and not an empty BOM either: the app cannot ask. Said so.
     return { ok: false, bom: empty, kind: "login_rejected", reason: "TOTALETO_DB_USER / TOTALETO_DB_PASSWORD are not configured" };
@@ -490,7 +504,12 @@ export async function getJobBomResult(jobId: string): Promise<JobBomResult> {
     return { ok: false, bom: empty, kind: classifyTotalEto(error), reason };
   }
 
-  if (bomRows.length === 0) return { ok: true, bom: empty };
+  return { ok: true, bom: buildJobBom(jobId, { specs, tops, bomRows, poRows, pullRows, processRows }) };
+}
+
+/** Builds the tree from one walk's result sets. Pure: no I/O. */
+function buildJobBom(jobId: string, { specs, tops, bomRows, poRows, pullRows, processRows }: JobBomRecordsets): JobBom {
+  if (bomRows.length === 0) return emptyBom(jobId);
 
   const ctx: BomContext = {
     poIndex: buildPoIndex(poRows),
@@ -596,5 +615,5 @@ export async function getJobBomResult(jobId: string): Promise<JobBomResult> {
   const grandTotalCost = roots.reduce((s, n) => s + n.totalCost, 0);
   const grandTotalPartQty = roots.reduce((s, n) => s + n.totalPartQty, 0);
 
-  return { ok: true, bom: { jobId: String(jobId), roots, grandTotalCost, grandTotalPartQty, rowCount, vendors } };
+  return { jobId: String(jobId), roots, grandTotalCost, grandTotalPartQty, rowCount, vendors };
 }

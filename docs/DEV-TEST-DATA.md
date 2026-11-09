@@ -111,8 +111,15 @@ invoices billed but only half posted to the GL; lines purchased across the last
 5 months including the days around a month-end (so the as-of cutoff in
 `left-to-invoice.ts` changes the answer); and PO-less extra-cost lines.
 Same job id, same lines, every time. To change the mix, edit `fakePartsLines`.
-It does not fake the BOM tree, so a part's "claimed by BOM row" split is not
-exercised.
+
+**Fake BOM** (same flag, [`dev-fake-bom.ts`](../apps/reports/src/lib/dev-fake-bom.ts)).
+`getJobBomResult` takes its six result sets from generated rows instead of
+Total ETO, and the real tree builder does the rest, so Job Details > Procurement
+(Assemblies, Parts List, Card view, risk cards, PO panel) renders. Built from
+the same fake PO lines, so PO numbers, suppliers and receipts match the parts
+feed and Open POs. Two sections (10 and 40), each with two sub-assemblies; the
+`BOM-…` parts on POs, plus three parts with no PO, one pulled from stock, one
+built in-house and one on hold. To change the tree, edit `fakeBomRecordsets`.
 
 **Build Readiness snapshots** (`npx tsx prisma/dev-data/build-readiness.ts [--seed N] [--jobs N]`).
 Writes `BuildReadinessJobSnapshot` rows for jobs 9101+: green/yellow/red bands,
