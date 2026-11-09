@@ -572,6 +572,16 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
         )}
         .
       </p>
+
+      {/* Bottom-left of the content area, opposite the Flag button. Sticky rather than
+          fixed so it never lands under the sidebar, whose width the user can drag. */}
+      <span
+        tabIndex={0}
+        title="This page is new. Its layout and figures may change. Use Flag (bottom right) to report anything that looks wrong."
+        className="sticky bottom-4 self-start rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-note font-semibold text-amber-800 shadow-sm"
+      >
+        Experimental, may change
+      </span>
     </div>
   );
 }
