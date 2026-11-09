@@ -3,7 +3,7 @@ import { PAGE_SHELL } from "@/components/ui/classnames";
 import { PageTitle } from "@/components/ui/Typography";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FeedbackGrid } from "@/components/FeedbackGrid";
-import type { FeedbackGridRow } from "@/components/FeedbackGridInner";
+import type { FeedbackGridRow } from "@/components/FeedbackGrid";
 import type { FeedbackDetail } from "@/components/FeedbackDetailDrawer";
 import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";

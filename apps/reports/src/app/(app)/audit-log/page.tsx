@@ -5,13 +5,11 @@ import { AuditLogGrid } from "@/components/AuditLogGrid";
 import { requirePagePermission } from "@/lib/require-permission";
 import { formatAuditWhen } from "@/lib/audit-time";
 
-// How many recent entries to load into the grid (AG Grid then sorts/filters/
-// paginates them client-side).
+// How many recent entries to load into the table (DataTable then searches, sorts and
+// pages them client-side).
 const LOAD_LIMIT = 1000;
 
-// ELT-only view of AuditLog — every logged data-changing action. AG Grid
-// (Community) provides sort / column filters / resize / pagination
-// client-side.
+// ELT-only view of AuditLog — every logged data-changing action.
 //
 // A role check WAS dropped from here 2026-08-02 in favor of a shared
 // password (audit-log-gate.ts), on the reasoning that a gate nobody could
@@ -41,7 +39,7 @@ export async function AuditLogView() {
         Every recorded data change across the app — ETC edits, employee/job changes, Standard Sheet edits,
         month submit/reopen/refresh, and sign-ins. {total.toLocaleString()} total{" "}
         {total === 1 ? "entry" : "entries"}
-        {total > LOAD_LIMIT ? ` (showing the latest ${LOAD_LIMIT.toLocaleString()})` : ""}. Sort or filter any column.
+        {total > LOAD_LIMIT ? ` (showing the latest ${LOAD_LIMIT.toLocaleString()})` : ""}. Search, or click a column to sort.
       </p>
       <AuditLogGrid rows={rows} />
     </div>
