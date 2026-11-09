@@ -12,7 +12,7 @@ import {
   isPartsCostDecided,
   type PartsCostLive,
 } from "@/lib/etc";
-import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
+import { showsPartsBreakout, usesPartsApproval } from "@/lib/parts-breakout-scope";
 
 // KPI cards for the top of the Monthly ETC page: hours worked and variance for
 // Engineering and Shop, parts money spent, and how many people booked time in
@@ -113,7 +113,7 @@ export async function getEtcMonthKpis(
   for (const job of jobs) {
     for (const entry of job.etcEntries) {
       if (entry.section === PARTS_COST_SECTION) {
-        const live: PartsCostLive = { breakoutInScope, breakoutSum: partsBreakoutSums.get(job.id) ?? null };
+        const live: PartsCostLive = { breakoutInScope, breakoutSum: partsBreakoutSums.get(job.id) ?? null, approval: usesPartsApproval(month) && partsBreakoutSums.size > 0 };
         const partsEffective = partsCostEffectiveNewEtc(entry, live);
         parts.prior += Number(entry.priorEtc);
         parts.spent += Number(entry.hoursWorked);

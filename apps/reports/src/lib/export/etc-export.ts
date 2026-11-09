@@ -17,9 +17,9 @@ import {
   type NewEtcCellState,
   type PartsCostLive,
 } from "@/lib/etc";
-import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
+import { showsPartsBreakout, usesPartsApproval } from "@/lib/parts-breakout-scope";
 import { readPartsEtcBreakout, type PartsEtcBreakoutResult } from "@/lib/parts-etc-breakout";
-import { resolveLeftToInvoice } from "@/lib/left-to-invoice";
+import { resolveLeftToInvoice, partsNewEtc, calcLeftToPurchase } from "@/lib/left-to-invoice";
 import type { CellValue, SheetColumn, SheetSpec } from "@/lib/export/sheet";
 
 // ── The Monthly ETC grid, as a spreadsheet (§24.4) ────────────────────────────
@@ -174,7 +174,24 @@ export async function buildEtcExport(
       // Parts rule; the export has no upstream read, so the live halves are passed as
       // unknown and the rule falls through exactly as for blank halves — every other
       // rung (frozen, draft, cleared, confirmed) resolves from the row's own columns.
-      const partsLive: PartsCostLive = { breakoutInScope: showsPartsBreakout(month), breakoutSum: null };
+      // The cell's own Left to Invoice resolution (computed default, or a stored override),
+      // signed — the grid renders it through the same function. Read before the Parts rule
+      // because an approval month (2026-11+) derives New ETC from it.
+      const b = money ? breakout?.byJobPk.get(job.id) ?? null : null;
+      const invoice = money
+        ? resolveLeftToInvoice({
+            computed: b?.rawLeftToInvoice == null ? null : round2(b.rawLeftToInvoice),
+            stored: entry.leftToInvoice != null ? round2(Number(entry.leftToInvoice)) : null,
+          }).value
+        : null;
+      const purchase = entry.leftToPurchase != null ? round2(Number(entry.leftToPurchase)) : null;
+      const approval = money && usesPartsApproval(month);
+      const partsLive: PartsCostLive = {
+        breakoutInScope: showsPartsBreakout(month),
+        // Approval months have the halves to hand; earlier months keep the old "unknown".
+        breakoutSum: approval ? partsNewEtc(invoice, purchase) : null,
+        approval,
+      };
       const state: NewEtcCellState = money
         ? partsCostCellState(entry, partsLive, { locked: !entry.needsReview, monthComplete: true })
         : {
@@ -193,20 +210,15 @@ export async function buildEtcExport(
       const seed = newEtcSeedText(state);
       const shown: number | null = seed.trim() === "" ? null : Number(seed);
       const diff = money ? partsCostDiff(entry, partsLive) : newEtcDiff(entry);
-      if (shown === null && worked !== 0 && entry.needsReview) needsCount++;
+      if (shown === null && (worked !== 0 || approval) && entry.needsReview) needsCount++;
       row.push(prior, worked, left);
       if (extra) {
-        // The cell's own resolution (computed default, or a stored override), signed —
-        // the grid renders it through the same function.
-        const b = breakout?.byJobPk.get(job.id) ?? null;
-        const invoice = resolveLeftToInvoice({
-          computed: b?.rawLeftToInvoice == null ? null : round2(b.rawLeftToInvoice),
-          stored: entry.leftToInvoice != null ? round2(Number(entry.leftToInvoice)) : null,
-        }).value;
-        const purchase = entry.leftToPurchase != null ? round2(Number(entry.leftToPurchase)) : null;
-        row.push(invoice, purchase);
+        // Approval months show what the grid shows: the approved figure, else the
+        // calculated pending one.
+        const purchaseShown = approval && purchase === null ? calcLeftToPurchase({ priorEtc: prior, spent: worked, leftToInvoice: invoice }) : purchase;
+        row.push(invoice, purchaseShown);
         addTotal(i + 3, invoice);
-        addTotal(i + 4, purchase);
+        addTotal(i + 4, purchaseShown);
       }
       row.push(shown, diff);
       addTotal(i, prior);

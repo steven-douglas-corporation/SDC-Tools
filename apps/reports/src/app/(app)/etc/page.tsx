@@ -30,8 +30,8 @@ import { readPartsEtcBreakout, type PartsEtcBreakout } from "@/lib/parts-etc-bre
 import { buildOverview, describeBuckets, pickBuckets, type JobBuckets, type LeftToInvoiceBuckets } from "@/lib/left-to-invoice-by-month";
 import { EtcLeftToInvoiceByMonth } from "@/components/EtcLeftToInvoiceByMonth";
 import { monthEndLabel } from "@/lib/left-to-invoice";
-import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
-import { resolveLeftToInvoice, partsNewEtc } from "@/lib/left-to-invoice";
+import { showsPartsBreakout, usesPartsApproval } from "@/lib/parts-breakout-scope";
+import { resolveLeftToInvoice, partsNewEtc, calcLeftToPurchase } from "@/lib/left-to-invoice";
 import { EtcSectionCells } from "@/components/EtcSectionCells";
 import {
   StandardRatesProvider,
@@ -614,6 +614,9 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
   // August 2026 onward, by request (lib/parts-breakout-scope.ts carries the why).
   // Everything downstream keys off this one boolean rather than re-deriving it.
   const showBreakout = showsPartsBreakout(month);
+  // November 2026 on: Left to Purchase is calculated and must be APPROVED (or changed) by
+  // a PM before New ETC exists. See lib/parts-breakout-scope.ts.
+  const approvalFlow = usesPartsApproval(month);
   const partsCostCols: readonly (typeof PARTS_COST_SUB_COLUMNS)[number][] = showBreakout
     ? PARTS_COST_SUB_COLUMNS
     : PARTS_COST_SUB_COLUMNS.filter((c) => c !== "Left to Invoice" && c !== "Left to Purchase");
@@ -2056,6 +2059,14 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                             partsCostEntry.leftToInvoice != null ? round2(Number(partsCostEntry.leftToInvoice)) : null,
                         });
                         const leftToInvoiceValue = resolvedInvoice.value;
+                        // Approval months (2026-11+): the CALCULATED Left to Purchase — Money Left −
+                        // Left to Invoice, or the Prior ETC carried forward when nothing was spent.
+                        // Never stored; it is what an unapproved cell shows (in yellow) until a PM
+                        // approves or changes it. `leftToPurchaseValue` stays the APPROVED figure.
+                        const calcPurchase = approvalFlow
+                          ? calcLeftToPurchase({ priorEtc: prior, spent, leftToInvoice: leftToInvoiceValue })
+                          : null;
+                        const purchaseShown = leftToPurchaseValue ?? calcPurchase;
                         // A New ETC typed before these columns existed. No longer shown
                         // as Left to Invoice — that cell is computed now — but not thrown
                         // away either: it moves to New ETC’s tooltip, so a manager can see
@@ -2105,7 +2116,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                         // `partsLiveSums` holds exactly `breakoutSum` for this job (same
                         // inputs, computed once above the KPI card); the local is kept for
                         // the footer's two half-columns below.
-                        const partsLive: PartsCostLive = { breakoutInScope: showBreakout, breakoutSum };
+                        const partsLive: PartsCostLive = { breakoutInScope: showBreakout, breakoutSum, approval: approvalFlow };
                         const partsCostState = partsCostCellState(partsCostEntry, partsLive, {
                           locked: cellsReadOnly,
                           monthComplete,
@@ -2152,7 +2163,9 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                         // itself uses, so entering $1 moves the footer by $1 and a footer
                         // total is never made partly of figures nobody can see.
                         partsCostGrandTotal.leftToInvoice += leftToInvoiceValue ?? 0;
-                        partsCostGrandTotal.leftToPurchase += leftToPurchaseValue ?? 0;
+                        // Approval months total what the column SHOWS — approved figures and pending
+                        // calculated ones alike; New ETC alone waits for approval.
+                        partsCostGrandTotal.leftToPurchase += (approvalFlow ? purchaseShown : leftToPurchaseValue) ?? 0;
 
                         return (
                           <Fragment key="parts-cost">
@@ -2254,7 +2267,17 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                               initialValue={leftToPurchaseValue == null ? "" : String(leftToPurchaseValue)}
                               jobId={job.id}
                               jobName={job.jobName}
-                              seedHint="Nothing is filled in here automatically — type what is still to be bought."
+                              approval={approvalFlow}
+                              calcValue={calcPurchase}
+                              seedHint={
+                                approvalFlow
+                                  ? calcPurchase == null
+                                    ? "Left to Invoice is unknown, so Left to Purchase cannot be calculated. Click to enter a figure."
+                                    : spent === 0
+                                    ? `Nothing was spent this month, so the Prior ETC (${currencyExact(prior)}) carries forward. Pending your approval — click to approve or change.`
+                                    : `Calculated: Money Left (${currencyExact(moneyLeft)}) − Left to Invoice (${currencyExact(leftToInvoiceValue ?? 0)}) = ${currencyExact(calcPurchase)}. Pending your approval — click to approve or change.`
+                                  : "Nothing is filled in here automatically — type what is still to be bought."
+                              }
                               bg={newEtcBg(true)}
                               locked={cellsReadOnly}
                             />
@@ -2297,7 +2320,9 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
                               // cell now reads as genuinely blank until one is
                               // typed; the suggestion stays on the tooltip.
                               hint={
-                                spent === 0 || draftCost != null
+                                approvalFlow
+                                  ? `Left to Invoice + an approved Left to Purchase. Blank until Left to Purchase is approved or changed.`
+                                  : spent === 0 || draftCost != null
                                   ? undefined
                                   : `Nothing decided yet. Money Left is ${currencyExact(moneyLeft)} — carrying that forward would give ${currencyExact(suggestedCost)}.`
                               }

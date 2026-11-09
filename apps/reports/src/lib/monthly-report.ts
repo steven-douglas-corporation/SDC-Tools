@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
+import { showsPartsBreakout, usesPartsApproval } from "@/lib/parts-breakout-scope";
 import { readPartsEtcBreakout } from "@/lib/parts-etc-breakout";
 import { resolveLeftToInvoice, partsNewEtc } from "@/lib/left-to-invoice";
 import { APP_VERSION } from "@/lib/app-version";
@@ -153,14 +153,15 @@ export async function validateMonthlyReport(month: string): Promise<MonthlyRepor
   // row resolves from its own columns, exactly as the grid does.
   const partsLiveSums = new Map<number, number | null>();
   if (showsPartsBreakout(month)) {
+    // Approval months (2026-11+): New ETC is the live sum for EVERY open row with an
+    // approved (stored) Left to Purchase — no draft or confirmed figure stands in for it.
+    const approvalMonth = usesPartsApproval(month);
     const needsLive = gridEntries.filter(
       (e) =>
         e.section === PARTS_COST_SECTION &&
         e.needsReview &&
-        e.newEtcDraft == null &&
-        e.newEtcClearedAt == null &&
-        confirmedNewEtc(e) === null &&
-        e.leftToPurchase != null,
+        e.leftToPurchase != null &&
+        (approvalMonth || (e.newEtcDraft == null && e.newEtcClearedAt == null && confirmedNewEtc(e) === null)),
     );
     if (needsLive.length > 0) {
       const jobRows = await prisma.job.findMany({
@@ -206,7 +207,7 @@ export async function validateMonthlyReport(month: string): Promise<MonthlyRepor
       e.section === PARTS_COST_SECTION
         ? partsCostCellState(
             e,
-            { breakoutInScope: showsPartsBreakout(month), breakoutSum: partsLiveSums.get(e.job.id) ?? null },
+            { breakoutInScope: showsPartsBreakout(month), breakoutSum: partsLiveSums.get(e.job.id) ?? null, approval: usesPartsApproval(month) },
             { locked: false, monthComplete: true },
           )
         : {
@@ -220,9 +221,22 @@ export async function validateMonthlyReport(month: string): Promise<MonthlyRepor
             precision: "whole",
           };
     // Same expression the cell uses for its background: blank + a decision required.
-    if (worked === 0) continue;
+    if (worked === 0 && !state.partsApproval) continue;
     if (newEtcSeedText(state).trim() !== "") continue;
     missingNewEtc++;
+    if (state.partsApproval) {
+      // Approval months: New ETC is blank only while Left to Purchase is not approved.
+      if (issues.length < MAX_REPORTED_ISSUES) {
+        issues.push({
+          section: "Monthly ETC",
+          rowRef: `${e.job.jobId} — ${e.job.jobName}`,
+          department: sectionLabel(e.section),
+          column: "Left to Purchase",
+          reason: "Left to Purchase has not been approved, so New ETC cannot be calculated. Approve or change it.",
+        });
+      }
+      continue;
+    }
     if (issues.length < MAX_REPORTED_ISSUES) {
       issues.push({
         section: "Monthly ETC",
@@ -664,7 +678,7 @@ export async function submitEtcEntriesInTx(tx: Tx, month: string, userId: number
             }).value
           : null;
       const purchase = entry.leftToPurchase != null ? round2(Number(entry.leftToPurchase)) : null;
-      const live: PartsCostLive = { breakoutInScope, breakoutSum: partsNewEtc(resolvedInvoice, purchase) };
+      const live: PartsCostLive = { breakoutInScope, breakoutSum: partsNewEtc(resolvedInvoice, purchase), approval: usesPartsApproval(month) };
       newEtc = partsCostEffectiveNewEtc(entry, live);
     } else {
       newEtc = newEtcForSubmission({

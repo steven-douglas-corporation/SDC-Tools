@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, isPartsCostDecided, partsCostDiff, partsCostEffectiveNewEtc, round2, type PartsCostLive } from "@/lib/etc";
-import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
+import { showsPartsBreakout, usesPartsApproval } from "@/lib/parts-breakout-scope";
 
 // ── The drill behind the "Parts spent" card, one row per JOB ─────────────────
 //
@@ -98,7 +98,7 @@ export async function getPartsSpentDetail(
   for (const e of entries) {
     const prior = Number(e.priorEtc);
     const spent = Number(e.hoursWorked);
-    const live: PartsCostLive = { breakoutInScope, breakoutSum: partsBreakoutSums.get(e.job.id) ?? null };
+    const live: PartsCostLive = { breakoutInScope, breakoutSum: partsBreakoutSums.get(e.job.id) ?? null, approval: usesPartsApproval(month) && partsBreakoutSums.size > 0 };
     const newEtc = partsCostEffectiveNewEtc(e, live);
     const decided = isPartsCostDecided(e, live);
     // Nothing spent, nothing planned, no budget — a row that exists because the month

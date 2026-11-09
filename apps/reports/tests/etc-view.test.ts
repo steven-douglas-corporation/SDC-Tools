@@ -161,8 +161,8 @@ test("every Parts Cost header, body and footer cell carries the hide key", async
   // 3 header cells + 5 body cells (no-entry fallback, Prior, Money Spent, Money Left, Diff)
   // + 7 footer cells (Prior, Money Spent, Money Left, Left to Invoice/Purchase, New ETC, Diff).
   assert.equal(count(read("app", "(app)", "etc", "page.tsx")), 15);
-  // The two client cells the body renders: Left to Invoice / Left to Purchase (read-only
-  // and editable variants) and Parts Cost New ETC.
-  assert.equal(count(read("components", "PartsBreakoutCell.tsx")), 2);
+  // The client cells the body renders: Left to Invoice / Left to Purchase (read-only,
+  // editable and — from 2026-11 — approval variants) and Parts Cost New ETC.
+  assert.equal(count(read("components", "PartsBreakoutCell.tsx")), 3);
   assert.equal(count(read("components", "PartsCostNewEtcCell.tsx")), 1);
 });
