@@ -35,7 +35,7 @@ export function fakeBomRecordsets(jobId: number): JobBomRecordsets {
     return id;
   };
 
-  const poRows: JobBomRecordsets["poRows"] = lines.map((l, i) => {
+  const poRows: JobBomRecordsets["poRows"] = lines.map((l) => {
     const received = Math.max(0, l.receivedQty ?? 0);
     const purchased = dateOf(l.purchaseDate);
     return {
@@ -43,7 +43,8 @@ export function fakeBomRecordsets(jobId: number): JobBomRecordsets {
       PurchaseDate: purchased,
       PurchaseDateRequired: dateOf(l.requiredDate),
       Supplier: l.supplier,
-      PurchaseDetailID: base + i,
+      // The parts feed's own line id (`pod:<PurchaseDetailID>`), so the two fakes join like the real ones.
+      PurchaseDetailID: Number(l.lineId.slice(4)),
       ItemID: itemId(l.partNumber!),
       PartNumber: l.partNumber,
       PartDesc: l.description,
