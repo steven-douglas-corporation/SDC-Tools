@@ -79,7 +79,8 @@ again. After editing `schema.prisma`, use `npx prisma migrate dev --name <what>`
 | Database | MySQL on the server, real company data | MySQL 8 in Docker, `127.0.0.1:3317`, database `sdc_reports_dev`, **seeded fake data** |
 | Sign-in | Entra ID SSO via the Scheduler broker, plus credentials | Credentials only (`*@dev.local`) |
 | Total ETO parts lines (parts cost, left-to-invoice, parts list) | Live SQL Server over the LAN | **Faked**: generated PO lines (`SDC_DEV_FAKE_ETO=1`, see [DEV-TEST-DATA.md](DEV-TEST-DATA.md#3-faux-eto-and-bom-data)) |
-| Total ETO BOM tree, job mirror, cash-flow queries | Live SQL Server | **Not connected**; BOM dashboard is seeded instead |
+| Total ETO BOM tree (Job Details > Procurement) | Live SQL Server | **Faked** from the same PO lines (`SDC_DEV_FAKE_ETO=1`, [`dev-fake-bom.ts`](../apps/reports/src/lib/dev-fake-bom.ts)) |
+| Total ETO job mirror, cash-flow queries | Live SQL Server | **Not connected**; BOM dashboard is seeded instead |
 | Power BI / Fabric | Service principal | **Not connected** |
 | DataWarehouse (Postgres) | Hours, roster, position families, job postings | **Not connected**; hours are seeded directly, job postings are faked (`SDC_DEV_FAKE_HIRING=1`) |
 | Paylocity / inventory workbooks | Files on the share | **Not read**; paths unset |
@@ -102,7 +103,7 @@ what the seed and [DEV-TEST-DATA.md](DEV-TEST-DATA.md) are for.
 | [`apps/reports/.env.dev.example`](../apps/reports/.env.dev.example) | The dev profile. Every real-system credential is left blank on purpose |
 | [`apps/reports/prisma/seed-dev.ts`](../apps/reports/prisma/seed-dev.ts) | Baseline dataset. Deterministic, idempotent, refuses non-local databases |
 | `SDC_DEV_DISABLE_SYNC` | The switch in `instrumentation.ts` and `refresh-service.ts` that stops the auto-refresh |
-| `SDC_DEV_FAKE_ETO` | Serves generated parts lines from [`src/lib/dev-fake-eto.ts`](../apps/reports/src/lib/dev-fake-eto.ts) instead of querying Total ETO |
+| `SDC_DEV_FAKE_ETO` | Serves generated parts lines from [`src/lib/dev-fake-eto.ts`](../apps/reports/src/lib/dev-fake-eto.ts), and a BOM built from them by [`src/lib/dev-fake-bom.ts`](../apps/reports/src/lib/dev-fake-bom.ts), instead of querying Total ETO |
 | `SDC_DEV_FAKE_HIRING` | Serves sample Paylocity job postings from [`src/lib/dev-fake-hiring.ts`](../apps/reports/src/lib/dev-fake-hiring.ts) instead of reading the DataWarehouse |
 | [`prisma/dev-data/build-readiness.ts`](../apps/reports/prisma/dev-data/build-readiness.ts) | Faux BOM / Build Readiness snapshots |
 

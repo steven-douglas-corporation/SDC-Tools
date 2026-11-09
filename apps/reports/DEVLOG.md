@@ -7155,3 +7155,24 @@ Response as columns; the drawer a row opens shows them.
 AG Grid (`ag-grid-community`, `ag-grid-react`) and `ag-grid-theme.ts` are removed, about
 1 MB off the client bundle (docs/PERFORMANCE.md). The two theme tests in
 `typography.test.ts` became one guard: no component imports `ag-grid-*`.
+
+## 84. ListCard: one card for grouped lists; a fake BOM for local dev (2026-11-09)
+
+Job Details' Parts card view (one card per vendor, its POs underneath) was written inline in
+`JobProcurement.tsx`, so a second page wanting the same card had to copy it. Open POs did,
+and the copy grew a big figure, a four-measure grid, a second line per PO and a footer.
+`components/ui/ListCard.tsx` is the shared card: header (title, subtitle, optional avatar
+and badge), one progress bar with a label, and a scrollable mini-table whose columns are
+declared like DataTable's; row click is optional and adds the chevron. `ListCardGrid` lays
+them out. Job Details' cards now render through it with the same content and behaviour
+(row opens the PO panel, the PO number copies). Two visible differences: the dot and the
+chevron are separate grid columns (8px apart, was 6px), and a long subtitle truncates.
+
+The Job Details card view could not be seen on a dev machine: `getJobBom` asked Total ETO,
+which dev has no credentials for, and the page said "No BOM found". With
+`SDC_DEV_FAKE_ETO=1`, `getJobBomResult` now takes its six result sets from
+`lib/dev-fake-bom.ts`, built from the same fake PO lines as the parts feed (same PO numbers,
+suppliers, receipts and `PurchaseDetailID`s), and the real tree builder does the rest. The
+tree building moved out of `getJobBomResult` into a pure `buildJobBom` so both paths share
+it. Two sections, four sub-assemblies, plus parts with no PO, pulled from stock, built
+in-house and on hold. Production never sets the flag.
