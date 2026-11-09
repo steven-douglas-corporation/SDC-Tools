@@ -410,6 +410,24 @@ export function partsNewEtc(leftToInvoice: number | null, leftToPurchase: number
 }
 
 /**
+ * The CALCULATED Left to Purchase for an approval-flow month (2026-11+) — a figure that
+ * is shown as pending until a PM approves or changes it, never stored by itself.
+ *
+ *   nothing spent this month -> the Prior ETC, carried forward directly
+ *   otherwise                -> Money Left − Left to Invoice
+ *
+ * Null when Money Left cannot be reduced by a Left to Invoice that is unknown (Total ETO
+ * unreachable): there is nothing to calculate, and the cell stays blank for a PM to type.
+ * Signed on purpose — an over-spent job gives a negative figure, exactly as the formula
+ * reads, so an approved calculation always leaves New ETC equal to Money Left.
+ */
+export function calcLeftToPurchase(x: { priorEtc: number; spent: number; leftToInvoice: number | null }): number | null {
+  if (x.spent === 0) return Math.round(x.priorEtc * 100) / 100;
+  if (x.leftToInvoice === null) return null;
+  return Math.round((x.priorEtc - x.spent - x.leftToInvoice) * 100) / 100;
+}
+
+/**
  * A Left to Invoice figure that is not $0.00 as displayed, positive or negative (2026-10-08).
  * Compared at cent precision so a sub-cent float residue does not count.
  */

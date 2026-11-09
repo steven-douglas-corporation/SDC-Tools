@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { registerEtcField, forgetEtcField, updateEtcField, adoptEtcFieldBaseline } from "@/lib/etc-dirty-tracker";
 import { PARTS_COL_W } from "@/components/ui/classnames";
 import { manualOverrideStyle } from "@/components/ui/etc-diff-colors";
 import { usd } from "@/components/ui/format";
 import { publishPartsBreakout, forgetPartsBreakout } from "@/lib/etc-live-totals";
-import { useEffect } from "react";
 
 // ── Left to Invoice / Left to Purchase, manager-entered ──────────────────────
 //
@@ -60,7 +59,17 @@ export function PartsBreakoutCell({
   jobName,
   seedHint,
   bg,
+  approval = false,
+  calcValue = null,
 }: {
+  /**
+   * Left to Purchase in an approval month (2026-11+): the cell shows the CALCULATED figure
+   * in light orange until a PM approves or changes it, and only then does it turn grey and
+   * count towards New ETC. Ignored for Left to Invoice and for earlier months.
+   */
+  approval?: boolean;
+  /** The calculated Left to Purchase (calcLeftToPurchase), or null when it cannot be worked out. */
+  calcValue?: number | null;
   /** Computed, uneditable: renders plain text and posts nothing (Left to Invoice). */
   readOnly?: boolean;
   /** `partsLeftToInvoice__<entryId>` or `partsLeftToPurchase__<entryId>`. */
@@ -140,6 +149,61 @@ export function PartsBreakoutCell({
     return () => forgetPartsBreakout(jobId, which);
   }, [jobId, which, value]);
 
+  // ── Approval flow (Left to Purchase, 2026-11+) ──────────────────────────────
+  //
+  // `value` is the APPROVED figure — "" until a PM approves or changes the calculation —
+  // so everything downstream (the hidden input the save posts, the figure New ETC is made
+  // of) only ever sees an approved number. The calculated figure is display-only: shown in
+  // light orange, and reported to the footer total through "purchaseShown" alone.
+  const approvalMode = approval && which === "purchase" && !readOnly;
+  const approved = value.trim() !== "";
+  const shownNum: number | null = approved ? Number(value) : calcValue;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [menu, setMenu] = useState<{ top: number; left: number } | null>(null);
+  const touched = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!approvalMode) return;
+    publishPartsBreakout(jobId, "purchaseShown", shownNum !== null && Number.isFinite(shownNum) ? shownNum : null);
+    return () => forgetPartsBreakout(jobId, "purchaseShown");
+  }, [approvalMode, jobId, shownNum]);
+
+  // The Change / Approve menu closes on an outside click, Escape, scroll or resize.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest("[data-ltp-menu]")) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [menu]);
+
+  // Tell the grid's autosave something changed. Approving or committing a change is not a
+  // keystroke, so it would otherwise wait for the next blur/Save; the form listens for a
+  // bubbling `input` event on an opted-in field (see EtcAutosave).
+  const nudgeAutosave = () => {
+    setTimeout(() => inputRef.current?.dispatchEvent(new Event("input", { bubbles: true })), 0);
+  };
+  const commitValue = (next: string) => {
+    setValue(next);
+    updateEtcField(name, next);
+    nudgeAutosave();
+  };
+
   const label = which === "invoice" ? "Left to Invoice" : "Left to Purchase";
   // Formatted when idle, raw while typing — a caret must never sit inside a "$" or a
   // thousands separator.
@@ -163,6 +227,110 @@ export function PartsBreakoutCell({
         >
           {initialValue.trim() === "" ? "" : usd(Number(initialValue))}
         </span>
+      </td>
+    );
+  }
+
+  if (approvalMode) {
+    const pending = !approved;
+    const shownText = editing ? draft : shownNum === null || !Number.isFinite(shownNum) ? "" : usd(shownNum);
+    const openMenu = (el: HTMLElement) => {
+      if (locked || editing) return;
+      const r = el.getBoundingClientRect();
+      setMenu({ top: r.bottom + 4, left: r.left });
+    };
+    const startChange = () => {
+      setMenu(null);
+      touched.current = false;
+      setDraft(approved ? value : shownNum === null || !Number.isFinite(shownNum) ? "" : String(shownNum));
+      setEditing(true);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      });
+    };
+    const approve = () => {
+      setMenu(null);
+      if (shownNum === null || !Number.isFinite(shownNum)) return;
+      commitValue(String(shownNum));
+    };
+    const finishEdit = () => {
+      setFocused(false);
+      setEditing(false);
+      if (!touched.current) return;
+      touched.current = false;
+      // Whatever was typed becomes the approved figure; emptying the box hands the cell
+      // back to the calculation (pending again). Junk like "-" or "." is treated as empty.
+      const t = draft.trim();
+      commitValue(t === "" || !Number.isFinite(Number(t)) ? "" : t);
+    };
+    return (
+      <td
+        data-col="parts"
+        // Pending (not yet approved) reads light orange; approved is the regular grey the
+        // other money cells wear.
+        className={`motion-cell relative border-l border-sdc-border ${pending ? "bg-[#FFE7B8]" : bg} ${PARTS_COL_W} px-1 py-1 text-center`}
+        data-ltp-state={pending ? "pending" : "approved"}
+      >
+        <input type="hidden" name={name} value={value} disabled={locked} />
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode="decimal"
+          value={shownText}
+          // Read-only until "Change" is chosen, so a click cannot edit by accident and
+          // the menu is the one way in. Still a focusable input, which keeps the grid's
+          // arrow/Enter navigation working through the cell.
+          readOnly={!editing}
+          data-etc-autosave="1"
+          data-baseline={serverValue}
+          onFocus={() => setFocused(true)}
+          onBlur={() => {
+            if (editing) finishEdit();
+            else setFocused(false);
+          }}
+          onClick={(e) => openMenu(e.currentTarget)}
+          onKeyDown={(e) => {
+            if (!editing && (e.key === " " || e.key === "F2")) {
+              e.preventDefault();
+              openMenu(e.currentTarget);
+            }
+          }}
+          onChange={(e) => {
+            // Digits, one decimal point, and a leading minus (the calculation can be negative).
+            const raw = e.target.value;
+            const next = (raw.startsWith("-") ? "-" : "") + raw.replace(/[^0-9.]/g, "");
+            touched.current = true;
+            setDraft(next);
+          }}
+          title={pending ? seedHint : `${label} — ${jobName}. Approved. Click to change it; New ETC is Left to Invoice + this.`}
+          disabled={locked}
+          aria-label={`${label}, ${jobName}${pending ? " (pending approval)" : " (approved)"}`}
+          className={`w-full rounded-md border-none bg-transparent px-1.5 py-0 text-center text-label font-bold leading-none text-sdc-gray-700 outline-none focus:bg-white focus:shadow-sm ${editing ? "" : "cursor-pointer"}`}
+        />
+        {menu && (
+          <div
+            data-ltp-menu
+            role="menu"
+            style={{ position: "fixed", top: menu.top, left: menu.left, zIndex: 60 }}
+            className="flex min-w-[9rem] flex-col rounded-md border border-sdc-border bg-white py-1 text-left text-label shadow-lg"
+          >
+            <button type="button" role="menuitem" className="px-3 py-1.5 text-left hover:bg-sdc-gray-100" onClick={startChange}>
+              Change
+            </button>
+            {pending && (
+              <button
+                type="button"
+                role="menuitem"
+                disabled={shownNum === null}
+                className="px-3 py-1.5 text-left font-bold hover:bg-sdc-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={approve}
+              >
+                Approve
+              </button>
+            )}
+          </div>
+        )}
       </td>
     );
   }

@@ -400,12 +400,15 @@ export function subscribeEtcLiveTotals(cb: () => void): () => void {
 // Same shape, and for the same reason, as `publishPartsCell` above: the two inputs
 // publish here, EtcLiveTotals patches the New ETC cell and the Parts Cost footer from
 // it. Without this the sum would only be right after a reload.
-export type PartsBreakoutHalf = "invoice" | "purchase";
+// "purchaseShown" (approval months, 2026-11+) is the Left to Purchase the cell DISPLAYS —
+// approved or still-pending calculated — which only the footer total reads. "purchase"
+// stays the APPROVED figure, the only one New ETC is ever built from.
+export type PartsBreakoutHalf = "invoice" | "purchase" | "purchaseShown";
 
-const breakout = new Map<number, { invoice: number | null; purchase: number | null }>();
+const breakout = new Map<number, { invoice: number | null; purchase: number | null; purchaseShown: number | null }>();
 
 export function publishPartsBreakout(jobId: number, which: PartsBreakoutHalf, value: number | null): void {
-  const prev = breakout.get(jobId) ?? { invoice: null, purchase: null };
+  const prev = breakout.get(jobId) ?? { invoice: null, purchase: null, purchaseShown: null };
   if (prev[which] === value) return; // no-op republish, e.g. a re-render with the same text
   breakout.set(jobId, { ...prev, [which]: value });
   emit();
@@ -415,7 +418,7 @@ export function forgetPartsBreakout(jobId: number, which: PartsBreakoutHalf): vo
   const prev = breakout.get(jobId);
   if (!prev) return;
   const next = { ...prev, [which]: null };
-  if (next.invoice === null && next.purchase === null) breakout.delete(jobId);
+  if (next.invoice === null && next.purchase === null && next.purchaseShown === null) breakout.delete(jobId);
   else breakout.set(jobId, next);
   emit();
 }
@@ -443,7 +446,8 @@ export function readPartsBreakoutTotals(): { invoice: number; purchase: number }
   let purchase = 0;
   for (const b of breakout.values()) {
     invoice += b.invoice ?? 0;
-    purchase += b.purchase ?? 0;
+    // Approval months publish what the cell shows; earlier months have no such figure.
+    purchase += b.purchaseShown ?? b.purchase ?? 0;
   }
   return { invoice, purchase };
 }

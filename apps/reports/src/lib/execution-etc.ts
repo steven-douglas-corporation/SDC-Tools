@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { effectiveNewEtc, partsCostEffectiveNewEtc, round2 } from "@/lib/etc";
-import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
+import { showsPartsBreakout, usesPartsApproval } from "@/lib/parts-breakout-scope";
 import type { EtcDb } from "@/lib/etc-month-jobs";
 import { ETC_SECTIONS, ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 
@@ -82,6 +82,9 @@ export async function getExecutionEtcByJob(
       totals.parts += partsCostEffectiveNewEtc(e, {
         breakoutInScope,
         breakoutSum: opts.partsBreakoutSums?.get(e.jobId) ?? null,
+        // The approval rule needs the live halves; a caller without them (no upstream
+        // read) keeps the rule it always had rather than reading every open Parts row as 0.
+        approval: usesPartsApproval(month) && opts.partsBreakoutSums !== undefined,
       });
     } else if (SECTION_BILLING_GROUP.get(e.section) === "Engineering") {
       totals.engineering += effectiveNewEtc(e);

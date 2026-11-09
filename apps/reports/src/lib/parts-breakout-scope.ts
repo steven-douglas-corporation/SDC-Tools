@@ -72,6 +72,21 @@ export function showsPartsBreakout(month: string | null | undefined): boolean {
 // nothing to recompute from: on a derived row the halves are the truth and the draft
 // is only their sum, so a redrive would be inventing a figure for a cell whose whole
 // contract is that it is entered. Leave it exactly as stored and the two stay equal.
+/**
+ * The first month in which Parts Cost runs the Left to Purchase APPROVAL flow, `YYYY-MM`
+ * (November 2026, by request), and every month after it.
+ *
+ * From this month Left to Purchase is calculated (Money Left − Left to Invoice, or the
+ * Prior ETC carried forward when nothing was spent) and shows as a pending figure until
+ * a PM approves or changes it. New ETC is then ONE rule — Left to Invoice + an APPROVED
+ * Left to Purchase — with no carry-forward of its own. Earlier months are untouched.
+ */
+export const PARTS_LTP_APPROVAL_FIRST_MONTH = "2026-11";
+
+export function usesPartsApproval(month: string | null | undefined): boolean {
+  return showsPartsBreakout(month) && !!month && month >= PARTS_LTP_APPROVAL_FIRST_MONTH;
+}
+
 export function isDerivedPartsDraft(month: string | null | undefined, section: string): boolean {
   return section === PARTS_COST_SECTION && showsPartsBreakout(month);
 }

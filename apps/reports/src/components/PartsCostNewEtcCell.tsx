@@ -332,7 +332,9 @@ export function PartsCostNewEtcCell({
           // explain where the number comes from and where to change it.
           title={
             displayValue === ""
-              ? "Blank until BOTH Left to Invoice and Left to Purchase have a value — a blank half is not treated as $0. Fill them in and this becomes their sum."
+              ? cellState.partsApproval
+                ? "Blank until Left to Purchase is approved (or changed). New ETC is then Left to Invoice + Left to Purchase."
+                : "Blank until BOTH Left to Invoice and Left to Purchase have a value — a blank half is not treated as $0. Fill them in and this becomes their sum."
               : `${usdExact(Number(value))} = Left to Invoice + Left to Purchase. Calculated — edit those two cells.`
           }
           aria-label={`New ETC cost, ${jobName}, Parts Cost — calculated from Left to Invoice plus Left to Purchase`}

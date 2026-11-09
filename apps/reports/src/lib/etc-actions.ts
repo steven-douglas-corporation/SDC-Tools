@@ -20,7 +20,7 @@ import { seedMonthRows } from "@/lib/etc-seeding";
 import { getEtcMonthJobIds } from "@/lib/etc-month-jobs";
 import { assertActionPermission } from "@/lib/require-permission";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION, SECTIONS } from "@/lib/sections";
-import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
+import { showsPartsBreakout, usesPartsApproval } from "@/lib/parts-breakout-scope";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 import { recordChanges, type CellChange } from "@/lib/change-log";
@@ -442,7 +442,12 @@ export async function saveAllNewEtcDrafts(
       if (half.key === "invoice") continue;
       // Same four answers as a New ETC field, and they mean the same things here —
       // absent is "no opinion", empty is a deliberate blank, 0 is a figure.
-      const intent = parseNewEtcField(formData.get(half.field));
+      // An approved Left to Purchase (2026-11+) may be NEGATIVE: it is calculated as
+      // Money Left − Left to Invoice, so an over-spent job gives a negative figure and
+      // approving it must store exactly what the cell shows.
+      const intent = parseNewEtcField(formData.get(half.field), {
+        allowNegative: half.key === "purchase" && usesPartsApproval(month),
+      });
       if (intent.kind === "absent") continue;
       if (intent.kind === "invalid") {
         invalidFields.push({ field: half.field, entryId: entry.id, raw: intent.raw });

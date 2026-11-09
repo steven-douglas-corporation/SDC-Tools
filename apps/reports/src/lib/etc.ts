@@ -254,6 +254,12 @@ export type PartsCostLive = {
   breakoutInScope: boolean;
   /** Left to Invoice + Left to Purchase as the halves stand now, or null while either is blank/unknown. */
   breakoutSum: number | null;
+  /**
+   * usesPartsApproval(month): November 2026 on. New ETC is then ONE rule — Left to Invoice
+   * + an APPROVED Left to Purchase (`breakoutSum` is null until it is approved) — with no
+   * saved draft, no confirmed figure and no carry-forward standing in for it.
+   */
+  approval?: boolean;
 };
 
 export function partsCostCellState(
@@ -273,6 +279,22 @@ export function partsCostCellState(
   // Frozen rows (needsReview false) never reach here with a live figure — they are their
   // stored newEtc, handled by the callers above.
   const liveDraft = entry.needsReview && live.breakoutInScope && live.breakoutSum !== null ? round2(live.breakoutSum) : null;
+  // ── Approval months: ONE rule, nothing stands in for it ──────────────────────
+  // The figure is the live sum or it is blank. A draft, a confirmed figure and the
+  // zero-spend carry-forward are all ignored (the carry-forward moved to Left to Purchase).
+  if (live.approval && live.breakoutInScope && entry.needsReview) {
+    return {
+      priorEtc: Number(entry.priorEtc),
+      hoursWorked: round2(Number(entry.hoursWorked)),
+      draft: liveDraft,
+      confirmed: null,
+      cleared: false,
+      locked: opts.locked,
+      monthComplete: opts.monthComplete,
+      precision: "exact",
+      partsApproval: true,
+    };
+  }
   return {
     priorEtc: Number(entry.priorEtc),
     hoursWorked: round2(Number(entry.hoursWorked)),
@@ -293,6 +315,9 @@ export function partsCostCellState(
 export function partsCostEffectiveNewEtc(entry: NewEtcEntryLike, live: PartsCostLive): number {
   if (!entry.needsReview) return Number(entry.newEtc);
   const s = partsCostCellState(entry, live, { locked: false, monthComplete: true });
+  // Approval months: no approved Left to Purchase, no New ETC — it counts as 0 everywhere
+  // (the grid footer already does), never as a suggestion or a carry-forward.
+  if (s.partsApproval) return s.draft ?? 0;
   return newEtcForSubmission({
     draft: s.draft,
     confirmed: s.confirmed,
@@ -305,6 +330,9 @@ export function partsCostEffectiveNewEtc(entry: NewEtcEntryLike, live: PartsCost
 // isNewEtcDecided for a Parts Cost row: the same answer, plus "both halves are
 // answered on an open, otherwise-undecided row" counts as decided.
 export function isPartsCostDecided(entry: NewEtcEntryLike, live: PartsCostLive): boolean {
+  // Approval months: decided only once the sum exists (Left to Purchase approved) — a
+  // zero-spend row is no longer decided by default.
+  if (live.approval && live.breakoutInScope && entry.needsReview) return live.breakoutSum !== null;
   if (isNewEtcDecided(entry)) return true;
   const s = partsCostCellState(entry, live, { locked: false, monthComplete: true });
   return s.draft !== null;
@@ -504,6 +532,10 @@ export type NewEtcCellState = {
   //     dollar seed to whole would quietly drop cents from what a no-changes
   //     resubmit writes.
   precision?: "whole" | "exact";
+  // Parts Cost, approval months (usesPartsApproval): New ETC is Left to Invoice + an
+  // approved Left to Purchase and nothing else. It never carries the prior forward and a
+  // decision is required on EVERY row, spent or not.
+  partsApproval?: boolean;
 };
 
 function fmt(n: number, precision: "whole" | "exact" | undefined): string {
@@ -531,6 +563,7 @@ export function formatNewEtcText(value: string | null | undefined, precision?: "
 
 // What the New ETC box holds on arrival.
 export function newEtcSeedText(s: NewEtcCellState): string {
+  if (s.partsApproval) return s.draft != null ? fmt(s.draft, s.precision) : "";
   // Cleared beats confirmed — that is the entire reason newEtcClearedAt exists.
   // A draft saved afterwards wins again, so re-entering a value un-clears the
   // cell even if the flag were somehow left behind.
@@ -588,6 +621,7 @@ export function hasNewEtcValue(text: string | number | null | undefined): boolea
 // month. With nothing spent, New ETC just carries the prior forward — there is
 // nothing to judge, so the cell is never yellow, even mid-month.
 export function isNewEtcDecisionRequired(s: NewEtcCellState): boolean {
+  if (s.partsApproval) return true;
   return s.hoursWorked !== 0;
 }
 
