@@ -3,6 +3,7 @@
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { SupplierAvatar } from "@/components/procurement/PoDetailPanel";
 import { ListCard, ListCardGrid, type ListCardColumn } from "@/components/ui/ListCard";
+import { OpenPoPanel } from "@/components/open-pos/OpenPoPanel";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -299,6 +300,7 @@ function OpenPoCard({
   money,
   oldestLate,
   pos,
+  onOpenPo,
 }: {
   title: ReactNode;
   titleTip: string;
@@ -308,6 +310,7 @@ function OpenPoCard({
   money: Record<MetricId, number> & { ordered: number; received: number };
   oldestLate: number;
   pos: CardPo[];
+  onOpenPo: (row: OpenPoRow) => void;
 }) {
   const p = pct(money.received, money.ordered);
   const columns: ListCardColumn<CardPo>[] = [
@@ -371,6 +374,8 @@ function OpenPoCard({
       columns={columns}
       rows={pos}
       rowKey={({ row }) => row.poNumber}
+      onRowClick={({ row }) => onOpenPo(row)}
+      rowTitle={() => "Open PO details"}
     />
   );
 }
@@ -380,6 +385,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const [partialOnly, setPartialOnly] = useState(false);
   const [view, setView] = useState<View>("projects");
   const [lateOpen, setLateOpen] = useState(false);
+  const [openPo, setOpenPo] = useState<OpenPoRow | null>(null);
 
   const cur = METRICS.find((m) => m.id === metric)!;
   const jobName = useMemo(() => new Map(data.jobs.map((j) => [j.jobId, j.jobName])), [data.jobs]);
@@ -563,7 +569,19 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
               </thead>
               <tbody>
                 {lateRows.map((r) => (
-                  <tr key={r.poNumber} className="border-t border-sdc-border">
+                  <tr
+                    key={r.poNumber}
+                    onClick={() => setOpenPo(r)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setOpenPo(r);
+                      }
+                    }}
+                    tabIndex={0}
+                    title="Open PO details"
+                    className="cursor-pointer border-t border-sdc-border hover:bg-sdc-blue-light/30 focus-visible:bg-sdc-blue-light/30"
+                  >
                     <td className="px-4 py-1.5 text-right font-bold tabular-nums text-red-700" title={`Late since ${fmtDate(r.lateSince)}`}>
                       {r.daysLate}
                     </td>
@@ -636,6 +654,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 money={{ ...p.totals, ordered: p.ordered, received: p.received }}
                 oldestLate={p.oldestLate}
                 pos={p.pos}
+                onOpenPo={setOpenPo}
               />
             ))}
           </ListCardGrid>
@@ -656,6 +675,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 money={{ ...s.totals, ordered: s.ordered, received: s.received }}
                 oldestLate={s.oldestLate}
                 pos={s.pos}
+                onOpenPo={setOpenPo}
               />
             ))}
           </ListCardGrid>
@@ -676,6 +696,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             paging="pages"
             searchPlaceholder="Search PO, supplier or job…"
             emptyText="No POs match."
+            onRowClick={setOpenPo}
           />
         </section>
       )}
@@ -707,6 +728,20 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       >
         Experimental, may change
       </span>
+
+      {openPo && (
+        <OpenPoPanel
+          key={openPo.poNumber}
+          row={openPo}
+          badge={(() => {
+            const c = statusChip(openPo);
+            return { label: c.text, cls: c.cls };
+          })()}
+          jobName={(j) => jobName.get(j) ?? ""}
+          schedulerVendorPosUrl={schedulerVendorPosUrl}
+          onClose={() => setOpenPo(null)}
+        />
+      )}
     </div>
   );
 }

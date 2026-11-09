@@ -102,6 +102,25 @@ export type OpenPoRow = {
   /** Earliest expected date among late lines, and how many days ago that was; null when nothing is late. */
   lateSince: string | null;
   daysLate: number | null;
+  /** The PO's lines, for the PO panel. Already loaded, so the panel opens without a query. */
+  items: OpenPoLine[];
+};
+
+export type OpenPoLine = {
+  /** `pod:<PurchaseDetailID>`, the key the panel's BOM lookup joins on. */
+  lineId: string;
+  jobId: string;
+  partNumber: string | null;
+  description: string | null;
+  quantity: number;
+  /** Null when the feed carried no receipt data. */
+  receivedQty: number | null;
+  unitPrice: number;
+  /** When it is expected now (re-promised date if any), `YYYY-MM-DD`. */
+  expected: string | null;
+  /** The original required date, before any re-promise. */
+  original: string | null;
+  leftToInvoice: number;
 };
 
 export type OpenPoWeek = {
@@ -289,6 +308,18 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
       partiallyReceived: money.received > 0 && money.notReceived > 0,
       lateSince,
       daysLate: lateSince ? daysBetween(lateSince, today) : null,
+      items: acc.lines.map(({ job, line: l }) => ({
+        lineId: l.lineId,
+        jobId: job,
+        partNumber: l.partNumber,
+        description: l.description,
+        quantity: l.quantity,
+        receivedQty: receiptKnown(l) ? (l.receivedQty as number) : null,
+        unitPrice: l.unitPrice,
+        expected: lineDue(l),
+        original: dayOf(l.requiredDate ?? null),
+        leftToInvoice: r2(lineLeftToInvoice(l)),
+      })),
     };
     row.status = poStatus(row);
     rows.push(row);
