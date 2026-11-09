@@ -50,6 +50,10 @@ export type Permission =
   | "job-hour-details:view"
   | "job-hour-details:schedule"
   | "build-readiness:view"
+  // Open POs (2026-11-06), for procurement / supply chain. Seeded to match
+  // job-hour-details:view: Job Details > Procurement already shows every role
+  // holding that permission the same PO money, so nobody sees more than before.
+  | "open-pos:view"
   | "projects:view"
   | "projects:edit"
   // Sales Price / Change Quote / Total on the Projects grid — a narrower view
@@ -132,6 +136,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "job-hour-details:view",
     "job-hour-details:schedule",
     "build-readiness:view",
+    "open-pos:view",
     "monthly-etc:view",
     // Nobody checked these before they existed: every caller who could open
     // Monthly ETC could also type in it, and submission was gated only by the
@@ -148,6 +153,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "job-hour-details:view",
     "job-hour-details:schedule",
     "build-readiness:view",
+    "open-pos:view",
     "monthly-etc:view",
     "monthly-etc:edit",
     "monthly-etc:submit",
@@ -177,6 +183,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "job-hour-details:view",
     "job-hour-details:schedule",
     "build-readiness:view",
+    "open-pos:view",
     "monthly-etc:view",
     "monthly-etc:edit",
     "projects:view",
@@ -189,6 +196,7 @@ const DEFAULT_OWN_PERMISSIONS: OwnPermissionsShape = {
     "job-hour-details:view",
     "job-hour-details:schedule",
     "build-readiness:view",
+    "open-pos:view",
     "monthly-etc:view",
     "monthly-etc:edit",
     "monthly-etc:submit",

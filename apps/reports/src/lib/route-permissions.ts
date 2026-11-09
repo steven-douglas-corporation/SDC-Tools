@@ -9,6 +9,8 @@ export const ROUTE_PERMISSIONS: readonly { path: string; permission: Permission 
   { path: "/job-hours", permission: "job-hour-details:view" },
   { path: "/tm", permission: "tm:view" },
   { path: "/build-readiness", permission: "build-readiness:view" },
+  // After /job-hours on purpose: safeFallbackPath() returns the first entry a role holds.
+  { path: "/open-pos", permission: "open-pos:view" },
   { path: "/quoted", permission: "projects:view" },
   // Added 2026-09-14. /jobs (the job list) and /jobs/[id] (one job's quoted vs
   // actual cost, ETC entries, task assignments) show the same cost figures as

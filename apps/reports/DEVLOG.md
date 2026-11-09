@@ -7089,6 +7089,54 @@ is empty, so the file is archived and deleted from the SFTP share like every oth
 Paylocity file. Both need a hand step on the server: re-run the SQL file, and carry the
 `keep_on_server` change into the live `D:\DataWarehouse\ingest\settings.toml`.
 
+## 82. Open POs: a page for procurement and supply chain (2026-11-06)
+
+New sidebar page `/open-pos` (Planning, after Build Readiness), gated on a new
+`open-pos:view` permission. Every purchase order that still owes an invoice, today, across
+Active and HeadStart projects: totals, one row per project, then every open PO with its
+status (Past due, Awaiting delivery, Received awaiting invoice, Invoiced more than ordered).
+
+**No second formula.** Built on `getPartsCostForJobs` and the per-line `lineLeftToInvoice`,
+the same lines and money as the Parts List and Monthly ETC. "Open" is the Parts List's
+"Left to invoice" filter applied per PO (`hasInvoiceBalance` on the signed PO balance).
+Receipts only decide the status; a PO invoiced in full but not logged as received is not
+listed. Extra Costs (freight, fees) are not POs and are left out, which is the one way a
+project's figure here can differ from Job Details' Left to Invoice (with the aggregate
+floor at 0).
+
+**Received quantity** is now on `PartsCostLine` (`receivedQty`, from the receiver-log view
+`partsDetailSql` already joined). Display only; no money figure uses it. The dev fake feed
+carries it and `requiredDate`, derived without new random draws so existing fake figures
+do not move.
+
+Permission seeded from the live `job-hour-details:view` rows (Job Details > Procurement
+already shows those roles the same money), so nobody's access changes on deploy.
+
+Files: `lib/open-pos-rules.ts`, `lib/open-pos.ts`, `app/(app)/open-pos/page.tsx`,
+`components/open-pos/*`, migration `20261106120000_add_open_pos_permission`, tests in
+`tests/open-pos.test.ts`. Not yet: an as-of date, a parts-budget comparison per project.
+
+**Due date = the re-promised one.** "Past due" and the Expected column judge each line on
+`expectedDate`: `COALESCE(POD.DateRevised, POD.DateRequired, POH.PurchaseDateRevised,
+POH.PurchaseDateRequired)`, the order the Scheduler's Vendor POs ETA already uses (buyers
+enter `DateRevised` when a vendor re-promises). Before this the page read only the required
+date, so a PO re-promised for next week showed as late here and on time in the Scheduler.
+The original date is kept (`originalDue`) and a re-promised PO shows ↻. `requiredDate` is
+unchanged, so Monthly ETC's Left to Invoice by month and Cash Flow do not move; they still
+ignore re-promises. One difference from the Scheduler remains: it calls a PO late when its
+LATEST outstanding line is past due, this page when ANY outstanding line is.
+
+**Manager-first layout (design board I).** The Scheduler's Vendor POs page is the buyers'
+worklist (ETA, tracking, notes), so this page leads with projects and money. Five tiles, each a
+filter and a sort: Late, Not yet received, Expected in the next 4 weeks, Received not invoiced,
+Left to invoice (= every open PO, the default). All delivery figures are by VALUE at PO price
+(`moneyOf`), per PO and per job share (`shares`, which sum to the PO). The project table shows
+all five as columns, the chosen one tinted; its Total row equals the chosen tile. Also: a chart
+of value not yet received by week expected (`weeks`, sums to Not yet received), a collapsible
+Late POs table (worst first), an "Only partially received" toggle, By supplier, and "All POs"
+on the shared DataTable (§83). Links go to Job Details and to the Scheduler's `?view=vendor-pos`.
+Not built: job milestones (would need the Scheduler's dates) and on-time % (needs closed POs).
+
 ## 83. DataTable replaces AG Grid on the Audit Log and Feedback (2026-11-06)
 
 Both lists were hard to use. Root cause of the small text: the shared AG Grid theme set

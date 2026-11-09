@@ -1021,6 +1021,22 @@ export type PartsCostLine = {
    * Null on Extra Costs, on PO lines with no date, and absent on feeds that do not read it.
    */
   requiredDate?: string | null;
+  /**
+   * When the part is now expected, after any re-promise: the line's `DateRevised`, else its
+   * `DateRequired`, else the header's revised date, else the header's required date. The same
+   * order the Scheduler's Vendor POs ETA uses (SDC_Scheduler lib/etoDb.js, syncVendorPOs);
+   * buyers enter `DateRevised` when a vendor re-promises. Open POs judges "late" on this.
+   * `requiredDate` above is left as it was on purpose: Monthly ETC and Cash Flow bucket on it.
+   * Null on Extra Costs; absent on feeds that do not read it.
+   */
+  expectedDate?: string | null;
+  /**
+   * Quantity received against this PO line so far (`vwReceiverLogSummed.SumOfQtyReceived`,
+   * the same view LINE_TOTAL_PRICE already reads), 0 when nothing has been logged.
+   * Null on Extra Costs, which have no receipt; absent on feeds that do not read it.
+   * Display only (Open POs' delivery status): no money figure is derived from it here.
+   */
+  receivedQty?: number | null;
   supplier: string | null;
   manufacturer: string | null;
   category: string | null;
@@ -1093,6 +1109,11 @@ SELECT
   -- When the part is due to arrive — the same stand-in the Cash Flow forecast uses for
   -- "when will this be billed" (cash-flow-totaleto.ts). Extra Costs below have none.
   ,CONVERT(varchar(10), ISNULL(POD.DateRequired, POH.PurchaseDateRequired), 23) AS RequiredDate
+  -- The re-promised date when a buyer entered one, in the Scheduler's ETA order.
+  ,CONVERT(varchar(10), COALESCE(POD.DateRevised, POD.DateRequired, POH.PurchaseDateRevised, POH.PurchaseDateRequired), 23) AS ExpectedDate
+  -- Received so far, from the receiver-log view already joined for LINE_TOTAL_PRICE.
+  -- No receiver row means nothing logged yet, so 0 rather than NULL.
+  ,ISNULL(RLS.SumOfQtyReceived, 0) AS ReceivedQty
   ,SUP.CName AS Supplier
   ,IM.Manufacturer AS Manufacturer
   ,CAT.CategoryDescription AS Category
@@ -1139,6 +1160,8 @@ SELECT
   ,CONVERT(varchar(10), EC.APDocDate, 23) AS PurchaseDate
   ,CONVERT(varchar(10), EC.APDocDate, 23) AS InvoicedDate
   ,CAST(NULL AS varchar(10)) AS RequiredDate
+  ,CAST(NULL AS varchar(10)) AS ExpectedDate
+  ,NULL AS ReceivedQty
   ,EC.Vendor AS Supplier
   ,NULL AS Manufacturer
   ,EC.APDocDesc AS Category
@@ -1177,6 +1200,8 @@ function toPartsCostLine(r: Record<string, unknown>): PartsCostLine {
     purchaseDate: (r.PurchaseDate as string) ?? null,
     invoicedDate: (r.InvoicedDate as string) ?? null,
     requiredDate: (r.RequiredDate as string) ?? null,
+    expectedDate: (r.ExpectedDate as string) ?? null,
+    receivedQty: r.ReceivedQty != null && Number.isFinite(Number(r.ReceivedQty)) ? Number(r.ReceivedQty) : null,
     supplier: (r.Supplier as string) ?? null,
     manufacturer: (r.Manufacturer as string) ?? null,
     category: (r.Category as string) ?? null,
