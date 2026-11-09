@@ -59,7 +59,7 @@ export type OpenPoMoney = {
 };
 
 export const NEXT_WEEKS_DAYS = 28;
-/** Weekly buckets shown in the chart after "Late". */
+/** Calendar weeks (Monday to Sunday) shown in the chart after "Late", starting with this one. */
 export const CHART_WEEKS = 8;
 
 export type OpenPoRow = {
@@ -148,7 +148,7 @@ export type OpenPosResult = {
   rows: OpenPoRow[];
   jobs: OpenPoJobSummary[];
   totals: { openPos: number; openValue: number; pastDuePos: number; awaitingDeliveryValue: number; suppliers: number };
-  /** Value not yet received on open POs, by when it is expected: late, CHART_WEEKS weeks from today, later, no date. */
+  /** Value not yet received on open POs, by when it is expected: late, CHART_WEEKS calendar weeks from this one, later, no date. */
   weeks: OpenPoWeek[];
 };
 
@@ -156,6 +156,22 @@ export type OpenPosResult = {
 export function addDays(day: string, days: number): string {
   const [y, m, d] = day.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** The Monday on or before `day` (`YYYY-MM-DD`): the start of its calendar week. */
+export function mondayOf(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 Sunday … 6 Saturday
+  return addDays(day, -((dow + 6) % 7));
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A calendar week by its Monday, for the chart: "Nov 9–15", or "Nov 30–Dec 6" across a month. */
+export function weekRange(monday: string): string {
+  const end = addDays(monday, 6);
+  const md = (day: string) => `${MONTHS[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8, 10))}`;
+  return monday.slice(0, 7) === end.slice(0, 7) ? `${md(monday)}–${Number(end.slice(8, 10))}` : `${md(monday)}–${md(end)}`;
 }
 
 /** Whole days from `a` to `b` (both `YYYY-MM-DD`). */
@@ -361,9 +377,12 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
     })
     .sort((a, b) => b.openValue - a.openValue);
 
-  // The chart: every open PO's not-yet-received value, by the week it is expected.
-  const weekStarts = Array.from({ length: CHART_WEEKS }, (_, i) => addDays(today, i * 7));
-  const after = addDays(today, CHART_WEEKS * 7);
+  // The chart: every open PO's not-yet-received value, by the calendar week (Monday to
+  // Sunday) it is expected. Calendar weeks, not 7-day spans from today, so a bar labelled
+  // "Nov 9–15" means those days whatever day the page is opened. The current week's bar
+  // only collects today onward: its earlier days are already "Late".
+  const weekStarts = Array.from({ length: CHART_WEEKS }, (_, i) => addDays(mondayOf(today), i * 7));
+  const after = addDays(weekStarts[0], CHART_WEEKS * 7);
   const weekTotals = new Map<string, number>([["late", 0], ...weekStarts.map((w) => [w, 0] as [string, number]), ["later", 0], ["no-date", 0]]);
   const open = new Set(rows.map((r) => r.poNumber));
   for (const [poNumber, acc] of byPo) {
@@ -373,7 +392,7 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
       const outstanding = (l.quantity - Math.min(l.receivedQty as number, l.quantity)) * l.unitPrice;
       if (outstanding <= 0) continue;
       const due = lineDue(l);
-      const key = !due ? "no-date" : due < today ? "late" : due >= after ? "later" : weekStarts[Math.floor(daysBetween(today, due) / 7)];
+      const key = !due ? "no-date" : due < today ? "late" : due >= after ? "later" : weekStarts[Math.floor(daysBetween(weekStarts[0], due) / 7)];
       weekTotals.set(key, (weekTotals.get(key) ?? 0) + outstanding);
     }
   }
