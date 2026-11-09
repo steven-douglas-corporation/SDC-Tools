@@ -7194,3 +7194,6 @@ so loading every job's BOM up front was ruled out. Total ETO takes any query; th
 BOM walk's per-row subqueries. So `lib/open-po-bom.ts` asks for one PO, when its panel opens:
 the BOM rows whose part is on that PO, in the job the line charges. Not run against real
 Total ETO yet; dev answers from the fake BOM.
+
+The collapsible Late POs list (§82) is dropped: the Late tile filters the cards and All POs
+to the same POs, and All POs can sort them, so the list repeated what was one click away.

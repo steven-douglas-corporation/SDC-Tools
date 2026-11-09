@@ -46,12 +46,9 @@ const TIP = {
   pos: "Open POs charged to this job",
   received: "How much of the order has arrived, by value at PO price. The bar turns green when everything has arrived",
   expected: "Earliest date still expected on lines not yet received. ↻ means the vendor re-promised a new date",
-  wasExpected: "The date the oldest late line was expected. ↻ means the vendor re-promised a new date",
-  daysLate: "Days since the oldest late line's expected date",
   status: "Where the PO stands: late, partly received, received and waiting on an invoice, or on schedule",
   notReceived: "Value still to arrive, at PO price",
   lti: "PO value still to be invoiced. Same figure as Job Details' Left to Invoice",
-  lateValue: "Value not yet received on this PO's late lines",
   revised: (original: string) => `Re-promised by the vendor. Originally due ${fmtDate(original)}`,
 };
 
@@ -384,7 +381,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const [metric, setMetric] = useState<MetricId>("leftToInvoice");
   const [partialOnly, setPartialOnly] = useState(false);
   const [view, setView] = useState<View>("projects");
-  const [lateOpen, setLateOpen] = useState(false);
   const [openPo, setOpenPo] = useState<OpenPoRow | null>(null);
 
   const cur = METRICS.find((m) => m.id === metric)!;
@@ -451,8 +447,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     return list.sort((a, b) => b.totals[metric] - a.totals[metric]);
   }, [shown, metric]);
 
-  const lateRows = useMemo(() => data.rows.filter((r) => r.money.late > 0).sort((a, b) => (b.daysLate ?? 0) - (a.daysLate ?? 0)), [data.rows]);
-  const lateTile = tiles[0];
 
   if (data.rows.length === 0) {
     return <div className={card()}>No open purchase orders on Active or HeadStart projects as of {fmtDate(data.asOf)}.</div>;
@@ -521,96 +515,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       </div>
 
       <WeekChart weeks={data.weeks} />
-
-      <section className="overflow-hidden rounded-xl border border-sdc-border bg-white">
-        <h2>
-          <button
-            type="button"
-            onClick={() => setLateOpen((v) => !v)}
-            aria-expanded={lateOpen}
-            title={`${lateOpen ? "Hide" : "Show"} every PO with a line past its expected date, oldest first`}
-            className="flex min-h-12 w-full flex-wrap items-center gap-2.5 bg-sdc-navy px-4 py-2.5 text-left text-white"
-          >
-            <span className="w-3">{lateOpen ? "▾" : "▸"}</span>
-            <span className="font-heading font-bold">Late POs</span>
-            <span className="rounded-full bg-white px-2 text-note font-bold text-sdc-navy">{lateRows.length}</span>
-            <span className="text-sm text-slate-300">
-              {usd(lateTile.value)} not received · {lateTile.jobs} jobs · oldest {days(lateRows[0]?.daysLate ?? 0)}
-            </span>
-          </button>
-        </h2>
-        {lateOpen && (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead className="bg-slate-100 text-left text-note text-sdc-gray-600">
-                <tr>
-                  <th className="px-4 py-2 text-right font-semibold" title={`${TIP.daysLate}. Most late first`}>
-                    Days late ▼
-                  </th>
-                  <th className="px-3 py-2 font-semibold" title={TIP.po}>
-                    PO #
-                  </th>
-                  <th className="px-3 py-2 font-semibold" title={TIP.supplier}>
-                    Supplier
-                  </th>
-                  <th className="px-3 py-2 font-semibold" title="Every job this PO charges">
-                    Job
-                  </th>
-                  <th className="px-3 py-2 font-semibold" title={TIP.wasExpected}>
-                    Was expected
-                  </th>
-                  <th className="px-3 py-2 font-semibold" title={TIP.received}>
-                    Received (by value)
-                  </th>
-                  <th className="px-4 py-2 text-right font-semibold" title={TIP.lateValue}>
-                    Late, not received
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {lateRows.map((r) => (
-                  <tr
-                    key={r.poNumber}
-                    onClick={() => setOpenPo(r)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setOpenPo(r);
-                      }
-                    }}
-                    tabIndex={0}
-                    title="Open PO details"
-                    className="cursor-pointer border-t border-sdc-border hover:bg-sdc-blue-light/30 focus-visible:bg-sdc-blue-light/30"
-                  >
-                    <td className="px-4 py-1.5 text-right font-bold tabular-nums text-red-700" title={`Late since ${fmtDate(r.lateSince)}`}>
-                      {r.daysLate}
-                    </td>
-                    <td className="px-3 py-1.5 font-semibold" title={poTip(r)}>
-                      {r.poNumber}
-                    </td>
-                    <td className="px-3 py-1.5" title={r.suppliers.join(", ")}>
-                      {r.suppliers.join(", ")}
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <JobLinks jobIds={r.jobIds} />
-                    </td>
-                    <td className="px-3 py-1.5" title={r.revised && r.originalDue ? TIP.revised(r.originalDue) : TIP.wasExpected}>
-                      {fmtDate(r.lateSince)}
-                      {r.revised && <span className="text-sdc-blue"> ↻</span>}
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <ReceivedBar received={r.money.received} ordered={r.money.ordered} late />
-                    </td>
-                    <td className="px-4 py-1.5 text-right font-semibold tabular-nums" title={usdExact(r.money.late)}>
-                      {usd(r.money.late)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
 
       <div className="flex flex-wrap items-center gap-3">
         <div role="status" className="flex min-h-10 flex-1 flex-wrap items-center gap-2.5 text-sm">
