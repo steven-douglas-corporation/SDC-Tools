@@ -49,6 +49,7 @@ import {
   type DrillablePart,
   type StatusKey,
 } from "@/lib/po-detail";
+import { ListCard, ListCardGrid, type ListCardColumn } from "@/components/ui/ListCard";
 import { PoPanel, ReleaseBadge, SupplierAvatar, Stat, ALL_COLS, partsListSortColumns, PartRowCells, PartPoSubRowCells, type ColKey } from "@/components/procurement/PoDetailPanel";
 import { PartPoPanel } from "@/components/procurement/PartPoPanel";
 import { computeRiskCards, dueMs, earliestRequired, groupPartsByPo } from "@/lib/procurement-risk";
@@ -3156,14 +3157,72 @@ function PartsCardView({
   const dotColor = (s: PoRowState) =>
     s === "received" ? "bg-sdc-green" : s === "partial" ? "bg-sdc-yellow" : s === "late" || s === "noPO" ? "bg-sdc-red" : "bg-sdc-blue";
 
+  // Per-PO figures for the card rows. Authoritative per-PO override: real line counts when
+  // matched, otherwise the BOM-derived counts.
+  const poRows = (v: VendorGroup) =>
+    v.pos.map((po) => {
+      const apo = findAuthoritativePo(vendors, po.poNumber);
+      const rc = apo ? apo.received : po.received;
+      const tot = apo ? apo.itemCount : po.total;
+      const effPct = apo ? apo.pct : po.total ? Math.round((po.received / po.total) * 100) : 0;
+      // Order matters: fully received wins over past due (a PO that arrived can't be late),
+      // and past due wins over any partial progress. Only a genuinely missing PO is "noPO".
+      const dotKey: PoRowState =
+        po.poKey === NO_PO_KEY ? "noPO" : effPct >= 100 ? "received" : po.pastDue ? "late" : effPct > 0 ? "partial" : "open";
+      return { po, rc, tot, fromSupplier: !!apo, dotKey, key: `${v.supplier}::${po.poKey}` };
+    });
+  type PoRow = ReturnType<typeof poRows>[number];
+
+  const columns: ListCardColumn<PoRow>[] = [
+    {
+      id: "po",
+      header: "PO #",
+      render: ({ po }) =>
+        po.poNumber ? (
+          <span
+            role="button"
+            tabIndex={0}
+            title="Copy PO number"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopy(po.poNumber!, `PO ${po.poNumber}`);
+            }}
+            className="block truncate font-mono text-note font-semibold text-sdc-blue underline decoration-dotted underline-offset-2"
+          >
+            {po.poNumber}
+          </span>
+        ) : (
+          <span className="text-label font-semibold text-sdc-red-text">NO PO</span>
+        ),
+    },
+    {
+      id: "received",
+      header: "Received",
+      align: "right",
+      render: (r) => (
+        <span className="text-label tabular-nums text-sdc-gray-600" title={r.fromSupplier ? "Supplier PO line count" : "BOM-derived count"}>
+          {r.rc}/{r.tot} rcvd
+        </span>
+      ),
+    },
+    {
+      id: "date",
+      header: "Date",
+      align: "right",
+      render: ({ po }) => <span className={`font-mono text-label ${po.pastDue ? "text-sdc-red-text" : "text-sdc-gray-600"}`}>{fmtDate(po.expected)}</span>,
+    },
+    {
+      id: "dot",
+      header: "",
+      render: (r) => <span title={PO_ROW_STATE_LABEL[r.dotKey]} className={`inline-block h-2 w-2 rounded-full ${dotColor(r.dotKey)}`} />,
+    },
+  ];
+
   return (
     // 0.96, up from 0.74 (2026-08-14, by request) — kept in step with the List
     // (table) view above, so switching the List/Card segmented control doesn't
     // visibly jump.
-    <div
-      className="grid max-h-[calc(var(--app-vh)_*_0.96)] gap-3 overflow-y-auto styled-scrollbar"
-      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}
-    >
+    <ListCardGrid className="max-h-[calc(var(--app-vh)_*_0.96)] overflow-y-auto styled-scrollbar">
       {vendorGroups.map((v) => {
         // Authoritative supplier rollup (real PO line counts) overrides the
         // BOM-derived bar %. Falls back to the BOM % when the vendor has no
@@ -3171,98 +3230,26 @@ function PartsCardView({
         const rollup = authoritativeVendorRollup(vendors, v.supplier);
         const barPct = rollup?.pct ?? v.pct;
         return (
-        <div key={v.supplier} className="flex flex-col overflow-hidden rounded-lg border border-sdc-border bg-white shadow-sm">
-          {/* Header */}
-          <div className="flex flex-col gap-2 border-b border-sdc-border-soft p-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <SupplierAvatar supplier={v.supplier} size={30} />
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-bold text-sdc-navy" title={v.supplier}>{v.supplier}</div>
-                  <div className="text-label text-sdc-gray-400">
-                    {v.poCount} PO{v.poCount === 1 ? "" : "s"} · {v.total} item{v.total === 1 ? "" : "s"}
-                  </div>
-                </div>
-              </div>
-              <span className={`shrink-0 rounded px-1.5 py-0.5 text-micro font-bold tracking-wide ${v.status.cls}`}>{v.status.label}</span>
-            </div>
-            <div className="flex items-center gap-2" title={`${barPct}% received${rollup ? " (supplier PO lines)" : ""}`}>
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sdc-gray-100">
-                <div className={`h-full rounded-full ${vendorBar(barPct)}`} style={{ width: `${Math.min(100, barPct)}%` }} />
-              </div>
-              <span className={`w-9 shrink-0 text-right text-note font-semibold tabular-nums ${vendorText(barPct)}`}>{barPct}%</span>
-            </div>
-          </div>
-
-          {/* Mini PO table */}
-          <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 bg-sdc-gray-100 px-3 py-1.5 text-micro font-bold uppercase tracking-wider text-sdc-gray-400">
-            <span>PO #</span>
-            <span className="text-right">Received</span>
-            <span className="text-right">Date</span>
-            <span />
-          </div>
-          <div className="max-h-56 overflow-y-auto styled-scrollbar">
-            {v.pos.map((po) => {
-              const rowKey = `${v.supplier}::${po.poKey}`;
-              // Authoritative per-PO override — real line counts when matched,
-              // otherwise the BOM-derived counts.
-              const apo = findAuthoritativePo(vendors, po.poNumber);
-              const rc = apo ? apo.received : po.received;
-              const tot = apo ? apo.itemCount : po.total;
-              const effPct = apo ? apo.pct : po.total ? Math.round((po.received / po.total) * 100) : 0;
-              // Order matters: fully received wins over past due (a PO that
-              // arrived can't be late), and past due wins over any partial
-              // progress. Only a genuinely missing PO is "noPO".
-              const dotKey: PoRowState =
-                po.poKey === NO_PO_KEY
-                  ? "noPO"
-                  : effPct >= 100
-                    ? "received"
-                    : po.pastDue
-                      ? "late"
-                      : effPct > 0
-                        ? "partial"
-                        : "open";
-              return (
-                <button
-                  key={rowKey}
-                  type="button"
-                  onClick={() => onOpenPo(v.supplier, po.poNumber)}
-                  title="Open PO details"
-                  className="grid w-full grid-cols-[1fr_auto_auto_auto] items-center gap-2 border-b border-sdc-border-soft/60 px-3 py-1.5 text-left last:border-b-0 hover:bg-sdc-blue-light/30"
-                >
-                  {po.poNumber ? (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      title="Copy PO number"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCopy(po.poNumber!, `PO ${po.poNumber}`);
-                      }}
-                      className="truncate font-mono text-note font-semibold text-sdc-blue underline decoration-dotted underline-offset-2"
-                    >
-                      {po.poNumber}
-                    </span>
-                  ) : (
-                    <span className="text-label font-semibold text-sdc-red-text">NO PO</span>
-                  )}
-                  <span className="text-right text-label tabular-nums text-sdc-gray-600" title={apo ? "Supplier PO line count" : "BOM-derived count"}>{rc}/{tot} rcvd</span>
-                  <span className={`text-right font-mono text-label ${po.pastDue ? "text-sdc-red-text" : "text-sdc-gray-600"}`}>{fmtDate(po.expected)}</span>
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      title={PO_ROW_STATE_LABEL[dotKey]}
-                      className={`inline-block h-2 w-2 rounded-full ${dotColor(dotKey)}`}
-                    />
-                    <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" className="text-sdc-gray-400" aria-hidden>
-                      <path d="M6 3.5 L10.5 8 L6 12.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+          <ListCard
+            key={v.supplier}
+            title={v.supplier}
+            titleTip={v.supplier}
+            subtitle={`${v.poCount} PO${v.poCount === 1 ? "" : "s"} · ${v.total} item${v.total === 1 ? "" : "s"}`}
+            avatar={<SupplierAvatar supplier={v.supplier} size={30} />}
+            badge={{ text: v.status.label, className: v.status.cls }}
+            progress={{
+              pct: barPct,
+              barClassName: vendorBar(barPct),
+              label: `${barPct}%`,
+              labelClassName: `w-9 ${vendorText(barPct)}`,
+              title: `${barPct}% received${rollup ? " (supplier PO lines)" : ""}`,
+            }}
+            columns={columns}
+            rows={poRows(v)}
+            rowKey={(r) => r.key}
+            onRowClick={({ po }) => onOpenPo(v.supplier, po.poNumber)}
+            rowTitle={() => "Open PO details"}
+          />
         );
       })}
 
@@ -3271,7 +3258,7 @@ function PartsCardView({
           No parts match the current filters.
         </p>
       )}
-    </div>
+    </ListCardGrid>
   );
 }
 
