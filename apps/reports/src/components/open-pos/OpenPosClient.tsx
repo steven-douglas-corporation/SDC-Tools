@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { SupplierAvatar } from "@/components/procurement/PoDetailPanel";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -259,12 +260,145 @@ const LIST_COLUMNS: DataTableColumn<OpenPoRow>[] = [
   },
 ];
 
+// ── Cards (By project / By supplier), modelled on Job Details' Parts card view ─────────────
+//
+// One card per job or vendor: who it is, the selected tile's figure for it, how much has
+// arrived, then a short scrollable list of its POs. The list's amount column is always the
+// selected tile, so switching tiles re-ranks the cards and their POs together.
+
+type CardPo = { row: OpenPoRow; money: OpenPoMoney };
+
+// Dot per PO. Red only for late, so "not here yet" is never painted as a problem.
+function poDot(r: OpenPoRow, m: OpenPoMoney): { cls: string; tip: string } {
+  const chip = statusChip(r);
+  const cls =
+    m.late > 0
+      ? "bg-sdc-red"
+      : r.status === "over-invoiced"
+        ? "bg-amber-500"
+        : m.ordered > 0 && m.notReceived <= 0
+          ? "bg-sdc-green"
+          : r.partiallyReceived
+            ? "bg-sdc-yellow"
+            : "bg-sdc-blue";
+  return { cls, tip: `${chip.text}. ${chip.tip}` };
+}
+
+function cardChip(late: number, oldestLate: number, ordered: number, notReceived: number): { text: string; cls: string; tip: string } {
+  if (late > 0)
+    return { text: `LATE ${days(oldestLate).toUpperCase()}`, cls: "bg-sdc-red-bg text-sdc-red-text", tip: `${usdExact(late)} not received on lines past their expected date. The oldest is ${days(oldestLate)} late` };
+  if (ordered > 0 && notReceived <= 0) return { text: "ALL RECEIVED", cls: "bg-sdc-green-bg text-sdc-green-text", tip: "Everything has arrived; invoices are still to post" };
+  return { text: "ON SCHEDULE", cls: "bg-sdc-blue-light text-sdc-blue-dark", tip: "Nothing is past its expected date" };
+}
+
+function CardShell({
+  title,
+  titleTip,
+  subtitle,
+  avatar,
+  chip,
+  metric,
+  money,
+  pos,
+  secondary,
+  footer,
+}: {
+  title: string;
+  titleTip: string;
+  subtitle: string;
+  avatar?: ReactNode;
+  chip: { text: string; cls: string; tip: string };
+  metric: (typeof METRICS)[number];
+  money: Record<MetricId, number> & { ordered: number; received: number };
+  pos: CardPo[];
+  secondary: (p: CardPo) => ReactNode;
+  footer?: ReactNode;
+}) {
+  return (
+    <article className="flex flex-col overflow-hidden rounded-lg border border-sdc-border bg-white shadow-sm">
+      <div className="flex flex-col gap-2 border-b border-sdc-border-soft p-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            {avatar}
+            <div className="min-w-0">
+              <div className="truncate text-sm font-bold text-sdc-navy" title={titleTip}>
+                {title}
+              </div>
+              <div className="truncate text-label text-sdc-gray-400" title={subtitle}>
+                {subtitle}
+              </div>
+            </div>
+          </div>
+          <span title={chip.tip} className={`shrink-0 rounded px-1.5 py-0.5 text-micro font-bold tracking-wide ${chip.cls}`}>
+            {chip.text}
+          </span>
+        </div>
+        <div className="flex items-baseline justify-between gap-2" title={`${metric.hint}. ${usdExact(money[metric.id])}`}>
+          <span className="text-note font-semibold text-sdc-gray-600">{metric.label}</span>
+          <span className={`font-heading text-lg font-bold tabular-nums ${metric.id === "late" ? "text-red-700" : "text-sdc-navy"}`}>{usd(money[metric.id])}</span>
+        </div>
+        <ReceivedBar received={money.received} ordered={money.ordered} late={money.late > 0} />
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-label">
+          {METRICS.filter((m) => m.id !== metric.id).map((m) => (
+            <div key={m.id} className="flex justify-between gap-2" title={`${m.hint}. ${usdExact(money[m.id])}`}>
+              <dt className="truncate text-sdc-gray-400">{m.short}</dt>
+              <dd className={`tabular-nums ${money[m.id] === 0 ? "text-sdc-gray-400" : m.id === "late" ? "font-semibold text-red-700" : "text-sdc-gray-600"}`}>
+                {money[m.id] === 0 ? "–" : usd(money[m.id])}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 bg-sdc-gray-100 px-3 py-1.5 text-micro font-bold uppercase tracking-wider text-sdc-gray-400">
+        <span title={TIP.po}>PO #</span>
+        <span className="text-right" title={TIP.expected}>
+          Expected
+        </span>
+        <span className="text-right" title={`${metric.hint}, for each PO`}>
+          {metric.short}
+        </span>
+        <span />
+      </div>
+      <div className="max-h-56 overflow-y-auto styled-scrollbar">
+        {pos.map((p) => {
+          const { row, money: m } = p;
+          const dot = poDot(row, m);
+          return (
+            <div key={row.poNumber} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 border-b border-sdc-border-soft/60 px-3 py-1.5 last:border-b-0">
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate font-mono text-note font-semibold text-sdc-navy" title={poTip(row)}>
+                  {row.poNumber}
+                </span>
+                <span className="truncate text-label text-sdc-gray-400">{secondary(p)}</span>
+              </span>
+              <span
+                className={`text-right font-mono text-label ${m.late > 0 ? "text-sdc-red-text" : "text-sdc-gray-600"}`}
+                title={expectedTip(row, m.notReceived)}
+              >
+                {row.nextDue ? fmtDate(row.nextDue) : m.notReceived > 0 ? "No date" : "Here"}
+                {row.revised && <span className="text-sdc-blue"> ↻</span>}
+              </span>
+              <span className="text-right text-label font-semibold tabular-nums text-sdc-navy" title={`${metric.label}: ${usdExact(m[metric.id])}`}>
+                {m[metric.id] === 0 ? "–" : usd(m[metric.id])}
+              </span>
+              <span title={dot.tip} className={`inline-block h-2 w-2 rounded-full ${dot.cls}`} />
+            </div>
+          );
+        })}
+      </div>
+      {footer && <div className="mt-auto flex flex-wrap gap-2 border-t border-sdc-border-soft p-2.5">{footer}</div>}
+    </article>
+  );
+}
+
+const CARD_GRID = { gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" };
+
 export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosResult; schedulerVendorPosUrl?: string }) {
   const [metric, setMetric] = useState<MetricId>("leftToInvoice");
   const [partialOnly, setPartialOnly] = useState(false);
   const [view, setView] = useState<View>("projects");
   const [lateOpen, setLateOpen] = useState(false);
-  const [openJob, setOpenJob] = useState<string | null>(null);
 
   const cur = METRICS.find((m) => m.id === metric)!;
   const jobName = useMemo(() => new Map(data.jobs.map((j) => [j.jobId, j.jobName])), [data.jobs]);
@@ -302,25 +436,32 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           ordered: ms.reduce((s, m) => s + m.ordered, 0),
           received: ms.reduce((s, m) => s + m.received, 0),
           totals: Object.fromEntries(METRICS.map((m) => [m.id, sumMoney(ms, m.id)])) as Record<MetricId, number>,
+          oldestLate: Math.max(0, ...e.pos.filter((p) => p.money.late > 0).map((p) => p.row.daysLate ?? 0)),
         };
       })
       .sort((a, b) => b.totals[metric] - a.totals[metric]);
   }, [shown, metric, jobName]);
 
+  // One card per vendor, whole-PO amounts (a vendor's PO is the vendor's, whichever jobs it charges).
   const suppliers = useMemo(() => {
     const by = new Map<string, OpenPoRow[]>();
     for (const r of shown) {
       const k = r.suppliers.join(", ") || "No supplier";
       by.set(k, [...(by.get(k) ?? []), r]);
     }
-    const list = [...by].map(([name, rows]) => ({
-      name,
-      pos: rows.length,
-      jobs: new Set(rows.flatMap((r) => r.jobIds)).size,
-      value: sumMoney(rows.map((r) => r.money), metric),
-      oldestLate: Math.max(0, ...rows.map((r) => r.daysLate ?? 0)),
-    }));
-    return list.sort((a, b) => b.value - a.value);
+    const list = [...by].map(([name, rows]) => {
+      const ms = rows.map((r) => r.money);
+      return {
+        name,
+        pos: rows.map((row) => ({ row, money: row.money })).sort((a, b) => b.money[metric] - a.money[metric]),
+        jobs: new Set(rows.flatMap((r) => r.jobIds)).size,
+        ordered: ms.reduce((s, m) => s + m.ordered, 0),
+        received: ms.reduce((s, m) => s + m.received, 0),
+        totals: Object.fromEntries(METRICS.map((m) => [m.id, sumMoney(ms, m.id)])) as Record<MetricId, number>,
+        oldestLate: Math.max(0, ...rows.filter((r) => r.money.late > 0).map((r) => r.daysLate ?? 0)),
+      };
+    });
+    return list.sort((a, b) => b.totals[metric] - a.totals[metric]);
   }, [shown, metric]);
 
   const lateRows = useMemo(() => data.rows.filter((r) => r.money.late > 0).sort((a, b) => (b.daysLate ?? 0) - (a.daysLate ?? 0)), [data.rows]);
@@ -332,9 +473,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
   const filtered = metric !== "leftToInvoice" || partialOnly;
   const shownJobs = new Set(shown.flatMap((r) => r.jobIds)).size;
-  const supplierMax = Math.max(1, ...suppliers.map((s) => s.value));
-  const totalsRow = Object.fromEntries(METRICS.map((m) => [m.id, sumMoney(shown.map((r) => r.money), m.id)])) as Record<MetricId, number>;
-  const gridCols = "24px minmax(0,1.6fr) minmax(0,0.4fr) minmax(0,1.6fr) repeat(5, minmax(0,1fr))";
 
   return (
     <div className="flex flex-col gap-5">
@@ -362,6 +500,38 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           );
         })}
       </section>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div role="group" aria-label="Group by" className="flex gap-1">
+          {(
+            [
+              ["projects", "By project", "One card per job, with its POs. Amounts are each job's own share"],
+              ["suppliers", "By supplier", "One card per vendor, with its POs, ranked by the selected tile"],
+              ["list", "All POs", "Every PO in one searchable, sortable list"],
+            ] as [View, string, string][]
+          ).map(([id, label, tip]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={view === id}
+              onClick={() => setView(id)}
+              title={tip}
+              className={`${TOOLBAR_BTN_COMPACT} ${view === id ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          aria-pressed={partialOnly}
+          onClick={() => setPartialOnly((v) => !v)}
+          title="Only POs where some of the order has arrived and the rest is still expected"
+          className={`${TOOLBAR_BTN_COMPACT} ${partialOnly ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+        >
+          {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inMetric(r, metric) && r.partiallyReceived).length})
+        </button>
+      </div>
 
       <WeekChart weeks={data.weeks} />
 
@@ -449,7 +619,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             Showing: {cur.label}
             {partialOnly ? ", partially received only" : ""}
           </span>
-          <span className="text-sdc-gray-600" title="Open POs in the table below, and the jobs they charge">
+          <span className="text-sdc-gray-600" title="Open POs shown below, and the jobs they charge">
             {shown.length} POs on {shownJobs} jobs{filtered ? ` · ${data.rows.length - shown.length} other open POs hidden` : ""}
           </span>
           {filtered && (
@@ -466,258 +636,69 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             </button>
           )}
         </div>
-        <button
-          type="button"
-          aria-pressed={partialOnly}
-          onClick={() => setPartialOnly((v) => !v)}
-          title="Only POs where some of the order has arrived and the rest is still expected"
-          className={`${TOOLBAR_BTN_COMPACT} ${partialOnly ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
-        >
-          {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inMetric(r, metric) && r.partiallyReceived).length})
-        </button>
-        <div role="group" aria-label="Group by" className="flex gap-1">
-          {(
-            [
-              ["projects", "By project", "One row per job, with all five totals. Click a job to see its POs"],
-              ["suppliers", "By supplier", "One row per vendor, ranked by the selected total"],
-              ["list", "All POs", "Every PO in one searchable, sortable list"],
-            ] as [View, string, string][]
-          ).map(([id, label, tip]) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={view === id}
-              onClick={() => setView(id)}
-              title={tip}
-              className={`${TOOLBAR_BTN_COMPACT} ${view === id ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {view === "projects" && (
-        <section className="overflow-x-auto rounded-xl border border-sdc-border bg-white" aria-label="By project">
-          <div className="min-w-[1100px] text-sm">
-            <div className="grid gap-2.5 bg-slate-100 px-4 text-note font-semibold text-sdc-gray-600" style={{ gridTemplateColumns: gridCols }}>
-              <span />
-              <span className="py-2" title={TIP.jobCol}>
-                Job
-              </span>
-              <span className="py-2 text-right" title={TIP.pos}>
-                POs
-              </span>
-              <span className="py-2" title={TIP.received}>
-                Received (by value)
-              </span>
-              {METRICS.map((m) => (
-                <span
-                  key={m.id}
-                  title={m.id === metric ? `${m.hint}. The selected total` : `${m.hint}. Click its tile above to list these POs`}
-                  className={`px-1.5 py-2 text-right ${m.id === metric ? "border-b-2 border-sdc-navy bg-sdc-blue-light text-sdc-navy" : ""}`}
-                >
-                  {m.short}
+        <section className="grid gap-3" style={CARD_GRID} aria-label="By project">
+          {projects.map((p) => (
+            <CardShell
+              key={p.jobId}
+              title={p.jobId}
+              titleTip={`Job ${p.jobId}${p.name ? `, ${p.name}` : ""}`}
+              subtitle={`${p.name ? `${p.name} · ` : ""}${p.pos.length} ${p.pos.length === 1 ? "PO" : "POs"}`}
+              chip={cardChip(p.totals.late, p.oldestLate, p.ordered, p.totals.notReceived)}
+              metric={cur}
+              money={{ ...p.totals, ordered: p.ordered, received: p.received }}
+              pos={p.pos}
+              secondary={({ row }) => (
+                <span title={row.jobIds.length > 1 ? `Also charges ${row.jobIds.filter((j) => j !== p.jobId).join(", ")}. Amounts are only ${p.jobId}'s lines` : row.suppliers.join(", ")}>
+                  {row.suppliers.join(", ")}
+                  {row.jobIds.length > 1 && " · this job's share"}
                 </span>
-              ))}
-            </div>
-            {projects.map((p) => {
-              const expanded = openJob === p.jobId;
-              return (
-                <div key={p.jobId} className="border-t border-sdc-border">
-                  <button
-                    type="button"
-                    onClick={() => setOpenJob(expanded ? null : p.jobId)}
-                    aria-expanded={expanded}
-                    title={`${expanded ? "Hide" : "Show"} ${p.jobId}'s POs`}
-                    className={`grid w-full items-stretch gap-2.5 px-4 text-left ${expanded ? "bg-sdc-blue-light/40" : "bg-white hover:bg-slate-50"}`}
-                    style={{ gridTemplateColumns: gridCols }}
-                  >
-                    <span className="py-2.5 text-sdc-gray-400">{expanded ? "▾" : "▸"}</span>
-                    <span className="flex flex-col py-2.5 leading-tight">
-                      <span className="font-bold text-sdc-navy">{p.jobId}</span>
-                      <span className="text-note text-sdc-gray-600">{p.name}</span>
-                    </span>
-                    <span className="py-2.5 text-right tabular-nums">{p.pos.length}</span>
-                    <span className="flex items-center py-2.5">
-                      <ReceivedBar received={p.received} ordered={p.ordered} />
-                    </span>
-                    {METRICS.map((m) => {
-                      const v = p.totals[m.id];
-                      return (
-                        <span
-                          key={m.id}
-                          title={`${m.label}: ${usdExact(v)}`}
-                          className={`flex items-center justify-end px-1.5 py-2.5 tabular-nums ${m.id === metric ? "bg-sdc-blue-light/40 font-bold" : ""} ${
-                            v === 0 ? "text-sdc-gray-400" : m.id === "late" ? "text-red-700" : "text-sdc-navy"
-                          }`}
-                        >
-                          {v === 0 ? "–" : usd(v)}
-                        </span>
-                      );
-                    })}
-                  </button>
-                  {expanded && (
-                    <div className="flex flex-col bg-sdc-blue-light/20 py-2 pl-12 pr-4">
-                      <table className="w-full text-sm">
-                        <thead className="text-left text-note text-sdc-gray-400">
-                          <tr>
-                            <th className="py-1 font-semibold" title={TIP.status}>
-                              Status
-                            </th>
-                            <th className="py-1 font-semibold" title={TIP.po}>
-                              PO #
-                            </th>
-                            <th className="py-1 font-semibold" title={TIP.supplier}>
-                              Supplier
-                            </th>
-                            <th className="py-1 font-semibold" title={TIP.expected}>
-                              Expected
-                            </th>
-                            <th className="py-1 font-semibold" title={TIP.received}>
-                              Received (by value)
-                            </th>
-                            <th className="py-1 text-right font-semibold" title={TIP.notReceived}>
-                              Not received
-                            </th>
-                            <th className="py-1 text-right font-semibold" title={TIP.lti}>
-                              Left to invoice
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {p.pos.map(({ row, money }) => {
-                            return (
-                              <tr key={row.poNumber} className="border-t border-sdc-border/60">
-                                <td className="py-1.5">
-                                  <StatusChip row={row} small />
-                                </td>
-                                <td className="py-1.5 font-semibold" title={poTip(row)}>
-                                  {row.poNumber}
-                                  {row.jobIds.length > 1 && (
-                                    <span
-                                      className="ml-1 text-note font-normal text-sdc-gray-400"
-                                      title={`This PO also charges ${row.jobIds.filter((j) => j !== p.jobId).join(", ")}. Amounts here are only ${p.jobId}'s lines`}
-                                    >
-                                      (this job&apos;s share)
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-1.5" title={row.suppliers.join(", ")}>
-                                  {row.suppliers.join(", ")}
-                                </td>
-                                <td className="py-1.5" title={expectedTip(row, money.notReceived)}>
-                                  {row.nextDue ? fmtDate(row.nextDue) : money.notReceived > 0 ? "No date" : "Received"}
-                                  {row.revised && <span className="text-sdc-blue"> ↻</span>}
-                                </td>
-                                <td className="py-1.5">
-                                  <ReceivedBar received={money.received} ordered={money.ordered} late={money.late > 0} />
-                                </td>
-                                <td className="py-1.5 text-right tabular-nums" title={usdExact(money.notReceived)}>
-                                  {money.notReceived ? usd(money.notReceived) : "–"}
-                                </td>
-                                <td className="py-1.5 text-right font-semibold tabular-nums" title={usdExact(money.leftToInvoice)}>
-                                  {usd(money.leftToInvoice)}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <a href={jobHref(p.jobId)} title={`Open ${p.jobId} in Job Details, with the full Parts List`} className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}>
-                          Open in Job Details
-                        </a>
-                        {schedulerVendorPosUrl && (
-                          <a
-                            href={schedulerVendorPosUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            title="Opens the Scheduler's Vendor POs page in a new tab, where buyers set ETAs, tracking and notes"
-                            className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
-                          >
-                            Chase in Scheduler › Vendor POs ↗
-                          </a>
-                        )}
-                      </div>
-                    </div>
+              )}
+              footer={
+                <>
+                  <a href={jobHref(p.jobId)} title={`Open ${p.jobId} in Job Details, with the full Parts List`} className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}>
+                    Job Details
+                  </a>
+                  {schedulerVendorPosUrl && (
+                    <a
+                      href={schedulerVendorPosUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Opens the Scheduler's Vendor POs page in a new tab, where buyers set ETAs, tracking and notes"
+                      className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
+                    >
+                      Chase in Scheduler ↗
+                    </a>
                   )}
-                </div>
-              );
-            })}
-            <div className="grid gap-2.5 border-t-2 border-sdc-border bg-slate-50 px-4 font-bold" style={{ gridTemplateColumns: gridCols }}>
-              <span />
-              <span className="py-2.5" title="All jobs shown. The selected column equals its tile above">
-                Total
-              </span>
-              <span className="py-2.5 text-right tabular-nums" title="Open POs shown. A PO split across jobs counts once">
-                {shown.length}
-              </span>
-              <span />
-              {METRICS.map((m) => (
-                <span key={m.id} title={`${m.label}, all jobs: ${usdExact(totalsRow[m.id])}`} className={`px-1.5 py-2.5 text-right tabular-nums ${m.id === metric ? "bg-sdc-blue-light" : ""}`}>
-                  {usd(totalsRow[m.id])}
-                </span>
-              ))}
-            </div>
-          </div>
+                </>
+              }
+            />
+          ))}
         </section>
       )}
 
       {view === "suppliers" && (
-        <section className="overflow-x-auto rounded-xl border border-sdc-border bg-white" aria-label="By supplier">
-          <table className="w-full min-w-[800px] text-sm">
-            <thead className="bg-slate-100 text-left text-note text-sdc-gray-600">
-              <tr>
-                <th className="px-4 py-2 font-semibold" title={TIP.supplier}>
-                  Supplier
-                </th>
-                <th className="px-3 py-2 text-right font-semibold" title="Open POs with this vendor">
-                  POs
-                </th>
-                <th className="px-3 py-2 text-right font-semibold" title="Jobs those POs charge">
-                  Jobs
-                </th>
-                <th className="w-80 bg-sdc-blue-light px-3 py-2 font-semibold text-sdc-navy" title={`${cur.hint}. Click another tile above to switch`}>
-                  {cur.label}
-                </th>
-                <th className="px-4 py-2 text-right font-semibold" title="Days late on this vendor's oldest late line">
-                  Oldest late
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {suppliers.map((s) => (
-                <tr key={s.name} className="border-t border-sdc-border">
-                  <td className="px-4 py-2 font-semibold" title={s.name}>
-                    {s.name}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums" title={`${s.pos} open ${s.pos === 1 ? "PO" : "POs"} with ${s.name}`}>
-                    {s.pos}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums" title={`Charged to ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"}`}>
-                    {s.jobs}
-                  </td>
-                  <td className="bg-sdc-blue-light/30 px-3 py-2">
-                    <span className="flex items-center gap-2" title={`${cur.label}: ${usdExact(s.value)}. The bar is relative to the largest vendor`}>
-                      <span className="block h-2 flex-1 overflow-hidden rounded bg-sdc-border">
-                        <span className={`block h-full ${metric === "late" ? "bg-sdc-navy" : "bg-sdc-blue"}`} style={{ width: `${pct(Math.max(0, s.value), supplierMax)}%` }} />
-                      </span>
-                      <span className="min-w-20 text-right font-bold tabular-nums">
-                        {usd(s.value)}
-                      </span>
-                    </span>
-                  </td>
-                  <td
-                    className="px-4 py-2 text-right font-semibold text-red-700"
-                    title={s.oldestLate ? `This vendor's oldest late line is ${days(s.oldestLate)} past its expected date` : "Nothing late from this vendor"}
-                  >
-                    {s.oldestLate ? days(s.oldestLate) : "–"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <section className="grid gap-3" style={CARD_GRID} aria-label="By supplier">
+          {suppliers.map((s) => (
+            <CardShell
+              key={s.name}
+              title={s.name}
+              titleTip={s.name}
+              subtitle={`${s.pos.length} ${s.pos.length === 1 ? "PO" : "POs"} · ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"}`}
+              avatar={<SupplierAvatar supplier={s.name} size={30} />}
+              chip={cardChip(s.totals.late, s.oldestLate, s.ordered, s.totals.notReceived)}
+              metric={cur}
+              money={{ ...s.totals, ordered: s.ordered, received: s.received }}
+              pos={s.pos}
+              secondary={({ row }) => (
+                <span title={TIP.job}>
+                  <JobLinks jobIds={row.jobIds} />
+                </span>
+              )}
+            />
+          ))}
         </section>
       )}
 
