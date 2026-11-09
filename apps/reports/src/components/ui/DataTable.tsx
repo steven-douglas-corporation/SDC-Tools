@@ -111,6 +111,7 @@ export function DataTable<T>({
               }}
               placeholder={searchPlaceholder}
               aria-label={`Search ${label}`}
+              title="Type one or more words; a row shows when it contains every word"
               className="min-h-10 w-full max-w-sm rounded-lg border border-sdc-border bg-white px-3 py-1.5 text-base text-sdc-navy placeholder:text-sdc-gray-400"
             />
           )}
@@ -141,7 +142,7 @@ export function DataTable<T>({
                   <th
                     key={c.id}
                     scope="col"
-                    title={c.headerTitle}
+                    title={sortable ? `${c.headerTitle ? `${c.headerTitle}. ` : ""}Click to sort; click again to reverse` : c.headerTitle}
                     aria-sort={active ? (sort!.dir === "asc" ? "ascending" : "descending") : undefined}
                     className={`px-3 py-2 font-semibold ${c.align === "right" ? "text-right" : ""}`}
                   >
