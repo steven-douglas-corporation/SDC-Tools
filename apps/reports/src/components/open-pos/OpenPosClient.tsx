@@ -34,10 +34,39 @@ function dayLabel(day: string): string {
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+// Hover text, one place for the words each column and control uses everywhere on the page.
+const TIP = {
+  po: "Purchase order number in Total ETO",
+  supplier: "The vendor on the PO",
+  job: "Opens the job in Job Details",
+  jobCol: "Job number and name. Click a row to see its POs",
+  pos: "Open POs charged to this job",
+  received: "How much of the order has arrived, by value at PO price. The bar turns green when everything has arrived",
+  expected: "Earliest date still expected on lines not yet received. ↻ means the vendor re-promised a new date",
+  wasExpected: "The date the oldest late line was expected. ↻ means the vendor re-promised a new date",
+  daysLate: "Days since the oldest late line's expected date",
+  status: "Where the PO stands: late, partly received, received and waiting on an invoice, or on schedule",
+  notReceived: "Value still to arrive, at PO price",
+  lti: "PO value still to be invoiced. Same figure as Job Details' Left to Invoice",
+  lateValue: "Value not yet received on this PO's late lines",
+  revised: (original: string) => `Re-promised by the vendor. Originally due ${fmtDate(original)}`,
+};
+
+const days = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
+const expectedTip = (r: OpenPoRow, notReceived: number) =>
+  r.revised && r.originalDue
+    ? TIP.revised(r.originalDue)
+    : r.nextDue
+      ? `The earliest line not yet received is expected ${fmtDate(r.nextDue)}`
+      : notReceived > 0
+        ? "Total ETO has no date for the lines not yet received"
+        : "Everything on this PO has arrived";
+const poTip = (r: OpenPoRow) => `PO ${r.poNumber}, ordered ${fmtDate(r.purchaseDate)}. ${usdExact(r.money.ordered)} at PO price`;
+
 function ReceivedBar({ received, ordered, late }: { received: number; ordered: number; late?: boolean }) {
   const p = pct(received, ordered);
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex items-center gap-2" title={`${p}% of the PO's value has arrived: ${usdExact(received)} of ${usdExact(ordered)}, at PO price`}>
       <span role="img" aria-label={`${p}% of PO value received`} className="block h-1.5 w-20 shrink-0 overflow-hidden rounded bg-sdc-border">
         <span className={`block h-full ${p >= 100 ? "bg-green-600" : late ? "bg-sdc-navy" : "bg-sdc-blue"}`} style={{ width: `${p}%` }} />
       </span>
@@ -48,13 +77,29 @@ function ReceivedBar({ received, ordered, late }: { received: number; ordered: n
   );
 }
 
-function statusChip(r: OpenPoRow): { text: string; cls: string } {
-  if (r.status === "over-invoiced") return { text: "Invoiced more than ordered", cls: "bg-amber-100 text-amber-900" };
-  if (r.money.late > 0) return { text: `Late ${r.daysLate} days`, cls: "bg-sdc-navy text-white" };
-  if (r.money.ordered > 0 && r.money.notReceived <= 0) return { text: "Received, not invoiced", cls: "bg-green-100 text-green-900" };
-  if (r.partiallyReceived) return { text: "Partly received", cls: "bg-sdc-blue-light text-sdc-blue-dark" };
-  if (!r.receiptsKnown) return { text: "Open", cls: "bg-slate-100 text-slate-600" };
-  return { text: "On schedule", cls: "bg-slate-100 text-slate-600" };
+function statusChip(r: OpenPoRow): { text: string; cls: string; tip: string } {
+  if (r.status === "over-invoiced")
+    return { text: "Invoiced more than ordered", cls: "bg-amber-100 text-amber-900", tip: "Invoices posted add up to more than the PO's value, so Left to invoice is negative" };
+  if (r.money.late > 0)
+    return {
+      text: `Late ${days(r.daysLate ?? 0)}`,
+      cls: "bg-sdc-navy text-white",
+      tip: `Lines past their expected date have not arrived. The oldest was expected ${fmtDate(r.lateSince)}`,
+    };
+  if (r.money.ordered > 0 && r.money.notReceived <= 0)
+    return { text: "Received, not invoiced", cls: "bg-green-100 text-green-900", tip: "Everything has arrived; the vendor's invoice is not fully posted yet" };
+  if (r.partiallyReceived) return { text: "Partly received", cls: "bg-sdc-blue-light text-sdc-blue-dark", tip: "Some of the order has arrived; the rest is still expected" };
+  if (!r.receiptsKnown) return { text: "Open", cls: "bg-slate-100 text-slate-600", tip: "Total ETO has no receiving data for this PO, so delivery status is unknown" };
+  return { text: "On schedule", cls: "bg-slate-100 text-slate-600", tip: "Nothing has arrived yet, and no line is past its expected date" };
+}
+
+function StatusChip({ row, small }: { row: OpenPoRow; small?: boolean }) {
+  const chip = statusChip(row);
+  return (
+    <span title={chip.tip} className={`rounded-full px-2 py-0.5 font-semibold ${small ? "text-note" : ""} ${chip.cls}`}>
+      {chip.text}
+    </span>
+  );
 }
 
 function WeekChart({ weeks }: { weeks: OpenPoWeek[] }) {
@@ -62,18 +107,28 @@ function WeekChart({ weeks }: { weeks: OpenPoWeek[] }) {
   const noDate = weeks.find((w) => w.key === "no-date")?.notReceived ?? 0;
   const max = Math.max(...bars.map((w) => w.notReceived), 1);
   const label = (k: string) => (k === "late" ? "Late" : k === "later" ? "Later" : `Wk of ${dayLabel(k)}`);
+  const axisTip = (k: string) =>
+    k === "late"
+      ? "Expected before today and still not here"
+      : k === "later"
+        ? "Expected after the weeks shown"
+        : `Expected in the week starting ${dayLabel(k)}`;
   return (
     <section className={card("p-4")} aria-labelledby="op-weeks">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="op-weeks" className="text-sm font-bold text-sdc-navy">
+        <h2
+          id="op-weeks"
+          className="text-sm font-bold text-sdc-navy"
+          title="Value still to arrive at PO price, grouped by the week each line is expected. Uses the vendor's re-promised date when there is one"
+        >
           Value not yet received, by week expected
         </h2>
         <span className="flex gap-4 text-note text-sdc-gray-600">
-          <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5" title="Expected before today and still not here">
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-sdc-navy" />
             Late
           </span>
-          <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5" title="Expected today or later">
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-sdc-blue" />
             Expected
           </span>
@@ -92,12 +147,16 @@ function WeekChart({ weeks }: { weeks: OpenPoWeek[] }) {
       </div>
       <div className="mt-1 grid gap-2 border-t border-sdc-border pt-1" style={{ gridTemplateColumns: `repeat(${bars.length}, minmax(0, 1fr))` }}>
         {bars.map((w) => (
-          <span key={w.key} className={`text-center text-note ${w.key === "late" ? "font-bold text-red-700" : "text-sdc-gray-600"}`}>
+          <span key={w.key} title={axisTip(w.key)} className={`text-center text-note ${w.key === "late" ? "font-bold text-red-700" : "text-sdc-gray-600"}`}>
             {label(w.key)}
           </span>
         ))}
       </div>
-      {noDate > 0 && <p className="mt-2 text-note text-sdc-gray-400">Plus {usd(noDate)} on lines Total ETO has no date for.</p>}
+      {noDate > 0 && (
+        <p className="mt-2 text-note text-sdc-gray-400" title="No required or re-promised date on these lines in Total ETO, so they cannot be placed in a week">
+          Plus {usd(noDate)} on lines Total ETO has no date for.
+        </p>
+      )}
     </section>
   );
 }
@@ -110,7 +169,7 @@ function JobLinks({ jobIds }: { jobIds: string[] }) {
       {jobIds.map((j, i) => (
         <Fragment key={j}>
           {i > 0 && ", "}
-          <a href={jobHref(j)} onClick={(e) => e.stopPropagation()} className="text-sdc-blue hover:underline">
+          <a href={jobHref(j)} onClick={(e) => e.stopPropagation()} title={TIP.job} className="text-sdc-blue hover:underline">
             {j}
           </a>
         </Fragment>
@@ -121,28 +180,44 @@ function JobLinks({ jobIds }: { jobIds: string[] }) {
 
 // "All POs": every shown PO, whole-PO amounts. Same measures as the project table.
 const LIST_COLUMNS: DataTableColumn<OpenPoRow>[] = [
-  { id: "po", header: "PO #", value: (r) => r.poNumber, width: "150px", className: "font-semibold" },
+  { id: "po", header: "PO #", value: (r) => r.poNumber, width: "150px", className: "font-semibold", headerTitle: TIP.po, title: poTip },
   {
     id: "status",
     header: "Status",
     value: (r) => statusChip(r).text,
     width: "190px",
-    render: (r) => {
-      const chip = statusChip(r);
-      return <span className={`rounded-full px-2 py-0.5 font-semibold ${chip.cls}`}>{chip.text}</span>;
-    },
+    headerTitle: TIP.status,
+    title: (r) => statusChip(r).tip,
+    render: (r) => <StatusChip row={r} />,
   },
-  { id: "jobs", header: "Job", value: (r) => r.jobIds.join(", "), width: "110px", render: (r) => <JobLinks jobIds={r.jobIds} /> },
-  { id: "supplier", header: "Supplier", value: (r) => r.suppliers.join(", ") },
-  { id: "ordered", header: "Ordered", value: (r) => r.purchaseDate, width: "110px", render: (r) => fmtDate(r.purchaseDate), searchable: false },
+  {
+    id: "jobs",
+    header: "Job",
+    value: (r) => r.jobIds.join(", "),
+    width: "110px",
+    headerTitle: "Every job this PO charges",
+    title: () => TIP.job,
+    render: (r) => <JobLinks jobIds={r.jobIds} />,
+  },
+  { id: "supplier", header: "Supplier", value: (r) => r.suppliers.join(", "), headerTitle: TIP.supplier, title: (r) => r.suppliers.join(", ") },
+  {
+    id: "ordered",
+    header: "Ordered",
+    value: (r) => r.purchaseDate,
+    width: "110px",
+    render: (r) => fmtDate(r.purchaseDate),
+    searchable: false,
+    headerTitle: "The date the PO was placed",
+    title: (r) => `PO placed ${fmtDate(r.purchaseDate)}`,
+  },
   {
     id: "expected",
     header: "Expected",
     value: (r) => r.nextDue,
     width: "120px",
     searchable: false,
-    headerTitle: "Earliest date still expected on lines not yet received. ↻ = re-promised by the vendor.",
-    title: (r) => (r.revised && r.originalDue ? `Re-promised. Originally due ${fmtDate(r.originalDue)}` : undefined),
+    headerTitle: TIP.expected,
+    title: (r) => expectedTip(r, r.money.notReceived),
     render: (r) => (
       <>
         {r.nextDue ? fmtDate(r.nextDue) : r.money.notReceived > 0 ? "No date" : "Received"}
@@ -156,10 +231,32 @@ const LIST_COLUMNS: DataTableColumn<OpenPoRow>[] = [
     value: (r) => (r.money.ordered > 0 ? r.money.received / r.money.ordered : null),
     width: "250px",
     searchable: false,
+    headerTitle: TIP.received,
+    title: (r) => `${pct(r.money.received, r.money.ordered)}% of the PO's value has arrived: ${usdExact(r.money.received)} of ${usdExact(r.money.ordered)}, at PO price`,
     render: (r) => <ReceivedBar received={r.money.received} ordered={r.money.ordered} late={r.money.late > 0} />,
   },
-  { id: "notReceived", header: "Not received", value: (r) => r.money.notReceived, align: "right", width: "120px", searchable: false, render: (r) => usd(r.money.notReceived) },
-  { id: "lti", header: "Left to invoice", value: (r) => r.money.leftToInvoice, align: "right", width: "130px", searchable: false, render: (r) => usd(r.money.leftToInvoice) },
+  {
+    id: "notReceived",
+    header: "Not received",
+    value: (r) => r.money.notReceived,
+    align: "right",
+    width: "120px",
+    searchable: false,
+    headerTitle: TIP.notReceived,
+    title: (r) => usdExact(r.money.notReceived),
+    render: (r) => usd(r.money.notReceived),
+  },
+  {
+    id: "lti",
+    header: "Left to invoice",
+    value: (r) => r.money.leftToInvoice,
+    align: "right",
+    width: "130px",
+    searchable: false,
+    headerTitle: TIP.lti,
+    title: (r) => usdExact(r.money.leftToInvoice),
+    render: (r) => usd(r.money.leftToInvoice),
+  },
 ];
 
 export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosResult; schedulerVendorPosUrl?: string }) {
@@ -274,13 +371,14 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             type="button"
             onClick={() => setLateOpen((v) => !v)}
             aria-expanded={lateOpen}
+            title={`${lateOpen ? "Hide" : "Show"} every PO with a line past its expected date, oldest first`}
             className="flex min-h-12 w-full flex-wrap items-center gap-2.5 bg-sdc-navy px-4 py-2.5 text-left text-white"
           >
             <span className="w-3">{lateOpen ? "▾" : "▸"}</span>
             <span className="font-heading font-bold">Late POs</span>
             <span className="rounded-full bg-white px-2 text-note font-bold text-sdc-navy">{lateRows.length}</span>
             <span className="text-sm text-slate-300">
-              {usd(lateTile.value)} not received · {lateTile.jobs} jobs · oldest {lateRows[0]?.daysLate ?? 0} days
+              {usd(lateTile.value)} not received · {lateTile.jobs} jobs · oldest {days(lateRows[0]?.daysLate ?? 0)}
             </span>
           </button>
         </h2>
@@ -289,32 +387,45 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             <table className="w-full min-w-[900px] text-sm">
               <thead className="bg-slate-100 text-left text-note text-sdc-gray-600">
                 <tr>
-                  <th className="px-4 py-2 text-right font-semibold">Days late ▼</th>
-                  <th className="px-3 py-2 font-semibold">PO #</th>
-                  <th className="px-3 py-2 font-semibold">Supplier</th>
-                  <th className="px-3 py-2 font-semibold">Job</th>
-                  <th className="px-3 py-2 font-semibold">Was expected</th>
-                  <th className="px-3 py-2 font-semibold">Received (by value)</th>
-                  <th className="px-4 py-2 text-right font-semibold">Late, not received</th>
+                  <th className="px-4 py-2 text-right font-semibold" title={`${TIP.daysLate}. Most late first`}>
+                    Days late ▼
+                  </th>
+                  <th className="px-3 py-2 font-semibold" title={TIP.po}>
+                    PO #
+                  </th>
+                  <th className="px-3 py-2 font-semibold" title={TIP.supplier}>
+                    Supplier
+                  </th>
+                  <th className="px-3 py-2 font-semibold" title="Every job this PO charges">
+                    Job
+                  </th>
+                  <th className="px-3 py-2 font-semibold" title={TIP.wasExpected}>
+                    Was expected
+                  </th>
+                  <th className="px-3 py-2 font-semibold" title={TIP.received}>
+                    Received (by value)
+                  </th>
+                  <th className="px-4 py-2 text-right font-semibold" title={TIP.lateValue}>
+                    Late, not received
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {lateRows.map((r) => (
                   <tr key={r.poNumber} className="border-t border-sdc-border">
-                    <td className="px-4 py-1.5 text-right font-bold tabular-nums text-red-700">{r.daysLate}</td>
-                    <td className="px-3 py-1.5 font-semibold">{r.poNumber}</td>
-                    <td className="px-3 py-1.5">{r.suppliers.join(", ")}</td>
-                    <td className="px-3 py-1.5">
-                      {r.jobIds.map((j, i) => (
-                        <Fragment key={j}>
-                          {i > 0 && ", "}
-                          <a href={jobHref(j)} className="text-sdc-blue hover:underline">
-                            {j}
-                          </a>
-                        </Fragment>
-                      ))}
+                    <td className="px-4 py-1.5 text-right font-bold tabular-nums text-red-700" title={`Late since ${fmtDate(r.lateSince)}`}>
+                      {r.daysLate}
                     </td>
-                    <td className="px-3 py-1.5" title={r.revised && r.originalDue ? `Re-promised. Originally due ${fmtDate(r.originalDue)}` : undefined}>
+                    <td className="px-3 py-1.5 font-semibold" title={poTip(r)}>
+                      {r.poNumber}
+                    </td>
+                    <td className="px-3 py-1.5" title={r.suppliers.join(", ")}>
+                      {r.suppliers.join(", ")}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <JobLinks jobIds={r.jobIds} />
+                    </td>
+                    <td className="px-3 py-1.5" title={r.revised && r.originalDue ? TIP.revised(r.originalDue) : TIP.wasExpected}>
                       {fmtDate(r.lateSince)}
                       {r.revised && <span className="text-sdc-blue"> ↻</span>}
                     </td>
@@ -334,11 +445,11 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
       <div className="flex flex-wrap items-center gap-3">
         <div role="status" className="flex min-h-10 flex-1 flex-wrap items-center gap-2.5 text-sm">
-          <span className="font-bold text-sdc-navy">
+          <span className="font-bold text-sdc-navy" title={`${cur.hint}. Choose another tile above to switch`}>
             Showing: {cur.label}
             {partialOnly ? ", partially received only" : ""}
           </span>
-          <span className="text-sdc-gray-600">
+          <span className="text-sdc-gray-600" title="Open POs in the table below, and the jobs they charge">
             {shown.length} POs on {shownJobs} jobs{filtered ? ` · ${data.rows.length - shown.length} other open POs hidden` : ""}
           </span>
           {filtered && (
@@ -348,6 +459,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 setMetric("leftToInvoice");
                 setPartialOnly(false);
               }}
+              title="Clear the filters and list every PO still owing an invoice"
               className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
             >
               Show all open POs
@@ -358,6 +470,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           type="button"
           aria-pressed={partialOnly}
           onClick={() => setPartialOnly((v) => !v)}
+          title="Only POs where some of the order has arrived and the rest is still expected"
           className={`${TOOLBAR_BTN_COMPACT} ${partialOnly ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
         >
           {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inMetric(r, metric) && r.partiallyReceived).length})
@@ -365,16 +478,17 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
         <div role="group" aria-label="Group by" className="flex gap-1">
           {(
             [
-              ["projects", "By project"],
-              ["suppliers", "By supplier"],
-              ["list", "All POs"],
-            ] as [View, string][]
-          ).map(([id, label]) => (
+              ["projects", "By project", "One row per job, with all five totals. Click a job to see its POs"],
+              ["suppliers", "By supplier", "One row per vendor, ranked by the selected total"],
+              ["list", "All POs", "Every PO in one searchable, sortable list"],
+            ] as [View, string, string][]
+          ).map(([id, label, tip]) => (
             <button
               key={id}
               type="button"
               aria-pressed={view === id}
               onClick={() => setView(id)}
+              title={tip}
               className={`${TOOLBAR_BTN_COMPACT} ${view === id ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
             >
               {label}
@@ -388,13 +502,19 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           <div className="min-w-[1100px] text-sm">
             <div className="grid gap-2.5 bg-slate-100 px-4 text-note font-semibold text-sdc-gray-600" style={{ gridTemplateColumns: gridCols }}>
               <span />
-              <span className="py-2">Job</span>
-              <span className="py-2 text-right">POs</span>
-              <span className="py-2">Received (by value)</span>
+              <span className="py-2" title={TIP.jobCol}>
+                Job
+              </span>
+              <span className="py-2 text-right" title={TIP.pos}>
+                POs
+              </span>
+              <span className="py-2" title={TIP.received}>
+                Received (by value)
+              </span>
               {METRICS.map((m) => (
                 <span
                   key={m.id}
-                  title={m.hint}
+                  title={m.id === metric ? `${m.hint}. The selected total` : `${m.hint}. Click its tile above to list these POs`}
                   className={`px-1.5 py-2 text-right ${m.id === metric ? "border-b-2 border-sdc-navy bg-sdc-blue-light text-sdc-navy" : ""}`}
                 >
                   {m.short}
@@ -409,6 +529,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                     type="button"
                     onClick={() => setOpenJob(expanded ? null : p.jobId)}
                     aria-expanded={expanded}
+                    title={`${expanded ? "Hide" : "Show"} ${p.jobId}'s POs`}
                     className={`grid w-full items-stretch gap-2.5 px-4 text-left ${expanded ? "bg-sdc-blue-light/40" : "bg-white hover:bg-slate-50"}`}
                     style={{ gridTemplateColumns: gridCols }}
                   >
@@ -426,7 +547,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                       return (
                         <span
                           key={m.id}
-                          title={usdExact(v)}
+                          title={`${m.label}: ${usdExact(v)}`}
                           className={`flex items-center justify-end px-1.5 py-2.5 tabular-nums ${m.id === metric ? "bg-sdc-blue-light/40 font-bold" : ""} ${
                             v === 0 ? "text-sdc-gray-400" : m.id === "late" ? "text-red-700" : "text-sdc-navy"
                           }`}
@@ -441,36 +562,60 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                       <table className="w-full text-sm">
                         <thead className="text-left text-note text-sdc-gray-400">
                           <tr>
-                            <th className="py-1 font-semibold">Status</th>
-                            <th className="py-1 font-semibold">PO #</th>
-                            <th className="py-1 font-semibold">Supplier</th>
-                            <th className="py-1 font-semibold">Expected</th>
-                            <th className="py-1 font-semibold">Received (by value)</th>
-                            <th className="py-1 text-right font-semibold">Not received</th>
-                            <th className="py-1 text-right font-semibold">Left to invoice</th>
+                            <th className="py-1 font-semibold" title={TIP.status}>
+                              Status
+                            </th>
+                            <th className="py-1 font-semibold" title={TIP.po}>
+                              PO #
+                            </th>
+                            <th className="py-1 font-semibold" title={TIP.supplier}>
+                              Supplier
+                            </th>
+                            <th className="py-1 font-semibold" title={TIP.expected}>
+                              Expected
+                            </th>
+                            <th className="py-1 font-semibold" title={TIP.received}>
+                              Received (by value)
+                            </th>
+                            <th className="py-1 text-right font-semibold" title={TIP.notReceived}>
+                              Not received
+                            </th>
+                            <th className="py-1 text-right font-semibold" title={TIP.lti}>
+                              Left to invoice
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {p.pos.map(({ row, money }) => {
-                            const chip = statusChip(row);
                             return (
                               <tr key={row.poNumber} className="border-t border-sdc-border/60">
                                 <td className="py-1.5">
-                                  <span className={`rounded-full px-2 py-0.5 text-note font-semibold ${chip.cls}`}>{chip.text}</span>
+                                  <StatusChip row={row} small />
                                 </td>
-                                <td className="py-1.5 font-semibold">
+                                <td className="py-1.5 font-semibold" title={poTip(row)}>
                                   {row.poNumber}
-                                  {row.jobIds.length > 1 && <span className="ml-1 text-note font-normal text-sdc-gray-400">(this job&apos;s share)</span>}
+                                  {row.jobIds.length > 1 && (
+                                    <span
+                                      className="ml-1 text-note font-normal text-sdc-gray-400"
+                                      title={`This PO also charges ${row.jobIds.filter((j) => j !== p.jobId).join(", ")}. Amounts here are only ${p.jobId}'s lines`}
+                                    >
+                                      (this job&apos;s share)
+                                    </span>
+                                  )}
                                 </td>
-                                <td className="py-1.5">{row.suppliers.join(", ")}</td>
-                                <td className="py-1.5" title={row.revised && row.originalDue ? `Re-promised. Originally due ${fmtDate(row.originalDue)}` : undefined}>
+                                <td className="py-1.5" title={row.suppliers.join(", ")}>
+                                  {row.suppliers.join(", ")}
+                                </td>
+                                <td className="py-1.5" title={expectedTip(row, money.notReceived)}>
                                   {row.nextDue ? fmtDate(row.nextDue) : money.notReceived > 0 ? "No date" : "Received"}
                                   {row.revised && <span className="text-sdc-blue"> ↻</span>}
                                 </td>
                                 <td className="py-1.5">
                                   <ReceivedBar received={money.received} ordered={money.ordered} late={money.late > 0} />
                                 </td>
-                                <td className="py-1.5 text-right tabular-nums">{money.notReceived ? usd(money.notReceived) : "–"}</td>
+                                <td className="py-1.5 text-right tabular-nums" title={usdExact(money.notReceived)}>
+                                  {money.notReceived ? usd(money.notReceived) : "–"}
+                                </td>
                                 <td className="py-1.5 text-right font-semibold tabular-nums" title={usdExact(money.leftToInvoice)}>
                                   {usd(money.leftToInvoice)}
                                 </td>
@@ -480,11 +625,17 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                         </tbody>
                       </table>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <a href={jobHref(p.jobId)} className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}>
+                        <a href={jobHref(p.jobId)} title={`Open ${p.jobId} in Job Details, with the full Parts List`} className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}>
                           Open in Job Details
                         </a>
                         {schedulerVendorPosUrl && (
-                          <a href={schedulerVendorPosUrl} target="_blank" rel="noreferrer" className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}>
+                          <a
+                            href={schedulerVendorPosUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Opens the Scheduler's Vendor POs page in a new tab, where buyers set ETAs, tracking and notes"
+                            className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
+                          >
                             Chase in Scheduler › Vendor POs ↗
                           </a>
                         )}
@@ -496,11 +647,15 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             })}
             <div className="grid gap-2.5 border-t-2 border-sdc-border bg-slate-50 px-4 font-bold" style={{ gridTemplateColumns: gridCols }}>
               <span />
-              <span className="py-2.5">Total</span>
-              <span className="py-2.5 text-right tabular-nums">{shown.length}</span>
+              <span className="py-2.5" title="All jobs shown. The selected column equals its tile above">
+                Total
+              </span>
+              <span className="py-2.5 text-right tabular-nums" title="Open POs shown. A PO split across jobs counts once">
+                {shown.length}
+              </span>
               <span />
               {METRICS.map((m) => (
-                <span key={m.id} title={usdExact(totalsRow[m.id])} className={`px-1.5 py-2.5 text-right tabular-nums ${m.id === metric ? "bg-sdc-blue-light" : ""}`}>
+                <span key={m.id} title={`${m.label}, all jobs: ${usdExact(totalsRow[m.id])}`} className={`px-1.5 py-2.5 text-right tabular-nums ${m.id === metric ? "bg-sdc-blue-light" : ""}`}>
                   {usd(totalsRow[m.id])}
                 </span>
               ))}
@@ -514,30 +669,51 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           <table className="w-full min-w-[800px] text-sm">
             <thead className="bg-slate-100 text-left text-note text-sdc-gray-600">
               <tr>
-                <th className="px-4 py-2 font-semibold">Supplier</th>
-                <th className="px-3 py-2 text-right font-semibold">POs</th>
-                <th className="px-3 py-2 text-right font-semibold">Jobs</th>
-                <th className="w-80 bg-sdc-blue-light px-3 py-2 font-semibold text-sdc-navy">{cur.label}</th>
-                <th className="px-4 py-2 text-right font-semibold">Oldest late</th>
+                <th className="px-4 py-2 font-semibold" title={TIP.supplier}>
+                  Supplier
+                </th>
+                <th className="px-3 py-2 text-right font-semibold" title="Open POs with this vendor">
+                  POs
+                </th>
+                <th className="px-3 py-2 text-right font-semibold" title="Jobs those POs charge">
+                  Jobs
+                </th>
+                <th className="w-80 bg-sdc-blue-light px-3 py-2 font-semibold text-sdc-navy" title={`${cur.hint}. Click another tile above to switch`}>
+                  {cur.label}
+                </th>
+                <th className="px-4 py-2 text-right font-semibold" title="Days late on this vendor's oldest late line">
+                  Oldest late
+                </th>
               </tr>
             </thead>
             <tbody>
               {suppliers.map((s) => (
                 <tr key={s.name} className="border-t border-sdc-border">
-                  <td className="px-4 py-2 font-semibold">{s.name}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{s.pos}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{s.jobs}</td>
+                  <td className="px-4 py-2 font-semibold" title={s.name}>
+                    {s.name}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums" title={`${s.pos} open ${s.pos === 1 ? "PO" : "POs"} with ${s.name}`}>
+                    {s.pos}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums" title={`Charged to ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"}`}>
+                    {s.jobs}
+                  </td>
                   <td className="bg-sdc-blue-light/30 px-3 py-2">
-                    <span className="flex items-center gap-2">
+                    <span className="flex items-center gap-2" title={`${cur.label}: ${usdExact(s.value)}. The bar is relative to the largest vendor`}>
                       <span className="block h-2 flex-1 overflow-hidden rounded bg-sdc-border">
                         <span className={`block h-full ${metric === "late" ? "bg-sdc-navy" : "bg-sdc-blue"}`} style={{ width: `${pct(Math.max(0, s.value), supplierMax)}%` }} />
                       </span>
-                      <span className="min-w-20 text-right font-bold tabular-nums" title={usdExact(s.value)}>
+                      <span className="min-w-20 text-right font-bold tabular-nums">
                         {usd(s.value)}
                       </span>
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-right font-semibold text-red-700">{s.oldestLate ? `${s.oldestLate} days` : "–"}</td>
+                  <td
+                    className="px-4 py-2 text-right font-semibold text-red-700"
+                    title={s.oldestLate ? `This vendor's oldest late line is ${days(s.oldestLate)} past its expected date` : "Nothing late from this vendor"}
+                  >
+                    {s.oldestLate ? days(s.oldestLate) : "–"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -547,7 +723,9 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
       {view === "list" && (
         <section className="flex flex-col gap-2" aria-label="All POs">
-          <p className="text-note text-sdc-gray-400">Amounts are the whole PO. A PO split across jobs lists every job it charges.</p>
+          <p className="text-note text-sdc-gray-400" title="By project shows each job's own share instead">
+            Amounts are the whole PO. A PO split across jobs lists every job it charges.
+          </p>
           <DataTable
             rows={shown}
             columns={LIST_COLUMNS}
@@ -564,7 +742,13 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       <p className="text-note text-sdc-gray-400">
         This page shows where the money stands. To chase a PO, add tracking or notes, use{" "}
         {schedulerVendorPosUrl ? (
-          <a href={schedulerVendorPosUrl} target="_blank" rel="noreferrer" className="text-sdc-blue hover:underline">
+          <a
+            href={schedulerVendorPosUrl}
+            target="_blank"
+            rel="noreferrer"
+            title="Opens the Scheduler's Vendor POs page in a new tab, where buyers set ETAs, tracking and notes"
+            className="text-sdc-blue hover:underline"
+          >
             Scheduler › Vendor POs ↗
           </a>
         ) : (
