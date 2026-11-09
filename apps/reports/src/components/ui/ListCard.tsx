@@ -63,8 +63,13 @@ export function ListCard<T>({
   footer,
 }: ListCardProps<T>) {
   const tracks = [...columns.map((c, i) => c.width ?? (i === 0 ? "1fr" : "auto")), ...(onRowClick ? ["auto"] : [])].join(" ");
+  // ONE grid for the header and every row (each a subgrid of it), so an "auto" column is
+  // sized once, to its widest cell. Each row used to be its own grid, sizing its auto
+  // columns to its own content: a date with ↻, a wider amount or the row-only chevron
+  // moved that row's columns off the header's. The header sits inside the scroll box
+  // (sticky) for the same reason: outside it, a scrollbar narrowed the rows but not it.
   const grid: CSSProperties = { gridTemplateColumns: tracks };
-  const rowCls = "grid w-full items-center gap-2 border-b border-sdc-border-soft/60 px-3 py-1.5 text-left last:border-b-0";
+  const rowCls = "col-span-full grid grid-cols-subgrid items-center border-b border-sdc-border-soft/60 px-3 py-1.5 text-left last:border-b-0";
   const cells = (row: T) =>
     columns.map((c) => (
       <span key={c.id} className={`min-w-0 ${c.align === "right" ? "text-right" : ""}`}>
@@ -101,24 +106,24 @@ export function ListCard<T>({
         )}
       </div>
 
-      <div className="grid items-center gap-2 bg-sdc-gray-100 px-3 py-1.5 text-micro font-bold uppercase tracking-wider text-sdc-gray-400" style={grid}>
-        {columns.map((c) => (
-          <span key={c.id} title={c.headerTitle} className={c.align === "right" ? "text-right" : ""}>
-            {c.header}
-          </span>
-        ))}
-        {onRowClick && <span />}
-      </div>
-      <div className="max-h-56 overflow-y-auto styled-scrollbar">
-        {rows.length === 0 && emptyText != null && <p className="px-3 py-3 text-center text-label text-sdc-gray-400">{emptyText}</p>}
+      <div className="grid max-h-56 content-start gap-x-2 overflow-y-auto styled-scrollbar" style={grid}>
+        <div className="sticky top-0 z-[1] col-span-full grid grid-cols-subgrid items-center bg-sdc-gray-100 px-3 py-1.5 text-micro font-bold uppercase tracking-wider text-sdc-gray-400">
+          {columns.map((c) => (
+            <span key={c.id} title={c.headerTitle} className={c.align === "right" ? "text-right" : ""}>
+              {c.header}
+            </span>
+          ))}
+          {onRowClick && <span />}
+        </div>
+        {rows.length === 0 && emptyText != null && <p className="col-span-full px-3 py-3 text-center text-label text-sdc-gray-400">{emptyText}</p>}
         {rows.map((row) =>
           onRowClick ? (
-            <button key={rowKey(row)} type="button" onClick={() => onRowClick(row)} title={rowTitle?.(row)} className={`${rowCls} hover:bg-sdc-blue-light/30`} style={grid}>
+            <button key={rowKey(row)} type="button" onClick={() => onRowClick(row)} title={rowTitle?.(row)} className={`${rowCls} hover:bg-sdc-blue-light/30`}>
               {cells(row)}
               <Chevron />
             </button>
           ) : (
-            <div key={rowKey(row)} title={rowTitle?.(row)} className={rowCls} style={grid}>
+            <div key={rowKey(row)} title={rowTitle?.(row)} className={rowCls}>
               {cells(row)}
             </div>
           ),
