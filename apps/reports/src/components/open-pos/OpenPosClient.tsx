@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { SupplierAvatar } from "@/components/procurement/PoDetailPanel";
+import { ListCard, ListCardGrid, type ListCardColumn } from "@/components/ui/ListCard";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -260,12 +261,6 @@ const LIST_COLUMNS: DataTableColumn<OpenPoRow>[] = [
   },
 ];
 
-// ── Cards (By project / By supplier), modelled on Job Details' Parts card view ─────────────
-//
-// One card per job or vendor: who it is, the selected tile's figure for it, how much has
-// arrived, then a short scrollable list of its POs. The list's amount column is always the
-// selected tile, so switching tiles re-ranks the cards and their POs together.
-
 type CardPo = { row: OpenPoRow; money: OpenPoMoney };
 
 // Dot per PO. Red only for late, so "not here yet" is never painted as a problem.
@@ -291,108 +286,94 @@ function cardChip(late: number, oldestLate: number, ordered: number, notReceived
   return { text: "ON SCHEDULE", cls: "bg-sdc-blue-light text-sdc-blue-dark", tip: "Nothing is past its expected date" };
 }
 
-function CardShell({
+// One card per job or vendor, on the shared ListCard (the same card as Job Details' Parts
+// card view): who it is, one status badge, how much has arrived with the selected tile's
+// figure beside it, then its POs. The PO list's amount is always the selected tile, so
+// switching tiles re-ranks the cards and their POs together.
+function OpenPoCard({
   title,
   titleTip,
   subtitle,
   avatar,
-  chip,
   metric,
   money,
+  oldestLate,
   pos,
-  secondary,
-  footer,
 }: {
-  title: string;
+  title: ReactNode;
   titleTip: string;
   subtitle: string;
   avatar?: ReactNode;
-  chip: { text: string; cls: string; tip: string };
   metric: (typeof METRICS)[number];
   money: Record<MetricId, number> & { ordered: number; received: number };
+  oldestLate: number;
   pos: CardPo[];
-  secondary: (p: CardPo) => ReactNode;
-  footer?: ReactNode;
 }) {
+  const p = pct(money.received, money.ordered);
+  const columns: ListCardColumn<CardPo>[] = [
+    {
+      id: "po",
+      header: "PO #",
+      headerTitle: TIP.po,
+      render: ({ row }) => (
+        <span className="block truncate font-mono text-note font-semibold text-sdc-navy" title={poTip(row)}>
+          {row.poNumber}
+        </span>
+      ),
+    },
+    {
+      id: "expected",
+      header: "Expected",
+      headerTitle: TIP.expected,
+      align: "right",
+      render: ({ row, money: m }) => (
+        <span className={`font-mono text-label ${m.late > 0 ? "text-sdc-red-text" : "text-sdc-gray-600"}`} title={expectedTip(row, m.notReceived)}>
+          {row.nextDue ? fmtDate(row.nextDue) : m.notReceived > 0 ? "No date" : "Here"}
+          {row.revised && <span className="text-sdc-blue"> ↻</span>}
+        </span>
+      ),
+    },
+    {
+      id: "amount",
+      header: metric.short,
+      headerTitle: `${metric.hint}, for each PO`,
+      align: "right",
+      render: ({ money: m }) => (
+        <span className="text-label font-semibold tabular-nums text-sdc-navy" title={`${metric.label}: ${usdExact(m[metric.id])}`}>
+          {m[metric.id] === 0 ? "–" : usd(m[metric.id])}
+        </span>
+      ),
+    },
+    {
+      id: "dot",
+      header: "",
+      render: ({ row, money: m }) => {
+        const dot = poDot(row, m);
+        return <span title={dot.tip} className={`inline-block h-2 w-2 rounded-full ${dot.cls}`} />;
+      },
+    },
+  ];
+  const chip = cardChip(money.late, oldestLate, money.ordered, money.notReceived);
   return (
-    <article className="flex flex-col overflow-hidden rounded-lg border border-sdc-border bg-white shadow-sm">
-      <div className="flex flex-col gap-2 border-b border-sdc-border-soft p-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            {avatar}
-            <div className="min-w-0">
-              <div className="truncate text-sm font-bold text-sdc-navy" title={titleTip}>
-                {title}
-              </div>
-              <div className="truncate text-label text-sdc-gray-400" title={subtitle}>
-                {subtitle}
-              </div>
-            </div>
-          </div>
-          <span title={chip.tip} className={`shrink-0 rounded px-1.5 py-0.5 text-micro font-bold tracking-wide ${chip.cls}`}>
-            {chip.text}
-          </span>
-        </div>
-        <div className="flex items-baseline justify-between gap-2" title={`${metric.hint}. ${usdExact(money[metric.id])}`}>
-          <span className="text-note font-semibold text-sdc-gray-600">{metric.label}</span>
-          <span className={`font-heading text-lg font-bold tabular-nums ${metric.id === "late" ? "text-red-700" : "text-sdc-navy"}`}>{usd(money[metric.id])}</span>
-        </div>
-        <ReceivedBar received={money.received} ordered={money.ordered} late={money.late > 0} />
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-label">
-          {METRICS.filter((m) => m.id !== metric.id).map((m) => (
-            <div key={m.id} className="flex justify-between gap-2" title={`${m.hint}. ${usdExact(money[m.id])}`}>
-              <dt className="truncate text-sdc-gray-400">{m.short}</dt>
-              <dd className={`tabular-nums ${money[m.id] === 0 ? "text-sdc-gray-400" : m.id === "late" ? "font-semibold text-red-700" : "text-sdc-gray-600"}`}>
-                {money[m.id] === 0 ? "–" : usd(money[m.id])}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-
-      <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 bg-sdc-gray-100 px-3 py-1.5 text-micro font-bold uppercase tracking-wider text-sdc-gray-400">
-        <span title={TIP.po}>PO #</span>
-        <span className="text-right" title={TIP.expected}>
-          Expected
-        </span>
-        <span className="text-right" title={`${metric.hint}, for each PO`}>
-          {metric.short}
-        </span>
-        <span />
-      </div>
-      <div className="max-h-56 overflow-y-auto styled-scrollbar">
-        {pos.map((p) => {
-          const { row, money: m } = p;
-          const dot = poDot(row, m);
-          return (
-            <div key={row.poNumber} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 border-b border-sdc-border-soft/60 px-3 py-1.5 last:border-b-0">
-              <span className="flex min-w-0 flex-col leading-tight">
-                <span className="truncate font-mono text-note font-semibold text-sdc-navy" title={poTip(row)}>
-                  {row.poNumber}
-                </span>
-                <span className="truncate text-label text-sdc-gray-400">{secondary(p)}</span>
-              </span>
-              <span
-                className={`text-right font-mono text-label ${m.late > 0 ? "text-sdc-red-text" : "text-sdc-gray-600"}`}
-                title={expectedTip(row, m.notReceived)}
-              >
-                {row.nextDue ? fmtDate(row.nextDue) : m.notReceived > 0 ? "No date" : "Here"}
-                {row.revised && <span className="text-sdc-blue"> ↻</span>}
-              </span>
-              <span className="text-right text-label font-semibold tabular-nums text-sdc-navy" title={`${metric.label}: ${usdExact(m[metric.id])}`}>
-                {m[metric.id] === 0 ? "–" : usd(m[metric.id])}
-              </span>
-              <span title={dot.tip} className={`inline-block h-2 w-2 rounded-full ${dot.cls}`} />
-            </div>
-          );
-        })}
-      </div>
-      {footer && <div className="mt-auto flex flex-wrap gap-2 border-t border-sdc-border-soft p-2.5">{footer}</div>}
-    </article>
+    <ListCard
+      title={title}
+      titleTip={titleTip}
+      subtitle={subtitle}
+      avatar={avatar}
+      badge={{ text: chip.text, className: chip.cls, title: chip.tip }}
+      progress={{
+        pct: p,
+        barClassName: money.late > 0 ? "bg-sdc-navy" : p >= 100 ? "bg-sdc-green" : "bg-sdc-blue",
+        label: usd(money[metric.id]),
+        labelClassName: metric.id === "late" ? "text-red-700" : "text-sdc-navy",
+        title: `${p}% of the value has arrived (${usdExact(money.received)} of ${usdExact(money.ordered)}). ${metric.label}: ${usdExact(money[metric.id])}`,
+      }}
+      columns={columns}
+      rows={pos}
+      rowKey={({ row }) => row.poNumber}
+    />
   );
 }
-
-const CARD_GRID = { gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" };
 
 export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosResult; schedulerVendorPosUrl?: string }) {
   const [metric, setMetric] = useState<MetricId>("leftToInvoice");
@@ -639,66 +620,45 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       </div>
 
       {view === "projects" && (
-        <section className="grid gap-3" style={CARD_GRID} aria-label="By project">
-          {projects.map((p) => (
-            <CardShell
-              key={p.jobId}
-              title={p.jobId}
-              titleTip={`Job ${p.jobId}${p.name ? `, ${p.name}` : ""}`}
-              subtitle={`${p.name ? `${p.name} · ` : ""}${p.pos.length} ${p.pos.length === 1 ? "PO" : "POs"}`}
-              chip={cardChip(p.totals.late, p.oldestLate, p.ordered, p.totals.notReceived)}
-              metric={cur}
-              money={{ ...p.totals, ordered: p.ordered, received: p.received }}
-              pos={p.pos}
-              secondary={({ row }) => (
-                <span title={row.jobIds.length > 1 ? `Also charges ${row.jobIds.filter((j) => j !== p.jobId).join(", ")}. Amounts are only ${p.jobId}'s lines` : row.suppliers.join(", ")}>
-                  {row.suppliers.join(", ")}
-                  {row.jobIds.length > 1 && " · this job's share"}
-                </span>
-              )}
-              footer={
-                <>
-                  <a href={jobHref(p.jobId)} title={`Open ${p.jobId} in Job Details, with the full Parts List`} className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}>
-                    Job Details
+        <section aria-label="By project">
+          <ListCardGrid min={300}>
+            {projects.map((p) => (
+              <OpenPoCard
+                key={p.jobId}
+                title={
+                  <a href={jobHref(p.jobId)} className="hover:underline">
+                    {p.jobId}
                   </a>
-                  {schedulerVendorPosUrl && (
-                    <a
-                      href={schedulerVendorPosUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="Opens the Scheduler's Vendor POs page in a new tab, where buyers set ETAs, tracking and notes"
-                      className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
-                    >
-                      Chase in Scheduler ↗
-                    </a>
-                  )}
-                </>
-              }
-            />
-          ))}
+                }
+                titleTip={`Open ${p.jobId}${p.name ? ` (${p.name})` : ""} in Job Details`}
+                subtitle={`${p.name ? `${p.name} · ` : ""}${p.pos.length} ${p.pos.length === 1 ? "PO" : "POs"}`}
+                metric={cur}
+                money={{ ...p.totals, ordered: p.ordered, received: p.received }}
+                oldestLate={p.oldestLate}
+                pos={p.pos}
+              />
+            ))}
+          </ListCardGrid>
         </section>
       )}
 
       {view === "suppliers" && (
-        <section className="grid gap-3" style={CARD_GRID} aria-label="By supplier">
-          {suppliers.map((s) => (
-            <CardShell
-              key={s.name}
-              title={s.name}
-              titleTip={s.name}
-              subtitle={`${s.pos.length} ${s.pos.length === 1 ? "PO" : "POs"} · ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"}`}
-              avatar={<SupplierAvatar supplier={s.name} size={30} />}
-              chip={cardChip(s.totals.late, s.oldestLate, s.ordered, s.totals.notReceived)}
-              metric={cur}
-              money={{ ...s.totals, ordered: s.ordered, received: s.received }}
-              pos={s.pos}
-              secondary={({ row }) => (
-                <span title={TIP.job}>
-                  <JobLinks jobIds={row.jobIds} />
-                </span>
-              )}
-            />
-          ))}
+        <section aria-label="By supplier">
+          <ListCardGrid min={300}>
+            {suppliers.map((s) => (
+              <OpenPoCard
+                key={s.name}
+                title={s.name}
+                titleTip={s.name}
+                subtitle={`${s.pos.length} ${s.pos.length === 1 ? "PO" : "POs"} · ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"}`}
+                avatar={<SupplierAvatar supplier={s.name} size={30} />}
+                metric={cur}
+                money={{ ...s.totals, ordered: s.ordered, received: s.received }}
+                oldestLate={s.oldestLate}
+                pos={s.pos}
+              />
+            ))}
+          </ListCardGrid>
         </section>
       )}
 
