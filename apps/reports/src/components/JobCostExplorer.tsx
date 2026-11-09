@@ -63,15 +63,18 @@ const COMPACT_SELECT = `${BTN_H_COMPACT} rounded-md border border-sdc-border bg-
 // knows that grid recognizes these on sight. Labor $ and Sales/Margin get their own
 // soft washes (navy, lime) since nothing already claims those roles. All five are
 // `-bg`/opacity-modified tokens, never a saturated fill — see GROUP_META below.
-type GroupKey = "identity" | "hours" | "labor" | "etc" | "parts" | "sales";
+// (2026-11-09) Re-ordered and renamed: Job | Sold | Cost to Date | ETC | Standard Fees | Sales / Margin.
+// "hours" is Cost to Date (hours + Parts Invoiced, so the old "parts" group is gone) and "labor" is
+// Standard Fees; the keys keep their old names so nothing keyed on them changes.
+type GroupKey = "identity" | "sold" | "hours" | "etc" | "labor" | "sales";
 
 const GROUP_META: Record<GroupKey, { label: string; band: string; text: string }> = {
   identity: { label: "Job", band: "bg-sdc-gray-100", text: "text-sdc-gray-600" },
-  hours: { label: "Hours", band: "bg-sdc-blue-light", text: "text-sdc-blue-dark" },
-  labor: { label: "Labor $", band: "bg-sdc-navy/5", text: "text-sdc-navy" },
+  sold: { label: "Sold", band: "bg-sdc-green-bg", text: "text-sdc-green-text" },
+  hours: { label: "Cost to Date", band: "bg-sdc-blue-light", text: "text-sdc-blue-dark" },
   etc: { label: "ETC", band: "bg-sdc-yellow-bg", text: "text-sdc-yellow-text" },
-  parts: { label: "Parts", band: "bg-sdc-green-bg", text: "text-sdc-green-text" },
-  sales: { label: "Sales / Margin", band: "bg-sdc-lime/15", text: "text-sdc-navy" },
+  labor: { label: "Standard Fees", band: "bg-sdc-navy/5", text: "text-sdc-navy" },
+  sales:{ label: "Sales / Margin", band: "bg-sdc-lime/15", text: "text-sdc-navy" },
 };
 
 // Column widths, as tokens rather than per-cell literals — one width per shape of
@@ -101,22 +104,26 @@ const COLS: ColMeta[] = [
   // Type is drawn by the identity block too (right after Customer) and lives in this array for
   // the same reason Customer does: the Columns picker and the export read it.
   { key: "jobType", label: "Type", group: "identity", type: "text", widthClass: "min-w-[6rem]" },
+  // Column order here IS the on-screen order (header, Columns picker, export). The body and totals
+  // rows below are hand-written, so they must be kept in this same order:
+  // Job | Sold (Sold Price, Complete Date) | Cost to Date | ETC | Standard Fees | Sales / Margin.
+  { key: "salesPrice", label: "Sold Price", group: "sold", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
+  // Sold Date: column kept, no value behind it yet (Start date was rejected as a stand-in) — cells render blank.
+  { key: "startDate", label: "Sold Date", group: "sold", type: "date", widthClass: YEAR_COL_W },
+  { key: "completeDate", label: "Complete Date", group: "sold", type: "date", widthClass: YEAR_COL_W },
   { key: "actualHours", label: "Total Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
   { key: "engineeringHours", label: "Eng Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
   { key: "shopHours", label: "Shop Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
   { key: "otherHours", label: "Other Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
   { key: "serviceHours", label: "Service & Spares*", group: "hours", type: "hours", widthClass: "w-[80px] min-w-[80px]" },
-  { key: "pmCost", label: "PM $", group: "labor", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
-  { key: "mfgCost", label: "Mfg $", group: "labor", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
-  { key: "laborCost", label: "Labor $", group: "labor", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
+  { key: "partInvoiced", label: "Parts Invoiced", group: "hours", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "etcEngHours", label: "ETC Eng", group: "etc", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
   { key: "etcShopHours", label: "ETC Shop", group: "etc", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
   { key: "etcPartsCost", label: "ETC Parts", group: "etc", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
-  { key: "partInvoiced", label: "Parts Invoiced", group: "parts", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
+  { key: "pmCost", label: "PM $", group: "labor", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
+  { key: "mfgCost", label: "Mfg $", group: "labor", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
+  { key: "laborCost", label: "Labor $", group: "labor", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "percentComplete", label: "% Complete", group: "sales", type: "number", widthClass: PCT_COL_W },
-  { key: "salesPrice", label: "Sales $", group: "sales", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
-  { key: "startDate", label: "Start", group: "sales", type: "date", widthClass: YEAR_COL_W },
-  { key: "completeDate", label: "Complete", group: "sales", type: "date", widthClass: YEAR_COL_W },
   { key: "profit", label: "Profit", group: "sales", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "margin", label: "Margin", group: "sales", type: "number", widthClass: PCT_COL_W },
 ];
@@ -129,6 +136,9 @@ const WRAP_LABEL: Partial<Record<ColKey, [string, string]>> = {
   partInvoiced: ["Parts", "Invoiced"],
   percentComplete: ["%", "Complete"],
   serviceHours: ["Service &", "Spares*"],
+  salesPrice: ["Sold", "Price"],
+  startDate: ["Sold", "Date"],
+  completeDate: ["Complete", "Date"],
 };
 
 function headerLabel(key: ColKey, label: string) {
@@ -878,7 +888,7 @@ export function JobCostExplorer({
                   the same grouping the table already shows, instead of one
                   undifferentiated wall of checkboxes. */}
               <div className="max-h-[calc(var(--app-vh)_*_0.6)] overflow-y-auto styled-scrollbar">
-                {(["hours", "labor", "etc", "parts", "sales"] as const).map((g) => {
+                {(["sold", "hours", "etc", "labor", "sales"] as const).map((g) => {
                   const cols = COLS.filter((c) => c.group === g);
                   if (cols.length === 0) return null;
                   const shown = cols.filter((c) => !hiddenCols.has(c.key)).length;
@@ -1178,14 +1188,15 @@ export function JobCostExplorer({
                     <td className={`px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("status")} ${zebra}`}>
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-label font-semibold ${statusTone(r.status)}`}>{r.status}</span>
                     </td>
+                    {!hiddenCols.has("salesPrice") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("salesPrice")} ${zebra}`}>{fmtMoney(r.salesPrice)}</td>}
+                    {!hiddenCols.has("startDate") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("startDate")} ${zebra}`} />}
+                    {!hiddenCols.has("completeDate") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("completeDate")} ${zebra}`}>{r.completeDate ? r.completeDate.slice(0, 4) : "—"}</td>}
                     {!hiddenCols.has("actualHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("actualHours")} ${zebra}`}>{fmtNum(r.actualHours)}</td>}
                     {!hiddenCols.has("engineeringHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("engineeringHours")} ${zebra}`}>{fmtNum(r.engineeringHours)}</td>}
                     {!hiddenCols.has("shopHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("shopHours")} ${zebra}`}>{fmtNum(r.shopHours)}</td>}
                     {!hiddenCols.has("otherHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("otherHours")} ${zebra}`}>{r.otherHours ? fmtNum(r.otherHours) : "—"}</td>}
                     {!hiddenCols.has("serviceHours") && <td title={SERVICE_NOTE} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft italic text-sdc-gray-600 ${vBorder("serviceHours")} ${zebra}`}>{r.serviceHours ? fmtNum(r.serviceHours) : "—"}</td>}
-                    {!hiddenCols.has("pmCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("pmCost")} ${zebra}`}>{fmtMoney(r.pmCost)}</td>}
-                    {!hiddenCols.has("mfgCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("mfgCost")} ${zebra}`}>{fmtMoney(r.mfgCost)}</td>}
-                    {!hiddenCols.has("laborCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("laborCost")} ${zebra}`}>{fmtMoney(r.laborCost)}</td>}
+                    {!hiddenCols.has("partInvoiced") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("partInvoiced")} ${zebra}`}>{fmtMoney(r.partInvoiced)}</td>}
                     {!hiddenCols.has("etcEngHours") && (
                       <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("etcEngHours")} ${zebra}`}>
                         {r.etcEngHours == null ? "—" : fmtNum(r.etcEngHours)}
@@ -1201,11 +1212,10 @@ export function JobCostExplorer({
                         {r.etcPartsCost == null ? "—" : fmtMoney(r.etcPartsCost)}
                       </td>
                     )}
-                    {!hiddenCols.has("partInvoiced") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("partInvoiced")} ${zebra}`}>{fmtMoney(r.partInvoiced)}</td>}
+                    {!hiddenCols.has("pmCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("pmCost")} ${zebra}`}>{fmtMoney(r.pmCost)}</td>}
+                    {!hiddenCols.has("mfgCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("mfgCost")} ${zebra}`}>{fmtMoney(r.mfgCost)}</td>}
+                    {!hiddenCols.has("laborCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("laborCost")} ${zebra}`}>{fmtMoney(r.laborCost)}</td>}
                     {!hiddenCols.has("percentComplete") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("percentComplete")} ${zebra}`}>{fmtPct(r.percentComplete)}</td>}
-                    {!hiddenCols.has("salesPrice") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("salesPrice")} ${zebra}`}>{fmtMoney(r.salesPrice)}</td>}
-                    {!hiddenCols.has("startDate") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("startDate")} ${zebra}`}>{r.startDate ? r.startDate.slice(0, 4) : "—"}</td>}
-                    {!hiddenCols.has("completeDate") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("completeDate")} ${zebra}`}>{r.completeDate ? r.completeDate.slice(0, 4) : "—"}</td>}
                     {!hiddenCols.has("profit") && (
                       <td
                         className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("profit")} ${
@@ -1242,22 +1252,22 @@ export function JobCostExplorer({
                 {!hiddenCols.has("customerName") && <td className={`px-2 py-1.5 ${vBorder("customerName")}`} />}
                 {!hiddenCols.has("jobType") && <td className={`px-2 py-1.5 ${vBorder("jobType")}`} />}
                 <td className={`px-2 py-1.5 ${vBorder("status")}`} />
+                {!hiddenCols.has("salesPrice") && <td className={`px-2 py-1.5 text-right ${vBorder("salesPrice")}`}>{fmtMoney(totals.salesPrice)}</td>}
+                {!hiddenCols.has("startDate") && <td className={`px-2 py-1.5 ${vBorder("startDate")}`} />}
+                {!hiddenCols.has("completeDate") && <td className={`px-2 py-1.5 ${vBorder("completeDate")}`} />}
                 {!hiddenCols.has("actualHours") && <td className={`px-2 py-1.5 text-right ${vBorder("actualHours")}`}>{fmtNum(totals.actualHours)}</td>}
                 {!hiddenCols.has("engineeringHours") && <td className={`px-2 py-1.5 text-right ${vBorder("engineeringHours")}`}>{fmtNum(totals.engineeringHours)}</td>}
                 {!hiddenCols.has("shopHours") && <td className={`px-2 py-1.5 text-right ${vBorder("shopHours")}`}>{fmtNum(totals.shopHours)}</td>}
                 {!hiddenCols.has("otherHours") && <td className={`px-2 py-1.5 text-right ${vBorder("otherHours")}`}>{fmtNum(totals.otherHours)}</td>}
                 {!hiddenCols.has("serviceHours") && <td title={SERVICE_NOTE} className={`px-2 py-1.5 text-right italic text-sdc-gray-600 ${vBorder("serviceHours")}`}>{fmtNum(totals.serviceHours)}</td>}
-                {!hiddenCols.has("pmCost") && <td className={`px-2 py-1.5 text-right ${vBorder("pmCost")}`}>{fmtMoney(totals.pmCost)}</td>}
-                {!hiddenCols.has("mfgCost") && <td className={`px-2 py-1.5 text-right ${vBorder("mfgCost")}`}>{fmtMoney(totals.mfgCost)}</td>}
-                {!hiddenCols.has("laborCost") && <td className={`px-2 py-1.5 text-right ${vBorder("laborCost")}`}>{fmtMoney(totals.laborCost)}</td>}
+                {!hiddenCols.has("partInvoiced") && <td className={`px-2 py-1.5 text-right ${vBorder("partInvoiced")}`}>{fmtMoney(totals.partInvoiced)}</td>}
                 {!hiddenCols.has("etcEngHours") && <td className={`px-2 py-1.5 text-right ${vBorder("etcEngHours")}`}>{fmtNum(totals.etcEngHours)}</td>}
                 {!hiddenCols.has("etcShopHours") && <td className={`px-2 py-1.5 text-right ${vBorder("etcShopHours")}`}>{fmtNum(totals.etcShopHours)}</td>}
                 {!hiddenCols.has("etcPartsCost") && <td className={`px-2 py-1.5 text-right ${vBorder("etcPartsCost")}`}>{fmtMoney(totals.etcPartsCost)}</td>}
-                {!hiddenCols.has("partInvoiced") && <td className={`px-2 py-1.5 text-right ${vBorder("partInvoiced")}`}>{fmtMoney(totals.partInvoiced)}</td>}
+                {!hiddenCols.has("pmCost") && <td className={`px-2 py-1.5 text-right ${vBorder("pmCost")}`}>{fmtMoney(totals.pmCost)}</td>}
+                {!hiddenCols.has("mfgCost") && <td className={`px-2 py-1.5 text-right ${vBorder("mfgCost")}`}>{fmtMoney(totals.mfgCost)}</td>}
+                {!hiddenCols.has("laborCost") && <td className={`px-2 py-1.5 text-right ${vBorder("laborCost")}`}>{fmtMoney(totals.laborCost)}</td>}
                 {!hiddenCols.has("percentComplete") && <td className={`px-2 py-1.5 ${vBorder("percentComplete")}`} />}
-                {!hiddenCols.has("salesPrice") && <td className={`px-2 py-1.5 text-right ${vBorder("salesPrice")}`}>{fmtMoney(totals.salesPrice)}</td>}
-                {!hiddenCols.has("startDate") && <td className={`px-2 py-1.5 ${vBorder("startDate")}`} />}
-                {!hiddenCols.has("completeDate") && <td className={`px-2 py-1.5 ${vBorder("completeDate")}`} />}
                 {!hiddenCols.has("profit") && (
                   <td className={`px-2 py-1.5 text-right ${vBorder("profit")} ${totals.profit != null && totals.profit >= 0 ? "text-sdc-green-text" : "text-sdc-red-text"}`}>{fmtMoney(totals.profit)}</td>
                 )}
