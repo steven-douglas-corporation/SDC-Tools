@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { registerEtcField, forgetEtcField, updateEtcField, adoptEtcFieldBaseline } from "@/lib/etc-dirty-tracker";
 import { PARTS_COL_W } from "@/components/ui/classnames";
 import { manualOverrideStyle } from "@/components/ui/etc-diff-colors";
@@ -236,8 +237,15 @@ export function PartsBreakoutCell({
     const shownText = editing ? draft : shownNum === null || !Number.isFinite(shownNum) ? "" : usd(shownNum);
     const openMenu = (el: HTMLElement) => {
       if (locked || editing) return;
+      // Anchored just under the cell (above it when there is no room below), and kept on
+      // screen. The menu is portalled to <body> below: the grid sits inside a transformed
+      // scroller, which makes `position: fixed` resolve against IT, not the viewport.
       const r = el.getBoundingClientRect();
-      setMenu({ top: r.bottom + 4, left: r.left });
+      const W = 176;
+      const H = 92;
+      const top = r.bottom + 4 + H > window.innerHeight ? Math.max(8, r.top - 4 - H) : r.bottom + 4;
+      const left = Math.min(Math.max(8, r.left), window.innerWidth - W - 8);
+      setMenu({ top, left });
     };
     const startChange = () => {
       setMenu(null);
@@ -308,29 +316,36 @@ export function PartsBreakoutCell({
           aria-label={`${label}, ${jobName}${pending ? " (pending approval)" : " (approved)"}`}
           className={`w-full rounded-md border-none bg-transparent px-1.5 py-0 text-center text-label font-bold leading-none text-sdc-gray-700 outline-none focus:bg-white focus:shadow-sm ${editing ? "" : "cursor-pointer"}`}
         />
-        {menu && (
-          <div
-            data-ltp-menu
-            role="menu"
-            style={{ position: "fixed", top: menu.top, left: menu.left, zIndex: 60 }}
-            className="flex min-w-[9rem] flex-col rounded-md border border-sdc-border bg-white py-1 text-left text-label shadow-lg"
-          >
-            <button type="button" role="menuitem" className="px-3 py-1.5 text-left hover:bg-sdc-gray-100" onClick={startChange}>
-              Change
-            </button>
-            {pending && (
+        {menu &&
+          createPortal(
+            <div
+              data-ltp-menu
+              role="menu"
+              style={{ position: "fixed", top: menu.top, left: menu.left, zIndex: 1000, width: 176 }}
+              className="flex flex-col gap-1 rounded-lg border border-sdc-border bg-white p-1.5 text-left shadow-xl"
+            >
               <button
                 type="button"
                 role="menuitem"
-                disabled={shownNum === null}
-                className="px-3 py-1.5 text-left font-bold hover:bg-sdc-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-                onClick={approve}
+                className="rounded-md px-3 py-2 text-left text-sm font-semibold text-sdc-gray-700 hover:bg-sdc-gray-100"
+                onClick={startChange}
               >
-                Approve
+                Change
               </button>
-            )}
-          </div>
-        )}
+              {pending && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={shownNum === null}
+                  className="rounded-md bg-[#2E7D32] px-3 py-2 text-left text-sm font-bold text-white hover:bg-[#1B5E20] disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={approve}
+                >
+                  Approve
+                </button>
+              )}
+            </div>,
+            document.body,
+          )}
       </td>
     );
   }
