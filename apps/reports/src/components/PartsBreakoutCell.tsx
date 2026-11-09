@@ -259,6 +259,12 @@ export function PartsBreakoutCell({
       if (shownNum === null || !Number.isFinite(shownNum)) return;
       commitValue(String(shownNum));
     };
+    // Back to the original: drop the approved/changed figure so the cell shows the
+    // calculation again, light orange, and New ETC goes blank until it is re-approved.
+    const reset = () => {
+      setMenu(null);
+      commitValue("");
+    };
     const finishEdit = () => {
       setFocused(false);
       setEditing(false);
@@ -308,7 +314,7 @@ export function PartsBreakoutCell({
             touched.current = true;
             setDraft(next);
           }}
-          title={pending ? seedHint : `${label} — ${jobName}. Approved. Click to change it; New ETC is Left to Invoice + this.`}
+          title={pending ? seedHint : `${label} — ${jobName}. Approved. Click to Change or Reset it; New ETC is Left to Invoice + this.`}
           disabled={locked}
           aria-label={`${label}, ${jobName}${pending ? " (pending approval)" : " (approved)"}`}
           className={`w-full rounded-md border-none bg-transparent px-1.5 py-0 text-center text-label font-bold leading-none text-sdc-gray-700 outline-none focus:bg-white focus:shadow-sm ${editing ? "" : "cursor-pointer"}`}
@@ -329,6 +335,17 @@ export function PartsBreakoutCell({
             >
               Change
             </button>
+            {!pending && (
+              <button
+                type="button"
+                role="menuitem"
+                title="Go back to the calculated figure and pending (orange) status"
+                className="rounded-md px-3 py-2 text-left text-sm font-semibold text-[#B45309] hover:bg-[#FFF4DC]"
+                onClick={reset}
+              >
+                Reset
+              </button>
+            )}
             {pending && (
               <button
                 type="button"
