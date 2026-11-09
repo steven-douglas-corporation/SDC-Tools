@@ -7176,3 +7176,21 @@ suppliers, receipts and `PurchaseDetailID`s), and the real tree builder does the
 tree building moved out of `getJobBomResult` into a pure `buildJobBom` so both paths share
 it. Two sections, four sub-assemblies, plus parts with no PO, pulled from stock, built
 in-house and on hold. Production never sets the flag.
+
+## 85. Open POs: cards, and a PO panel that reads the BOM for one PO (2026-11-09)
+
+By project and By supplier are now ListCards (§84) instead of tables: per job or vendor, a
+status badge (late N days / on schedule / all received), the received bar with the selected
+tile's figure beside it, and its POs (PO #, expected, the selected tile's amount, a status
+dot that is red only when late). The view switch and the "Only partially received" toggle
+moved up under the tiles. All POs stays the searchable DataTable. Lost against the tables:
+the Total row (the tiles carry those totals) and all five measures per job on one line.
+
+Clicking a PO (card row, All POs row or Late POs row) opens a panel with its lines, money
+and dates, which the page already has (`OpenPoRow.items`). Where each part sits in the BOM
+(assembly, needed-by date, hold) is the part Job Details' PO panel has and this page does not:
+Open POs reads only PO lines, and a BOM walk is per job and can take ~100s for a large one,
+so loading every job's BOM up front was ruled out. Total ETO takes any query; the cost is the
+BOM walk's per-row subqueries. So `lib/open-po-bom.ts` asks for one PO, when its panel opens:
+the BOM rows whose part is on that PO, in the job the line charges. Not run against real
+Total ETO yet; dev answers from the fake BOM.
