@@ -181,6 +181,21 @@ test("job shares add up to the PO, and the chart adds up to Not yet received", (
   assert.equal(r.weeks.find((w) => w.key === "no-date")!.notReceived, 50);
 });
 
+test("each PO carries its lines for the PO panel, and they add up to the PO", () => {
+  const lines = new Map([
+    ["1101", [line({ po: "P", total: 300, posted: 100, quantity: 3, unitPrice: 100, receivedQty: 1, requiredDate: "2026-10-01", expectedDate: "2026-11-20" })]],
+    ["1102", [line({ po: "P", total: 50, quantity: 1, unitPrice: 50, receivedQty: 0 })]],
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY).rows[0];
+  assert.equal(r.items.length, 2);
+  assert.deepEqual(r.items.map((i) => i.jobId), ["1101", "1102"]);
+  assert.ok(r.items.every((i) => i.lineId.startsWith("pod:")));
+  assert.equal(r.items.reduce((s, i) => s + i.leftToInvoice, 0), r.leftToInvoice);
+  // The re-promised date is what the panel shows as expected; the original is kept for ↻.
+  assert.equal(r.items[0].expected, "2026-11-20");
+  assert.equal(r.items[0].original, "2026-10-01");
+});
+
 test("jobs not in the loaded set are ignored", () => {
   const r = buildOpenPos(new Map([["9999", [line({ po: "X", total: 10 })]]]), JOBS, TODAY);
   assert.equal(r.rows.length, 0);
