@@ -7239,3 +7239,6 @@ outstanding date, which is a late one whenever anything is late and made it repe
 The extra column squeezed the PO number to "DEV..." at five cards a row, too narrow even for
 a real 6-digit PO (measured: 31px needed, 25px given). Cards are now at least 340px, four a
 row on a 1600px screen, which leaves the PO column 92px.
+The "Value not yet received, by week expected" chart moved to the top, under the page title,
+above the tiles: the timeline reads first, and the tiles now sit with the view switch and the
+cards they filter.

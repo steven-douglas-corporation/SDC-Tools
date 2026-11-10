@@ -560,6 +560,10 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
   return (
     <div className="flex flex-col gap-5">
+      {/* The timeline leads: when the value still to arrive lands, before the totals that
+          filter the cards. */}
+      <WeekChart weeks={data.weeks} />
+
       <section aria-label="Totals. Choose one to list those POs" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {tiles.map((t) => {
           const on = t.id === metric;
@@ -648,8 +652,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           </label>
         )}
       </div>
-
-      <WeekChart weeks={data.weeks} />
 
       <div className="flex flex-wrap items-center gap-3">
         <div role="status" className="flex min-h-10 flex-1 flex-wrap items-center gap-2.5 text-sm">
