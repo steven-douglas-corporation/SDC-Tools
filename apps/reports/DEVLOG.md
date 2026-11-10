@@ -7219,7 +7219,9 @@ amounts and counts biggest first; second click reverses), and the order is share
 card. ListCard does the sorting (optional `sortValue` per column, `sort`/`onSort` from the
 page) with DataTable's `sortRows`, so blanks go last both ways. "Group by supplier" (project
 cards) splits each card's POs under collapsible supplier headers, ListCard's optional
-`groupBy`. Job Details passes neither, so its cards are unchanged.
+`groupBy`. Job Details passes neither, so its cards are unchanged. Ungrouped project cards
+also get a Supplier column (it takes the leftover width, truncating with the full name on
+hover); grouped cards and supplier cards don't need it.
 
 The dev fake feed gave each PO line its own random supplier, so a PO read "Umbrella, Globex,
 Hooli" and supplier groups were meaningless; each fake PO now has one supplier, as a real PO

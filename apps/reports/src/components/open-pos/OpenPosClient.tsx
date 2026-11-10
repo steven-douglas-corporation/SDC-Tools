@@ -316,7 +316,7 @@ function groupCard(pos: CardPo[], metric: MetricId) {
 
 // The PO columns' sort. The first click sorts text and dates A→Z / soonest first, and
 // amounts and counts biggest first; the second click reverses.
-const PO_SORT_FIRST: Record<string, SortDir> = { po: "asc", lines: "desc", expected: "asc", received: "desc", status: "asc" };
+const PO_SORT_FIRST: Record<string, SortDir> = { po: "asc", supplier: "asc", lines: "desc", expected: "asc", received: "desc", status: "asc" };
 function nextPoSort(cur: ListCardSort | null, id: string): ListCardSort {
   if (cur?.id === id) return { id, dir: cur.dir === "asc" ? "desc" : "asc" };
   return { id, dir: PO_SORT_FIRST[id] ?? "asc" };
@@ -364,6 +364,7 @@ function OpenPoCard({
   poSort,
   onPoSort,
   bySupplier,
+  supplierColumn,
 }: {
   title: ReactNode;
   titleTip: string;
@@ -377,13 +378,18 @@ function OpenPoCard({
   poSort: ListCardSort | null;
   onPoSort: (id: string) => void;
   bySupplier?: boolean;
+  /** Project cards, ungrouped: a Supplier column. Supplier cards are the supplier already. */
+  supplierColumn?: boolean;
 }) {
   const p = pct(money.received, money.ordered);
+  const supplierOf = ({ row }: CardPo) => row.suppliers.join(", ") || "No supplier";
   const columns: ListCardColumn<CardPo>[] = [
     {
       id: "po",
       header: "PO #",
       headerTitle: TIP.po,
+      // With a Supplier column, that column takes the leftover width and the PO # fits its text.
+      width: supplierColumn ? "auto" : undefined,
       sortValue: ({ row }) => row.poNumber,
       render: ({ row }) => (
         <span className="block truncate font-mono text-note font-semibold text-sdc-navy" title={poTip(row)}>
@@ -391,6 +397,22 @@ function OpenPoCard({
         </span>
       ),
     },
+    ...(supplierColumn
+      ? [
+          {
+            id: "supplier",
+            header: "Supplier",
+            headerTitle: TIP.supplier,
+            width: "minmax(0, 1fr)",
+            sortValue: supplierOf,
+            render: (po: CardPo) => (
+              <span className="block truncate text-label text-sdc-gray-600" title={supplierOf(po)}>
+                {supplierOf(po)}
+              </span>
+            ),
+          } satisfies ListCardColumn<CardPo>,
+        ]
+      : []),
     {
       id: "lines",
       header: "Lines",
@@ -443,7 +465,6 @@ function OpenPoCard({
     },
   ];
   const chip = cardChip(money.late, oldestLate, money.ordered, money.notReceived);
-  const supplierOf = ({ row }: CardPo) => row.suppliers.join(", ") || "No supplier";
   return (
     <ListCard
       title={title}
@@ -692,6 +713,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 oldestLate={p.oldestLate}
                 pos={p.pos}
                 bySupplier={bySupplier}
+                supplierColumn={!bySupplier}
                 onOpenPo={setOpenPo}
                 poSort={poSort}
                 onPoSort={onPoSort}
