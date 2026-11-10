@@ -96,7 +96,9 @@ export function fakePartsLines(jobId: string): PartsCostLine[] {
       requiredDate: ymd(required),
       expectedDate: ymd(expected),
       receivedQty,
-      supplier: SUPPLIERS[Math.floor(rand() * SUPPLIERS.length)],
+      // One supplier per PO (lines i, i+1, i+2 share a PO number below), as on a real PO. The
+      // draw is kept and discarded so every later rand() value, and every figure, is unchanged.
+      supplier: (rand(), SUPPLIERS[(n + Math.floor(i / 3)) % SUPPLIERS.length]),
       manufacturer: null,
       category: CATEGORIES[Math.floor(rand() * CATEGORIES.length)],
       poNumber: `DEV-PO-${n}-${100 + Math.floor(i / 3)}`,

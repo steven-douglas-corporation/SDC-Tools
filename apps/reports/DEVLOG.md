@@ -7205,14 +7205,28 @@ which read as calendar weeks but moved every day. This week's bar collects today
 ## 86. Open POs: lines-received counts and a card sort (2026-11-10)
 
 Asked for: how many parts have arrived, and a way to order the project cards. Each card's
-subtitle now says "12 of 21 lines received" and each PO row has a Received column ("2/3"),
+subtitle now says "12 of 21 lines received" and each PO row has a Lines column ("2/3"),
 like Job Details' cards. Counted in PO lines, not pieces (pieces are in the hover text): a
 line counts once all of it has arrived, credits have nothing to receive, and a project card
 counts only its own lines of a PO split across jobs (lineCounts in open-pos-rules.ts, the
 same rule as a PO's linesReceived/linesReceivable).
 
-A Sort menu beside the view switch orders the cards (and the POs inside them): Amount (the
-selected tile, the default), Job number / Supplier name, Most late, and Soonest expected.
+The PO list inside a card is now PO #, Lines, Expected, Received (value at PO price) and the
+status dot. The column that followed the selected tile (Left to invoice by default) is gone:
+the value received was the more useful figure there, and the card's bar still carries the
+tile's total. Every column header sorts the POs (first click: text and dates A to Z / soonest,
+amounts and counts biggest first; second click reverses), and the order is shared by every
+card. ListCard does the sorting (optional `sortValue` per column, `sort`/`onSort` from the
+page) with DataTable's `sortRows`, so blanks go last both ways. "Group by supplier" (project
+cards) splits each card's POs under collapsible supplier headers, ListCard's optional
+`groupBy`. Job Details passes neither, so its cards are unchanged.
+
+The dev fake feed gave each PO line its own random supplier, so a PO read "Umbrella, Globex,
+Hooli" and supplier groups were meaningless; each fake PO now has one supplier, as a real PO
+does. The random draw is kept and discarded, so every other fake figure is unchanged.
+
+A "Sort cards" menu beside the view switch orders the cards: Amount (the selected tile, the
+default), Job number / Supplier name, Most late, and Soonest expected.
 Soonest expected uses the next delivery from today on (
 extUpcoming), not the earliest
 outstanding date, which is a late one whenever anything is late and made it repeat Most late.
