@@ -318,7 +318,7 @@ test("Service & Spares hours are display-only: no cost, profit, margin or ETC fi
   }
 });
 
-test("Service & Spares: bucketed by the Projects grid's own test, kept out of Total Hrs and Other Hrs, and shown after Other Hrs", async () => {
+test("Service & Spares: bucketed by the Projects grid's own test, kept out of Total Hrs and Other Hrs, and not shown as a Profitability column", async () => {
   const { readFileSync } = await import("node:fs");
   const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
   const source = read("src/lib/job-cost-source.ts");
@@ -327,7 +327,7 @@ test("Service & Spares: bucketed by the Projects grid's own test, kept out of To
   assert.ok(add.indexOf("e.serviceHours += hrs") < add.indexOf("e.actualHours += hrs"));
   assert.match(add, /!SECTION_CODES\.has\(section\) && isServiceOrSparePartsCode\(section\)/);
   const explorer = read("src/components/JobCostExplorer.tsx");
-  assert.ok(explorer.indexOf('key: "otherHours", label') < explorer.indexOf('key: "serviceHours", label'));
-  assert.match(explorer, /excluded from Total Hrs and from every calculation/);
-  assert.match(explorer, /title=\{c\.key === "serviceHours" \? SERVICE_NOTE : undefined\}/);
+  // Profitability no longer shows Total Hrs or Service & Spares columns (2026-11-10); the data stays in the row.
+  assert.doesNotMatch(explorer, /key: "serviceHours", label/);
+  assert.doesNotMatch(explorer, /key: "actualHours", label/);
 });
