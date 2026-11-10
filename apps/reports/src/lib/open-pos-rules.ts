@@ -180,6 +180,64 @@ export function lineCounts(items: readonly OpenPoLine[], jobId?: string): LineCo
 }
 
 /**
+ * A PO's dates for the timeline, from its next line to arrive (pass `jobId` for one job's
+ * lines of a split PO): the outstanding line with the earliest expected date, when it is
+ * expected now, when that SAME line was originally due, and whether it was re-promised.
+ * Taking both dates from one line is the point: the earliest original date among all lines
+ * can belong to a different line, which would show a slip that never happened.
+ * `outstanding` is false when everything has arrived (the PO has no place on the timeline).
+ */
+export function poDates(items: readonly OpenPoLine[], jobId?: string): { outstanding: boolean; expected: string | null; original: string | null; revised: boolean } {
+  let next: OpenPoLine | null = null;
+  let outstanding = false;
+  for (const i of items) {
+    if (i.quantity <= 0 || (jobId != null && i.jobId !== jobId)) continue;
+    if (i.receivedQty != null && i.receivedQty >= i.quantity) continue;
+    outstanding = true;
+    if (i.expected && (!next?.expected || i.expected < next.expected)) next = i;
+  }
+  const expected = next?.expected ?? null;
+  const original = next?.original ?? null;
+  return { outstanding, expected, original, revised: !!(expected && original && expected !== original) };
+}
+
+export type TimelineSlot = { lane: "late" | "track" | "later" | "none"; pct: number };
+
+/**
+ * Where a date sits on the timeline: `weeks` calendar weeks from `weekStart` (a Monday) form
+ * the track, `pct` across it; earlier dates go in the Late column, later ones in Later, and
+ * no date in "none". A date earlier this week is still on the track, left of the Today line.
+ */
+export function timelineSlot(day: string | null, weekStart: string, weeks: number): TimelineSlot {
+  if (!day) return { lane: "none", pct: 0 };
+  const d = daysBetween(weekStart, day);
+  if (d < 0) return { lane: "late", pct: 0 };
+  if (d >= weeks * 7) return { lane: "later", pct: 100 };
+  return { lane: "track", pct: ((d + 0.5) / (weeks * 7)) * 100 };
+}
+
+/**
+ * Stacks markers that would overlap. Each marker is a span in % of the track: a dot is a
+ * single point; a re-promised PO runs from where it was first due to where it is expected
+ * now, so no other dot lands on its line and looks connected. Each goes on the first line
+ * whose last span ends at least `gap` before it starts. Returns the line for each, in order.
+ */
+export function stackLines(spans: readonly (number | { from: number; to: number })[], gap: number): number[] {
+  const order = spans
+    .map((s, i) => (typeof s === "number" ? { from: s, to: s, i } : { from: Math.min(s.from, s.to), to: Math.max(s.from, s.to), i }))
+    .sort((a, b) => a.from - b.from);
+  const endOfLine: number[] = [];
+  const line = new Array<number>(spans.length);
+  for (const { from, to, i } of order) {
+    let l = endOfLine.findIndex((end) => from - end >= gap);
+    if (l < 0) l = endOfLine.push(to) - 1;
+    else endOfLine[l] = to;
+    line[i] = l;
+  }
+  return line;
+}
+
+/**
  * The next delivery still to come: the earliest expected date, today or later, among lines
  * not yet fully received. Late lines are left out, so "soonest expected" is not just "most
  * late" again. Pass `jobId` for one job's lines of a split PO.

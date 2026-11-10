@@ -7242,3 +7242,25 @@ row on a 1600px screen, which leaves the PO column 92px.
 The "Value not yet received, by week expected" chart moved to the top, under the page title,
 above the tiles: the timeline reads first, and the tiles now sit with the view switch and the
 cards they filter.
+## 87. Open POs: a Timeline view (2026-11-10)
+
+Asked for: a supplier timeline like the Scheduler's, of when POs are expected for which
+project, with when they were due beside it. A fourth view, Timeline, beside By project / By
+supplier / All POs (components/open-pos/PoTimeline.tsx), laid out like the Scheduler's
+Financial Milestones timeline: month and week header, a dashed Today line, one row per
+project (or per supplier, "Rows: Projects / Suppliers"). Rows follow the same filters (tiles,
+Only partially received) and the same "Sort rows" menu as the cards.
+
+Each PO still to arrive is a dot at its expected date: red late, yellow partly received,
+blue on schedule, hollow when Total ETO has no date (in Later). Calendar weeks from this
+Monday, 12 of them, the same weeks as the chart; earlier dates sit in a Late column, later
+ones in Later. A PO the vendor re-promised also shows a hollow ring where it was first due,
+joined by a line to its dot (at the track's edge when that date is outside the weeks shown).
+Hover a dot for the PO, the other side (supplier or job), the dates and the value still to
+arrive; click it to open the PO panel. No new query: every PO already carries its lines.
+
+The dates come from one line: the PO's next line to arrive, its expected date and that same
+line's original date (poDates). Taking the earliest original among all the PO's lines
+could pair one line's due date with another line's expected date and draw a slip that never
+happened. Dots that would overlap stack onto new lines (stackLines); a re-promised PO
+counts its whole line, so no other dot lands on it and looks connected.

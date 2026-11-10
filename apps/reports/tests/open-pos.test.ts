@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import { lineLeftToInvoice } from "../src/lib/left-to-invoice";
-import { buildOpenPos, lineCounts, nextUpcoming, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
+import { buildOpenPos, lineCounts, nextUpcoming, poDates, stackLines, timelineSlot, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
 
 // Open POs: a PO is open when its signed Left to Invoice is not $0.00, the Parts List's own
 // filter applied per PO. Receipts only decide the Status column.
@@ -264,6 +264,43 @@ test("next delivery to come skips late and fully received lines", () => {
   assert.equal(nextUpcoming(r.items, TODAY), "2026-11-12");
   assert.equal(nextUpcoming(r.items, TODAY, "1101"), "2026-11-20");
   assert.equal(nextUpcoming(r.items, "2026-12-01"), null);
+});
+
+test("timeline dates come from the next line to arrive: expected and original from the same line", () => {
+  const lines = new Map([
+    [
+      "1101",
+      [
+        line({ po: "D", total: 10, receivedQty: 0, requiredDate: "2026-10-01", expectedDate: "2026-11-20" }), // re-promised
+        line({ po: "D", total: 10, receivedQty: 1, requiredDate: "2026-09-01" }), // here: ignored
+      ],
+    ],
+    ["1102", [line({ po: "D", total: 10, receivedQty: 0, requiredDate: "2026-11-12" })]],
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY).rows[0];
+  // The next line is 1102's (Nov 12, never moved). The re-promised line's Oct 1 is NOT its original.
+  assert.deepEqual(poDates(r.items), { outstanding: true, expected: "2026-11-12", original: "2026-11-12", revised: false });
+  assert.deepEqual(poDates(r.items, "1101"), { outstanding: true, expected: "2026-11-20", original: "2026-10-01", revised: true });
+  assert.deepEqual(poDates(r.items, "1102"), { outstanding: true, expected: "2026-11-12", original: "2026-11-12", revised: false });
+  const done = buildOpenPos(new Map([["1101", [line({ po: "E", total: 10, posted: 5, receivedQty: 1, requiredDate: "2026-10-01" })]]]), JOBS, TODAY).rows[0];
+  assert.equal(poDates(done.items).outstanding, false);
+});
+
+test("timeline slots: Late before this Monday, the track for the weeks shown, Later after", () => {
+  const monday = "2026-11-02";
+  assert.deepEqual(timelineSlot("2026-11-01", monday, 12), { lane: "late", pct: 0 });
+  assert.equal(timelineSlot("2026-11-02", monday, 12).lane, "track"); // earlier this week: still on the track
+  assert.ok(Math.abs(timelineSlot("2026-11-02", monday, 12).pct - (0.5 / 84) * 100) < 1e-9);
+  assert.equal(timelineSlot("2027-01-24", monday, 12).lane, "track"); // last day shown
+  assert.deepEqual(timelineSlot("2027-01-25", monday, 12), { lane: "later", pct: 100 });
+  assert.deepEqual(timelineSlot(null, monday, 12), { lane: "none", pct: 0 });
+});
+
+test("dots too close together stack onto new lines; far apart ones share the first", () => {
+  assert.deepEqual(stackLines([10, 10.5, 11, 30], 1.6), [0, 1, 2, 0]);
+  assert.deepEqual(stackLines([50, 10, 12], 1.6), [0, 0, 0]);
+  // A re-promised PO's line (0% to 40%) keeps other dots off it, so none looks connected.
+  assert.deepEqual(stackLines([{ from: 0, to: 40 }, 20, 60], 1.6), [0, 1, 0]);
 });
 
 test("jobs not in the loaded set are ignored", () => {
