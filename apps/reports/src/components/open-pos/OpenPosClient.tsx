@@ -316,7 +316,7 @@ function groupCard(pos: CardPo[], metric: MetricId) {
 
 // The PO columns' sort. The first click sorts text and dates A→Z / soonest first, and
 // amounts and counts biggest first; the second click reverses.
-const PO_SORT_FIRST: Record<string, SortDir> = { po: "asc", supplier: "asc", lines: "desc", expected: "asc", received: "desc", status: "asc" };
+const PO_SORT_FIRST: Record<string, SortDir> = { po: "asc", supplier: "asc", lines: "desc", expected: "asc", status: "asc" };
 function nextPoSort(cur: ListCardSort | null, id: string): ListCardSort {
   if (cur?.id === id) return { id, dir: cur.dir === "asc" ? "desc" : "asc" };
   return { id, dir: PO_SORT_FIRST[id] ?? "asc" };
@@ -348,7 +348,8 @@ function cardChip(late: number, oldestLate: number, ordered: number, notReceived
 
 // One card per job or vendor, on the shared ListCard (the same card as Job Details' Parts
 // card view): who it is, one status badge, how much has arrived with the selected tile's
-// figure beside it, then its POs: PO #, lines received, expected, value received, status.
+// figure beside it, then its POs: PO #, supplier (project cards), lines received, expected,
+// status. Value received is on the bar's hover, not a column.
 // The PO columns sort on click, one order shared by every card; project cards can group
 // their POs under each supplier.
 function OpenPoCard({
@@ -435,21 +436,6 @@ function OpenPoCard({
         <span className={`font-mono text-label ${m.late > 0 ? "text-sdc-red-text" : "text-sdc-gray-600"}`} title={expectedTip(row, m.notReceived)}>
           {row.nextDue ? fmtDate(row.nextDue) : m.notReceived > 0 ? "No date" : "Here"}
           {row.revised && <span className="text-sdc-blue"> ↻</span>}
-        </span>
-      ),
-    },
-    {
-      id: "received",
-      header: "Received",
-      headerTitle: "Value received so far, at PO price",
-      align: "right",
-      sortValue: ({ money: m }) => m.received,
-      render: ({ money: m }) => (
-        <span
-          className="text-label font-semibold tabular-nums text-sdc-navy"
-          title={`${usdExact(m.received)} of ${usdExact(m.ordered)} received (${pct(m.received, m.ordered)}%), at PO price`}
-        >
-          {m.received === 0 ? "–" : usd(m.received)}
         </span>
       ),
     },

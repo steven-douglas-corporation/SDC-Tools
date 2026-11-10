@@ -7211,10 +7211,10 @@ line counts once all of it has arrived, credits have nothing to receive, and a p
 counts only its own lines of a PO split across jobs (lineCounts in open-pos-rules.ts, the
 same rule as a PO's linesReceived/linesReceivable).
 
-The PO list inside a card is now PO #, Lines, Expected, Received (value at PO price) and the
-status dot. The column that followed the selected tile (Left to invoice by default) is gone:
-the value received was the more useful figure there, and the card's bar still carries the
-tile's total. Every column header sorts the POs (first click: text and dates A to Z / soonest,
+The PO list inside a card is now PO #, Supplier (ungrouped project cards), Lines, Expected
+and the status dot. The column that followed the selected tile (Left to invoice by default)
+is gone, and so is a value-received column that briefly replaced it: neither earned its
+width. The card's bar still carries the tile's total, and its hover the value received. Every column header sorts the POs (first click: text and dates A to Z / soonest,
 amounts and counts biggest first; second click reverses), and the order is shared by every
 card. ListCard does the sorting (optional `sortValue` per column, `sort`/`onSort` from the
 page) with DataTable's `sortRows`, so blanks go last both ways. "Group by supplier" (project
