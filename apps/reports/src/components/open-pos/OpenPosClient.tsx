@@ -7,7 +7,18 @@ import { OpenPoPanel } from "@/components/open-pos/OpenPoPanel";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
-import { addDays, weekRange, type OpenPoMoney, type OpenPoRow, type OpenPosResult, type OpenPoWeek } from "@/lib/open-pos-rules";
+import {
+  addCounts,
+  addDays,
+  lineCounts,
+  nextUpcoming,
+  weekRange,
+  type LineCounts,
+  type OpenPoMoney,
+  type OpenPoRow,
+  type OpenPosResult,
+  type OpenPoWeek,
+} from "@/lib/open-pos-rules";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 
 // For managers first (the Scheduler's Vendor POs page is the buyers' worklist).
@@ -19,6 +30,12 @@ import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 
 type MetricId = "late" | "notReceived" | "next4Weeks" | "receivedNotInvoiced" | "leftToInvoice";
 type View = "projects" | "suppliers" | "list";
+type CardSort = "amount" | "name" | "late" | "soonest";
+
+const NO_COUNTS: LineCounts = { lines: 0, received: 0, pieces: 0, piecesReceived: 0 };
+const countsText = (c: LineCounts) => `${c.received} of ${c.lines} ${c.lines === 1 ? "line" : "lines"} received`;
+const countsTip = (c: LineCounts) =>
+  `${c.received} of ${c.lines} PO lines fully received (${c.piecesReceived} of ${c.pieces} pieces). A line counts once all of it has arrived`;
 
 const METRICS: { id: MetricId; label: string; short: string; hint: string }[] = [
   { id: "late", label: "Late", short: "Late", hint: "Not yet received, on lines past their expected date" },
@@ -258,7 +275,50 @@ const LIST_COLUMNS: DataTableColumn<OpenPoRow>[] = [
   },
 ];
 
-type CardPo = { row: OpenPoRow; money: OpenPoMoney };
+/** One PO on a card. `upcoming`: its next delivery from today on (see nextUpcoming). */
+type CardPo = { row: OpenPoRow; money: OpenPoMoney; counts: LineCounts; upcoming: string | null };
+
+// The card Sort menu. Ties fall back to the selected tile's amount, biggest first.
+const SORTS: { id: CardSort; label: string; tip: string }[] = [
+  { id: "amount", label: "Amount", tip: "Biggest first, by the selected tile" },
+  { id: "name", label: "Job number / name", tip: "Projects by job number, suppliers by name" },
+  { id: "late", label: "Most late", tip: "The card with the oldest late line first" },
+  { id: "soonest", label: "Soonest expected", tip: "The card whose next delivery (today or later) is soonest first. Late lines don't count here; use Most late for those" },
+];
+type CardOrderable = { totals: Record<MetricId, number>; oldestLate: number; soonest: string | null };
+const byDay = (a: string | null, b: string | null) => (a ?? "9999").localeCompare(b ?? "9999");
+
+function cardOrder(sort: CardSort, metric: MetricId, a: CardOrderable, b: CardOrderable, byName: () => number): number {
+  const amount = b.totals[metric] - a.totals[metric];
+  if (sort === "name") return byName();
+  if (sort === "late") return b.oldestLate - a.oldestLate || amount;
+  if (sort === "soonest") return byDay(a.soonest, b.soonest) || amount;
+  return amount;
+}
+
+// A card's figures from its POs (each PO's money and line counts already cut to the card).
+function groupCard(pos: CardPo[], sort: CardSort, metric: MetricId) {
+  const ms = pos.map((p) => p.money);
+  const due = pos.map((p) => p.upcoming).filter((d): d is string => !!d);
+  return {
+    pos: [...pos].sort((a, b) => poOrder(sort, metric, a, b)),
+    ordered: ms.reduce((s, m) => s + m.ordered, 0),
+    received: ms.reduce((s, m) => s + m.received, 0),
+    totals: Object.fromEntries(METRICS.map((m) => [m.id, sumMoney(ms, m.id)])) as Record<MetricId, number>,
+    oldestLate: Math.max(0, ...pos.filter((p) => p.money.late > 0).map((p) => p.row.daysLate ?? 0)),
+    soonest: due.length ? due.reduce((a, b) => (a <= b ? a : b)) : null,
+    counts: pos.reduce((c, p) => addCounts(c, p.counts), NO_COUNTS),
+  };
+}
+
+// POs inside a card follow the same choice where it means something for a PO.
+function poOrder(sort: CardSort, metric: MetricId, a: CardPo, b: CardPo): number {
+  const amount = b.money[metric] - a.money[metric];
+  const lateDays = (p: CardPo) => (p.money.late > 0 ? (p.row.daysLate ?? 0) : -1);
+  if (sort === "late") return lateDays(b) - lateDays(a) || amount;
+  if (sort === "soonest") return byDay(a.upcoming, b.upcoming) || amount;
+  return amount;
+}
 
 // Dot per PO. Red only for late, so "not here yet" is never painted as a problem.
 function poDot(r: OpenPoRow, m: OpenPoMoney): { cls: string; tip: string } {
@@ -300,7 +360,7 @@ function OpenPoCard({
 }: {
   title: ReactNode;
   titleTip: string;
-  subtitle: string;
+  subtitle: ReactNode;
   avatar?: ReactNode;
   metric: (typeof METRICS)[number];
   money: Record<MetricId, number> & { ordered: number; received: number };
@@ -317,6 +377,17 @@ function OpenPoCard({
       render: ({ row }) => (
         <span className="block truncate font-mono text-note font-semibold text-sdc-navy" title={poTip(row)}>
           {row.poNumber}
+        </span>
+      ),
+    },
+    {
+      id: "received",
+      header: "Received",
+      headerTitle: "PO lines fully received, of the lines on the PO",
+      align: "right",
+      render: ({ counts: c }) => (
+        <span className={`font-mono text-label tabular-nums ${c.lines > 0 && c.received >= c.lines ? "text-sdc-green-text" : "text-sdc-gray-600"}`} title={countsTip(c)}>
+          {c.lines ? `${c.received}/${c.lines}` : "–"}
         </span>
       ),
     },
@@ -381,6 +452,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const [partialOnly, setPartialOnly] = useState(false);
   const [view, setView] = useState<View>("projects");
   const [openPo, setOpenPo] = useState<OpenPoRow | null>(null);
+  const [sort, setSort] = useState<CardSort>("amount");
 
   const cur = METRICS.find((m) => m.id === metric)!;
   const jobName = useMemo(() => new Map(data.jobs.map((j) => [j.jobId, j.jobName])), [data.jobs]);
@@ -399,52 +471,31 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     [data.rows],
   );
 
-  // One row per job: its own share of each shown PO.
+  // One card per job: its own share of each shown PO, its own lines' counts.
   const projects = useMemo(() => {
-    const by = new Map<string, { pos: { row: OpenPoRow; money: OpenPoMoney }[] }>();
+    const by = new Map<string, CardPo[]>();
     for (const row of shown)
-      for (const s of row.shares) {
-        const e = by.get(s.jobId) ?? { pos: [] };
-        e.pos.push({ row, money: s.money });
-        by.set(s.jobId, e);
-      }
+      for (const s of row.shares)
+        by.set(s.jobId, [
+          ...(by.get(s.jobId) ?? []),
+          { row, money: s.money, counts: lineCounts(row.items, s.jobId), upcoming: nextUpcoming(row.items, data.asOf, s.jobId) },
+        ]);
     return [...by]
-      .map(([jobId, e]) => {
-        const ms = e.pos.map((p) => p.money);
-        return {
-          jobId,
-          name: jobName.get(jobId) ?? "",
-          pos: e.pos.sort((a, b) => b.money[metric] - a.money[metric]),
-          ordered: ms.reduce((s, m) => s + m.ordered, 0),
-          received: ms.reduce((s, m) => s + m.received, 0),
-          totals: Object.fromEntries(METRICS.map((m) => [m.id, sumMoney(ms, m.id)])) as Record<MetricId, number>,
-          oldestLate: Math.max(0, ...e.pos.filter((p) => p.money.late > 0).map((p) => p.row.daysLate ?? 0)),
-        };
-      })
-      .sort((a, b) => b.totals[metric] - a.totals[metric]);
-  }, [shown, metric, jobName]);
+      .map(([jobId, pos]) => ({ jobId, name: jobName.get(jobId) ?? "", ...groupCard(pos, sort, metric) }))
+      .sort((a, b) => cardOrder(sort, metric, a, b, () => a.jobId.localeCompare(b.jobId, undefined, { numeric: true })));
+  }, [shown, metric, sort, jobName, data.asOf]);
 
   // One card per vendor, whole-PO amounts (a vendor's PO is the vendor's, whichever jobs it charges).
   const suppliers = useMemo(() => {
-    const by = new Map<string, OpenPoRow[]>();
-    for (const r of shown) {
-      const k = r.suppliers.join(", ") || "No supplier";
-      by.set(k, [...(by.get(k) ?? []), r]);
+    const by = new Map<string, CardPo[]>();
+    for (const row of shown) {
+      const k = row.suppliers.join(", ") || "No supplier";
+      by.set(k, [...(by.get(k) ?? []), { row, money: row.money, counts: lineCounts(row.items), upcoming: nextUpcoming(row.items, data.asOf) }]);
     }
-    const list = [...by].map(([name, rows]) => {
-      const ms = rows.map((r) => r.money);
-      return {
-        name,
-        pos: rows.map((row) => ({ row, money: row.money })).sort((a, b) => b.money[metric] - a.money[metric]),
-        jobs: new Set(rows.flatMap((r) => r.jobIds)).size,
-        ordered: ms.reduce((s, m) => s + m.ordered, 0),
-        received: ms.reduce((s, m) => s + m.received, 0),
-        totals: Object.fromEntries(METRICS.map((m) => [m.id, sumMoney(ms, m.id)])) as Record<MetricId, number>,
-        oldestLate: Math.max(0, ...rows.filter((r) => r.money.late > 0).map((r) => r.daysLate ?? 0)),
-      };
-    });
-    return list.sort((a, b) => b.totals[metric] - a.totals[metric]);
-  }, [shown, metric]);
+    return [...by]
+      .map(([name, pos]) => ({ name, jobs: new Set(pos.flatMap((p) => p.row.jobIds)).size, ...groupCard(pos, sort, metric) }))
+      .sort((a, b) => cardOrder(sort, metric, a, b, () => a.name.localeCompare(b.name)));
+  }, [shown, metric, sort, data.asOf]);
 
 
   if (data.rows.length === 0) {
@@ -486,7 +537,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           {(
             [
               ["projects", "By project", "One card per job, with its POs. Amounts are each job's own share"],
-              ["suppliers", "By supplier", "One card per vendor, with its POs, ranked by the selected tile"],
+              ["suppliers", "By supplier", "One card per vendor, with its POs"],
               ["list", "All POs", "Every PO in one searchable, sortable list"],
             ] as [View, string, string][]
           ).map(([id, label, tip]) => (
@@ -511,6 +562,24 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
         >
           {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inMetric(r, metric) && r.partiallyReceived).length})
         </button>
+        {view !== "list" && (
+          <label className="flex items-center gap-1.5 text-note font-semibold text-sdc-gray-600" title={SORTS.find((s) => s.id === sort)!.tip}>
+            Sort
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as CardSort)}
+              className={`h-8 rounded-md border bg-white px-2 text-xs font-medium outline-none focus:border-sdc-blue ${
+                sort !== "amount" ? "border-sdc-blue text-sdc-blue-dark" : "border-sdc-border text-sdc-gray-600"
+              }`}
+            >
+              {SORTS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.id === "name" ? (view === "projects" ? "Job number" : "Supplier name") : s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <WeekChart weeks={data.weeks} />
@@ -542,17 +611,22 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
       {view === "projects" && (
         <section aria-label="By project">
-          <ListCardGrid min={300}>
+          <ListCardGrid min={340}>
             {projects.map((p) => (
               <OpenPoCard
                 key={p.jobId}
                 title={
                   <a href={jobHref(p.jobId)} className="hover:underline">
                     {p.jobId}
+                    {p.name && <span className="font-semibold text-sdc-gray-600"> — {p.name}</span>}
                   </a>
                 }
                 titleTip={`Open ${p.jobId}${p.name ? ` (${p.name})` : ""} in Job Details`}
-                subtitle={`${p.name ? `${p.name} · ` : ""}${p.pos.length} ${p.pos.length === 1 ? "PO" : "POs"}`}
+                subtitle={
+                  <span title={countsTip(p.counts)}>
+                    {p.pos.length} {p.pos.length === 1 ? "PO" : "POs"} · {countsText(p.counts)}
+                  </span>
+                }
                 metric={cur}
                 money={{ ...p.totals, ordered: p.ordered, received: p.received }}
                 oldestLate={p.oldestLate}
@@ -566,13 +640,17 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
       {view === "suppliers" && (
         <section aria-label="By supplier">
-          <ListCardGrid min={300}>
+          <ListCardGrid min={340}>
             {suppliers.map((s) => (
               <OpenPoCard
                 key={s.name}
                 title={s.name}
                 titleTip={s.name}
-                subtitle={`${s.pos.length} ${s.pos.length === 1 ? "PO" : "POs"} · ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"}`}
+                subtitle={
+                  <span title={countsTip(s.counts)}>
+                    {s.pos.length} {s.pos.length === 1 ? "PO" : "POs"} · {s.jobs} {s.jobs === 1 ? "job" : "jobs"} · {countsText(s.counts)}
+                  </span>
+                }
                 avatar={<SupplierAvatar supplier={s.name} size={30} />}
                 metric={cur}
                 money={{ ...s.totals, ordered: s.ordered, received: s.received }}

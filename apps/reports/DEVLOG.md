@@ -7197,3 +7197,26 @@ Total ETO yet; dev answers from the fake BOM.
 
 The collapsible Late POs list (§82) is dropped: the Late tile filters the cards and All POs
 to the same POs, and All POs can sort them, so the list repeated what was one click away.
+
+The chart's bars are calendar weeks (Monday to Sunday) starting with this one, labelled as
+ranges ("Nov 9-15", "Nov 30-Dec 6"). They were 7-day spans from today labelled "Wk of Nov 9",
+which read as calendar weeks but moved every day. This week's bar collects today onward.
+
+## 86. Open POs: lines-received counts and a card sort (2026-11-10)
+
+Asked for: how many parts have arrived, and a way to order the project cards. Each card's
+subtitle now says "12 of 21 lines received" and each PO row has a Received column ("2/3"),
+like Job Details' cards. Counted in PO lines, not pieces (pieces are in the hover text): a
+line counts once all of it has arrived, credits have nothing to receive, and a project card
+counts only its own lines of a PO split across jobs (lineCounts in open-pos-rules.ts, the
+same rule as a PO's linesReceived/linesReceivable).
+
+A Sort menu beside the view switch orders the cards (and the POs inside them): Amount (the
+selected tile, the default), Job number / Supplier name, Most late, and Soonest expected.
+Soonest expected uses the next delivery from today on (
+extUpcoming), not the earliest
+outstanding date, which is a late one whenever anything is late and made it repeat Most late.
+
+The extra column squeezed the PO number to "DEV..." at five cards a row, too narrow even for
+a real 6-digit PO (measured: 31px needed, 25px given). Cards are now at least 340px, four a
+row on a 1600px screen, which leaves the PO column 92px.
