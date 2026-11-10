@@ -101,7 +101,9 @@ export function fakePartsLines(jobId: string): PartsCostLine[] {
       supplier: (rand(), SUPPLIERS[(n + Math.floor(i / 3)) % SUPPLIERS.length]),
       manufacturer: null,
       category: CATEGORIES[Math.floor(rand() * CATEGORIES.length)],
-      poNumber: `DEV-PO-${n}-${100 + Math.floor(i / 3)}`,
+      // Six characters like a real PO number (106836), with T marking it as test data:
+      // T + the 4-digit job + the PO's index on it (8 POs a job, 0-7), so T90041.
+      poNumber: `T${String(n).padStart(4, "0").slice(-4)}${Math.floor(i / 3)}`,
       partNumber: bom ? `BOM-${n}-${String(i).padStart(3, "0")}` : `MISC-${String(i).padStart(3, "0")}`,
       description: bom ? "DEV BOM part" : "DEV non-BOM purchase",
       quantity: scenario === 6 ? -qty : qty,

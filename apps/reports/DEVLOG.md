@@ -7223,7 +7223,10 @@ cards) splits each card's POs under collapsible supplier headers, ListCard's opt
 
 The dev fake feed gave each PO line its own random supplier, so a PO read "Umbrella, Globex,
 Hooli" and supplier groups were meaningless; each fake PO now has one supplier, as a real PO
-does. The random draw is kept and discarded, so every other fake figure is unchanged.
+does. The random draw is kept and discarded, so every other fake figure is unchanged. Fake PO
+numbers are six characters like real ones (106836): T + the 4-digit job + the PO's index on
+it, so T90041, where they were DEV-PO-9004-101 and squeezed the cards' PO column. The T says
+"test data" at a glance.
 
 A "Sort cards" menu beside the view switch orders the cards: Amount (the selected tile, the
 default), Job number / Supplier name, Most late, and Soonest expected.
