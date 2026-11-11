@@ -120,60 +120,63 @@ export function WorkforceSummaryCards({
   const hiringCapacityHoursTotal = hasCapacityPolicy ? hiringCapacityHours(hiringPositions, year) : 0;
   const plannedCapacityHours = currentCapacityHours + hiringCapacityHoursTotal;
 
+  // Without hiring (lib/hiring-feature.ts) there are no openings: only the Current column.
+  const hiringOn = HIRING_POSITIONS_ENABLED;
+  const head = "text-right text-label font-semibold uppercase tracking-wider text-sdc-gray-400";
+  const num = "text-right text-sm font-bold text-sdc-navy";
   return (
-    <div className="flex flex-col gap-4">
-      {/* Workforce-planning summary strip — company-wide, not affected by the
-          Employees toolbar's own filters (those narrow WHO you're looking at;
-          this answers "how big is the org, planned"). */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-sdc-border bg-sdc-gray-50 px-4 py-2.5 text-sm">
-        <span>
-          <span className="font-bold tabular-nums text-sdc-navy">{activeHeadcount}</span>{" "}
-          <span className="text-sdc-muted">Active Headcount</span>
-        </span>
-        {/* Without hiring (lib/hiring-feature.ts) there are no openings, and planned headcount is just active headcount. */}
-        {HIRING_POSITIONS_ENABLED && (
-          <>
-            <span>
-              <span className="font-bold tabular-nums text-sdc-navy">{openPositions}</span> <span className="text-sdc-muted">Open Positions</span>
-            </span>
-            <span>
-              <span className="font-bold tabular-nums text-sdc-navy">{plannedHeadcount}</span>{" "}
-              <span className="text-sdc-muted">Planned Headcount</span>
-            </span>
-          </>
-        )}
+    <div className="flex flex-col">
+      {/* Workforce-planning summary (2026-11-11: a small table at the page's top
+          right, the same Current / Hiring / Planned shape as a team card's
+          stats) — company-wide, not affected by the search (that narrows WHO
+          you're looking at; this answers "how big is the org, planned"). */}
+      <div className="rounded-xl border border-sdc-border bg-sdc-gray-50 px-3 py-1.5 text-xs">
+        <div className={`grid items-baseline gap-x-5 tabular-nums ${hiringOn ? "grid-cols-[auto_auto_auto_auto]" : "grid-cols-[auto_auto]"}`}>
+          <span />
+          <span className={head}>Current</span>
+          {hiringOn && (
+            <>
+              <span className={head}>Hiring</span>
+              <span className={head}>Planned</span>
+            </>
+          )}
+          <span className="text-sdc-muted">People</span>
+          <span className={num}>{activeHeadcount}</span>
+          {hiringOn && (
+            <>
+              <span className="text-right text-sm font-bold text-sdc-green-text">+{openPositions}</span>
+              <span className={num}>{plannedHeadcount}</span>
+            </>
+          )}
+          {hasCapacityPolicy && (
+            // The hours row opens how the total was built, by employee and open position.
+            <button
+              type="button"
+              onClick={() =>
+                onSelectCapacity({
+                  title: "Company-Wide Capacity",
+                  employees: allActivePeople,
+                  hiringPositions,
+                })
+              }
+              title="See how this capacity total was built, by employee and open position"
+              className="motion-interactive col-span-full grid grid-cols-subgrid items-baseline rounded-md hover:bg-white"
+            >
+              <span className="text-left text-sdc-muted">Hrs/yr</span>
+              <span className={num}>{fmtHours(currentCapacityHours)}</span>
+              {hiringOn && (
+                <>
+                  <span className="text-right text-sm font-bold text-sdc-green-text">+{fmtHours(hiringCapacityHoursTotal)}</span>
+                  <span className={num}>{fmtHours(plannedCapacityHours)}</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
         {unassignedHiring > 0 && (
-          <span>
-            <span className="font-bold tabular-nums text-sdc-navy">{unassignedHiring}</span>{" "}
-            <span className="text-sdc-muted">Unassigned Openings</span>
-          </span>
-        )}
-        {hasCapacityPolicy && (
-          <button
-            type="button"
-            onClick={() =>
-              onSelectCapacity({
-                title: "Company-Wide Capacity",
-                employees: allActivePeople,
-                hiringPositions,
-              })
-            }
-            title="See how this capacity total was built, by employee and open position"
-            className="flex items-baseline gap-x-2 rounded-md px-1 -mx-1 hover:bg-white"
-          >
-            <span className="font-bold tabular-nums text-sdc-navy">{fmtHours(currentCapacityHours)}</span>{" "}
-            <span className="text-sdc-muted">current hrs/yr</span>
-            {hiringCapacityHoursTotal > 0 && (
-              <>
-                <span className="text-sdc-gray-400">·</span>
-                <span className="font-bold tabular-nums text-sdc-green-text">+{fmtHours(hiringCapacityHoursTotal)}</span>{" "}
-                <span className="text-sdc-muted">hiring hrs/yr</span>
-                <span className="text-sdc-gray-400">·</span>
-                <span className="font-bold tabular-nums text-sdc-navy">{fmtHours(plannedCapacityHours)}</span>{" "}
-                <span className="text-sdc-muted">planned hrs/yr</span>
-              </>
-            )}
-          </button>
+          <p className="mt-0.5 text-right text-sdc-muted">
+            <span className="font-bold tabular-nums text-sdc-navy">{unassignedHiring}</span> unassigned {unassignedHiring === 1 ? "opening" : "openings"}
+          </p>
         )}
       </div>
 

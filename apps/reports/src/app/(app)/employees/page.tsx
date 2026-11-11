@@ -114,15 +114,17 @@ export async function EmployeesView() {
 
   return (
     <div className={PAGE_SHELL}>
-      {/* The Dashboard's header (2026-10-29): title, one line on what the page
-          is, and the rule the tabs below sit under. */}
-      <div className="mb-7 border-b border-sdc-border pb-5">
-        <PageTitle>Employees</PageTitle>
-        <p className="text-sm text-sdc-gray-600">Everyone on the Paylocity roster by who they report to, plus contractors and the positions being hired for</p>
-      </div>
-
       <div>
         <EmployeesGrid
+          // The Dashboard's header (2026-10-29): title and one line on what the
+          // page is. EmployeesGrid draws it, so the headcount table and search
+          // can sit at its right (2026-11-11).
+          header={
+            <>
+              <PageTitle>Employees</PageTitle>
+              <p className="text-sm text-sdc-gray-600">Everyone on the Paylocity roster by who they report to, plus contractors and the positions being hired for</p>
+            </>
+          }
           rows={rows}
           placeholders={placeholders}
           canAddEmployees={canAddEmployees}
