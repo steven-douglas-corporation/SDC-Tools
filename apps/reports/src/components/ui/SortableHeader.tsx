@@ -84,12 +84,21 @@ export function SortableTh<K extends string>({
   className,
   align: alignProp,
   title,
+  style,
+  children,
   ...props
-}: SortCellProps<K> & { className?: string }) {
+}: SortCellProps<K> & {
+  className?: string;
+  /** Inline sizing for a column whose width the user controls. */
+  style?: React.CSSProperties;
+  /** Extra header content rendered after the sort control (e.g. a column-resize handle). */
+  children?: React.ReactNode;
+}) {
   const align = alignProp ?? defaultAlign(props.type);
   return (
-    <th title={title} aria-sort={ariaSortValue(props.sort, props.sortKey)} className={`${align === "right" ? "text-right" : "text-left"} ${className ?? ""}`}>
+    <th title={title} style={style} aria-sort={ariaSortValue(props.sort, props.sortKey)} className={`${align === "right" ? "text-right" : "text-left"} ${className ?? ""}`}>
       <SortControl {...props} align={align} />
+      {children}
     </th>
   );
 }
