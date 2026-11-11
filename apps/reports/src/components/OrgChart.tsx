@@ -1,7 +1,9 @@
+import { Fragment } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { card } from "@/components/ui/classnames";
 import { resolveEmployeeGroup } from "@/lib/employee-card-theme";
-import type { OrgChart as OrgChartData, OrgNode } from "@/lib/org-chart";
+import type { OrgBand, OrgChart as OrgChartData, OrgNode, OrgTeamCard } from "@/lib/org-chart";
+import { groupByFunction, sectionActive, type SectionKey } from "@/lib/org-chart-groups";
 import { DepartmentCardHeader, EmployeePersonRow, HandPlacedSection, TempsSection } from "@/components/EmployeePersonRow";
 import { isPaylocityId, comparePositionCode, rowMatchesSearch, type EmployeeRow } from "@/lib/employee-row";
 import { filterOrgNodes, countOrgNodes } from "@/lib/org-chart-search";
@@ -16,10 +18,11 @@ import { cardId, LEADERS_CARD, placeHiringOnChart } from "@/lib/org-chart-hiring
 
 // The Employees page's Org chart view (2026-10-02): the same department cards
 // as the Cards view — same header, same "N active" line, same person rows
-// (EmployeePersonRow.tsx) — arranged by reporting line instead of by
-// department group. Each group is headed by who it reports to, the way Cards
-// heads its groups with Engineering / Shop / PM, and inside a card everyone
-// hangs off their manager on connector lines. Data and the rule behind the
+// (EmployeePersonRow.tsx). Since 2026-11-11 the groups are by function by
+// default — Leadership, Growth, Execution, Support (lib/org-chart-groups.ts) —
+// each card naming who it reports to; the page can switch back to a group per
+// leader ("Reporting to X"). Inside a card everyone hangs off their manager on
+// connector lines. Data and the rule behind the
 // teams: lib/org-chart.ts. No hooks, so it renders on server or client.
 
 // Connectors: an elbow into each person at their name's height, and a trunk
@@ -126,8 +129,11 @@ function TeamCard({
   shown = null,
   nodes,
   ctx,
+  reportsTo = null,
   children,
 }: {
+  /** Who the card's people report to (the function groups; a "Reporting to X" heading already says). */
+  reportsTo?: string | null;
   /** cardId() — which positions are placed here. */
   id: string;
   team: string | null;
@@ -165,6 +171,7 @@ function TeamCard({
         isAi={group?.key === "ai"}
         className="rounded-t-[11px]"
       />
+      {reportsTo && <p className="px-3.5 pt-1.5 text-xs text-sdc-muted">Reports to {reportsTo}</p>}
       <CardStats
         stats={{ active: count, inactive, hiringOpenings, currentHours: canOpenCapacity ? currentHours : null, hiringHours }}
         shown={shown}
@@ -182,20 +189,101 @@ function TeamCard({
   );
 }
 
-// The Cards view's group heading, naming who the group reports to.
-function Group({ title, active, cardCount, children }: { title: string; active: number; cardCount: number; children: React.ReactNode }) {
+// The Cards view's group heading: the function (Growth, Execution, Support), or
+// for any other team "Reporting to X". Who a function's cards report to is on
+// each card, not in the heading (several leaders in one heading read as a muddle).
+function Group({
+  title,
+  active,
+  cardCount,
+  bare = false,
+  className = "",
+  children,
+}: {
+  title: string;
+  /** A number, or (Execution) which number by chart width. */
+  active: React.ReactNode;
+  cardCount: number;
+  /** Children lay themselves out (Execution's parts). */
+  bare?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="min-w-0 max-w-full flex-1" style={{ flexBasis: `${Math.max(1, cardCount) * 20}rem` }}>
+    <div className={`min-w-0 max-w-full flex-1 ${className}`} style={{ flexBasis: `${Math.max(1, cardCount) * 20}rem` }}>
       <h3 className="mb-2 border-b border-sdc-border pb-1 text-xs font-bold uppercase tracking-wider text-sdc-muted">
-        {title}
+        <span>{title}</span>
         <span className="ml-2 font-normal normal-case tracking-normal text-sdc-gray-400">{active} active</span>
       </h3>
-      {/* 18rem at the narrowest (was 15rem until 2026-10-30): room for a wrapped
-          open-position title beside its status pill. */}
-      <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(18rem,1fr))]">{children}</div>
+      {bare ? children : <div className={CARD_GRID}>{children}</div>}
     </div>
   );
 }
+
+// 18rem at the narrowest (was 15rem until 2026-10-30): room for a wrapped
+// open-position title beside its status pill.
+const CARD_GRID = "grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(18rem,1fr))]";
+
+// A part of Execution (2026-11-11): Project management, Engineering, Operations,
+// with a rule dividing it from the part before on the same line. The parts flow like
+// the groups do, sharing a line when they fit. Engineering and Operations get a
+// small header; Project management is one card already titled that, so its
+// header line is left blank (same height, so the cards' tops still line up).
+//
+// The rule sits in the gap to a part's left (before:-left-2, half of gap-x-4).
+// The parts' row clips sideways (PARTS_ROW), so a part that starts a line, the
+// first or one that wrapped, has its rule clipped away rather than drawn at
+// the edge, and nobody is indented by it.
+//
+// How Execution gives way as the chart narrows (2026-11-11, by request), by the
+// CHART's width (container queries on OrgChart's root, so the app's zoom and the
+// sidebar don't matter):
+//   1. Project management and Engineering keep their width (one card, two
+//      cards: PART_WIDTH); Operations takes the rest of the line and wraps its
+//      own cards first, down to two a row.
+//   2. Below that (1410px: one + two + two cards and the gaps, 93.5rem at the
+//      app's constant 15px root), Project management moves up beside
+//      Leadership and Growth, and Engineering and Operations keep the
+//      Execution line to themselves.
+//   3. Narrower still, the parts and groups wrap as they always have.
+// The threshold is in px, not rem: inside a container query `rem` is the
+// browser's 16px, not the page's 15px. The app's zoom (CSS zoom on <html>)
+// scales the cards and the container alike, so it doesn't move the switch.
+// (Classes written out in full: Tailwind only generates what it finds literally.)
+const PARTS_ROW = "flex flex-wrap items-start gap-x-4 gap-y-4 overflow-x-clip";
+// One card is 18rem; two are 18 + 0.75 (CARD_GRID's gap-3) + 18.
+const PART_WIDTH: Partial<Record<SectionKey, string>> = {
+  pm: "flex-none w-[18rem]",
+  engineering: "flex-none w-[36.75rem]",
+  operations: "flex-[1_1_36.75rem]",
+};
+const PM_IN_EXECUTION = "@max-[1410px]:hidden";
+const PM_MOVED_UP = "@min-[1410px]:hidden";
+function Part({ label, active, className, children }: { label: string | null; active: number; className: string; children: React.ReactNode }) {
+  return (
+    <div
+      className={`relative min-w-0 max-w-full before:absolute before:inset-y-0 before:-left-2 before:border-l before:border-sdc-border before:content-[''] ${className}`}
+    >
+      <h4 className={`mb-2 text-xs font-semibold text-sdc-navy ${label ? "" : "invisible"}`} aria-hidden={label ? undefined : true}>
+        <span>{label ?? "—"}</span>
+        <span className="ml-2 font-normal text-sdc-gray-400">{active} active</span>
+      </h4>
+      <div className={CARD_GRID}>{children}</div>
+    </div>
+  );
+}
+
+export type OrgChartGrouping = "function" | "leader";
+
+// The function groups, in page order, and which sections of
+// lib/org-chart-groups.ts each one draws. Execution draws its sections as Parts.
+const FUNCTIONS: { key: "growth" | "execution" | "support"; title: string; sections: SectionKey[] }[] = [
+  { key: "growth", title: "Growth", sections: ["growth"] },
+  { key: "execution", title: "Execution", sections: ["pm", "engineering", "operations"] },
+  { key: "support", title: "Support", sections: ["support"] },
+];
+// Execution's part headers. Project management has none: its one card already says it.
+const PART_LABEL: Partial<Record<SectionKey, string>> = { engineering: "Engineering", operations: "Operations" };
 
 /**
  * `people` is the Employees page's own rows, so each person renders exactly as
@@ -210,8 +298,11 @@ export function OrgChart({
   hiringPositions,
   onSelectHiringPosition,
   query = "",
+  groupBy = "function",
 }: {
   chart: OrgChartData;
+  /** "function": Growth / Execution / Support (the default since 2026-11-11). "leader": a group per leader, "Reporting to X". */
+  groupBy?: OrgChartGrouping;
   /** The Employees page's search text: narrows the chart to matches and the managers above them. */
   query?: string;
   people: Map<number, EmployeeRow>;
@@ -265,9 +356,43 @@ export function OrgChart({
   if (match && leaders.length === 0 && bands.length === 0 && unplaced.length === 0) {
     return <EmptyState title="No one matches" message={`Nothing on the chart matches “${needle}”. Inactive people only show with Show inactive.`} />;
   }
+  // The groups by function instead of a band per leader: the same cards, in the
+  // same flow (lib/org-chart-groups.ts). Each card says who its people report
+  // to, read off the band it came from.
+  const { sections, other } = groupByFunction(bands);
+  const functions = FUNCTIONS.map((f) => ({
+    ...f,
+    sections: f.sections.filter((k) => sections[k].cards.length > 0),
+    cards: f.sections.flatMap((k) => sections[k].cards),
+    active: f.sections.reduce((n, k) => n + sectionActive(sections[k]), 0),
+  })).filter((f) => f.cards.length > 0);
+  const teamCard = (b: OrgBand, c: OrgTeamCard, heads: OrgNode[], reportsTo: string | null) => (
+    <TeamCard
+      key={cardId(b.leader.id, c.team)}
+      id={cardId(b.leader.id, c.team)}
+      team={c.team}
+      count={c.active}
+      inactive={c.people - c.active}
+      shown={shownOf(heads, c.heads)}
+      nodes={c.heads}
+      ctx={ctx}
+      reportsTo={reportsTo}
+    >
+      {(title) => <CardBody nodes={heads} cardTitle={title} ctx={ctx} />}
+    </TeamCard>
+  );
+  // A group per leader: the "By reporting line" view, and in the function view
+  // any team no function takes. The heading says who, so the cards don't.
+  const leaderGroup = (b: OrgBand, cards: { card: OrgTeamCard; heads: OrgNode[] }[], active: number) => (
+    <Group key={b.leader.id} title={`Reporting to ${b.leader.name}`} active={active} cardCount={cards.length}>
+      {cards.map(({ card: c, heads }) => teamCard(b, c, heads, null))}
+    </Group>
+  );
+  const pmActive = sectionActive(sections.pm);
   return (
-    // Groups share a line when they fit, the same flow the Cards view uses.
-    <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
+    // Groups share a line when they fit, the same flow the Cards view uses. A
+    // size container, so Execution can give way by the chart's width (see Part).
+    <div className="@container flex flex-wrap items-start gap-x-5 gap-y-4">
       {(!match || leaders.length > 0) && (
         <Group title="Leadership" active={chart.leaderActive} cardCount={1}>
           <TeamCard
@@ -284,24 +409,57 @@ export function OrgChart({
         </Group>
       )}
 
-      {bands.map(({ band: b, cards }) => (
-        <Group key={b.leader.id} title={`Reporting to ${b.leader.name}`} active={b.active} cardCount={cards.length}>
-          {cards.map(({ card: c, heads }) => (
-            <TeamCard
-              key={c.team ?? "none"}
-              id={cardId(b.leader.id, c.team)}
-              team={c.team}
-              count={c.active}
-              inactive={c.people - c.active}
-              shown={shownOf(heads, c.heads)}
-              nodes={c.heads}
-              ctx={ctx}
-            >
-              {(title) => <CardBody nodes={heads} cardTitle={title} ctx={ctx} />}
-            </TeamCard>
-          ))}
-        </Group>
-      ))}
+      {groupBy === "leader" ? (
+        // By reporting line: a group per leader, as before 2026-11-11.
+        bands.map(({ band: b, cards }) => leaderGroup(b, cards, b.active))
+      ) : (
+        <>
+          {functions.map((f) =>
+            f.key === "execution" ? (
+              // Execution in its parts, each headed and divided from the one before.
+              // Below 1410px (see Part), Project management is drawn up beside Growth
+              // instead (the group just before), and the count leaves it out.
+              <Fragment key={f.key}>
+                {f.sections.includes("pm") && (
+                  <Group title="Project management" active={pmActive} cardCount={sections.pm.cards.length} className={PM_MOVED_UP}>
+                    {sections.pm.cards.map(({ band: b, item }) => teamCard(b, item.card, item.heads, b.leader.name))}
+                  </Group>
+                )}
+                <Group
+                  title={f.title}
+                  active={
+                    pmActive > 0 ? (
+                      <>
+                        <span className={PM_IN_EXECUTION}>{f.active}</span>
+                        <span className={PM_MOVED_UP}>{f.active - pmActive}</span>
+                      </>
+                    ) : (
+                      f.active
+                    )
+                  }
+                  cardCount={f.cards.length}
+                  bare
+                >
+                  <div className={PARTS_ROW}>
+                    {f.sections.map((k) => (
+                      <Part key={k} label={PART_LABEL[k] ?? null} active={sectionActive(sections[k])} className={`${PART_WIDTH[k] ?? "flex-1"} ${k === "pm" ? PM_IN_EXECUTION : ""}`}>
+                        {sections[k].cards.map(({ band: b, item }) => teamCard(b, item.card, item.heads, b.leader.name))}
+                      </Part>
+                    ))}
+                  </div>
+                </Group>
+              </Fragment>
+            ) : (
+              <Group key={f.key} title={f.title} active={f.active} cardCount={f.cards.length}>
+                {f.cards.map(({ band: b, item }) => teamCard(b, item.card, item.heads, b.leader.name))}
+              </Group>
+            ),
+          )}
+
+          {/* A team no function takes (lib/org-chart-groups.ts) stays in its leader's band. */}
+          {other.map(({ band: b, cards }) => leaderGroup(b, cards, cards.reduce((n, x) => n + x.card.active, 0)))}
+        </>
+      )}
 
       {(unplaced.length > 0 || unplacedHiring.length > 0) && (
         <Group title="Not placed" active={unplaced.filter((u) => u.active).length} cardCount={1}>

@@ -7264,3 +7264,35 @@ line's original date (poDates). Taking the earliest original among all the PO's 
 could pair one line's due date with another line's expected date and draw a slip that never
 happened. Dots that would overlap stack onto new lines (stackLines); a re-promised PO
 counts its whole line, so no other dot lands on it and looks connected.
+
+## 88. Employees: the org chart by function, and a shorter header (2026-11-11)
+
+Asked for: the org chart grouped the way the company is drawn on paper (Growth, Execution,
+Support under Executive leadership), without losing what the old chart did well. Several
+layouts were tried on a dev roster (fixed columns, side rails, a full-width Execution
+band); all of them fell apart at a higher zoom or on a smaller screen, because each nesting
+level wrapped on its own. What shipped keeps the old chart's single flow of groups and
+cards and only changes what the groups are.
+
+By function (the default): Leadership, Growth (Sales, Marketing), Execution and Support
+(Finance, HR, AI) instead of "Reporting to X". lib/org-chart-groups.ts maps each team to a
+section; cards are regrouped, not merged, so a team under two leaders keeps both cards and
+every card id (and the open positions placed on it) is unchanged. Headings name no leaders:
+several in one heading read as a muddle, so each card says "Reports to X" instead. A team
+no section takes stays in a "Reporting to X" group. A "By function / By reporting line"
+switch beside the search brings back the old chart exactly.
+
+Execution is in parts: Project management, then Engineering and Operations with small
+headers, divided by a rule in the gap between parts (clipped at a line's start, so a part
+that wraps is neither ruled nor indented). As the chart narrows, Operations wraps its own
+cards first; below 1410px of chart width Project management moves up beside Leadership and
+Growth (drawn twice, one copy hidden by a container query) and Execution's count leaves it
+out; narrower still, everything wraps as before. The switch is in px because a container
+query's rem is the browser's 16px, not the app's 15px root; the app's CSS zoom scales the
+chart and the threshold alike.
+
+Header: the headcount strip became a small Current / Hiring / Planned table (People,
+Hrs/yr; the Hrs/yr row still opens the capacity breakdown) at the top right beside the
+title, on both tabs. Search, Show inactive and the grouping switch sit under it, on the
+Org chart / Hiring tabs' line (the header's rule is the tabs' underline). On the Hiring tab
+that row keeps its space, invisible and inert, so the tabs never move when you switch.

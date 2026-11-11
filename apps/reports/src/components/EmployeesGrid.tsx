@@ -14,7 +14,7 @@ import { workforceGroupForCardKey, type WorkforceGroupKey } from "@/lib/employee
 import { countOpenings } from "@/lib/hiring-openings";
 import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
 import { findPostingForRequest, teamLeadOptions } from "@/lib/hiring-requests";
-import { OrgChart, PendingTeamChanges } from "@/components/OrgChart";
+import { OrgChart, PendingTeamChanges, type OrgChartGrouping } from "@/components/OrgChart";
 import type { OrgChart as OrgChartData } from "@/lib/org-chart";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
 import type { HiringPosition } from "@/lib/hiring-positions";
@@ -90,6 +90,9 @@ export function EmployeesGrid({
   const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const [q, setQ] = useState("");
   const [showInactive, setShowInactive] = useState(false);
+  // How the Org chart groups its cards (2026-11-11): by function, or by who they report to.
+  const [groupBy, setGroupBy] = useState<OrgChartGrouping>("function");
+
   // The drawers are overlay state, not navigation: closing one returns to
   // whatever was showing underneath, with the search and tab untouched.
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
@@ -234,6 +237,26 @@ export function EmployeesGrid({
                   {hiddenInactiveMatches} inactive {hiddenInactiveMatches === 1 ? "person matches" : "people match"} — show them
                 </button>
               )}
+              <div className="flex overflow-hidden rounded-lg border border-sdc-border bg-white text-xs font-medium" role="group" aria-label="Group the chart">
+                {(
+                  [
+                    ["function", "By function"],
+                    ["leader", "By reporting line"],
+                  ] as const
+                ).map(([g, label]) => (
+                  <button
+                    key={g}
+                    type="button"
+                    aria-pressed={groupBy === g}
+                    onClick={() => setGroupBy(g)}
+                    className={`motion-interactive px-3 py-2 not-first:border-l not-first:border-sdc-border ${
+                      groupBy === g ? "bg-sdc-blue-light text-sdc-blue-dark" : "text-sdc-muted hover:bg-sdc-gray-50 hover:text-sdc-navy"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <SearchBox value={q} onChange={setQ} />
               <label className="flex items-center gap-2 text-xs font-medium text-sdc-gray-600">
                 <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="h-3.5 w-3.5" />
@@ -255,6 +278,7 @@ export function EmployeesGrid({
           <OrgChart
             chart={showInactive ? orgChartWithInactive : orgChart}
             query={q}
+            groupBy={groupBy}
             people={rowsById}
             onSelectPerson={selectEmployee}
             year={year}
