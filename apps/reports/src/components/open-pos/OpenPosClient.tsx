@@ -5,6 +5,7 @@ import { SupplierAvatar } from "@/components/procurement/PoDetailPanel";
 import { ListCard, ListCardGrid, type ListCardColumn, type ListCardSort } from "@/components/ui/ListCard";
 import type { SortDir } from "@/lib/data-table";
 import { OpenPoPanel } from "@/components/open-pos/OpenPoPanel";
+import { PoTimeline, type TimelinePo, type TimelineRow } from "@/components/open-pos/PoTimeline";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -13,6 +14,7 @@ import {
   addDays,
   lineCounts,
   nextUpcoming,
+  poDates,
   weekRange,
   type LineCounts,
   type OpenPoMoney,
@@ -30,7 +32,7 @@ import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 // the default and the "show all" state. All client-side: the server sent every open PO.
 
 type MetricId = "late" | "notReceived" | "next4Weeks" | "receivedNotInvoiced" | "leftToInvoice";
-type View = "projects" | "suppliers" | "list";
+type View = "projects" | "suppliers" | "timeline" | "list";
 type CardSort = "amount" | "name" | "late" | "soonest";
 
 const NO_COUNTS: LineCounts = { lines: 0, received: 0, pieces: 0, piecesReceived: 0 };
@@ -505,6 +507,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   // One PO order for every card: clicking a column header in any card sorts them all.
   const [poSort, setPoSort] = useState<ListCardSort | null>(null);
   const [bySupplier, setBySupplier] = useState(false);
+  const [timelineBy, setTimelineBy] = useState<"projects" | "suppliers">("projects");
   const onPoSort = (id: string) => setPoSort((s) => nextPoSort(s, id));
 
   const cur = METRICS.find((m) => m.id === metric)!;
@@ -549,6 +552,41 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       .map(([name, pos]) => ({ name, jobs: new Set(pos.flatMap((p) => p.row.jobIds)).size, ...groupCard(pos, metric) }))
       .sort((a, b) => cardOrder(sort, metric, a, b, () => a.name.localeCompare(b.name)));
   }, [shown, metric, sort, data.asOf]);
+
+  // Timeline rows: the same groups and order as the cards, keeping only POs with something
+  // still to arrive. Project rows date each PO by that job's own lines.
+  const timelineRows = useMemo((): TimelineRow[] => {
+    const sub = (pos: TimelinePo[]) => {
+      const late = pos.filter((p) => p.dates.expected && p.dates.expected < data.asOf).length;
+      return `${pos.length} ${pos.length === 1 ? "PO" : "POs"} to arrive${late ? ` · ${late} late` : ""}`;
+    };
+    const rows: TimelineRow[] =
+      timelineBy === "projects"
+        ? projects.map((p) => {
+            const pos = p.pos
+              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items, p.jobId), other: c.row.suppliers.join(", ") || "No supplier" }))
+              .filter((x) => x.dates.outstanding);
+            return {
+              key: p.jobId,
+              label: (
+                <a href={jobHref(p.jobId)} className="hover:underline">
+                  {p.jobId}
+                  {p.name && <span className="font-semibold text-sdc-gray-600"> — {p.name}</span>}
+                </a>
+              ),
+              sublabel: sub(pos),
+              title: `Open ${p.jobId}${p.name ? ` (${p.name})` : ""} in Job Details`,
+              pos,
+            };
+          })
+        : suppliers.map((s) => {
+            const pos = s.pos
+              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items), other: `Job ${c.row.jobIds.join(", ")}` }))
+              .filter((x) => x.dates.outstanding);
+            return { key: s.name, label: s.name, sublabel: sub(pos), title: s.name, pos };
+          });
+    return rows.filter((r) => r.pos.length > 0);
+  }, [timelineBy, projects, suppliers, data.asOf]);
 
 
   if (data.rows.length === 0) {
@@ -595,6 +633,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             [
               ["projects", "By project", "One card per job, with its POs. Amounts are each job's own share"],
               ["suppliers", "By supplier", "One card per vendor, with its POs"],
+              ["timeline", "Timeline", "When each PO is expected, one row per project or supplier, with where re-promised POs were first due"],
               ["list", "All POs", "Every PO in one searchable, sortable list"],
             ] as [View, string, string][]
           ).map(([id, label, tip]) => (
@@ -630,12 +669,38 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             {bySupplier ? "☑" : "☐"} Group by supplier
           </button>
         )}
+        {view === "timeline" && (
+          <div role="group" aria-label="Timeline rows" className="flex items-center gap-1 text-note font-semibold text-sdc-gray-600">
+            Rows
+            {(
+              [
+                ["projects", "Projects", "One row per project, its own share of each PO"],
+                ["suppliers", "Suppliers", "One row per supplier, whole POs"],
+              ] as const
+            ).map(([id, label, tip]) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={timelineBy === id}
+                onClick={() => setTimelineBy(id)}
+                title={tip}
+                className={`${TOOLBAR_BTN_COMPACT} ${timelineBy === id ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {view !== "list" && (
           <label
             className="flex items-center gap-1.5 text-note font-semibold text-sdc-gray-600"
-            title={`Order of the cards: ${SORTS.find((s) => s.id === sort)!.tip}. To order the POs inside the cards, click a column header in any card`}
+            title={
+              view === "timeline"
+                ? `Order of the rows: ${SORTS.find((s) => s.id === sort)!.tip}`
+                : `Order of the cards: ${SORTS.find((s) => s.id === sort)!.tip}. To order the POs inside the cards, click a column header in any card`
+            }
           >
-            Sort cards
+            {view === "timeline" ? "Sort rows" : "Sort cards"}
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as CardSort)}
@@ -645,7 +710,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             >
               {SORTS.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.id === "name" ? (view === "projects" ? "Job number" : "Supplier name") : s.label}
+                  {s.id === "name" ? ((view === "timeline" ? timelineBy : view) === "projects" ? "Job number" : "Supplier name") : s.label}
                 </option>
               ))}
             </select>
@@ -736,6 +801,15 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             ))}
           </ListCardGrid>
         </section>
+      )}
+
+      {view === "timeline" && (
+        <PoTimeline
+          rows={timelineRows}
+          asOf={data.asOf}
+          onOpenPo={setOpenPo}
+          emptyText="Nothing still to arrive among the POs shown. Try Show all open POs."
+        />
       )}
 
       {view === "list" && (
