@@ -14,7 +14,7 @@ import { workforceGroupForCardKey, type WorkforceGroupKey } from "@/lib/employee
 import { countOpenings } from "@/lib/hiring-openings";
 import { HIRING_POSITIONS_ENABLED } from "@/lib/hiring-feature";
 import { findPostingForRequest, teamLeadOptions } from "@/lib/hiring-requests";
-import { OrgChart, PendingTeamChanges } from "@/components/OrgChart";
+import { OrgChart, PendingTeamChanges, type OrgChartGrouping } from "@/components/OrgChart";
 import type { OrgChart as OrgChartData } from "@/lib/org-chart";
 import type { SchedulerPlaceholder } from "@/lib/scheduler-db";
 import type { HiringPosition } from "@/lib/hiring-positions";
@@ -61,7 +61,10 @@ export function EmployeesGrid({
   year,
   orgChart,
   orgChartWithInactive,
+  header,
 }: {
+  /** The page's title and description; the Org chart's figures and search sit at its right. */
+  header?: React.ReactNode;
   rows: EmployeeRow[];
   placeholders: SchedulerPlaceholder[];
   canAddEmployees: boolean;
@@ -87,6 +90,8 @@ export function EmployeesGrid({
   const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const [q, setQ] = useState("");
   const [showInactive, setShowInactive] = useState(false);
+  // How the Org chart groups its cards (2026-11-11): by function, or by who they report to.
+  const [groupBy, setGroupBy] = useState<OrgChartGrouping>("function");
 
   // The drawers are overlay state, not navigation: closing one returns to
   // whatever was showing underneath, with the search and tab untouched.
@@ -179,46 +184,87 @@ export function EmployeesGrid({
     ? ([["chart", "Org chart"], ["hiring", "Hiring"]] as const)
     : ([["chart", "Org chart"]] as const);
 
+  const tabs = views.length > 1;
   return (
     <>
-      {/* Underlined tabs, the Dashboard's own strip (DashboardTabs.tsx), so the
-          two pages with tabs look alike. Local state, not a URL param: neither
-          tab costs a server round trip, unlike the Dashboard's Finances. */}
-      {views.length > 1 && (
-        <div className="mb-6 flex items-center gap-1 border-b border-sdc-border" role="tablist">
-          {views.map(([v, label]) => (
-            <button
-              key={v}
-              type="button"
-              role="tab"
-              aria-selected={view === v}
-              onClick={() => setView(v)}
-              className={`relative -mb-px border-b-2 px-4 py-2.5 text-sm font-semibold motion-interactive ${
-                view === v
-                  ? "border-sdc-blue text-sdc-blue-dark"
-                  : "border-transparent text-sdc-muted hover:border-sdc-border hover:text-sdc-navy"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {view === "chart" && (
-        <div className="mb-3 flex flex-wrap items-center gap-3">
-          <SearchBox value={q} onChange={setQ} />
-          <label className="flex items-center gap-2 text-xs font-medium text-sdc-gray-600">
-            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="h-3.5 w-3.5" />
-            Show inactive
-          </label>
-          {hiddenInactiveMatches > 0 && (
-            <button type="button" onClick={() => setShowInactive(true)} className="text-xs font-medium text-sdc-blue hover:underline">
-              {hiddenInactiveMatches} inactive {hiddenInactiveMatches === 1 ? "person matches" : "people match"} — show them
-            </button>
+      {/* The page's header (2026-11-11). Left: title and summary, with the tabs
+          at its foot. Right: the company-wide figures, with the search and Show
+          inactive under them. The header's rule is the tabs' underline, so the
+          search sits on the same line as the tabs. */}
+      <div className={`mb-4 flex flex-wrap items-stretch justify-between gap-x-8 gap-y-3 border-b border-sdc-border ${tabs ? "" : "pb-4"}`}>
+        <div className="flex min-w-0 flex-col justify-between gap-3">
+          <div>{header}</div>
+          {/* Underlined tabs, the Dashboard's own strip (DashboardTabs.tsx), so
+              the two pages with tabs look alike. Local state, not a URL param:
+              neither tab costs a server round trip, unlike the Dashboard's
+              Finances. Each tab's underline overlaps the header's rule (-mb-px). */}
+          {tabs && (
+            <div className="flex items-center gap-1" role="tablist">
+              {views.map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === v}
+                  onClick={() => setView(v)}
+                  className={`relative -mb-px border-b-2 px-4 py-2.5 text-sm font-semibold motion-interactive ${
+                    view === v
+                      ? "border-sdc-blue text-sdc-blue-dark"
+                      : "border-transparent text-sdc-muted hover:border-sdc-border hover:text-sdc-navy"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           )}
         </div>
-      )}
+        <div className={`flex flex-col items-end justify-end gap-2 ${tabs ? "pb-2" : ""}`}>
+          {/* On both tabs: the company-wide figures don't change with the tab. */}
+          <WorkforceSummaryCards
+            rows={rows}
+            placeholders={placeholders}
+            hiringPositions={openHiring}
+            year={year}
+            onSelectCapacity={setCapacityDrill}
+          />
+          {/* Search is the Org chart's own. On Hiring it keeps its space, hidden
+              and unreachable, so the header — and the tabs under it — stay put
+              when the tab changes. */}
+          <div className={`flex flex-wrap items-center justify-end gap-3 ${view === "chart" ? "" : "invisible"}`} inert={view !== "chart"}>
+              {hiddenInactiveMatches > 0 && (
+                <button type="button" onClick={() => setShowInactive(true)} className="text-xs font-medium text-sdc-blue hover:underline">
+                  {hiddenInactiveMatches} inactive {hiddenInactiveMatches === 1 ? "person matches" : "people match"} — show them
+                </button>
+              )}
+              <div className="flex overflow-hidden rounded-lg border border-sdc-border bg-white text-xs font-medium" role="group" aria-label="Group the chart">
+                {(
+                  [
+                    ["function", "By function"],
+                    ["leader", "By reporting line"],
+                  ] as const
+                ).map(([g, label]) => (
+                  <button
+                    key={g}
+                    type="button"
+                    aria-pressed={groupBy === g}
+                    onClick={() => setGroupBy(g)}
+                    className={`motion-interactive px-3 py-2 not-first:border-l not-first:border-sdc-border ${
+                      groupBy === g ? "bg-sdc-blue-light text-sdc-blue-dark" : "text-sdc-muted hover:bg-sdc-gray-50 hover:text-sdc-navy"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <SearchBox value={q} onChange={setQ} />
+              <label className="flex items-center gap-2 text-xs font-medium text-sdc-gray-600">
+                <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="h-3.5 w-3.5" />
+                Show inactive
+              </label>
+          </div>
+        </div>
+      </div>
 
       {hiringError && (
         <p className="mb-3 rounded border border-sdc-yellow bg-sdc-yellow-bg px-2 py-1 text-note text-sdc-yellow-text">
@@ -228,18 +274,11 @@ export function EmployeesGrid({
 
       {view === "chart" || !hiringOn ? (
         <div className="grid gap-6">
-          {/* The headcount strip and group tiles, for the whole organisation. */}
-          <WorkforceSummaryCards
-            rows={rows}
-            placeholders={placeholders}
-            hiringPositions={openHiring}
-            year={year}
-            onSelectCapacity={setCapacityDrill}
-          />
           {orgChart.pending.length > 0 && <PendingTeamChanges pending={orgChart.pending} />}
           <OrgChart
             chart={showInactive ? orgChartWithInactive : orgChart}
             query={q}
+            groupBy={groupBy}
             people={rowsById}
             onSelectPerson={selectEmployee}
             year={year}
