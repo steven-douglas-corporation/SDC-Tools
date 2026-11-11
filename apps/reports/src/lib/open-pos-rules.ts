@@ -158,6 +158,49 @@ export function addDays(day: string, days: number): string {
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
+export type LineCounts = { lines: number; received: number; pieces: number; piecesReceived: number };
+
+/**
+ * How many PO lines (and pieces) have arrived, for the "3/5" counts. Same rule as the PO's
+ * linesReceived / linesReceivable: a line counts when its quantity is positive (credits have
+ * nothing to receive), and is received when the feed says all of it arrived. Pass `jobId` to
+ * count only that job's lines of a PO split across jobs.
+ */
+export function lineCounts(items: readonly OpenPoLine[], jobId?: string): LineCounts {
+  const c: LineCounts = { lines: 0, received: 0, pieces: 0, piecesReceived: 0 };
+  for (const i of items) {
+    if (i.quantity <= 0 || (jobId != null && i.jobId !== jobId)) continue;
+    c.lines++;
+    c.pieces += i.quantity;
+    if (i.receivedQty == null) continue;
+    c.piecesReceived += Math.min(i.receivedQty, i.quantity);
+    if (i.receivedQty >= i.quantity) c.received++;
+  }
+  return c;
+}
+
+/**
+ * The next delivery still to come: the earliest expected date, today or later, among lines
+ * not yet fully received. Late lines are left out, so "soonest expected" is not just "most
+ * late" again. Pass `jobId` for one job's lines of a split PO.
+ */
+export function nextUpcoming(items: readonly OpenPoLine[], today: string, jobId?: string): string | null {
+  let next: string | null = null;
+  for (const i of items) {
+    if (i.quantity <= 0 || (jobId != null && i.jobId !== jobId)) continue;
+    if (i.receivedQty != null && i.receivedQty >= i.quantity) continue;
+    if (i.expected && i.expected >= today && (!next || i.expected < next)) next = i.expected;
+  }
+  return next;
+}
+
+export const addCounts =(a: LineCounts, b: LineCounts): LineCounts => ({
+  lines: a.lines + b.lines,
+  received: a.received + b.received,
+  pieces: a.pieces + b.pieces,
+  piecesReceived: a.piecesReceived + b.piecesReceived,
+});
+
 /** The Monday on or before `day` (`YYYY-MM-DD`): the start of its calendar week. */
 export function mondayOf(day: string): string {
   const [y, m, d] = day.split("-").map(Number);

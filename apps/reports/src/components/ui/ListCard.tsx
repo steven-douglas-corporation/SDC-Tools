@@ -1,6 +1,7 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
+import { sortRows, type SortDir } from "@/lib/data-table";
 
 // A card that heads a short list: who it is, one status badge, one progress bar, then a
 // scrollable mini-table of its items. First built for Job Details' Parts card view (one card
@@ -20,7 +21,15 @@ export type ListCardColumn<T> = {
   /** CSS grid track. Default: the first column takes the room ("1fr"), the rest fit ("auto"). */
   width?: string;
   render: (row: T) => ReactNode;
+  /**
+   * What the column sorts by. With it, and the card's `onSort`, the header becomes a sort
+   * button. Same rules as DataTable (lib/data-table.ts sortRows): numbers as numbers, text
+   * naturally, blanks last either way.
+   */
+  sortValue?: (row: T) => string | number | null | undefined;
 };
+
+export type ListCardSort = { id: string; dir: SortDir };
 
 export type ListCardProps<T> = {
   title: ReactNode;
@@ -39,6 +48,17 @@ export type ListCardProps<T> = {
   rowTitle?: (row: T) => string | undefined;
   emptyText?: ReactNode;
   footer?: ReactNode;
+  /**
+   * Sorting by a column header, controlled by the page so several cards can share one order.
+   * `sort` null keeps `rows` in the order given.
+   */
+  sort?: ListCardSort | null;
+  onSort?: (columnId: string) => void;
+  /**
+   * Splits the list under collapsible group headers (e.g. one per supplier). Groups appear in
+   * the order their first row does, after sorting; every group starts open.
+   */
+  groupBy?: { key: (row: T) => string; label: (key: string, rows: T[]) => ReactNode; title?: (key: string, rows: T[]) => string };
 };
 
 const Chevron = () => (
@@ -61,7 +81,11 @@ export function ListCard<T>({
   rowTitle,
   emptyText,
   footer,
+  sort,
+  onSort,
+  groupBy,
 }: ListCardProps<T>) {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const tracks = [...columns.map((c, i) => c.width ?? (i === 0 ? "1fr" : "auto")), ...(onRowClick ? ["auto"] : [])].join(" ");
   // ONE grid for the header and every row (each a subgrid of it), so an "auto" column is
   // sized once, to its widest cell. Each row used to be its own grid, sizing its auto
@@ -76,6 +100,37 @@ export function ListCard<T>({
         {c.render(row)}
       </span>
     ));
+
+  const sortable = columns.filter((c) => c.sortValue).map((c) => ({ id: c.id, value: c.sortValue! }));
+  const ordered = sort ? sortRows(rows, sortable, sort) : rows;
+  const groups: { key: string; rows: T[] }[] = [];
+  if (groupBy) {
+    const at = new Map<string, number>();
+    for (const row of ordered) {
+      const k = groupBy.key(row);
+      if (!at.has(k)) at.set(k, groups.push({ key: k, rows: [] }) - 1);
+      groups[at.get(k)!].rows.push(row);
+    }
+  }
+  const toggle = (k: string) =>
+    setCollapsed((s) => {
+      const n = new Set(s);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+
+  const renderRow = (row: T) =>
+    onRowClick ? (
+      <button key={rowKey(row)} type="button" onClick={() => onRowClick(row)} title={rowTitle?.(row)} className={`${rowCls} hover:bg-sdc-blue-light/30`}>
+        {cells(row)}
+        <Chevron />
+      </button>
+    ) : (
+      <div key={rowKey(row)} title={rowTitle?.(row)} className={rowCls}>
+        {cells(row)}
+      </div>
+    );
 
   return (
     <article className="flex flex-col overflow-hidden rounded-lg border border-sdc-border bg-white shadow-sm">
@@ -108,26 +163,54 @@ export function ListCard<T>({
 
       <div className="grid max-h-56 content-start gap-x-2 overflow-y-auto styled-scrollbar" style={grid}>
         <div className="sticky top-0 z-[1] col-span-full grid grid-cols-subgrid items-center bg-sdc-gray-100 px-3 py-1.5 text-micro font-bold uppercase tracking-wider text-sdc-gray-400">
-          {columns.map((c) => (
-            <span key={c.id} title={c.headerTitle} className={c.align === "right" ? "text-right" : ""}>
-              {c.header}
-            </span>
-          ))}
+          {columns.map((c) => {
+            const right = c.align === "right";
+            if (!onSort || !c.sortValue)
+              return (
+                <span key={c.id} title={c.headerTitle} className={right ? "text-right" : ""}>
+                  {c.header}
+                </span>
+              );
+            const active = sort?.id === c.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onSort(c.id)}
+                title={`${c.headerTitle ? `${c.headerTitle}. ` : ""}Click to sort; click again to reverse`}
+                aria-label={`Sort by ${typeof c.header === "string" ? c.header : c.id}${active ? `, now ${sort!.dir === "asc" ? "ascending" : "descending"}` : ""}`}
+                className={`flex items-center gap-0.5 font-bold uppercase tracking-wider hover:text-sdc-navy ${right ? "justify-end" : ""} ${active ? "text-sdc-navy" : ""}`}
+              >
+                {c.header}
+                {active && <span aria-hidden>{sort!.dir === "asc" ? "▲" : "▼"}</span>}
+              </button>
+            );
+          })}
           {onRowClick && <span />}
         </div>
         {rows.length === 0 && emptyText != null && <p className="col-span-full px-3 py-3 text-center text-label text-sdc-gray-400">{emptyText}</p>}
-        {rows.map((row) =>
-          onRowClick ? (
-            <button key={rowKey(row)} type="button" onClick={() => onRowClick(row)} title={rowTitle?.(row)} className={`${rowCls} hover:bg-sdc-blue-light/30`}>
-              {cells(row)}
-              <Chevron />
-            </button>
-          ) : (
-            <div key={rowKey(row)} title={rowTitle?.(row)} className={rowCls}>
-              {cells(row)}
-            </div>
-          ),
-        )}
+        {groupBy
+          ? groups.map((g) => {
+              const open = !collapsed.has(g.key);
+              return (
+                <Fragment key={`group:${g.key}`}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(g.key)}
+                    aria-expanded={open}
+                    title={groupBy.title?.(g.key, g.rows) ?? `${open ? "Hide" : "Show"} these`}
+                    className="col-span-full flex items-center gap-1.5 border-b border-sdc-border-soft/60 bg-slate-50 px-3 py-1 text-left text-label font-semibold text-sdc-gray-600 hover:bg-slate-100"
+                  >
+                    <span className="w-2.5 text-sdc-gray-400" aria-hidden>
+                      {open ? "▾" : "▸"}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{groupBy.label(g.key, g.rows)}</span>
+                  </button>
+                  {open && g.rows.map(renderRow)}
+                </Fragment>
+              );
+            })
+          : ordered.map(renderRow)}
       </div>
       {footer && <div className="mt-auto flex flex-wrap gap-2 border-t border-sdc-border-soft p-2.5">{footer}</div>}
     </article>

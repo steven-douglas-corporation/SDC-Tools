@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import { lineLeftToInvoice } from "../src/lib/left-to-invoice";
-import { buildOpenPos, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
+import { buildOpenPos, lineCounts, nextUpcoming, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
 
 // Open POs: a PO is open when its signed Left to Invoice is not $0.00, the Parts List's own
 // filter applied per PO. Receipts only decide the Status column.
@@ -223,6 +223,47 @@ test("week labels are date ranges", () => {
   assert.equal(weekRange("2026-11-09"), "Nov 9–15");
   assert.equal(weekRange("2026-11-30"), "Nov 30–Dec 6");
   assert.equal(weekRange("2026-12-28"), "Dec 28–Jan 3");
+});
+
+test("line counts: a line is received once all of it has arrived; credits and unknown receipts don't count as received", () => {
+  const lines = new Map([
+    [
+      "1101",
+      [
+        line({ po: "C", total: 100, quantity: 10, unitPrice: 10, receivedQty: 10 }), // all here
+        line({ po: "C", total: 100, quantity: 10, unitPrice: 10, receivedQty: 4 }), // partly here
+        line({ po: "C", total: -20, quantity: -2, unitPrice: 10, receivedQty: 0 }), // a credit: nothing to receive
+      ],
+    ],
+    ["1102", [line({ po: "C", total: 50, quantity: 5, unitPrice: 10, receivedQty: undefined })]], // no receipt data
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY).rows[0];
+  assert.deepEqual(lineCounts(r.items), { lines: 3, received: 1, pieces: 25, piecesReceived: 14 });
+  // A job's card counts only its own lines of a split PO.
+  assert.deepEqual(lineCounts(r.items, "1101"), { lines: 2, received: 1, pieces: 20, piecesReceived: 14 });
+  assert.deepEqual(lineCounts(r.items, "1102"), { lines: 1, received: 0, pieces: 5, piecesReceived: 0 });
+  // Same rule as the PO's own counts.
+  assert.equal(lineCounts(r.items).lines, r.linesReceivable);
+  assert.equal(lineCounts(r.items).received, r.linesReceived);
+});
+
+test("next delivery to come skips late and fully received lines", () => {
+  const lines = new Map([
+    [
+      "1101",
+      [
+        line({ po: "N", total: 10, receivedQty: 0, requiredDate: "2026-10-01" }), // late
+        line({ po: "N", total: 10, receivedQty: 0, requiredDate: "2026-11-20" }), // to come
+        line({ po: "N", total: 10, receivedQty: 1, requiredDate: "2026-11-10" }), // already here
+      ],
+    ],
+    ["1102", [line({ po: "N", total: 10, receivedQty: 0, requiredDate: "2026-11-12" })]],
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY).rows[0];
+  assert.equal(r.nextDue, "2026-10-01"); // the PO's earliest outstanding date is the late one
+  assert.equal(nextUpcoming(r.items, TODAY), "2026-11-12");
+  assert.equal(nextUpcoming(r.items, TODAY, "1101"), "2026-11-20");
+  assert.equal(nextUpcoming(r.items, "2026-12-01"), null);
 });
 
 test("jobs not in the loaded set are ignored", () => {
