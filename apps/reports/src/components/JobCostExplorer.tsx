@@ -151,6 +151,92 @@ function headerLabel(key: ColKey, label: string) {
 }
 
 const HIDDEN_COLS_KEY = "job-cost-explorer-hidden-cols";
+const COL_W_KEY = "job-cost-explorer-col-widths";
+type ResizableCol = "jobName" | "customerName";
+
+// ── Header hover tips, Cost to Date through Other Hrs (2026-11-11) ───────────
+//
+// Each one states where the column's number comes from and how far it runs, so a reader can
+// check it against the source without opening the code. They describe what lib/job-cost.ts and
+// lib/job-cost-source.ts actually do — keep them in step if either changes.
+function buildColTips(etcMonth: string | null, inventoryAsOf: string | null): Partial<Record<ColKey, string>> {
+  const etcSrc = etcMonth
+    ? `Starts from the latest SUBMITTED Monthly ETC month (${etcMonth}) and subtracts what has happened since.`
+    : "No submitted Monthly ETC month exists yet, so this shows —.";
+  return {
+    engineeringHours:
+      "Eng Hrs — all-time actual hours on Engineering-group sections. Adds the pre-tracking migration snapshot, the frozen Monthly ETC hours for months the punch import doesn't cover, and Paylocity punches folded onto the job's sections. Runs through the latest synced day (through the picked month on an As-of view). Service & Spares (80-/90-) are excluded. Costed in Labor $ at the Eng rate for the year the hours were worked.",
+    shopHours:
+      "Shop Hrs — same sources and cut-off as Eng Hrs, for Shop-group sections (build / test / install). Costed in Labor $ at the Shop rate for the year worked.",
+    partInvoiced:
+      "Parts Invoiced — GL-posted parts spend from Total ETO (the Projects tab's Parts Actual). For closed jobs below the final-parts cutoff it is the final Parts Cost Actual imported from the Sage job ledger. Always current: the As-of picker does not move it. Profit adds still-to-come parts on top (see Profit).",
+    etcEngHours: `ETC Eng — Engineering hours still to do. ${etcSrc} Each section is reduced by its own hours worked after that month and floored at 0, so an overrun on one section never shrinks another. — means the job had no row in that submission; Complete jobs show 0. Costed in Profit at the default Eng rate.`,
+    etcShopHours: `ETC Shop — Shop hours still to do. ${etcSrc} Same per-section reduction and 0 floor as ETC Eng; — means no row in that submission; Complete jobs show 0. Costed in Profit at the default Shop rate.`,
+    etcPartsCost: `ETC Parts — parts still to spend. ${etcSrc} Starts from Parts New ETC (Left to Invoice + Left to Purchase) less GL-posted parts spend since, floored at 0. $0 means the forecast is used up, not that parts are free — Profit still counts invoiced parts plus any open PO balance. — means no row in that submission; Complete jobs show 0.`,
+    pmCost: "PM $ — Sold Price × PM % for the job's Complete Date year (Rate Matrix; the default PM % when there is no Complete Date). A share of sales, not hours.",
+    mfgCost: "Mfg $ — Sold Price × Mfg % for the job's Complete Date year (Rate Matrix; the default Mfg % when there is no Complete Date). A share of sales, not hours.",
+    laborCost:
+      "Labor $ (Standard Fees total) = Eng Hrs × Eng rate + Shop Hrs × Shop rate (each year's hours at that year's rate; a manual hour allocation from the Job Id overrides; hours with no year use the default rate) + PM $ + Mfg $. Does not include ETC or parts.",
+    percentComplete: `% Complete — read from the inventory workbook snapshot${inventoryAsOf ? ` (as of ${inventoryAsOf})` : ""}, not calculated here. Complete jobs show 100%. — means the job isn't in the snapshot.`,
+    profit:
+      "Profit = Sold Price − (Labor $ + ETC Eng × default Eng rate + ETC Shop × default Shop rate + projected parts). Projected parts = Parts Invoiced + the larger of (open PO balance not yet invoiced, ETC Parts); Complete jobs use Parts Invoiced only and no ETC. Blank when the job has no Sold Price.",
+    margin: "Margin = Profit ÷ Sold Price × 100. Blank when the job has no Sold Price.",
+    otherHours:
+      "Other Hrs — hours on sections that are neither Engineering nor Shop (e.g. PM / Management 10-111). Same sources and cut-off as Eng Hrs; Service & Spares (80-/90-) excluded. Counted in a job's actual hours but costed at $0 in Labor $ — PM and Mfg cost are modelled as a % of sales instead.",
+  };
+}
+
+/** Drag handle on a header's right edge: drag to resize, double-click to go back to the default. */
+function ColResizeHandle({
+  label,
+  min,
+  max,
+  onResize,
+  onCommit,
+  onReset,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  onResize: (width: number) => void;
+  onCommit: () => void;
+  onReset: () => void;
+}) {
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize ${label} column`}
+      title="Drag to resize · double-click to reset"
+      className="absolute right-0 top-0 z-20 h-full w-1.5 cursor-col-resize touch-none select-none hover:bg-sdc-blue/40"
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onReset();
+      }}
+      onPointerDown={(e) => {
+        const th = e.currentTarget.parentElement;
+        if (!th) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const el = e.currentTarget;
+        const startX = e.clientX;
+        const startW = th.getBoundingClientRect().width;
+        el.setPointerCapture(e.pointerId);
+        const move = (ev: PointerEvent) => onResize(Math.min(max, Math.max(min, startW + ev.clientX - startX)));
+        const up = () => {
+          el.removeEventListener("pointermove", move);
+          el.removeEventListener("pointerup", up);
+          el.removeEventListener("pointercancel", up);
+          onCommit();
+        };
+        el.addEventListener("pointermove", move);
+        el.addEventListener("pointerup", up);
+        el.addEventListener("pointercancel", up);
+      }}
+    />
+  );
+}
 
 // Fixed lead-in order for the status picker — matches every other status
 // control in the app (e.g. the Projects grid's own status <select>). Anything
@@ -186,7 +272,7 @@ function statusTone(status: string): string {
 // "which job is this row" while scrolling through fifteen numeric ones, which is
 // the actual problem being solved.
 const JOB_ID_COL_W = "w-24 min-w-24 max-w-24"; // 6rem
-const JOB_NAME_COL_W = "w-56 min-w-56 max-w-56"; // 14rem
+const JOB_NAME_DEFAULT_PX = 288; // ~18rem: most job names fit; drag the header edge to compress or expand
 const JOB_NAME_LEFT = "left-24"; // = JOB_ID_COL_W's width, so the pane has no gap (§ sticky-column rem-offset gotcha)
 
 type HeaderSlot = { key: string; group: GroupKey; frozen: boolean };
@@ -328,6 +414,53 @@ export function JobCostExplorer({
       // Same non-fatal case as toggleCol.
     }
   }
+
+  // User-set widths for the two long-text columns. Unset = Job Name's default width / Customer fitting
+  // its longest name; a dragged width is remembered per browser.
+  const [colW, setColW] = useState<Partial<Record<ResizableCol, number>>>({});
+  const colWRef = useRef(colW);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COL_W_KEY) || "{}") as Record<string, unknown>;
+      const next: Partial<Record<ResizableCol, number>> = {};
+      for (const k of ["jobName", "customerName"] as const) {
+        const v = saved?.[k];
+        if (typeof v === "number" && Number.isFinite(v) && v > 0) next[k] = v;
+      }
+      colWRef.current = next;
+      // Same post-hydration read as the hidden-columns effect above, for the same reason.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setColW(next);
+    } catch {
+      // localStorage unavailable or corrupt — keep the defaults.
+    }
+  }, []);
+  function resizeCol(key: ResizableCol, width: number) {
+    const next = { ...colWRef.current, [key]: Math.round(width) };
+    colWRef.current = next;
+    setColW(next);
+  }
+  function commitColW() {
+    try {
+      localStorage.setItem(COL_W_KEY, JSON.stringify(colWRef.current));
+    } catch {
+      // Not fatal — the width just won't be remembered.
+    }
+  }
+  function resetCol(key: ResizableCol) {
+    const next = { ...colWRef.current };
+    delete next[key];
+    colWRef.current = next;
+    setColW(next);
+    commitColW();
+  }
+  const jobNameW = colW.jobName ?? JOB_NAME_DEFAULT_PX;
+  const jobNameStyle = { width: jobNameW, minWidth: jobNameW, maxWidth: jobNameW };
+  const customerStyle =
+    colW.customerName != null
+      ? { width: colW.customerName, minWidth: colW.customerName, maxWidth: colW.customerName }
+      : { width: "1%" };
+  const colTips = useMemo(() => buildColTips(etcRefreshedThru, inventoryAsOf), [etcRefreshedThru, inventoryAsOf]);
 
   const [rateMatrixOpen, setRateMatrixOpen] = useState(false);
   // Read-only until someone turns editing on: the Rate Matrix button stays disabled
@@ -1032,7 +1165,7 @@ export function JobCostExplorer({
               same key at the header, body, and totals row, so the boundary
               set can't drift between tiers the way three hand-written
               copies could. */}
-          <table className="w-full border-separate border-spacing-0 text-sm [&_td]:tabular-nums [&_td]:font-semibold">
+          <table className="w-auto border-separate border-spacing-0 text-sm [&_td]:tabular-nums [&_td]:font-semibold">
             <thead className="sticky top-0 z-20 bg-white">
               <tr>
                 {bandCells.map((b, i) => {
@@ -1087,8 +1220,11 @@ export function JobCostExplorer({
                   align="left"
                   sort={sortState}
                   onSort={toggleSort}
-                  className={`frozen-col frozen-col-last sticky ${JOB_NAME_LEFT} z-10 border-r border-sdc-border bg-sdc-gray-100 px-2 py-1 align-bottom ${JOB_NAME_COL_W}`}
-                />
+                  className={`frozen-col frozen-col-last sticky ${JOB_NAME_LEFT} z-10 border-r border-sdc-border bg-sdc-gray-100 px-2 py-1 align-bottom`}
+                  style={jobNameStyle}
+                >
+                  <ColResizeHandle label="Job Name" onResize={(w) => resizeCol("jobName", w)} onCommit={commitColW} onReset={() => resetCol("jobName")} min={120} max={720} />
+                </SortableTh>
                 {!hiddenCols.has("customerName") && (
                   <SortableTh
                     label="Customer"
@@ -1097,8 +1233,11 @@ export function JobCostExplorer({
                     align="left"
                     sort={sortState}
                     onSort={toggleSort}
-                    className={`min-w-[9rem] px-2 py-1 align-bottom ${vBorder("customerName")}`}
-                  />
+                    className={`relative whitespace-nowrap px-2 py-1 align-bottom ${vBorder("customerName")}`}
+                    style={customerStyle}
+                  >
+                    <ColResizeHandle label="Customer" onResize={(w) => resizeCol("customerName", w)} onCommit={commitColW} onReset={() => resetCol("customerName")} min={80} max={640} />
+                  </SortableTh>
                 )}
                 {!hiddenCols.has("jobType") && (
                   <SortableTh
@@ -1108,7 +1247,7 @@ export function JobCostExplorer({
                     align="left"
                     sort={sortState}
                     onSort={toggleSort}
-                    className={`min-w-[6rem] px-2 py-1 align-bottom ${vBorder("jobType")}`}
+                    className={`w-[1%] whitespace-nowrap px-2 py-1 align-bottom ${vBorder("jobType")}`}
                   />
                 )}
                 <SortableTh
@@ -1118,7 +1257,7 @@ export function JobCostExplorer({
                   align="left"
                   sort={sortState}
                   onSort={toggleSort}
-                  className={`min-w-[6.5rem] px-2 py-1 align-bottom ${vBorder("status")}`}
+                  className={`w-[1%] whitespace-nowrap px-2 py-1 align-bottom ${vBorder("status")}`}
                 />
                 {COLS.filter((c) => c.key !== "customerName" && c.key !== "jobType" && !hiddenCols.has(c.key)).map((c) => (
                   <SortableTh
@@ -1129,6 +1268,7 @@ export function JobCostExplorer({
                     align="right"
                     sort={sortState}
                     onSort={toggleSort}
+                    title={colTips[c.key]}
                     className={`px-2 py-1 align-bottom leading-tight ${c.widthClass} ${vBorder(c.key)}`}
                   />
                 ))}
@@ -1159,19 +1299,26 @@ export function JobCostExplorer({
                       )}
                     </td>
                     <td
-                      className={`frozen-col frozen-col-last sticky ${JOB_NAME_LEFT} z-10 truncate border-b border-r border-b-sdc-border-soft border-r-sdc-border px-2 py-1.5 text-left align-middle ${JOB_NAME_COL_W} ${zebraFrozen} group-hover:bg-sdc-blue-light`}
+                      className={`frozen-col frozen-col-last sticky ${JOB_NAME_LEFT} z-10 truncate border-b border-r border-b-sdc-border-soft border-r-sdc-border px-2 py-1.5 text-left align-middle ${zebraFrozen} group-hover:bg-sdc-blue-light`}
+                      style={jobNameStyle}
                     >
                       <Link href={`/job-hours?jobs=${r.jobId}`} className="hover:underline" title={r.jobName || "Open in Job Details"}>
                         {r.jobName || "—"}
                       </Link>
                     </td>
                     {!hiddenCols.has("customerName") && (
-                      <td className={`px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("customerName")} ${zebra}`}>{r.customerName || "—"}</td>
+                      <td
+                        className={`whitespace-nowrap px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${colW.customerName != null ? "overflow-hidden text-ellipsis" : ""} ${vBorder("customerName")} ${zebra}`}
+                        style={customerStyle}
+                        title={r.customerName || undefined}
+                      >
+                        {r.customerName || "—"}
+                      </td>
                     )}
                     {!hiddenCols.has("jobType") && (
-                      <td className={`px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("jobType")} ${zebra}`}>{r.jobType || "—"}</td>
+                      <td className={`whitespace-nowrap px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("jobType")} ${zebra}`}>{r.jobType || "—"}</td>
                     )}
-                    <td className={`px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("status")} ${zebra}`}>
+                    <td className={`whitespace-nowrap px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("status")} ${zebra}`}>
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-label font-semibold ${statusTone(r.status)}`}>{r.status}</span>
                     </td>
                     {!hiddenCols.has("salesPrice") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("salesPrice")} ${zebra}`}>{fmtMoney(r.salesPrice)}</td>}
