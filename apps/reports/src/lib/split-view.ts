@@ -154,7 +154,7 @@ export const SPLIT_ROUTES: readonly {
   { path: "/open-pos", label: "Open POs", params: [] },
   { path: "/jobs", label: "Jobs", params: ["q", "status", "type", "customer"] },
   { path: "/job-cost-explorer", label: "Profitability", params: ["asOf"], instanceParam: "asOf" },
-  { path: "/cash-flow", label: "Cash Flow", params: ["as", "compare"], instanceParam: "as" },
+  { path: "/cash-flow", label: "Cash Flow", params: ["as", "compare", "lti"], instanceParam: "as" },
   { path: "/employees", label: "Employees", params: [] },
   { path: "/audit-log", label: "Audit Log", params: [] },
   // Back as a pane 2026-10-21. Data Quality was a Dashboard tab, and the Dashboard is
