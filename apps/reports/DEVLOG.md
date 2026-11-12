@@ -7296,3 +7296,26 @@ Hrs/yr; the Hrs/yr row still opens the capacity breakdown) at the top right besi
 title, on both tabs. Search, Show inactive and the grouping switch sit under it, on the
 Org chart / Hiring tabs' line (the header's rule is the tabs' underline). On the Hiring tab
 that row keeps its space, invisible and inert, so the tabs never move when you switch.
+## 89. Open POs: card rows like Job Details' parts cards (2026-11-12)
+
+Asked for: the PO rows in the Open POs cards should look like Job Details' Parts card
+view, with a blue underlined PO #, and the received count should leave out tariffs and
+shipping as Job Details does.
+
+Rows: the PO # is blue with a dotted underline (clicking the row still opens the PO
+panel; Job Details copies the number instead). "Lines" became "Received" and reads
+"2/3 rcvd" in plain grey, as on Job Details, without the green for a complete PO.
+
+Counts: Job Details' PO query drops lines whose part number is Shipping, FEE or TARIFF
+(job-bom.ts PO_SQL). open-pos-rules.ts `isChargeLine` applies the same three part numbers,
+ignoring case and spaces (SQL Server's default collation), and `lineCounts` skips them, so
+the card counts, the card subtitle and the supplier group headers agree with Job Details.
+The PO panel shows those lines' Received as "Charge". Money is unchanged: the tiles, the
+bar and Left to invoice still include them, as Job Details' Left to Invoice does.
+
+Card header, also as on Job Details: the badge reads PAST DUE (anything late), else
+RECEIVED / PARTIAL / PENDING at 90% / 60% of PO lines received; the bar and its "64%"
+label go by lines received, green / yellow / blue at the same thresholds. The selected
+tile's figure, which used to be the bar's label, moved into the subtitle ("8 POs · 21
+items · $180,928 left to invoice"), so the card still shows what the tiles and the Amount
+sort are about. The share by value is in the bar's hover text.

@@ -160,16 +160,23 @@ export function addDays(day: string, days: number): string {
 
 export type LineCounts = { lines: number; received: number; pieces: number; piecesReceived: number };
 
+// Charges billed as PO lines, not parts: nothing arrives at the dock for them, so they are
+// left out of the received counts. The same part numbers Job Details' parts cards leave out
+// (job-bom.ts PO_SQL: ItemCompanyID NOT IN ('Shipping', 'FEE', 'TARIFF')). Matched ignoring
+// case and spaces, as SQL Server's default collation compares them.
+const CHARGE_PART_NUMBERS = new Set(["SHIPPING", "FEE", "TARIFF"]);
+export const isChargeLine = (l: Pick<OpenPoLine, "partNumber">) => CHARGE_PART_NUMBERS.has((l.partNumber ?? "").trim().toUpperCase());
+
 /**
- * How many PO lines (and pieces) have arrived, for the "3/5" counts. Same rule as the PO's
- * linesReceived / linesReceivable: a line counts when its quantity is positive (credits have
- * nothing to receive), and is received when the feed says all of it arrived. Pass `jobId` to
- * count only that job's lines of a PO split across jobs.
+ * How many PO lines (and pieces) have arrived, for the "3/5 rcvd" counts. A line counts when
+ * its quantity is positive (credits have nothing to receive) and it is a part, not a shipping,
+ * fee or tariff charge (`isChargeLine`), and is received when the feed says all of it arrived.
+ * Pass `jobId` to count only that job's lines of a PO split across jobs.
  */
 export function lineCounts(items: readonly OpenPoLine[], jobId?: string): LineCounts {
   const c: LineCounts = { lines: 0, received: 0, pieces: 0, piecesReceived: 0 };
   for (const i of items) {
-    if (i.quantity <= 0 || (jobId != null && i.jobId !== jobId)) continue;
+    if (i.quantity <= 0 || isChargeLine(i) || (jobId != null && i.jobId !== jobId)) continue;
     c.lines++;
     c.pieces += i.quantity;
     if (i.receivedQty == null) continue;
