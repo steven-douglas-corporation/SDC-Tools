@@ -1,12 +1,14 @@
+import { LeftToInvoiceCutoffPicker } from "@/components/LeftToInvoiceCutoffPicker";
 import { usd } from "@/components/ui/format";
 import { NET_TERMS_DAYS, monthName, type LeftToInvoiceOverview } from "@/lib/left-to-invoice-by-month";
 
-// Monthly ETC → every job's Left to Invoice, side by side by expected billing month (2026-10-28).
+// Cash Flow Forecast → "Monthly ETC - Left to Invoice Split". Moved here from the Monthly ETC page
+// (2026-11-12) and now read live: every job's Left to Invoice as of today, side by side by expected
+// billing month, then the same balances moved by net terms to an expected payment month.
 //
-// Collapsed it is one line (total, and how much of it is already overdue); opened, a job-by-month
-// table. Every row is the split already behind that job's own Left to Invoice cell, so a row sums
-// to its cell and the Total row sums the column of cells in the grid below. No client state: a
-// plain <details>, so it costs the page nothing until someone opens it.
+// Every row is the split already behind that job's own Left to Invoice figure
+// (lib/parts-etc-breakout.ts), so a row sums to that figure and the Total row sums the column.
+// No client state: a plain <details>, open by default.
 //
 // The date is each PO line's required date — when the part is due to arrive, so roughly when the
 // supplier bills. It is an estimate of billing, NOT a payment due date: nothing here is invoiced.
@@ -16,27 +18,27 @@ import { NET_TERMS_DAYS, monthName, type LeftToInvoiceOverview } from "@/lib/lef
 const NUM = "px-2 py-1 text-right font-mono tabular-nums";
 const money = (n: number) => (Math.abs(n) < 0.5 ? "—" : usd(n));
 
-export function EtcLeftToInvoiceByMonth({
+export function CashFlowLeftToInvoiceSplit({
   overview,
   payOverview,
-  overriddenJobs,
-  cutoffLabel,
+  asOfLabel,
+  cutoffMonth,
 }: {
   overview: LeftToInvoiceOverview;
   /** Same jobs with each month moved NET_TERMS_DAYS later (expected payment month). */
   payOverview: LeftToInvoiceOverview;
-  /** Jobs whose cell holds a manual figure instead of this computed one, so their row is not what the cell shows. */
-  overriddenJobs: number;
-  cutoffLabel: string;
+  /** The day the figures are as of, written for a human (today). */
+  asOfLabel: string;
+  /** `YYYY-MM` when a month-end cutoff is chosen; null = today (live). */
+  cutoffMonth: string | null;
 }) {
   const { rows, totals } = overview;
-  if (rows.length === 0) return null;
   const overduePct = totals.sum > 0 ? Math.round((totals.overdue / totals.sum) * 100) : 0;
 
   return (
-    <details className="mb-3 rounded-md border border-sdc-border bg-white text-xs">
+    <details open className="mb-6 rounded-md border border-sdc-border bg-white text-xs">
       <summary className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-sdc-navy">
-        <span className="font-semibold">Parts Left to Invoice — all jobs, by expected billing month</span>
+        <span className="text-sm font-semibold">Monthly ETC - Left to Invoice Split</span>
         <span className="font-mono font-bold tabular-nums">{usd(totals.sum)}</span>
         <span className="text-sdc-muted">
           {totals.overdue > 0.5 ? `${usd(totals.overdue)} (${overduePct}%) already past its required date` : "none past its required date"}
@@ -45,14 +47,17 @@ export function EtcLeftToInvoiceByMonth({
         </span>
       </summary>
       <div className="border-t border-sdc-border">
-        <p className="px-4 py-2 text-note leading-relaxed text-sdc-gray-600">
-          Each job&apos;s Left to Invoice as of {cutoffLabel}, split by the PO line&apos;s <span className="font-semibold">required date</span> — when the part is
+        <LeftToInvoiceCutoffPicker month={cutoffMonth} />
+        {rows.length === 0 ? (
+          <p className="border-t border-sdc-border px-4 py-3 text-sdc-muted">Nothing left to invoice as of {asOfLabel}.</p>
+        ) : (
+          <>
+        <h3 className="border-t border-sdc-border px-4 pb-1 pt-2.5 text-xs font-semibold text-sdc-navy">Parts Left to Invoice — all jobs, by expected billing month</h3>
+        <p className="px-4 pb-2 text-note leading-relaxed text-sdc-gray-600">
+          Each job&apos;s Left to Invoice as of {asOfLabel}, split by the PO line&apos;s <span className="font-semibold">required date</span> — when the part is
           due to arrive, so roughly when the supplier bills it. It is an estimate of billing, not a payment due date: nothing here is invoiced yet.{" "}
           <span className="font-semibold">Overdue</span> means that date has passed and the balance is still not invoiced — the supplier has not billed it,
-          or the bill has not been entered. Overdue is measured against today.
-          {overriddenJobs > 0
-            ? ` ${overriddenJobs} job${overriddenJobs === 1 ? "" : "s"} carry a manually adjusted figure in the grid; this table shows the computed one.`
-            : ""}
+          or the bill has not been entered. Overdue is measured against today, whatever date the figures are as of.
         </p>
         <OverviewTable overview={overview} />
         <h3 className="border-t border-sdc-border px-4 pb-1 pt-2.5 text-xs font-semibold text-sdc-navy">
@@ -63,6 +68,8 @@ export function EtcLeftToInvoiceByMonth({
           suppliers bill with shorter terms, and net terms run from the invoice date, which can be after the required date. Overdue stays on the required date.
         </p>
         <OverviewTable overview={payOverview} />
+          </>
+        )}
       </div>
     </details>
   );

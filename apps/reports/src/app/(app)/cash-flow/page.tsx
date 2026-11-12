@@ -4,14 +4,21 @@ import { PAGE_SHELL } from "@/components/ui/classnames";
 import { requireEltOnly } from "@/lib/cash-flow-access";
 import { getProjectEstimates, getCashFlowLines, resolveAsOf, listSnapshots, getLatestSnapshotSummary } from "@/lib/cash-flow";
 import { CashFlowClient } from "@/components/CashFlowClient";
+import { CashFlowLeftToInvoiceSplit } from "@/components/CashFlowLeftToInvoiceSplit";
+import { isValidMonth } from "@/lib/etc";
+import { monthEndLabel } from "@/lib/left-to-invoice";
+import { readPartsEtcBreakout } from "@/lib/parts-etc-breakout";
+import { buildOverview, pickBuckets, type JobBuckets, type LeftToInvoiceBuckets } from "@/lib/left-to-invoice-by-month";
 
 // Cash Flow Forecast — ELT-only (see cash-flow-access.ts's own header for
 // why this is a hard role check, not a togglable Permission). "Current" is
 // always live against Total ETO; any other `as`/`compare` param reads an
 // immutable stored snapshot — see lib/cash-flow.ts.
-export async function CashFlowView({ params }: { params: { as?: string; compare?: string } }) {
+export async function CashFlowView({ params }: { params: { as?: string; compare?: string; lti?: string } }) {
   await requireEltOnly();
   const { as, compare } = params;
+  // Left to Invoice Split cutoff: a valid `YYYY-MM` = that month's last day, anything else = today.
+  const ltiMonth = params.lti && isValidMonth(params.lti) ? params.lti : null;
 
   // Started HERE, before the asOf/compareAsOf resolution below, because neither
   // of these depends on either of them — and both used to sit inside the
@@ -24,6 +31,25 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
   // resolution below throws first.
   const estimatesPromise = getProjectEstimates();
   const snapshotsPromise = listSnapshots();
+  // "Monthly ETC - Left to Invoice Split" (moved here from Monthly ETC): always live, as of
+  // today by default (month null = no cutoff, so it moves as POs are received and invoices
+  // post), or through the month end picked with `lti` — then only POs purchased and invoices
+  // posted on or before that day count, exactly as Monthly ETC computes a month. Never throws — a
+  // Total ETO outage costs this table, not the forecast below it.
+  const splitPromise = estimatesPromise
+    .then((ests) => readPartsEtcBreakout(ests.map((e, i) => ({ pk: i, jobNumber: e.projectId })), ltiMonth).then((r) => ({ ests, r })))
+    .then(({ ests, r }) => {
+      const jobs: (JobBuckets & { payBuckets: LeftToInvoiceBuckets })[] = [];
+      ests.forEach((e, i) => {
+        const b = r.byJobPk.get(i);
+        if (b?.byRequiredMonth) jobs.push({ jobId: e.projectId, jobName: e.jobName ?? "", buckets: b.byRequiredMonth, payBuckets: b.byPaymentMonth ?? b.byRequiredMonth });
+      });
+      return { overview: buildOverview(jobs), payOverview: buildOverview(pickBuckets(jobs, (j) => j.payBuckets)) };
+    })
+    .catch((e) => {
+      console.error("[cash-flow] left to invoice split failed:", e);
+      return null;
+    });
   estimatesPromise.catch(() => {});
   snapshotsPromise.catch(() => {});
 
@@ -44,11 +70,12 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
     if (latest) compareAsOf = { kind: "snapshot", snapshot: latest };
   }
 
-  const [estimates, lines, compareLines, snapshots] = await Promise.all([
+  const [estimates, lines, compareLines, snapshots, split] = await Promise.all([
     estimatesPromise,
     getCashFlowLines(asOf),
     compareAsOf ? getCashFlowLines(compareAsOf) : Promise.resolve(null),
     snapshotsPromise,
+    splitPromise,
   ]);
 
   return (
@@ -57,6 +84,14 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
           source fails to refresh the page still renders — correctly, from the last
           good snapshot — and until now said nothing about it. Silent when healthy. */}
       <SourceStaleBanner sources={["cash_flow_snapshot"]} what="This forecast" />
+      {split && (
+        <CashFlowLeftToInvoiceSplit
+          overview={split.overview}
+          payOverview={split.payOverview}
+          asOfLabel={ltiMonth ? monthEndLabel(ltiMonth) : `today, ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`}
+          cutoffMonth={ltiMonth}
+        />
+      )}
       <div className="mb-1">
         <PageTitle className="mb-1">Cash Flow Forecast</PageTitle>
         <p className="max-w-3xl text-sm text-sdc-gray-600">
@@ -88,6 +123,6 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
 // Nothing about this route's behaviour changes: same URL, same params, same server
 // render. `searchParams` is still awaited HERE, which is what keeps this route
 // dynamic exactly as before.
-export default async function CashFlowPage({ searchParams }: { searchParams: Promise<{ as?: string; compare?: string }> }) {
+export default async function CashFlowPage({ searchParams }: { searchParams: Promise<{ as?: string; compare?: string; lti?: string }> }) {
   return <CashFlowView params={await searchParams} />;
 }
