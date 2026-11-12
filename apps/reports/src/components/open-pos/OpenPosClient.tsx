@@ -395,7 +395,7 @@ function OpenPoCard({
       width: supplierColumn ? "auto" : undefined,
       sortValue: ({ row }) => row.poNumber,
       render: ({ row }) => (
-        <span className="block truncate font-mono text-note font-semibold text-sdc-navy" title={poTip(row)}>
+        <span className="block truncate font-mono text-note font-semibold text-sdc-blue underline decoration-dotted underline-offset-2" title={`${poTip(row)}. Click to open`}>
           {row.poNumber}
         </span>
       ),
@@ -418,13 +418,13 @@ function OpenPoCard({
       : []),
     {
       id: "lines",
-      header: "Lines",
-      headerTitle: "PO lines fully received, of the lines on the PO",
+      header: "Received",
+      headerTitle: "PO lines fully received, of the part lines on the PO. Shipping, fee and tariff charges are not counted, as on Job Details",
       align: "right",
       sortValue: ({ counts: c }) => (c.lines ? c.received / c.lines : null),
       render: ({ counts: c }) => (
-        <span className={`font-mono text-label tabular-nums ${c.lines > 0 && c.received >= c.lines ? "text-sdc-green-text" : "text-sdc-gray-600"}`} title={countsTip(c)}>
-          {c.lines ? `${c.received}/${c.lines}` : "–"}
+        <span className="text-label tabular-nums text-sdc-gray-600" title={countsTip(c)}>
+          {c.lines ? `${c.received}/${c.lines} rcvd` : "–"}
         </span>
       ),
     },
