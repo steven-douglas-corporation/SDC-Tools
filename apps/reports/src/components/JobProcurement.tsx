@@ -210,9 +210,12 @@ export function JobProcurement({
   bom,
   partsLines,
   transfers,
+  schedulerVendorPosUrl,
 }: {
   bom: JobBom;
   partsLines: PartsCostLine[];
+  /** The Scheduler's Vendor POs page, for the PO panel's "Chase in Scheduler". */
+  schedulerVendorPosUrl?: string;
   /** Parts moved between jobs, as the Parts Cost card nets them. Absent = the caller has none to show. */
   transfers?: { net: number; entries: JobTransferEntry[]; items: JobTransferItem[]; unavailable: boolean };
 }) {
@@ -777,6 +780,7 @@ export function JobProcurement({
           onClose={() => setPoPanel(null)}
           onPartClick={drillToPart}
           onOpenPo={openPoFor}
+          schedulerVendorPosUrl={schedulerVendorPosUrl}
         />
       )}
 

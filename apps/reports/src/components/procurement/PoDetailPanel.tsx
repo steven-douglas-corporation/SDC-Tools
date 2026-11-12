@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import type { BomPart, PoLineGroup } from "@/lib/job-bom";
 import { SDC_CANONICAL } from "@/lib/vendor-normalize";
 import { usd, usd2 } from "@/components/ui/format";
+import { TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { useColumnSort } from "@/components/useColumnSort";
 import { SortableTh } from "@/components/ui/SortableHeader";
 import { sortRows, type SortColumns } from "@/lib/table-sort";
@@ -851,6 +852,8 @@ export function PoPanel({
   onClose,
   onPartClick,
   onOpenPo,
+  schedulerVendorPosUrl,
+  actions,
 }: {
   supplier: string;
   po: PoGroup;
@@ -858,6 +861,10 @@ export function PoPanel({
   onClose: () => void;
   onPartClick: (p: DrillablePart) => void;
   onOpenPo: (supplier: string | null, poNumber: string | null) => void;
+  /** The Scheduler's Vendor POs page, where buyers chase the PO. Shown as "Chase in Scheduler" when given. */
+  schedulerVendorPosUrl?: string;
+  /** Extra links under the bars, beside "Chase in Scheduler" (Open POs: the jobs the PO charges). */
+  actions?: ReactNode;
 }) {
   const nowMs = useStableNow();
   const cols = useMemo(() => ALL_COLS.filter((c) => PO_PANEL_COL_KEYS.includes(c.key)), []);
@@ -992,6 +999,23 @@ export function PoPanel({
             )}
             <PanelBar label="Parts (Assembly Readiness)" received={po.received} total={po.total} pct={stats.pct} />
           </div>
+
+          {(schedulerVendorPosUrl || actions) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {actions}
+              {schedulerVendorPosUrl && (
+                <a
+                  href={schedulerVendorPosUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Opens the Scheduler's Vendor POs page in a new tab, where buyers set ETAs, tracking and notes"
+                  className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
+                >
+                  Chase in Scheduler ↗
+                </a>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Parts table — same columns, sort keys and row cells (`PartRowCells`)

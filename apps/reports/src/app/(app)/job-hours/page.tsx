@@ -12,6 +12,7 @@ import { listDashboardJobs, getJobHoursDashboard, defaultDashboardJobId } from "
 import { getPartsCostFinancials, type PartsCostFinancials } from "@/lib/parts-cost-financials";
 import { SchedulerJobLink } from "@/components/SchedulerJobLink";
 import { getSchedulerLinkContext } from "@/lib/scheduler-link";
+import { withSchedulerSso } from "@/lib/scheduler-sso";
 import { getJobBom, type JobBom } from "@/lib/job-bom";
 import { getJobHoursDetail, type JobHoursDetail } from "@/lib/job-hours-detail";
 import { withTimeoutOrNull, UPSTREAM_BUDGET_MS } from "@/lib/with-timeout";
@@ -351,7 +352,11 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
               // The heading above is on screen at once; only the Total ETO-backed body
               // streams in. Keyed by selection — see `selectionKey`.
               <Suspense key={selectionKey} fallback={<ProcurementSkeleton />}>
-                <ProcurementBody bomPromise={bomPromise} financialsPromise={financialsPromise} />
+                <ProcurementBody
+                  bomPromise={bomPromise}
+                  financialsPromise={financialsPromise}
+                  schedulerVendorPosUrl={withSchedulerSso(`${schedulerBaseUrl}/?view=vendor-pos`, schedulerSsoEmail)}
+                />
               </Suspense>
             )}
           </div>
@@ -381,9 +386,11 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
 async function ProcurementBody({
   bomPromise,
   financialsPromise,
+  schedulerVendorPosUrl,
 }: {
   bomPromise: Promise<JobBom | null>;
   financialsPromise: Promise<PartsCostFinancials | null>;
+  schedulerVendorPosUrl: string;
 }) {
   const [bom, parts] = await Promise.all([bomPromise, financialsPromise]);
   // Distinguishes "we asked and could not get it" from "there is nothing to ask for",
@@ -402,6 +409,7 @@ async function ProcurementBody({
       <JobProcurement
         bom={bom}
         partsLines={parts?.lines ?? []}
+        schedulerVendorPosUrl={schedulerVendorPosUrl}
         // Parts moved between jobs, so the list can say how the Parts Cost card gets to its total.
         transfers={parts ? { net: parts.transfersNet, entries: parts.transfers, items: parts.transferItems, unavailable: parts.transfersUnavailable } : undefined}
       />
