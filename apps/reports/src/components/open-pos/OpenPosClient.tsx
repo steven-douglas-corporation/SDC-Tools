@@ -341,16 +341,30 @@ function poDot(r: OpenPoRow, m: OpenPoMoney): { cls: string; tip: string; rank: 
   return { cls, rank, tip: `${chip.text}. ${chip.tip}` };
 }
 
-function cardChip(late: number, oldestLate: number, ordered: number, notReceived: number): { text: string; cls: string; tip: string } {
+// The card header, the same as Job Details' parts cards (PartsCardView): badge, bar colour and
+// "64%" all go by the share of PO lines received; past due wins over any progress.
+function cardChip(late: number, oldestLate: number, linesPct: number): { text: string; cls: string; tip: string } {
   if (late > 0)
-    return { text: `LATE ${days(oldestLate).toUpperCase()}`, cls: "bg-sdc-red-bg text-sdc-red-text", tip: `${usdExact(late)} not received on lines past their expected date. The oldest is ${days(oldestLate)} late` };
-  if (ordered > 0 && notReceived <= 0) return { text: "ALL RECEIVED", cls: "bg-sdc-green-bg text-sdc-green-text", tip: "Everything has arrived; invoices are still to post" };
-  return { text: "ON SCHEDULE", cls: "bg-sdc-blue-light text-sdc-blue-dark", tip: "Nothing is past its expected date" };
+    return { text: "PAST DUE", cls: "bg-sdc-red-bg text-sdc-red-text", tip: `${usdExact(late)} not received on lines past their expected date. The oldest is ${days(oldestLate)} late` };
+  if (linesPct >= 90) return { text: "RECEIVED", cls: "bg-sdc-green-bg text-sdc-green-text", tip: `${linesPct}% of the PO lines have arrived, and nothing is past due` };
+  if (linesPct >= 60) return { text: "PARTIAL", cls: "bg-sdc-yellow-bg text-sdc-yellow-text", tip: `${linesPct}% of the PO lines have arrived, and nothing is past due` };
+  return { text: "PENDING", cls: "bg-sdc-blue-light text-sdc-blue-dark", tip: `${linesPct}% of the PO lines have arrived, and nothing is past due` };
 }
+const linesBar = (p: number) => (p >= 90 ? "bg-sdc-green" : p >= 60 ? "bg-sdc-yellow" : "bg-sdc-blue");
+const linesText = (p: number) => (p >= 90 ? "text-sdc-green-text" : p >= 60 ? "text-sdc-yellow-text" : "text-sdc-blue-dark");
+
+/** The selected tile's figure, as the card subtitle says it: "$180,928 left to invoice". */
+const METRIC_PHRASE: Record<MetricId, string> = {
+  late: "late",
+  notReceived: "not yet received",
+  next4Weeks: "expected in 4 weeks",
+  receivedNotInvoiced: "received, not invoiced",
+  leftToInvoice: "left to invoice",
+};
 
 // One card per job or vendor, on the shared ListCard (the same card as Job Details' Parts
-// card view): who it is, one status badge, how much has arrived with the selected tile's
-// figure beside it, then its POs: PO #, supplier (project cards), lines received, expected,
+// card view), with the same header: who it is, one status badge, the share of PO lines
+// received as a bar and "%", and the selected tile's figure in the subtitle; then its POs: PO #, supplier (project cards), lines received, expected,
 // status. Value received is on the bar's hover, not a column.
 // The PO columns sort on click, one order shared by every card; project cards can group
 // their POs under each supplier.
@@ -361,6 +375,7 @@ function OpenPoCard({
   avatar,
   metric,
   money,
+  counts,
   oldestLate,
   pos,
   onOpenPo,
@@ -371,10 +386,12 @@ function OpenPoCard({
 }: {
   title: ReactNode;
   titleTip: string;
-  subtitle: ReactNode;
+  /** What comes before the item count, e.g. "8 POs" or "3 POs · 2 jobs". */
+  subtitle: string;
   avatar?: ReactNode;
   metric: (typeof METRICS)[number];
   money: Record<MetricId, number> & { ordered: number; received: number };
+  counts: LineCounts;
   oldestLate: number;
   pos: CardPo[];
   onOpenPo: (row: OpenPoRow) => void;
@@ -384,7 +401,8 @@ function OpenPoCard({
   /** Project cards, ungrouped: a Supplier column. Supplier cards are the supplier already. */
   supplierColumn?: boolean;
 }) {
-  const p = pct(money.received, money.ordered);
+  const p = pct(counts.received, counts.lines);
+  const valuePct = pct(money.received, money.ordered);
   const supplierOf = ({ row }: CardPo) => row.suppliers.join(", ") || "No supplier";
   const columns: ListCardColumn<CardPo>[] = [
     {
@@ -452,20 +470,24 @@ function OpenPoCard({
       },
     },
   ];
-  const chip = cardChip(money.late, oldestLate, money.ordered, money.notReceived);
+  const chip = cardChip(money.late, oldestLate, p);
   return (
     <ListCard
       title={title}
       titleTip={titleTip}
-      subtitle={subtitle}
+      subtitle={
+        <span title={`${countsTip(counts)}. ${metric.label}: ${usdExact(money[metric.id])}, the selected tile`}>
+          {subtitle} · {counts.lines} {counts.lines === 1 ? "item" : "items"} · {usd(money[metric.id])} {METRIC_PHRASE[metric.id]}
+        </span>
+      }
       avatar={avatar}
       badge={{ text: chip.text, className: chip.cls, title: chip.tip }}
       progress={{
         pct: p,
-        barClassName: money.late > 0 ? "bg-sdc-navy" : p >= 100 ? "bg-sdc-green" : "bg-sdc-blue",
-        label: usd(money[metric.id]),
-        labelClassName: metric.id === "late" ? "text-red-700" : "text-sdc-navy",
-        title: `${p}% of the value has arrived (${usdExact(money.received)} of ${usdExact(money.ordered)}). ${metric.label}: ${usdExact(money[metric.id])}`,
+        barClassName: linesBar(p),
+        label: `${p}%`,
+        labelClassName: `w-9 ${linesText(p)}`,
+        title: `${p}% received: ${countsText(counts)}. By value, ${valuePct}% has arrived (${usdExact(money.received)} of ${usdExact(money.ordered)})`,
       }}
       columns={columns}
       rows={pos}
@@ -756,13 +778,10 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                   </a>
                 }
                 titleTip={`Open ${p.jobId}${p.name ? ` (${p.name})` : ""} in Job Details`}
-                subtitle={
-                  <span title={countsTip(p.counts)}>
-                    {p.pos.length} {p.pos.length === 1 ? "PO" : "POs"} · {countsText(p.counts)}
-                  </span>
-                }
+                subtitle={`${p.pos.length} ${p.pos.length === 1 ? "PO" : "POs"}`}
                 metric={cur}
                 money={{ ...p.totals, ordered: p.ordered, received: p.received }}
+                counts={p.counts}
                 oldestLate={p.oldestLate}
                 pos={p.pos}
                 bySupplier={bySupplier}
@@ -784,14 +803,11 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 key={s.name}
                 title={s.name}
                 titleTip={s.name}
-                subtitle={
-                  <span title={countsTip(s.counts)}>
-                    {s.pos.length} {s.pos.length === 1 ? "PO" : "POs"} · {s.jobs} {s.jobs === 1 ? "job" : "jobs"} · {countsText(s.counts)}
-                  </span>
-                }
+                subtitle={`${s.pos.length} ${s.pos.length === 1 ? "PO" : "POs"} · ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"}`}
                 avatar={<SupplierAvatar supplier={s.name} size={30} />}
                 metric={cur}
                 money={{ ...s.totals, ordered: s.ordered, received: s.received }}
+                counts={s.counts}
                 oldestLate={s.oldestLate}
                 pos={s.pos}
                 onOpenPo={setOpenPo}

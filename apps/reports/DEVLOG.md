@@ -7312,3 +7312,10 @@ ignoring case and spaces (SQL Server's default collation), and `lineCounts` skip
 the card counts, the card subtitle and the supplier group headers agree with Job Details.
 The PO panel shows those lines' Received as "Charge". Money is unchanged: the tiles, the
 bar and Left to invoice still include them, as Job Details' Left to Invoice does.
+
+Card header, also as on Job Details: the badge reads PAST DUE (anything late), else
+RECEIVED / PARTIAL / PENDING at 90% / 60% of PO lines received; the bar and its "64%"
+label go by lines received, green / yellow / blue at the same thresholds. The selected
+tile's figure, which used to be the bar's label, moved into the subtitle ("8 POs · 21
+items · $180,928 left to invoice"), so the card still shows what the tiles and the Amount
+sort are about. The share by value is in the bar's hover text.
