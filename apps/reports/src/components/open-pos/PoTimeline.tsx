@@ -22,6 +22,8 @@ export type TimelinePo = {
   dates: ReturnType<typeof poDates>;
   /** Shown in the hover text: the supplier on project rows, the job on supplier rows. */
   other: string;
+  /** Project rows: the row's job, so a click opens that job's view of the PO. */
+  jobId?: string;
 };
 
 export type TimelineRow = { key: string; label: ReactNode; sublabel: string; title: string; pos: TimelinePo[] };
@@ -49,11 +51,11 @@ function tip(p: TimelinePo, today: string): string {
   return `PO ${p.row.poNumber} · ${p.other}\n${when}${slip}\n${usdExact(p.money.notReceived)} not yet received. Click to open`;
 }
 
-function Dot({ p, today, onOpen, style }: { p: TimelinePo; today: string; onOpen: (r: OpenPoRow) => void; style?: CSSProperties }) {
+function Dot({ p, today, onOpen, style }: { p: TimelinePo; today: string; onOpen: (r: OpenPoRow, jobId?: string) => void; style?: CSSProperties }) {
   return (
     <button
       type="button"
-      onClick={() => onOpen(p.row)}
+      onClick={() => onOpen(p.row, p.jobId)}
       title={tip(p, today)}
       aria-label={`PO ${p.row.poNumber}, ${p.dates.expected ? `expected ${md(p.dates.expected)}` : "no date"}`}
       className={`z-[2] h-2.5 w-2.5 rounded-full ring-2 ring-white motion-interactive hover:scale-150 ${dotClass(p, today)}`}
@@ -62,7 +64,7 @@ function Dot({ p, today, onOpen, style }: { p: TimelinePo; today: string; onOpen
   );
 }
 
-function SideLane({ pos, today, onOpen }: { pos: TimelinePo[]; today: string; onOpen: (r: OpenPoRow) => void }) {
+function SideLane({ pos, today, onOpen }: { pos: TimelinePo[]; today: string; onOpen: (r: OpenPoRow, jobId?: string) => void }) {
   return (
     <div className="flex flex-wrap content-start justify-center gap-[5px] border-x border-sdc-border-soft bg-slate-50/60 px-1 py-[5px]">
       {pos.map((p) => (
@@ -72,7 +74,7 @@ function SideLane({ pos, today, onOpen }: { pos: TimelinePo[]; today: string; on
   );
 }
 
-export function PoTimeline({ rows, asOf, onOpenPo, emptyText }: { rows: TimelineRow[]; asOf: string; onOpenPo: (r: OpenPoRow) => void; emptyText: string }) {
+export function PoTimeline({ rows, asOf, onOpenPo, emptyText }: { rows: TimelineRow[]; asOf: string; onOpenPo: (r: OpenPoRow, jobId?: string) => void; emptyText: string }) {
   const start = mondayOf(asOf);
   const weekStarts = Array.from({ length: TIMELINE_WEEKS }, (_, i) => addDays(start, i * 7));
   const todayPct = timelineSlot(asOf, start, TIMELINE_WEEKS).pct;

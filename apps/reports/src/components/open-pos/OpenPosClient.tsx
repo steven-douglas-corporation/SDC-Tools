@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { SupplierAvatar } from "@/components/procurement/PoDetailPanel";
 import { ListCard, ListCardGrid, type ListCardColumn, type ListCardSort } from "@/components/ui/ListCard";
 import type { SortDir } from "@/lib/data-table";
-import { OpenPoPanel } from "@/components/open-pos/OpenPoPanel";
+import { OpenPoDetail } from "@/components/open-pos/OpenPoDetail";
 import { PoTimeline, type TimelinePo, type TimelineRow } from "@/components/open-pos/PoTimeline";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
@@ -524,7 +524,10 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const [metric, setMetric] = useState<MetricId>("leftToInvoice");
   const [partialOnly, setPartialOnly] = useState(false);
   const [view, setView] = useState<View>("projects");
-  const [openPo, setOpenPo] = useState<OpenPoRow | null>(null);
+  // The PO open in the panel, and which of its jobs' BOM the panel shows (the card's job on a
+  // project card or timeline row, otherwise the PO's first job).
+  const [openPo, setOpenPo] = useState<{ row: OpenPoRow; jobId: string } | null>(null);
+  const openRow = (row: OpenPoRow, jobId?: string) => setOpenPo({ row, jobId: jobId ?? row.jobIds[0] });
   const [sort, setSort] = useState<CardSort>("amount");
   // One PO order for every card: clicking a column header in any card sorts them all.
   const [poSort, setPoSort] = useState<ListCardSort | null>(null);
@@ -586,7 +589,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       timelineBy === "projects"
         ? projects.map((p) => {
             const pos = p.pos
-              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items, p.jobId), other: c.row.suppliers.join(", ") || "No supplier" }))
+              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items, p.jobId), other: c.row.suppliers.join(", ") || "No supplier", jobId: p.jobId }))
               .filter((x) => x.dates.outstanding);
             return {
               key: p.jobId,
@@ -786,7 +789,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 pos={p.pos}
                 bySupplier={bySupplier}
                 supplierColumn={!bySupplier}
-                onOpenPo={setOpenPo}
+                onOpenPo={(r) => openRow(r, p.jobId)}
                 poSort={poSort}
                 onPoSort={onPoSort}
               />
@@ -810,7 +813,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 counts={s.counts}
                 oldestLate={s.oldestLate}
                 pos={s.pos}
-                onOpenPo={setOpenPo}
+                onOpenPo={openRow}
                 poSort={poSort}
                 onPoSort={onPoSort}
               />
@@ -823,7 +826,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
         <PoTimeline
           rows={timelineRows}
           asOf={data.asOf}
-          onOpenPo={setOpenPo}
+          onOpenPo={openRow}
           emptyText="Nothing still to arrive among the POs shown. Try Show all open POs."
         />
       )}
@@ -842,7 +845,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             paging="pages"
             searchPlaceholder="Search PO, supplier or job…"
             emptyText="No POs match."
-            onRowClick={setOpenPo}
+            onRowClick={(r) => openRow(r)}
           />
         </section>
       )}
@@ -876,11 +879,12 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       </span>
 
       {openPo && (
-        <OpenPoPanel
-          key={openPo.poNumber}
-          row={openPo}
+        <OpenPoDetail
+          key={`${openPo.row.poNumber}::${openPo.jobId}`}
+          row={openPo.row}
+          jobId={openPo.jobId}
           badge={(() => {
-            const c = statusChip(openPo);
+            const c = statusChip(openPo.row);
             return { label: c.text, cls: c.cls };
           })()}
           jobName={(j) => jobName.get(j) ?? ""}
