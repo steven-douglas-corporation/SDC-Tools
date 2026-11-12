@@ -821,7 +821,8 @@ export function PartPoSubRowCells({
 // (including any non-BOM lines) isn't lost, though — the authoritative
 // "PO Lines (Supplier Status)" bar below still reads
 // `authoritative.received/itemCount/pct`.
-const PO_PANEL_COL_KEYS: ColKey[] = ["qty", "pn", "desc", "mfr", "purchased", "invoiceddate", "req", "exp", "delivered", "unit", "total", "invoiced", "status"];
+// "parent" (2026-11-12, by request): where the part goes, as Open POs' old "Used in" column showed.
+const PO_PANEL_COL_KEYS: ColKey[] = ["qty", "pn", "desc", "parent", "mfr", "purchased", "invoiceddate", "req", "exp", "delivered", "unit", "total", "invoiced", "status"];
 
 // Pinned column widths — an auto-layout table with no width hints sizes every
 // column to its OWN widest cell with no ceiling, and "Desc" is free text
@@ -832,6 +833,7 @@ const PO_PANEL_COL_WIDTH: Partial<Record<ColKey, number>> = {
   qty: 44,
   pn: 110,
   desc: 200,
+  parent: 170,
   mfr: 90,
   // Widened 2026-09-13 for the two-digit year ("Jan 23 '26").
   purchased: 78,
