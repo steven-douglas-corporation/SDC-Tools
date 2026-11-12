@@ -347,6 +347,7 @@ export function PartRowCells({
   onCopy,
   filteredCol,
   subtotal,
+  wrapParent,
 }: {
   p: FlatPart;
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
@@ -378,6 +379,11 @@ export function PartRowCells({
   filteredCol?: ColKey | null;
   /** The row's money is a subtotal of the sub-rows under it (moneyIsSubtotal): dimmed, with a hover note. */
   subtotal?: boolean;
+  /**
+   * Parent Assembly wraps instead of truncating. The PO panel only: the Parts List table
+   * windows its rows on a fixed row height (JobProcurement.tsx ROW_H), so its cells stay one line.
+   */
+  wrapParent?: boolean;
 }) {
   const parentLine = parentLineFor(p);
   // Replaces the cells' navy while the row is open; the title wins over the cell's own note.
@@ -448,7 +454,10 @@ export function PartRowCells({
         return <span className="block truncate text-note font-semibold text-sdc-navy" title={p.desc}>{p.desc || "—"}</span>;
       case "parent":
         return (
-          <span className={`block truncate font-mono text-label font-medium ${p.parentPN ? "text-sdc-navy" : "italic text-sdc-muted"}`} title={parentLine}>
+          <span
+            className={`block ${wrapParent ? "whitespace-normal break-words" : "truncate"} font-mono text-label font-medium ${p.parentPN ? "text-sdc-navy" : "italic text-sdc-muted"}`}
+            title={parentLine}
+          >
             {parentLine}
           </span>
         );
@@ -1062,7 +1071,7 @@ export function PoPanel({
                   title="Copy part # · locate row"
                   className={`cursor-pointer border-b border-sdc-border-soft/60 ${STATUS_ROW_BG[p.st.key]}`}
                 >
-                  <PartRowCells p={p} cols={cols} now={nowMs} onOpenPo={onOpenPo} />
+                  <PartRowCells p={p} cols={cols} now={nowMs} onOpenPo={onOpenPo} wrapParent />
                 </tr>
               ))}
             </tbody>
