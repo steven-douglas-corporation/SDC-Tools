@@ -7319,3 +7319,44 @@ label go by lines received, green / yellow / blue at the same thresholds. The se
 tile's figure, which used to be the bar's label, moved into the subtitle ("8 POs · 21
 items · $180,928 left to invoice"), so the card still shows what the tiles and the Amount
 sort are about. The share by value is in the bar's hover text.
+
+
+## 90. Open POs opens Job Details' PO panel; "Chase in Scheduler" on both (2026-11-12)
+
+Asked for: the panel that slides in when you click a PO on Open POs should match Job
+Details' PO panel, keeping "Chase in Scheduler", ideally on both pages.
+
+Job Details' panel (PoDetailPanel.tsx PoPanel) is built from one job's BOM parts, not from
+PO lines, so Open POs now reads that job's BOM and parts cost on click with the call Build
+Readiness already uses for the same panel (build-readiness-po-actions.ts
+loadPoDetailForJob), then renders PoPanel unchanged. open-pos/OpenPoDetail.tsx does this.
+The job is the card's own on a project card or a timeline project row; elsewhere (supplier
+cards, supplier rows, All POs) it is the PO's first job. A PO split across jobs gets a
+"<job> in Job Details" link per job under the bars, the panel's job first.
+
+If the panel can't be built (Total ETO didn't answer in time, or none of the PO's lines are
+BOM parts, e.g. a services PO), Open POs' own panel (OpenPoPanel) opens instead, from the
+PO lines the page already has, so a click always shows the PO.
+
+PoPanel gained two optional props: `schedulerVendorPosUrl` ("Chase in Scheduler", a link to
+the Scheduler's Vendor POs page) and `actions` (extra links beside it). Job Details passes
+the Scheduler link from job-hours/page.tsx through ProcurementBody and JobProcurement;
+Build Readiness passes neither, so its panel is unchanged.
+
+What Open POs' panel had that Job Details' doesn't: the five money figures (late, left to
+invoice...), the BOM "Used in" column and every non-BOM PO line. Those are still on the
+fallback panel and on the cards.
+
+The panel also gained a Parent Assembly column (where each part goes, as the old Open POs
+"Used in" showed; one parent per part, as the Parts List has it), which wraps in the panel.
+It stays one line in the Parts List table, which windows its rows on a fixed row height
+(JobProcurement.tsx ROW_H).
+
+Clicking a part in the panel on Open POs opens Job Details for that job beside Open POs,
+with the part highlighted in the Parts List. Job Details takes a new `?part=<BOM part id>`
+(carried by split view and the workspace: split-view.ts SPLIT_ROUTES) and runs the Parts
+List's own drill on arrival: filters cleared, list view, scroll and flash; no copy to the
+clipboard, since nobody clicked on that page. useWorkspaceActions' openInSplitView takes
+the params (an open Job Details tab is pointed at them). Already split: the other side
+shows it. Too narrow for two readable panes (fitsSplit on <main>'s width): a new browser
+tab with the same link.

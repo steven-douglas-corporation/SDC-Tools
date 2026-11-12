@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import type { BomPart, PoLineGroup } from "@/lib/job-bom";
 import { SDC_CANONICAL } from "@/lib/vendor-normalize";
 import { usd, usd2 } from "@/components/ui/format";
+import { TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { useColumnSort } from "@/components/useColumnSort";
 import { SortableTh } from "@/components/ui/SortableHeader";
 import { sortRows, type SortColumns } from "@/lib/table-sort";
@@ -346,6 +347,7 @@ export function PartRowCells({
   onCopy,
   filteredCol,
   subtotal,
+  wrapParent,
 }: {
   p: FlatPart;
   cols: { key: ColKey; label: string; align?: "right"; title?: string }[];
@@ -377,6 +379,11 @@ export function PartRowCells({
   filteredCol?: ColKey | null;
   /** The row's money is a subtotal of the sub-rows under it (moneyIsSubtotal): dimmed, with a hover note. */
   subtotal?: boolean;
+  /**
+   * Parent Assembly wraps instead of truncating. The PO panel only: the Parts List table
+   * windows its rows on a fixed row height (JobProcurement.tsx ROW_H), so its cells stay one line.
+   */
+  wrapParent?: boolean;
 }) {
   const parentLine = parentLineFor(p);
   // Replaces the cells' navy while the row is open; the title wins over the cell's own note.
@@ -447,7 +454,10 @@ export function PartRowCells({
         return <span className="block truncate text-note font-semibold text-sdc-navy" title={p.desc}>{p.desc || "—"}</span>;
       case "parent":
         return (
-          <span className={`block truncate font-mono text-label font-medium ${p.parentPN ? "text-sdc-navy" : "italic text-sdc-muted"}`} title={parentLine}>
+          <span
+            className={`block ${wrapParent ? "whitespace-normal break-words" : "truncate"} font-mono text-label font-medium ${p.parentPN ? "text-sdc-navy" : "italic text-sdc-muted"}`}
+            title={parentLine}
+          >
             {parentLine}
           </span>
         );
@@ -820,7 +830,8 @@ export function PartPoSubRowCells({
 // (including any non-BOM lines) isn't lost, though — the authoritative
 // "PO Lines (Supplier Status)" bar below still reads
 // `authoritative.received/itemCount/pct`.
-const PO_PANEL_COL_KEYS: ColKey[] = ["qty", "pn", "desc", "mfr", "purchased", "invoiceddate", "req", "exp", "delivered", "unit", "total", "invoiced", "status"];
+// "parent" (2026-11-12, by request): where the part goes, as Open POs' old "Used in" column showed.
+const PO_PANEL_COL_KEYS: ColKey[] = ["qty", "pn", "desc", "parent", "mfr", "purchased", "invoiceddate", "req", "exp", "delivered", "unit", "total", "invoiced", "status"];
 
 // Pinned column widths — an auto-layout table with no width hints sizes every
 // column to its OWN widest cell with no ceiling, and "Desc" is free text
@@ -831,6 +842,7 @@ const PO_PANEL_COL_WIDTH: Partial<Record<ColKey, number>> = {
   qty: 44,
   pn: 110,
   desc: 200,
+  parent: 170,
   mfr: 90,
   // Widened 2026-09-13 for the two-digit year ("Jan 23 '26").
   purchased: 78,
@@ -851,6 +863,8 @@ export function PoPanel({
   onClose,
   onPartClick,
   onOpenPo,
+  schedulerVendorPosUrl,
+  actions,
 }: {
   supplier: string;
   po: PoGroup;
@@ -858,6 +872,10 @@ export function PoPanel({
   onClose: () => void;
   onPartClick: (p: DrillablePart) => void;
   onOpenPo: (supplier: string | null, poNumber: string | null) => void;
+  /** The Scheduler's Vendor POs page, where buyers chase the PO. Shown as "Chase in Scheduler" when given. */
+  schedulerVendorPosUrl?: string;
+  /** Extra links under the bars, beside "Chase in Scheduler" (Open POs: the jobs the PO charges). */
+  actions?: ReactNode;
 }) {
   const nowMs = useStableNow();
   const cols = useMemo(() => ALL_COLS.filter((c) => PO_PANEL_COL_KEYS.includes(c.key)), []);
@@ -992,6 +1010,23 @@ export function PoPanel({
             )}
             <PanelBar label="Parts (Assembly Readiness)" received={po.received} total={po.total} pct={stats.pct} />
           </div>
+
+          {(schedulerVendorPosUrl || actions) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {actions}
+              {schedulerVendorPosUrl && (
+                <a
+                  href={schedulerVendorPosUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Opens the Scheduler's Vendor POs page in a new tab, where buyers set ETAs, tracking and notes"
+                  className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
+                >
+                  Chase in Scheduler ↗
+                </a>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Parts table — same columns, sort keys and row cells (`PartRowCells`)
@@ -1036,7 +1071,7 @@ export function PoPanel({
                   title="Copy part # · locate row"
                   className={`cursor-pointer border-b border-sdc-border-soft/60 ${STATUS_ROW_BG[p.st.key]}`}
                 >
-                  <PartRowCells p={p} cols={cols} now={nowMs} onOpenPo={onOpenPo} />
+                  <PartRowCells p={p} cols={cols} now={nowMs} onOpenPo={onOpenPo} wrapParent />
                 </tr>
               ))}
             </tbody>

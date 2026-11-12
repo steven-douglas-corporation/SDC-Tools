@@ -210,9 +210,15 @@ export function JobProcurement({
   bom,
   partsLines,
   transfers,
+  schedulerVendorPosUrl,
+  focusPartId,
 }: {
   bom: JobBom;
   partsLines: PartsCostLine[];
+  /** The Scheduler's Vendor POs page, for the PO panel's "Chase in Scheduler". */
+  schedulerVendorPosUrl?: string;
+  /** A part to highlight on arrival (`?part=` from Open POs' PO panel): the Parts List's own drill. */
+  focusPartId?: number;
   /** Parts moved between jobs, as the Parts Cost card nets them. Absent = the caller has none to show. */
   transfers?: { net: number; entries: JobTransferEntry[]; items: JobTransferItem[]; unavailable: boolean };
 }) {
@@ -331,6 +337,16 @@ export function JobProcurement({
     },
     [toast],
   );
+
+  // A part named in the link (?part=, sent by Open POs' PO panel): the same drill as clicking
+  // it here (Parts List, filters cleared, scroll and flash), minus the copy to the clipboard
+  // ("—" skips it), since nobody clicked on this page. Once per part id, applied while
+  // rendering (React's "adjusting state when a prop changes") rather than in an effect.
+  const [focusedPartId, setFocusedPartId] = useState<number | undefined>(undefined);
+  if (focusPartId != null && focusPartId !== focusedPartId) {
+    setFocusedPartId(focusPartId);
+    drillToPart({ id: focusPartId, pn: "—" });
+  }
 
   // Jump from a risk card's Part No (Group By = Part) straight to that
   // part's own row in the Parts List — WITHOUT touching any filter, search,
@@ -777,6 +793,7 @@ export function JobProcurement({
           onClose={() => setPoPanel(null)}
           onPartClick={drillToPart}
           onOpenPo={openPoFor}
+          schedulerVendorPosUrl={schedulerVendorPosUrl}
         />
       )}
 
