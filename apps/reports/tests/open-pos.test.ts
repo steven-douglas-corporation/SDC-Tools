@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import { lineLeftToInvoice } from "../src/lib/left-to-invoice";
-import { buildOpenPos, lineCounts, nextUpcoming, poDates, stackLines, timelineSlot, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
+import { buildOpenPos, isChargeLine, lineCounts, nextUpcoming, poDates, stackLines, timelineSlot, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
 
 // Open POs: a PO is open when its signed Left to Invoice is not $0.00, the Parts List's own
 // filter applied per PO. Receipts only decide the Status column.
@@ -245,6 +245,28 @@ test("line counts: a line is received once all of it has arrived; credits and un
   // Same rule as the PO's own counts.
   assert.equal(lineCounts(r.items).lines, r.linesReceivable);
   assert.equal(lineCounts(r.items).received, r.linesReceived);
+});
+
+test("received counts leave out shipping, fee and tariff charges, as Job Details does", () => {
+  const items = buildOpenPos(
+    new Map([
+      [
+        "1101",
+        [
+          line({ po: "D", total: 100, quantity: 10, unitPrice: 10, receivedQty: 10, partNumber: "ABC-1" }),
+          line({ po: "D", total: 40, quantity: 1, unitPrice: 40, receivedQty: 0, partNumber: "Shipping" }),
+          line({ po: "D", total: 15, quantity: 1, unitPrice: 15, receivedQty: 0, partNumber: " tariff " }),
+          line({ po: "D", total: 5, quantity: 1, unitPrice: 5, receivedQty: 0, partNumber: "FEE" }),
+          line({ po: "D", total: 10, quantity: 1, unitPrice: 10, receivedQty: 0, partNumber: "SHIPPING-BOX" }), // a part, not a charge
+        ],
+      ],
+    ]),
+    JOBS,
+    TODAY,
+  ).rows[0].items;
+  assert.deepEqual(lineCounts(items), { lines: 2, received: 1, pieces: 11, piecesReceived: 10 });
+  assert.equal(isChargeLine({ partNumber: "Shipping" }), true);
+  assert.equal(isChargeLine({ partNumber: null }), false);
 });
 
 test("next delivery to come skips late and fully received lines", () => {

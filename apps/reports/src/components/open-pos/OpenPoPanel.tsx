@@ -6,7 +6,7 @@ import { Stat } from "@/components/procurement/PoDetailPanel";
 import { TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
-import type { OpenPoLine, OpenPoRow } from "@/lib/open-pos-rules";
+import { isChargeLine, type OpenPoLine, type OpenPoRow } from "@/lib/open-pos-rules";
 import type { PoBomContext, PoBomUse } from "@/lib/open-po-bom";
 import { loadPoBomContext } from "@/lib/open-pos-actions";
 
@@ -141,9 +141,17 @@ export function OpenPoPanel({
                     )}
                     <td
                       className="px-2 py-1.5 text-right font-mono text-label tabular-nums text-sdc-gray-600"
-                      title={l.quantity <= 0 ? "A credit or return on the PO, nothing to receive" : l.receivedQty == null ? "No receiving data for this line" : `${Math.min(l.receivedQty, l.quantity)} of ${l.quantity} received`}
+                      title={
+                        l.quantity <= 0
+                          ? "A credit or return on the PO, nothing to receive"
+                          : isChargeLine(l)
+                            ? "A shipping, fee or tariff charge, not a part. Left out of the received counts, as on Job Details"
+                            : l.receivedQty == null
+                              ? "No receiving data for this line"
+                              : `${Math.min(l.receivedQty, l.quantity)} of ${l.quantity} received`
+                      }
                     >
-                      {l.quantity <= 0 ? "Credit" : `${l.receivedQty == null ? "?" : Math.min(l.receivedQty, l.quantity)}/${l.quantity}`}
+                      {l.quantity <= 0 ? "Credit" : isChargeLine(l) ? "Charge" : `${l.receivedQty == null ? "?" : Math.min(l.receivedQty, l.quantity)}/${l.quantity}`}
                     </td>
                     <td
                       className={`whitespace-nowrap px-2 py-1.5 font-mono text-label ${late ? "font-semibold text-sdc-red-text" : "text-sdc-gray-600"}`}
