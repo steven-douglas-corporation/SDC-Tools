@@ -27,8 +27,7 @@ import { buildEtcIssues } from "@/lib/etc-issues";
 import { PartsCostNewEtcCell } from "@/components/PartsCostNewEtcCell";
 import { PartsBreakoutCell } from "@/components/PartsBreakoutCell";
 import { readPartsEtcBreakout, type PartsEtcBreakout } from "@/lib/parts-etc-breakout";
-import { buildOverview, describeBuckets, pickBuckets, type JobBuckets, type LeftToInvoiceBuckets } from "@/lib/left-to-invoice-by-month";
-import { EtcLeftToInvoiceByMonth } from "@/components/EtcLeftToInvoiceByMonth";
+import { describeBuckets } from "@/lib/left-to-invoice-by-month";
 import { monthEndLabel } from "@/lib/left-to-invoice";
 import { showsPartsBreakout, usesPartsApproval } from "@/lib/parts-breakout-scope";
 import { resolveLeftToInvoice, partsNewEtc, calcLeftToPurchase } from "@/lib/left-to-invoice";
@@ -890,11 +889,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
   // the cell only through resolveLeftToInvoice, once.
   const partsLiveSums = new Map<number, number | null>();
   const partsRowBreakout = new Map<number, PartsEtcBreakout | null>();
-  // The all-jobs "by expected billing month" table: the visible jobs' computed splits, and how
-  // many of those cells hold a manual figure instead (the table cannot show a typed number).
-  const visiblePks = new Set(visibleJobs.map((j) => j.id));
-  const partsSplitJobs: (JobBuckets & { payBuckets: LeftToInvoiceBuckets })[] = [];
-  let partsSplitOverridden = 0;
+  // (The all-jobs "Left to Invoice Split" tables moved to the Cash Flow Forecast page.)
   if (showBreakout) {
     for (const job of jobs) {
       const entry = job.etcEntries.find((e) => e.section === PARTS_COST_SECTION);
@@ -906,10 +901,6 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
         stored: entry.leftToInvoice != null ? round2(Number(entry.leftToInvoice)) : null,
       });
       const invoice = resolved.value;
-      if (visiblePks.has(job.id) && b?.byRequiredMonth) {
-        partsSplitJobs.push({ jobId: job.jobId, jobName: job.jobName, buckets: b.byRequiredMonth, payBuckets: b.byPaymentMonth ?? b.byRequiredMonth });
-        if (resolved.overridden) partsSplitOverridden++;
-      }
       const purchase = entry.leftToPurchase != null ? round2(Number(entry.leftToPurchase)) : null;
       partsLiveSums.set(job.id, partsNewEtc(invoice, purchase));
     }
@@ -1382,16 +1373,6 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
           importIssues={undefinedHoursTotals.issues.map((i) => ({ label: i.label, rows: i.rows, hours: i.hours }))}
           // Same rows the red banner below is built from — one query, one number.
           offGridJobs={hiddenJobHours}
-        />
-      )}
-
-      {/* Every job's Left to Invoice by expected billing month — the same split each cell's tooltip carries. */}
-      {started && showBreakout && partsSplitJobs.length > 0 && (
-        <EtcLeftToInvoiceByMonth
-          overview={buildOverview(partsSplitJobs)}
-          payOverview={buildOverview(pickBuckets(partsSplitJobs, (j) => j.payBuckets))}
-          overriddenJobs={partsSplitOverridden}
-          cutoffLabel={cutoffLabel}
         />
       )}
 
