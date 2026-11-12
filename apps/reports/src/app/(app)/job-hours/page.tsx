@@ -32,9 +32,9 @@ const EMPTY_HOURS_DETAIL: JobHoursDetail = { rows: [], total: 0, sections: [], t
 // "Job Hour Details" — web recreation of the Power BI "Job Hours Report —
 // Management Level" drillthrough. Supports one OR many jobs (aggregated), like
 // the report's job slicer. Selected jobs travel in ?jobs=<jobId,jobId,…>.
-export async function JobHoursView({ params }: { params: { jobs?: string; job?: string; section?: string } }) {
+export async function JobHoursView({ params }: { params: { jobs?: string; job?: string; section?: string; part?: string } }) {
   const pageSession = await requirePagePermission("job-hour-details:view");
-  const { jobs: jobsParam, job: legacyJobParam, section } = params;
+  const { jobs: jobsParam, job: legacyJobParam, section, part } = params;
   const jobs = await listDashboardJobs();
   const idByJobId = new Map(jobs.map((j) => [j.jobId, j.id]));
 
@@ -341,7 +341,7 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
                 `?section=procurement`) — the section already renders inline
                 below regardless, this just brings it on screen instead of
                 leaving the visitor to scroll down and find it themselves. */}
-            {section === "procurement" && <ScrollIntoView id="procurement" />}
+            {(section === "procurement" || part) && <ScrollIntoView id="procurement" />}
             <p className="mb-3 font-heading text-lg font-bold tracking-tight text-sdc-navy">Procurement</p>
             <p className="mb-4 text-sm text-sdc-gray-600">
               Assembly readiness and the full parts buy-list — assemblies, parts, PO status, suppliers and material cost, pulled live from Total ETO.
@@ -356,6 +356,8 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
                   bomPromise={bomPromise}
                   financialsPromise={financialsPromise}
                   schedulerVendorPosUrl={withSchedulerSso(`${schedulerBaseUrl}/?view=vendor-pos`, schedulerSsoEmail)}
+                  // Open POs' PO panel: the part clicked there, highlighted in the Parts List.
+                  focusPartId={part && /^\d+$/.test(part) ? Number(part) : undefined}
                 />
               </Suspense>
             )}
@@ -387,10 +389,12 @@ async function ProcurementBody({
   bomPromise,
   financialsPromise,
   schedulerVendorPosUrl,
+  focusPartId,
 }: {
   bomPromise: Promise<JobBom | null>;
   financialsPromise: Promise<PartsCostFinancials | null>;
   schedulerVendorPosUrl: string;
+  focusPartId?: number;
 }) {
   const [bom, parts] = await Promise.all([bomPromise, financialsPromise]);
   // Distinguishes "we asked and could not get it" from "there is nothing to ask for",
@@ -410,6 +414,7 @@ async function ProcurementBody({
         bom={bom}
         partsLines={parts?.lines ?? []}
         schedulerVendorPosUrl={schedulerVendorPosUrl}
+        focusPartId={focusPartId}
         // Parts moved between jobs, so the list can say how the Parts Cost card gets to its total.
         transfers={parts ? { net: parts.transfersNet, entries: parts.transfers, items: parts.transferItems, unavailable: parts.transfersUnavailable } : undefined}
       />
@@ -432,6 +437,6 @@ async function ProcurementBody({
 // Nothing about this route's behaviour changes: same URL, same params, same server
 // render. `searchParams` is still awaited HERE, which is what keeps this route
 // dynamic exactly as before.
-export default async function JobHoursPage({ searchParams }: { searchParams: Promise<{ jobs?: string; job?: string; section?: string }> }) {
+export default async function JobHoursPage({ searchParams }: { searchParams: Promise<{ jobs?: string; job?: string; section?: string; part?: string }> }) {
   return <JobHoursView params={await searchParams} />;
 }

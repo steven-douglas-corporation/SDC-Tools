@@ -7,6 +7,9 @@ import type { DrawerBadge } from "@/components/build-readiness/BuildReadinessDra
 import { TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { loadPoDetailForJob, type PoDetailResult } from "@/lib/build-readiness-po-actions";
 import type { OpenPoRow } from "@/lib/open-pos-rules";
+import { fitsSplit } from "@/lib/split-view";
+import { useWorkspaceActions } from "@/components/useWorkspaceActions";
+import { useSplitNav } from "@/components/useSplitNav";
 
 // ── A PO opened from Open POs: the same panel as Job Details ─────────────────────────────
 //
@@ -36,6 +39,19 @@ export function OpenPoDetail({
   onClose: () => void;
 }) {
   const [state, setState] = useState<"loading" | PoDetailResult>("loading");
+  const { openInSplitView } = useWorkspaceActions();
+  const { isSplit } = useSplitNav();
+
+  // A part clicked in the panel: Job Details for this job beside Open POs, with that part
+  // highlighted in its Parts List (?part=, the Parts List's own drill: filters cleared,
+  // scroll and flash). Already split: the other side shows it. Too narrow for two readable
+  // panes (fitsSplit, measured on <main> as the workspace does): a new browser tab instead.
+  const openPartInJobDetails = (partId: number) => {
+    const params = { jobs: jobId, part: String(partId) };
+    const main = document.getElementById("main-content");
+    if ((isSplit || fitsSplit(main?.clientWidth ?? window.innerWidth)) && openInSplitView("/job-hours", { params })) return;
+    window.open(`/job-hours?${new URLSearchParams(params)}`, "_blank", "noopener");
+  };
   useEffect(() => {
     let live = true;
     loadPoDetailForJob(jobId, row.suppliers[0] ?? null, row.poNumber)
@@ -71,7 +87,7 @@ export function OpenPoDetail({
       po={state.po}
       authoritative={state.authoritative}
       onClose={onClose}
-      onPartClick={() => {}}
+      onPartClick={(p) => openPartInJobDetails(p.id)}
       onOpenPo={() => {}}
       schedulerVendorPosUrl={schedulerVendorPosUrl}
       actions={

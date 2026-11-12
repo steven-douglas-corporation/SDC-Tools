@@ -122,7 +122,8 @@ export const SPLIT_ROUTES: readonly {
   instanceParam?: string;
 }[] = [
   { path: "/", label: "Dashboard", params: ["tab", "m"] },
-  { path: "/job-hours", label: "Job Details", params: ["jobs", "job"], instanceParam: "jobs" },
+  // `part`: a BOM part to highlight in the Parts List, sent by Open POs' PO panel.
+  { path: "/job-hours", label: "Job Details", params: ["jobs", "job", "part"], instanceParam: "jobs" },
   { path: "/etc", label: "Monthly ETC", params: ["month", "dept", "jobname", "parts", "billables"], exclusive: true, instanceParam: "month" },
   {
     path: "/quoted",

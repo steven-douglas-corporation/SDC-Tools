@@ -7346,3 +7346,17 @@ Build Readiness passes neither, so its panel is unchanged.
 What Open POs' panel had that Job Details' doesn't: the five money figures (late, left to
 invoice...), the BOM "Used in" column and every non-BOM PO line. Those are still on the
 fallback panel and on the cards.
+
+The panel also gained a Parent Assembly column (where each part goes, as the old Open POs
+"Used in" showed; one parent per part, as the Parts List has it), which wraps in the panel.
+It stays one line in the Parts List table, which windows its rows on a fixed row height
+(JobProcurement.tsx ROW_H).
+
+Clicking a part in the panel on Open POs opens Job Details for that job beside Open POs,
+with the part highlighted in the Parts List. Job Details takes a new `?part=<BOM part id>`
+(carried by split view and the workspace: split-view.ts SPLIT_ROUTES) and runs the Parts
+List's own drill on arrival: filters cleared, list view, scroll and flash; no copy to the
+clipboard, since nobody clicked on that page. useWorkspaceActions' openInSplitView takes
+the params (an open Job Details tab is pointed at them). Already split: the other side
+shows it. Too narrow for two readable panes (fitsSplit on <main>'s width): a new browser
+tab with the same link.

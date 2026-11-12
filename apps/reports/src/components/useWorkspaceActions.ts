@@ -13,6 +13,7 @@ import {
   needsRender,
   openTab,
   sidebarClick,
+  setTabParams,
   sidebarTarget,
   tabById,
   tabTitle,
@@ -277,7 +278,7 @@ export function useWorkspaceActions() {
    * active tab to keep on one side, so there is no split to make.
    */
   const openInSplitView = useCallback(
-    (path: string, opts?: { instance?: TabId; newInstance?: boolean }): boolean => {
+    (path: string, opts?: { instance?: TabId; newInstance?: boolean; params?: Record<string, string> }): boolean => {
       if (!canHost(path)) return false;
 
       // ── The legacy two-pane route ──────────────────────────────────────────
@@ -287,7 +288,7 @@ export function useWorkspaceActions() {
       // working in, which is what it has always done.
       if (pathname === "/split") {
         if (!confirmLeaving()) return true;
-        router.push(splitHref(openInSplit({ path: pathname, params: currentParams }, { path })));
+        router.push(splitHref(openInSplit({ path: pathname, params: currentParams }, { path, params: opts?.params })));
         return true;
       }
 
@@ -301,7 +302,7 @@ export function useWorkspaceActions() {
         }
         if (!confirmLeaving()) return true;
         const base = openTab(EMPTY_WORKSPACE, pathname, currentParams);
-        const opened = openTab(base, path, {}, { newInstance: true });
+        const opened = openTab(base, path, opts?.params ?? {}, { newInstance: true });
         router.push(workspaceHref(enterSplit({ ...opened, active: base.active }, opened.active)));
         return true;
       }
@@ -319,10 +320,15 @@ export function useWorkspaceActions() {
       }
       let navigate = false;
       if (!target) {
-        next = openTab(workspace, path, {}, { newInstance: !refusesSecondInstance(path) });
+        next = openTab(workspace, path, opts?.params ?? {}, { newInstance: !refusesSecondInstance(path) });
         if (next === workspace) return false;
         target = next.active;
         navigate = next.tabs.length !== workspace.tabs.length;
+      } else if (opts?.params) {
+        // An open instance pointed somewhere new (Open POs: this job, this part). New
+        // params are a pane /w has not rendered, so it navigates (needsRender).
+        next = setTabParams(workspace, target, opts.params);
+        navigate = needsRender(workspace, next);
       }
       if (target === anchor) return false; // a tab cannot be split against itself
 
