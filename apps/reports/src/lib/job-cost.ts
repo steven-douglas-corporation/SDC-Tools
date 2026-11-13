@@ -175,7 +175,7 @@ export function laborForType(
 /**
  * The full per-job rollup — unchanged from the original's compute():
  *   Labor Cost = Σ_year(EngHours[year] × EngRate[year]) + Σ_year(ShopHours[year] × ShopRate[year])
- *              + Sales × PM%[completionYear] × 0.8 + Sales × Mfg%[completionYear] × 0.8
+ *              + Sales × PM%[completionYear] + Sales × Mfg%[completionYear]
  *   x (cost)   = Labor Cost + ETC_EngHours × EngRate_default + ETC_ShopHours × ShopRate_default
  *   y (parts)  = partsCostForProfit(row, ETC_PartsCost).projected   [2026-09-14; was PartCost + ETC_PartsCost]
  *   Profit     = Sales Price − (x + y)              [null if no Sales Price]
@@ -200,9 +200,8 @@ export function computeJobCost(
 
   const compYear = row.completeDate ? row.completeDate.slice(0, 4) : null;
   const rc = compYear ? rateForYear(compYear, def, overrides) : def;
-  // Only 80% of the sales-based PM/Mfg share is counted as cost (20% held back).
-  const pmCost = sales * (rc.pmPct / 100) * 0.8;
-  const mfgCost = sales * (rc.mfgPct / 100) * 0.8;
+  const pmCost = sales * (rc.pmPct / 100);
+  const mfgCost = sales * (rc.mfgPct / 100);
   const laborCost = blendedLabor + pmCost + mfgCost;
 
   const isComplete = row.status === "Complete";

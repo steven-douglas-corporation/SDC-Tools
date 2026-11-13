@@ -7498,3 +7498,14 @@ and descriptions on its lines, by the tables' own rule (lib/data-table.ts search
 shows when it contains every word typed, anywhere, in any order. The line under the filters
 says what is being matched, and Clear filters empties the box too. The Table view's own
 search box is gone (DataTable `search={false}`), so the page has one search, not two.
+
+
+## 95. Profitability: PM $ / Mfg $ are Sales Price × the Rate Matrix %, as entered (2026-11-13)
+
+PM $ and Mfg $ had a second `× 0.8` in computeJobCost (PR #264) on top of Rate Matrix defaults
+already entered as 80% of the headline rates (PM 2.8 = 3.5 × 0.8, Mfg 3.6 = 4.5 × 0.8). The grid
+therefore used 2.24% and 2.88% of Sales Price, and Profit was overstated by 20% of PM $ + Mfg $
+(about $34k on job 1101). The extra factor is gone: PM $ = Sales Price × PM %, Mfg $ = Sales Price
+× Mfg %, with the percentages exactly as in the Rate Matrix. To change the reduction, change the
+rates. The Rate Matrix title is back to "rates by year", its footnote says the rates apply as
+entered, and the PM $ / Mfg $ tooltips match. The per-year rows (2024 to 2026) were not touched.
