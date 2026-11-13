@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import { lineLeftToInvoice } from "../src/lib/left-to-invoice";
-import { buildOpenPos, isChargeLine, lineCounts, nextUpcoming, poDates, stackLines, timelineSlot, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
+import { buildOpenPos, isChargeLine, lineCounts, nextUpcoming, poDates, stackLines, timelineSlot, vsRequired, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
 
 // Open POs: a PO is open when its signed Left to Invoice is not $0.00, the Parts List's own
 // filter applied per PO. Receipts only decide the Status column.
@@ -301,11 +301,37 @@ test("timeline dates come from the next line to arrive: expected and original fr
   ]);
   const r = buildOpenPos(lines, JOBS, TODAY).rows[0];
   // The next line is 1102's (Nov 12, never moved). The re-promised line's Oct 1 is NOT its original.
-  assert.deepEqual(poDates(r.items), { outstanding: true, expected: "2026-11-12", original: "2026-11-12", revised: false });
-  assert.deepEqual(poDates(r.items, "1101"), { outstanding: true, expected: "2026-11-20", original: "2026-10-01", revised: true });
-  assert.deepEqual(poDates(r.items, "1102"), { outstanding: true, expected: "2026-11-12", original: "2026-11-12", revised: false });
+  assert.deepEqual(poDates(r.items), { outstanding: true, expected: "2026-11-12", original: "2026-11-12", revised: false, required: null });
+  assert.deepEqual(poDates(r.items, "1101"), { outstanding: true, expected: "2026-11-20", original: "2026-10-01", revised: true, required: null });
+  assert.deepEqual(poDates(r.items, "1102"), { outstanding: true, expected: "2026-11-12", original: "2026-11-12", revised: false, required: null });
   const done = buildOpenPos(new Map([["1101", [line({ po: "E", total: 10, posted: 5, receivedQty: 1, requiredDate: "2026-10-01" })]]]), JOBS, TODAY).rows[0];
   assert.equal(poDates(done.items).outstanding, false);
+});
+
+test("timeline: the BOM's required date is the same line's, and the line is green on or before it, red after", () => {
+  const lines = new Map([
+    [
+      "1101",
+      [
+        line({ po: "F", total: 10, receivedQty: 0, requiredDate: "2026-11-20" }), // next to arrive
+        line({ po: "F", total: 10, receivedQty: 0, requiredDate: "2026-12-05" }),
+      ],
+    ],
+  ]);
+  const items = buildOpenPos(lines, JOBS, TODAY).rows[0].items;
+  const [next, later] = items[0].expected === "2026-11-20" ? [items[0], items[1]] : [items[1], items[0]];
+  // Only the next line's required date counts, not the earliest one on the PO.
+  const req = new Map([
+    [next.lineId, "2026-11-25"],
+    [later.lineId, "2026-11-01"],
+  ]);
+  assert.equal(poDates(items, undefined, req).required, "2026-11-25");
+  assert.equal(poDates(items, undefined, new Map([[later.lineId, "2026-11-01"]])).required, null); // next line not on the BOM
+  assert.deepEqual(vsRequired("2026-11-20", "2026-11-25"), { onTime: true, days: 5 });
+  assert.deepEqual(vsRequired("2026-11-25", "2026-11-25"), { onTime: true, days: 0 });
+  assert.deepEqual(vsRequired("2026-11-30", "2026-11-25"), { onTime: false, days: 5 });
+  assert.equal(vsRequired(null, "2026-11-25"), null);
+  assert.equal(vsRequired("2026-11-25", null), null);
 });
 
 test("timeline slots: Late before this Monday, the track for the weeks shown, Later after", () => {

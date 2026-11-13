@@ -7360,3 +7360,97 @@ clipboard, since nobody clicked on that page. useWorkspaceActions' openInSplitVi
 the params (an open Job Details tab is pointed at them). Already split: the other side
 shows it. Too narrow for two readable panes (fitsSplit on <main>'s width): a new browser
 tab with the same link.
+
+
+## 91. Open POs timeline: a row per PO, expected against the BOM's required date (2026-11-13)
+
+Asked for: each PO visible under its job on the timeline, with lines that show a
+relationship. Settled on one line per PO with two points: when it is expected and when the
+BOM needs the part (Job Details' "Required Date", eps.RequiredDate), green when it arrives
+on or before that day and red when after. Not the PO's own required date (the date we asked
+the vendor for), which only says whether the vendor slipped; the slip ring is gone from the
+rows and the re-promise is in the hover text instead.
+
+Rows: each project (or supplier) is a group, expanded by default into one row per PO still
+to arrive, labelled with the PO number and supplier (or job), sorted by expected date. Expand
+all / Collapse all, or the arrow on a group; collapsed, a group is the old row of dots. A PO
+row is drawn from its next line to arrive, so the expected and required dates are the same
+line's (poDates, now with `required`; vsRequired decides the colour).
+
+Dot colour: Status (late / partly received / on schedule, as before) or Required date (the
+line's green / red). A toggle, to compare the two. A late PO can still be green: it was
+expected after its promise but before the build needs it.
+
+Data: open-po-bom.ts getRequiredDates reads MIN(eps.RequiredDate) per PO line (the panel's
+own join, by line instead of by PO) for every line still to arrive, in IN-list chunks of
+900 validated ids, when the Timeline is first opened (open-pos-actions.ts
+loadOpenPoRequiredDates). The cards don't wait for it. A line whose part is not on the job's
+BOM has no required date and no line.
+
+Dev: the fake BOM's required dates are the PO's date moved by +14 / -12 / +4 / -30 / 0 days
+in turn, so the timeline has late and on-schedule POs on both sides of the line.
+
+Dynamic (same day, by request): zoom to 4 / 8 / 12 / 26 weeks; pan with ◂ ▸ (a quarter
+of the weeks shown at a time), Today, dragging the timeline sideways (a week per week-width
+dragged; a drag swallows the click it ends on, a press that doesn't move is still a click).
+No trackpad / wheel panning: the app's one wheel listener is ScrollHandoff's. Panned off this week, the left column reads "Earlier", not
+"Late", and the Today line goes when today is off screen. Hovering a PO row highlights that
+PO wherever it is (a PO split across jobs is on each job's group) and dims the rest. Dots,
+diamonds, lines and the Today line slide on a change: `.motion-timeline-move` in
+globals.css, a third enumerated exception to animating layout properties (absolutely
+positioned, so nothing reflows), off for reduced motion.
+
+Layout (same day, by request): the key moved from a bar under the timeline to a column
+down its right side (Dots, Lines, Using it, and the total still to arrive at the foot).
+The timeline fills the rest of the window: its height is what is left below everything
+above it, less what follows it on the page, so the page itself doesn't scroll; the rows
+scroll inside under a sticky week header. Measured on screen and converted to CSS px (the
+app's zoom makes the two differ), re-measured on resize and when the content around it
+changes, with one pass that trims leftover overflow (the page's own bottom padding). Never
+under 360px: on a window too short for that, the page scrolls a little instead.
+
+
+## 92. Open POs: Filter, View and Group by as separate controls; full-height cards in columns (2026-11-13)
+
+Asked for: it wasn't clear what each button on the page did. "By project / By supplier"
+sat in one row with "Timeline" and "All POs" (two groupings and two views as four
+alternatives); "Only partially received" was a filter beside them while the five totals
+above were filters too; the timeline had its own "Rows: Projects / Suppliers", the same
+choice under another name; and one "Sort" menu did not say whether it moved the cards or
+the POs in them.
+
+Now three choices, each with its own labelled control:
+- Filter (which POs): the five totals and "Only partially received" under one "Filter"
+  label, one line saying what is showing ("Showing 29 POs on 6 jobs: Late · 19 other open
+  POs hidden") and one "Clear filters".
+- View (how they are drawn): Cards / Timeline / Table.
+- Group by (what a card or timeline group is): Project / Supplier. One switch for Cards and
+  the Timeline, replacing the timeline's "Rows". Not shown for the Table, which is one flat
+  list of POs.
+
+Sorting sits in the bar of the view it sorts. Cards: "N project cards · Order cards by",
+then, after a divider, "Inside each card · Order POs by" with a button naming the direction
+in words ("Soonest first" / "Latest first"), kept in step with a click on a column header
+(one state), and "Split by supplier" (project cards only; it used to read "Group by
+supplier", which now means something else). Timeline: "Order projects by" and "Dot colour"
+moved into the timeline's own bar (PoTimeline `controls`).
+
+Cards show every PO (ListCard `fullHeight`: no scrolling list inside) and run down columns,
+continuing at the top of the next (ListCardGrid `flow="columns"`), so cards of different
+heights leave no gaps. Not CSS columns, which fill one column after another and leave the
+last ones empty when there are few cards (six cards in four columns: 2, 2, 2 and a blank):
+lib/column-flow.ts splitInOrder cuts the ordered cards so the tallest column is as short as
+it can be and every column gets a card (2, 2, 1, 1). The column count comes from the
+container's width, measured before paint; on the server CSS columns stand in. Job Details'
+card view passes neither prop and is unchanged.
+
+The two-or-three-way switch is Job Details' `Segmented`, moved to components/ui/Segmented
+(with hover text and aria-pressed added) so both pages draw the same control.
+
+
+Timeline height, changed the same day (by request): it now reaches the bottom of the window
+(10px short of it) instead of also leaving room for what follows it on the page. That had
+taken the Scheduler note, the Experimental badge and the page's bottom padding off its
+height, which left it too short. Those now sit below it, a short scroll away, and the
+overflow-trimming pass is gone. The Experimental badge is not pinned to the window's bottom
+on the Timeline view, where it would cover the last PO labels.

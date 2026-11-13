@@ -3,9 +3,11 @@
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { SupplierAvatar } from "@/components/procurement/PoDetailPanel";
 import { ListCard, ListCardGrid, type ListCardColumn, type ListCardSort } from "@/components/ui/ListCard";
+import { Segmented } from "@/components/ui/Segmented";
 import type { SortDir } from "@/lib/data-table";
 import { OpenPoDetail } from "@/components/open-pos/OpenPoDetail";
-import { PoTimeline, type TimelinePo, type TimelineRow } from "@/components/open-pos/PoTimeline";
+import { PoTimeline, type DotsBy, type RequiredState, type TimelinePo, type TimelineRow } from "@/components/open-pos/PoTimeline";
+import { loadOpenPoRequiredDates } from "@/lib/open-pos-actions";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -32,7 +34,14 @@ import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 // the default and the "show all" state. All client-side: the server sent every open PO.
 
 type MetricId = "late" | "notReceived" | "next4Weeks" | "receivedNotInvoiced" | "leftToInvoice";
-type View = "projects" | "suppliers" | "timeline" | "list";
+// Three separate choices, each with its own control, so no button does two jobs:
+//   Filter   WHICH POs: the five totals (one at a time) and "Only partially received".
+//   View     HOW they are drawn: cards, the timeline, or one table.
+//   Group by WHAT a card or timeline group is: a project or a supplier. Not for the table,
+//            which is one flat list of POs.
+// Sorting belongs to the view it sorts and sits in that view's own bar.
+type View = "cards" | "timeline" | "table";
+type GroupBy = "projects" | "suppliers";
 type CardSort = "amount" | "name" | "late" | "soonest";
 
 const NO_COUNTS: LineCounts = { lines: 0, received: 0, pieces: 0, piecesReceived: 0 };
@@ -197,7 +206,7 @@ function JobLinks({ jobIds }: { jobIds: string[] }) {
   );
 }
 
-// "All POs": every shown PO, whole-PO amounts. Same measures as the project table.
+// The Table view: every shown PO, whole-PO amounts.
 const LIST_COLUMNS: DataTableColumn<OpenPoRow>[] = [
   { id: "po", header: "PO #", value: (r) => r.poNumber, width: "150px", className: "font-semibold", headerTitle: TIP.po, title: poTip },
   {
@@ -281,7 +290,8 @@ const LIST_COLUMNS: DataTableColumn<OpenPoRow>[] = [
 /** One PO on a card. `upcoming`: its next delivery from today on (see nextUpcoming). */
 type CardPo = { row: OpenPoRow; money: OpenPoMoney; counts: LineCounts; upcoming: string | null };
 
-// The "Sort cards" menu orders the cards; the POs inside them sort by their column headers.
+// "Order cards by" (Cards) / "Order projects by" (Timeline) orders the cards or groups; the POs
+// inside the cards have their own order ("Order POs by", or a click on a column header).
 // Ties fall back to the selected tile's amount, biggest first.
 const SORTS: { id: CardSort; label: string; tip: string }[] = [
   { id: "amount", label: "Amount", tip: "Biggest first, by the selected tile" },
@@ -323,6 +333,24 @@ function nextPoSort(cur: ListCardSort | null, id: string): ListCardSort {
   if (cur?.id === id) return { id, dir: cur.dir === "asc" ? "desc" : "asc" };
   return { id, dir: PO_SORT_FIRST[id] ?? "asc" };
 }
+
+// The same PO order as a menu, in the cards' bar: the column headers still sort on click, and
+// the two stay in step (one state). Each direction is named in words, per column.
+const PO_SORTS: { id: string; label: string; asc: string; desc: string }[] = [
+  { id: "po", label: "PO number", asc: "A to Z", desc: "Z to A" },
+  { id: "supplier", label: "Supplier", asc: "A to Z", desc: "Z to A" },
+  { id: "lines", label: "Lines received", asc: "Least received first", desc: "Most received first" },
+  { id: "expected", label: "Expected date", asc: "Soonest first", desc: "Latest first" },
+  { id: "status", label: "Status", asc: "Late first", desc: "Received first" },
+];
+
+// A card's height in px, near enough to cut the columns level (ListCardGrid `weights`): its
+// header and column titles, a row per PO, and a row per supplier heading when split.
+const cardWeight = (pos: CardPo[], split: boolean) => 112 + 28 * pos.length + (split ? 26 * new Set(pos.map((p) => p.row.suppliers.join(", "))).size : 0);
+
+const CONTROL_LABEL ="text-xs font-semibold uppercase tracking-wide text-sdc-muted";
+const selectCls = (active: boolean) =>
+  `h-8 rounded-md border bg-white px-2 text-xs font-medium outline-none focus:border-sdc-blue ${active ? "border-sdc-blue text-sdc-blue-dark" : "border-sdc-border text-sdc-gray-600"}`;
 
 // Dot per PO. Red only for late, so "not here yet" is never painted as a problem.
 const DOT_RANK = { late: 0, over: 1, partial: 2, open: 3, received: 4 } as const;
@@ -494,6 +522,7 @@ function OpenPoCard({
       rowKey={({ row }) => row.poNumber}
       onRowClick={({ row }) => onOpenPo(row)}
       rowTitle={() => "Open PO details"}
+      fullHeight
       sort={poSort}
       onSort={onPoSort}
       groupBy={
@@ -523,7 +552,8 @@ function OpenPoCard({
 export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosResult; schedulerVendorPosUrl?: string }) {
   const [metric, setMetric] = useState<MetricId>("leftToInvoice");
   const [partialOnly, setPartialOnly] = useState(false);
-  const [view, setView] = useState<View>("projects");
+  const [view, setView] = useState<View>("cards");
+  const [groupBy, setGroupBy] = useState<GroupBy>("projects");
   // The PO open in the panel, and which of its jobs' BOM the panel shows (the card's job on a
   // project card or timeline row, otherwise the PO's first job).
   const [openPo, setOpenPo] = useState<{ row: OpenPoRow; jobId: string } | null>(null);
@@ -532,8 +562,36 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   // One PO order for every card: clicking a column header in any card sorts them all.
   const [poSort, setPoSort] = useState<ListCardSort | null>(null);
   const [bySupplier, setBySupplier] = useState(false);
-  const [timelineBy, setTimelineBy] = useState<"projects" | "suppliers">("projects");
+  const [dotsBy, setDotsBy] = useState<DotsBy>("status");
   const onPoSort = (id: string) => setPoSort((s) => nextPoSort(s, id));
+  // Project cards have a Supplier column unless they are split by supplier; supplier cards
+  // never do. An order by a column that just went away falls back to the default.
+  const supplierColumn = groupBy === "projects" && !bySupplier;
+  const dropSupplierSort = () => setPoSort((s) => (s?.id === "supplier" ? null : s));
+  const chooseGroupBy = (g: GroupBy) => {
+    setGroupBy(g);
+    if (g === "suppliers") dropSupplierSort();
+  };
+  const toggleBySupplier = () => {
+    setBySupplier((v) => !v);
+    dropSupplierSort();
+  };
+
+  // The BOM's required dates, for the timeline's lines. Read the first time the Timeline is
+  // opened (not with the page: the cards don't need them), for every line still to arrive.
+  const [required, setRequired] = useState<{ state: RequiredState | "idle"; byLine: ReadonlyMap<string, string> }>({ state: "idle", byLine: new Map() });
+  const loadRequired = () => {
+    if (required.state !== "idle" && required.state !== "failed") return;
+    setRequired((r) => ({ ...r, state: "loading" }));
+    const ids = data.rows.flatMap((r) => r.items.filter((l) => l.quantity > 0 && !(l.receivedQty != null && l.receivedQty >= l.quantity)).map((l) => l.lineId));
+    loadOpenPoRequiredDates(ids)
+      .then((res) => setRequired(res.ok ? { state: "ok", byLine: new Map(Object.entries(res.byLine)) } : { state: "failed", byLine: new Map() }))
+      .catch(() => setRequired({ state: "failed", byLine: new Map() }));
+  };
+  const showView = (v: View) => {
+    setView(v);
+    if (v === "timeline") loadRequired();
+  };
 
   const cur = METRICS.find((m) => m.id === metric)!;
   const jobName = useMemo(() => new Map(data.jobs.map((j) => [j.jobId, j.jobName])), [data.jobs]);
@@ -586,10 +644,10 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       return `${pos.length} ${pos.length === 1 ? "PO" : "POs"} to arrive${late ? ` · ${late} late` : ""}`;
     };
     const rows: TimelineRow[] =
-      timelineBy === "projects"
+      groupBy === "projects"
         ? projects.map((p) => {
             const pos = p.pos
-              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items, p.jobId), other: c.row.suppliers.join(", ") || "No supplier", jobId: p.jobId }))
+              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items, p.jobId, required.byLine), other: c.row.suppliers.join(", ") || "No supplier", jobId: p.jobId }))
               .filter((x) => x.dates.outstanding);
             return {
               key: p.jobId,
@@ -606,12 +664,12 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           })
         : suppliers.map((s) => {
             const pos = s.pos
-              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items), other: `Job ${c.row.jobIds.join(", ")}` }))
+              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items, undefined, required.byLine), other: `Job ${c.row.jobIds.join(", ")}` }))
               .filter((x) => x.dates.outstanding);
             return { key: s.name, label: s.name, sublabel: sub(pos), title: s.name, pos };
           });
     return rows.filter((r) => r.pos.length > 0);
-  }, [timelineBy, projects, suppliers, data.asOf]);
+  }, [groupBy, projects, suppliers, data.asOf, required.byLine]);
 
 
   if (data.rows.length === 0) {
@@ -620,6 +678,22 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
   const filtered = metric !== "leftToInvoice" || partialOnly;
   const shownJobs = new Set(shown.flatMap((r) => r.jobIds)).size;
+  const cardCount = groupBy === "projects" ? projects.length : suppliers.length;
+  const poSortDef = PO_SORTS.find((s) => s.id === poSort?.id);
+  // The order of the cards (Cards) or of the groups (Timeline): one setting, labelled for
+  // whichever it is moving, in that view's own bar.
+  const groupSortSelect = (label: string) => (
+    <label className="flex items-center gap-2" title={`${label.replace(/ by$/, "")}: ${SORTS.find((s) => s.id === sort)!.tip}`}>
+      <span className={CONTROL_LABEL}>{label}</span>
+      <select value={sort} onChange={(e) => setSort(e.target.value as CardSort)} className={selectCls(sort !== "amount")}>
+        {SORTS.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.id === "name" ? (groupBy === "projects" ? "Job number" : "Supplier name") : s.id === "amount" ? `Amount (${cur.short})` : s.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -627,130 +701,58 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           filter the cards. */}
       <WeekChart weeks={data.weeks} />
 
-      <section aria-label="Totals. Choose one to list those POs" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        {tiles.map((t) => {
-          const on = t.id === metric;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              aria-pressed={on}
-              onClick={() => setMetric(t.id)}
-              title={`${t.hint}. ${usdExact(t.value)}`}
-              className={`flex flex-col gap-0.5 rounded-xl p-4 text-left motion-interactive ${
-                on ? "border-2 border-sdc-navy bg-sdc-blue-light/50" : "border border-sdc-border bg-white hover:border-sdc-gray-400"
-              }`}
-            >
-              <span className="text-note font-semibold text-sdc-gray-600">{t.label}</span>
-              <span className={`font-heading text-xl font-bold tabular-nums ${t.id === "late" ? "text-red-700" : "text-sdc-navy"}`}>{usd(t.value)}</span>
-              <span className="text-note text-sdc-gray-400">
-                {t.pos} POs · {t.jobs} jobs
-              </span>
-              <span className={`mt-1 text-note font-semibold ${on ? "text-sdc-navy" : "text-sdc-blue"}`}>{on ? "Showing below" : "Show these"}</span>
-            </button>
-          );
-        })}
-      </section>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <div role="group" aria-label="Group by" className="flex gap-1">
-          {(
-            [
-              ["projects", "By project", "One card per job, with its POs. Amounts are each job's own share"],
-              ["suppliers", "By supplier", "One card per vendor, with its POs"],
-              ["timeline", "Timeline", "When each PO is expected, one row per project or supplier, with where re-promised POs were first due"],
-              ["list", "All POs", "Every PO in one searchable, sortable list"],
-            ] as [View, string, string][]
-          ).map(([id, label, tip]) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={view === id}
-              onClick={() => setView(id)}
-              title={tip}
-              className={`${TOOLBAR_BTN_COMPACT} ${view === id ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
-            >
-              {label}
-            </button>
-          ))}
+      {/* ── Filter: WHICH POs ───────────────────────────────────────────────────────
+          The five totals and "Only partially received" sit under one label, with one line
+          saying what they leave on screen and one button that clears them all. */}
+      <section aria-labelledby="op-filter" className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <h2 id="op-filter" className={CONTROL_LABEL}>
+            Filter
+          </h2>
+          <span className="text-note text-sdc-gray-400">Pick a total to list the POs behind it. Left to invoice is every open PO.</span>
         </div>
-        <button
-          type="button"
-          aria-pressed={partialOnly}
-          onClick={() => setPartialOnly((v) => !v)}
-          title="Only POs where some of the order has arrived and the rest is still expected"
-          className={`${TOOLBAR_BTN_COMPACT} ${partialOnly ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
-        >
-          {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inMetric(r, metric) && r.partiallyReceived).length})
-        </button>
-        {view === "projects" && (
+        <div role="group" aria-label="Filter by total. Choose one to list those POs" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+          {tiles.map((t) => {
+            const on = t.id === metric;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setMetric(t.id)}
+                title={`${t.hint}. ${usdExact(t.value)}. Click to list only these POs`}
+                className={`flex flex-col gap-0.5 rounded-xl p-4 text-left motion-interactive ${
+                  on ? "border-2 border-sdc-navy bg-sdc-blue-light/50" : "border border-sdc-border bg-white hover:border-sdc-gray-400"
+                }`}
+              >
+                <span className="text-note font-semibold text-sdc-gray-600">{t.label}</span>
+                <span className={`font-heading text-xl font-bold tabular-nums ${t.id === "late" ? "text-red-700" : "text-sdc-navy"}`}>{usd(t.value)}</span>
+                <span className="text-note text-sdc-gray-400">
+                  {t.pos} POs · {t.jobs} jobs
+                </span>
+                <span className={`mt-1 text-note font-semibold ${on ? "text-sdc-navy" : "text-sdc-blue"}`}>{on ? "Showing these" : "Show these"}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <button
             type="button"
-            aria-pressed={bySupplier}
-            onClick={() => setBySupplier((v) => !v)}
-            title="Inside each project card, group its POs under their supplier. Click a supplier to hide or show its POs"
-            className={`${TOOLBAR_BTN_COMPACT} ${bySupplier ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+            aria-pressed={partialOnly}
+            onClick={() => setPartialOnly((v) => !v)}
+            title="A second filter, on top of the total chosen above: only POs where some of the order has arrived and the rest is still expected"
+            className={`${TOOLBAR_BTN_COMPACT} ${partialOnly ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
           >
-            {bySupplier ? "☑" : "☐"} Group by supplier
+            {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inMetric(r, metric) && r.partiallyReceived).length})
           </button>
-        )}
-        {view === "timeline" && (
-          <div role="group" aria-label="Timeline rows" className="flex items-center gap-1 text-note font-semibold text-sdc-gray-600">
-            Rows
-            {(
-              [
-                ["projects", "Projects", "One row per project, its own share of each PO"],
-                ["suppliers", "Suppliers", "One row per supplier, whole POs"],
-              ] as const
-            ).map(([id, label, tip]) => (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={timelineBy === id}
-                onClick={() => setTimelineBy(id)}
-                title={tip}
-                className={`${TOOLBAR_BTN_COMPACT} ${timelineBy === id ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        {view !== "list" && (
-          <label
-            className="flex items-center gap-1.5 text-note font-semibold text-sdc-gray-600"
-            title={
-              view === "timeline"
-                ? `Order of the rows: ${SORTS.find((s) => s.id === sort)!.tip}`
-                : `Order of the cards: ${SORTS.find((s) => s.id === sort)!.tip}. To order the POs inside the cards, click a column header in any card`
-            }
-          >
-            {view === "timeline" ? "Sort rows" : "Sort cards"}
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as CardSort)}
-              className={`h-8 rounded-md border bg-white px-2 text-xs font-medium outline-none focus:border-sdc-blue ${
-                sort !== "amount" ? "border-sdc-blue text-sdc-blue-dark" : "border-sdc-border text-sdc-gray-600"
-              }`}
-            >
-              {SORTS.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.id === "name" ? ((view === "timeline" ? timelineBy : view) === "projects" ? "Job number" : "Supplier name") : s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <div role="status" className="flex min-h-10 flex-1 flex-wrap items-center gap-2.5 text-sm">
-          <span className="font-bold text-sdc-navy" title={`${cur.hint}. Choose another tile above to switch`}>
-            Showing: {cur.label}
+          <span role="status" className="text-sm text-sdc-gray-600" title={`${cur.hint}. Open POs shown below, and the jobs they charge`}>
+            Showing{" "}
+            <span className="font-bold text-sdc-navy">
+              {shown.length} {shown.length === 1 ? "PO" : "POs"}
+            </span>{" "}
+            on {shownJobs} {shownJobs === 1 ? "job" : "jobs"}: {cur.label}
             {partialOnly ? ", partially received only" : ""}
-          </span>
-          <span className="text-sdc-gray-600" title="Open POs shown below, and the jobs they charge">
-            {shown.length} POs on {shownJobs} jobs{filtered ? ` · ${data.rows.length - shown.length} other open POs hidden` : ""}
+            {filtered ? ` · ${data.rows.length - shown.length} other open POs hidden` : ""}
           </span>
           {filtered && (
             <button
@@ -759,65 +761,142 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 setMetric("leftToInvoice");
                 setPartialOnly(false);
               }}
-              title="Clear the filters and list every PO still owing an invoice"
+              title="Back to Left to invoice with nothing else filtered: every PO still owing an invoice"
               className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
             >
-              Show all open POs
+              Clear filters
             </button>
           )}
         </div>
+      </section>
+
+      {/* ── View and Group by: HOW they are drawn ───────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="flex items-center gap-2">
+          <span className={CONTROL_LABEL}>View</span>
+          <Segmented
+            label="View"
+            value={view}
+            onChange={showView}
+            options={[
+              { value: "cards", label: "Cards", title: "One card per project or supplier, with its POs listed inside" },
+              { value: "timeline", label: "Timeline", title: "When each PO is expected against when the BOM needs it, grouped by project or supplier" },
+              { value: "table", label: "Table", title: "Every PO in one searchable, sortable list" },
+            ]}
+          />
+        </div>
+        {view !== "table" && (
+          <div className="flex items-center gap-2">
+            <span className={CONTROL_LABEL}>Group by</span>
+            <Segmented
+              label="Group by"
+              value={groupBy}
+              onChange={chooseGroupBy}
+              options={[
+                { value: "projects", label: "Project", title: `One ${view === "cards" ? "card" : "group"} per job. Amounts are each job's own share of a PO split across jobs` },
+                { value: "suppliers", label: "Supplier", title: `One ${view === "cards" ? "card" : "group"} per vendor, whole POs` },
+              ]}
+            />
+          </div>
+        )}
       </div>
 
-      {view === "projects" && (
-        <section aria-label="By project">
-          <ListCardGrid min={340}>
-            {projects.map((p) => (
-              <OpenPoCard
-                key={p.jobId}
-                title={
-                  <a href={jobHref(p.jobId)} className="hover:underline">
-                    {p.jobId}
-                    {p.name && <span className="font-semibold text-sdc-gray-600"> — {p.name}</span>}
-                  </a>
-                }
-                titleTip={`Open ${p.jobId}${p.name ? ` (${p.name})` : ""} in Job Details`}
-                subtitle={`${p.pos.length} ${p.pos.length === 1 ? "PO" : "POs"}`}
-                metric={cur}
-                money={{ ...p.totals, ordered: p.ordered, received: p.received }}
-                counts={p.counts}
-                oldestLate={p.oldestLate}
-                pos={p.pos}
-                bySupplier={bySupplier}
-                supplierColumn={!bySupplier}
-                onOpenPo={(r) => openRow(r, p.jobId)}
-                poSort={poSort}
-                onPoSort={onPoSort}
-              />
-            ))}
-          </ListCardGrid>
-        </section>
-      )}
+      {view === "cards" && (
+        <section aria-label={groupBy === "projects" ? "Project cards" : "Supplier cards"} className="flex flex-col gap-3">
+          {/* The cards' own bar. Two orders, named for what each one moves: the cards
+              themselves, and the POs listed inside every card. */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-sdc-border bg-white px-3 py-2">
+            <span className="text-sm font-bold text-sdc-navy">
+              {cardCount} {groupBy === "projects" ? "project" : "supplier"} {cardCount === 1 ? "card" : "cards"}
+            </span>
+            {groupSortSelect("Order cards by")}
+            <span aria-hidden className="hidden h-6 w-px bg-sdc-border sm:block" />
+            <span className="text-sm font-bold text-sdc-navy">Inside each card</span>
+            <span className="flex items-center gap-1.5">
+              <label className="flex items-center gap-2" title="The order of the POs listed inside every card. The same as clicking a column header in any card">
+                <span className={CONTROL_LABEL}>Order POs by</span>
+                <select
+                  value={poSort?.id ?? ""}
+                  onChange={(e) => setPoSort(e.target.value ? { id: e.target.value, dir: PO_SORT_FIRST[e.target.value] ?? "asc" } : null)}
+                  className={selectCls(poSort != null)}
+                >
+                  <option value="">Amount ({cur.short}), biggest first</option>
+                  {PO_SORTS.filter((s) => s.id !== "supplier" || supplierColumn).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {poSort && poSortDef && (
+                <button
+                  type="button"
+                  onClick={() => setPoSort((s) => (s ? { ...s, dir: s.dir === "asc" ? "desc" : "asc" } : s))}
+                  title="Click to reverse the order"
+                  className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
+                >
+                  {poSort.dir === "asc" ? poSortDef.asc : poSortDef.desc}
+                </button>
+              )}
+            </span>
+            {groupBy === "projects" && (
+              <button
+                type="button"
+                aria-pressed={bySupplier}
+                onClick={toggleBySupplier}
+                title="Inside each project card, list its POs under their supplier. Click a supplier to hide or show its POs. The cards stay one per project"
+                className={`${TOOLBAR_BTN_COMPACT} ${bySupplier ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+              >
+                {bySupplier ? "☑" : "☐"} Split by supplier
+              </button>
+            )}
+          </div>
 
-      {view === "suppliers" && (
-        <section aria-label="By supplier">
-          <ListCardGrid min={340}>
-            {suppliers.map((s) => (
-              <OpenPoCard
-                key={s.name}
-                title={s.name}
-                titleTip={s.name}
-                subtitle={`${s.pos.length} ${s.pos.length === 1 ? "PO" : "POs"} · ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"}`}
-                avatar={<SupplierAvatar supplier={s.name} size={30} />}
-                metric={cur}
-                money={{ ...s.totals, ordered: s.ordered, received: s.received }}
-                counts={s.counts}
-                oldestLate={s.oldestLate}
-                pos={s.pos}
-                onOpenPo={openRow}
-                poSort={poSort}
-                onPoSort={onPoSort}
-              />
-            ))}
+          {cardCount === 0 && <p className={card("text-center text-sm text-sdc-gray-400")}>No POs match these filters. Try Clear filters.</p>}
+          {/* Every card shows all its POs, so cards differ in height: they run down each
+              column and continue at the top of the next (ListCardGrid flow="columns"). */}
+          <ListCardGrid min={340} flow="columns" weights={(groupBy === "projects" ? projects : suppliers).map((c) => cardWeight(c.pos, groupBy === "projects" && bySupplier))}>
+            {groupBy === "projects"
+              ? projects.map((p) => (
+                  <OpenPoCard
+                    key={p.jobId}
+                    title={
+                      <a href={jobHref(p.jobId)} className="hover:underline">
+                        {p.jobId}
+                        {p.name && <span className="font-semibold text-sdc-gray-600"> — {p.name}</span>}
+                      </a>
+                    }
+                    titleTip={`Open ${p.jobId}${p.name ? ` (${p.name})` : ""} in Job Details`}
+                    subtitle={`${p.pos.length} ${p.pos.length === 1 ? "PO" : "POs"}`}
+                    metric={cur}
+                    money={{ ...p.totals, ordered: p.ordered, received: p.received }}
+                    counts={p.counts}
+                    oldestLate={p.oldestLate}
+                    pos={p.pos}
+                    bySupplier={bySupplier}
+                    supplierColumn={supplierColumn}
+                    onOpenPo={(r) => openRow(r, p.jobId)}
+                    poSort={poSort}
+                    onPoSort={onPoSort}
+                  />
+                ))
+              : suppliers.map((s) => (
+                  <OpenPoCard
+                    key={s.name}
+                    title={s.name}
+                    titleTip={s.name}
+                    subtitle={`${s.pos.length} ${s.pos.length === 1 ? "PO" : "POs"} · ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"}`}
+                    avatar={<SupplierAvatar supplier={s.name} size={30} />}
+                    metric={cur}
+                    money={{ ...s.totals, ordered: s.ordered, received: s.received }}
+                    counts={s.counts}
+                    oldestLate={s.oldestLate}
+                    pos={s.pos}
+                    onOpenPo={openRow}
+                    poSort={poSort}
+                    onPoSort={onPoSort}
+                  />
+                ))}
           </ListCardGrid>
         </section>
       )}
@@ -827,14 +906,33 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           rows={timelineRows}
           asOf={data.asOf}
           onOpenPo={openRow}
-          emptyText="Nothing still to arrive among the POs shown. Try Show all open POs."
+          emptyText="Nothing still to arrive among the POs shown. Try Clear filters."
+          dotsBy={dotsBy}
+          requiredState={required.state === "idle" ? "loading" : required.state}
+          controls={
+            <>
+              {groupSortSelect(`Order ${groupBy === "projects" ? "projects" : "suppliers"} by`)}
+              <span className="flex items-center gap-2">
+                <span className={CONTROL_LABEL}>Dot colour</span>
+                <Segmented
+                  label="Dot colour"
+                  value={dotsBy}
+                  onChange={setDotsBy}
+                  options={[
+                    { value: "status", label: "Status", title: "Late, partly received or on schedule. The line's colour says whether it arrives before the BOM needs it" },
+                    { value: "required", label: "Required date", title: "The same as the line: green if it arrives on or before the day the BOM needs it, red if after" },
+                  ]}
+                />
+              </span>
+            </>
+          }
         />
       )}
 
-      {view === "list" && (
-        <section className="flex flex-col gap-2" aria-label="All POs">
-          <p className="text-note text-sdc-gray-400" title="By project shows each job's own share instead">
-            Amounts are the whole PO. A PO split across jobs lists every job it charges.
+      {view === "table" && (
+        <section className="flex flex-col gap-2" aria-label="Table of POs">
+          <p className="text-note text-sdc-gray-400" title="Cards and the Timeline, grouped by project, show each job's own share instead">
+            One row per PO. Amounts are the whole PO; a PO split across jobs lists every job it charges. Click a column header to sort.
           </p>
           <DataTable
             rows={shown}
@@ -869,11 +967,13 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       </p>
 
       {/* Bottom-left of the content area, opposite the Flag button. Sticky rather than
-          fixed so it never lands under the sidebar, whose width the user can drag. */}
+          fixed so it never lands under the sidebar, whose width the user can drag. Not
+          sticky on the Timeline, which reaches the bottom of the window: pinned there it
+          would cover the timeline's last PO labels, so it stays in the page below it. */}
       <span
         tabIndex={0}
         title="This page is new. Its layout and figures may change. Use Flag (bottom right) to report anything that looks wrong."
-        className="sticky bottom-4 self-start rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-note font-semibold text-amber-800 shadow-sm"
+        className={`${view === "timeline" ? "" : "sticky bottom-4"} self-start rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-note font-semibold text-amber-800 shadow-sm`}
       >
         Experimental, may change
       </span>

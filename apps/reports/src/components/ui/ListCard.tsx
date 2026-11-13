@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
+import { Children, Fragment, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { sortRows, type SortDir } from "@/lib/data-table";
+import { splitInOrder } from "@/lib/column-flow";
 
 // A card that heads a short list: who it is, one status badge, one progress bar, then a
 // scrollable mini-table of its items. First built for Job Details' Parts card view (one card
@@ -59,6 +60,12 @@ export type ListCardProps<T> = {
    * the order their first row does, after sorting; every group starts open.
    */
   groupBy?: { key: (row: T) => string; label: (key: string, rows: T[]) => ReactNode; title?: (key: string, rows: T[]) => string };
+  /**
+   * Shows every row: the card grows to its list instead of scrolling it inside a fixed
+   * height. For pages that lay cards out in columns (ListCardGrid `flow="columns"`), where a
+   * tall card costs nothing and a scroll box inside a scrolling page is one more thing to aim at.
+   */
+  fullHeight?: boolean;
 };
 
 const Chevron = () => (
@@ -84,6 +91,7 @@ export function ListCard<T>({
   sort,
   onSort,
   groupBy,
+  fullHeight,
 }: ListCardProps<T>) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const tracks = [...columns.map((c, i) => c.width ?? (i === 0 ? "1fr" : "auto")), ...(onRowClick ? ["auto"] : [])].join(" ");
@@ -161,7 +169,7 @@ export function ListCard<T>({
         )}
       </div>
 
-      <div className="grid max-h-56 content-start gap-x-2 overflow-y-auto styled-scrollbar" style={grid}>
+      <div className={`grid content-start gap-x-2 ${fullHeight ? "" : "max-h-56 overflow-y-auto styled-scrollbar"}`} style={grid}>
         <div className="sticky top-0 z-[1] col-span-full grid grid-cols-subgrid items-center bg-sdc-gray-100 px-3 py-1.5 text-micro font-bold uppercase tracking-wider text-sdc-gray-400">
           {columns.map((c) => {
             const right = c.align === "right";
@@ -217,8 +225,87 @@ export function ListCard<T>({
   );
 }
 
-/** The grid ListCards sit in: as many columns as fit, each at least `min` wide. */
-export function ListCardGrid({ children, min = 300, className = "" }: { children: ReactNode; min?: number; className?: string }) {
+const FLOW_GAP = 12; // px between cards, both ways (Tailwind gap-3)
+
+// Cards down columns. The number of columns comes from the container's own width (as many as
+// fit at `min`), measured before paint and again on resize; until then, and on the server,
+// CSS columns stand in, which give the same order. Every column is drawn, an empty one
+// included, so two cards on a wide screen stay card-width instead of stretching to half each.
+function ColumnFlow({ children, min, className, weights }: { children: ReactNode; min: number; className: string; weights?: readonly number[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [columns, setColumns] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setColumns(Math.max(1, Math.floor((el.clientWidth + FLOW_GAP) / (min + FLOW_GAP))));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [min]);
+
+  // One outer element for both states, so the width being watched is never unmounted.
+  if (columns == null) {
+    return (
+      <div ref={ref} className={className}>
+        <div className="[&>*]:mb-3 [&>*]:break-inside-avoid" style={{ columnWidth: min, columnGap: FLOW_GAP }}>
+          {children}
+        </div>
+      </div>
+    );
+  }
+  const items = Children.toArray(children);
+  const sizes = splitInOrder(
+    items.map((_, i) => weights?.[i] ?? 1),
+    columns,
+  );
+  const starts = sizes.map((_, c) => sizes.slice(0, c).reduce((s, n) => s + n, 0));
+  return (
+    <div ref={ref} className={className}>
+      <div className="flex items-start gap-3">
+        {sizes.map((n, c) => (
+          <div key={c} className="flex min-w-0 flex-1 flex-col gap-3">
+            {items.slice(starts[c], starts[c] + n)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What ListCards sit in: as many columns as fit, each at least `min` wide.
+ *
+ * `flow="rows"` (default) is a grid: cards read left to right, and each row is as tall as its
+ * tallest card, which suits cards of one height (a scrolling list inside).
+ *
+ * `flow="columns"` is for cards of different heights (ListCard `fullHeight`): they stack down
+ * the first column, then continue at the top of the next, so a short card leaves no gap
+ * beside a tall one. The order therefore reads DOWN each column, not across. `weights` is
+ * each card's height (or anything proportional, e.g. its row count plus a constant for the
+ * header), in the children's order; it decides where the columns are cut so they come out
+ * about level (lib/column-flow.ts). Without it every card counts the same.
+ */
+export function ListCardGrid({
+  children,
+  min = 300,
+  className = "",
+  flow = "rows",
+  weights,
+}: {
+  children: ReactNode;
+  min?: number;
+  className?: string;
+  flow?: "rows" | "columns";
+  weights?: readonly number[];
+}) {
+  if (flow === "columns") {
+    return (
+      <ColumnFlow min={min} className={className} weights={weights}>
+        {children}
+      </ColumnFlow>
+    );
+  }
   return (
     <div className={`grid gap-3 ${className}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${min}px, 1fr))` }}>
       {children}

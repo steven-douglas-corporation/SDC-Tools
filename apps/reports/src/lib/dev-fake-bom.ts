@@ -22,6 +22,7 @@ import { fakePartsLines } from "@/lib/dev-fake-eto";
 
 const DAY = 86_400_000;
 const dateOf = (ymd: string | null | undefined) => (ymd ? new Date(`${ymd}T12:00:00`) : null);
+const shiftDays = (d: Date | null, days: number) => (d ? new Date(d.getTime() + days * DAY) : null);
 
 export function fakeBomRecordsets(jobId: number): JobBomRecordsets {
   const lines = fakePartsLines(String(jobId)).filter((l) => l.poNumber && l.partNumber);
@@ -111,7 +112,11 @@ export function fakeBomRecordsets(jobId: number): JobBomRecordsets {
         ParentDesc: sub.desc,
         SpecID: sub.spec,
         ItemQty: its.reduce((s, p) => s + (p.PurchaseQty ?? 0), 0) || 1,
-        RequiredDate: dateOf(first.requiredDate),
+        // When the build needs it: the PO's own required date moved by a few days either way,
+        // so Open POs' timeline has parts that arrive before they're needed (green) and after
+        // (red), on late POs and on-schedule ones alike. A PO's date and the BOM's are
+        // separate in Total ETO too.
+        RequiredDate: shiftDays(dateOf(first.requiredDate), [14, -12, 4, -30, 0][i % 5]),
         POQty: its.reduce((s, p) => s + (p.PurchaseQty ?? 0), 0),
         ReceivedQty: received,
         UnitPrice: first.unitPrice,

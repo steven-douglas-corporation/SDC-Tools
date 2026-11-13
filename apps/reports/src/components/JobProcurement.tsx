@@ -50,6 +50,7 @@ import {
   type StatusKey,
 } from "@/lib/po-detail";
 import { ListCard, ListCardGrid, type ListCardColumn } from "@/components/ui/ListCard";
+import { Segmented } from "@/components/ui/Segmented";
 import { PoPanel, ReleaseBadge, SupplierAvatar, Stat, ALL_COLS, partsListSortColumns, PartRowCells, PartPoSubRowCells, type ColKey } from "@/components/procurement/PoDetailPanel";
 import { PartPoPanel } from "@/components/procurement/PartPoPanel";
 import { computeRiskCards, dueMs, earliestRequired, groupPartsByPo } from "@/lib/procurement-risk";
@@ -4049,25 +4050,6 @@ function PartRiskRow({ part, onClick }: { part: FlatPart; onClick: () => void })
 }
 
 // ── Small filter controls ────────────────────────────────────────────────────
-
-function Segmented<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[] }) {
-  return (
-    <div className="inline-flex h-8 items-center rounded-md border border-sdc-border bg-white p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          className={`h-7 rounded px-2.5 text-xs font-medium motion-interactive ${
-            value === o.value ? "bg-sdc-blue-light text-sdc-blue-dark" : "text-sdc-gray-600 hover:text-sdc-navy"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function FilterSelect({ value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   const active = value !== FILTER_ALL;
