@@ -7399,3 +7399,12 @@ PO wherever it is (a PO split across jobs is on each job's group) and dims the r
 diamonds, lines and the Today line slide on a change: `.motion-timeline-move` in
 globals.css, a third enumerated exception to animating layout properties (absolutely
 positioned, so nothing reflows), off for reduced motion.
+
+Layout (same day, by request): the key moved from a bar under the timeline to a column
+down its right side (Dots, Lines, Using it, and the total still to arrive at the foot).
+The timeline fills the rest of the window: its height is what is left below everything
+above it, less what follows it on the page, so the page itself doesn't scroll; the rows
+scroll inside under a sticky week header. Measured on screen and converted to CSS px (the
+app's zoom makes the two differ), re-measured on resize and when the content around it
+changes, with one pass that trims leftover overflow (the page's own bottom padding). Never
+under 360px: on a window too short for that, the page scrolls a little instead.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { card, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -44,6 +44,7 @@ const GAP_PCT = 1.6; // dots closer than this (% of the track) stack on the next
 const SIDE_PER_LINE = 4; // dots per line in the Late / Later columns
 const SIDE = 72; // px, the Late and Later columns
 const PO_ROW = 24; // px, one PO row
+const MIN_FILL = 360; // px, the shortest the timeline gets when filling the window
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const md = (day: string) => `${MONTHS[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8, 10))}`;
@@ -211,12 +212,63 @@ export function PoTimeline({
     });
   const byExpected = (a: TimelinePo, b: TimelinePo) => (a.dates.expected ?? "9999").localeCompare(b.dates.expected ?? "9999");
 
+  // ── Fill the rest of the window, without the page scrolling ─────────────────────
+  // The timeline takes whatever height is left below everything above it, less whatever
+  // follows it on the page, so the page itself doesn't scroll and the rows scroll inside
+  // (under a sticky week header). Measured in screen px and converted to the section's own
+  // CSS px, because the app's zoom makes the two differ. One correction pass trims any
+  // overflow the estimate left (the page's own bottom padding). Never under MIN_FILL px.
+  const sectionRef = useRef<HTMLElement>(null);
+  const [fillHeight, setFillHeight] = useState<number | null>(null);
+  const pad = useRef(0);
+  useLayoutEffect(() => {
+    const el = sectionRef.current;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    const scroller = scrollParent(el);
+    const isDoc = scroller === document.scrollingElement;
+    let frame = 0;
+    const measure = (correct: boolean) => {
+      const r = el.getBoundingClientRect();
+      const sEl = el.offsetHeight ? r.height / el.offsetHeight : 1;
+      const sr = scroller.getBoundingClientRect();
+      const sSc = isDoc || !scroller.offsetHeight ? 1 : sr.height / scroller.offsetHeight;
+      const viewTop = isDoc ? 0 : sr.top;
+      const view = scroller.clientHeight * sSc;
+      if (correct) {
+        const over = (scroller.scrollHeight - scroller.clientHeight) * sSc;
+        if (over > 0.5) pad.current += over;
+      }
+      const topInContent = r.top - viewTop + scroller.scrollTop * sSc;
+      const after = parent.getBoundingClientRect().bottom - r.bottom;
+      const h = Math.max(MIN_FILL, Math.floor((view - topInContent - after - pad.current) / sEl));
+      setFillHeight(h);
+    };
+    const run = () => {
+      cancelAnimationFrame(frame);
+      measure(false);
+      frame = requestAnimationFrame(() => measure(true));
+    };
+    run();
+    const ro = new ResizeObserver(run);
+    ro.observe(scroller);
+    for (const sib of Array.from(parent.children)) if (sib !== el) ro.observe(sib);
+    window.addEventListener("resize", run);
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+      window.removeEventListener("resize", run);
+    };
+  }, []);
+
   const atToday = offset === 0;
   const ctl = `${TOOLBAR_BTN_COMPACT} !h-7 !px-2`;
 
   return (
     <section
-      className={card(`p-0 overflow-hidden select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`)}
+      ref={sectionRef}
+      className={card(`flex flex-col p-0 overflow-hidden select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`)}
+      style={{ height: fillHeight ?? undefined }}
       aria-label="Timeline"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -272,10 +324,13 @@ export function PoTimeline({
         </span>
       </div>
 
+      {/* Below the controls: the weeks and rows (scrolling under a sticky header), then the key. */}
+      <div className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-y-auto styled-scrollbar">
       {/* Header: months, then the week each column starts. */}
-      <div className="grid border-b border-sdc-border bg-slate-100 text-note text-sdc-gray-600" style={{ gridTemplateColumns: grid }}>
+      <div className="sticky top-0 z-[5] grid border-b border-sdc-border bg-slate-100 text-note text-sdc-gray-600" style={{ gridTemplateColumns: grid }}>
         <span className="self-center px-3 text-label text-sdc-gray-400" title="Drag the timeline sideways to move through the weeks">
-          Drag to move · hover a PO
+          Weeks of
         </span>
         <span
           className={`self-center text-center font-bold ${atToday ? "text-red-700" : "text-sdc-gray-600"}`}
@@ -407,33 +462,57 @@ export function PoTimeline({
         );
       })}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-sdc-border bg-white px-3 py-2 text-note text-sdc-gray-600">
-        {dotsBy === "status" ? (
-          <>
-            <Legend cls="bg-sdc-red" label="Late" tip="Expected before today and not here" />
-            <Legend cls="bg-sdc-yellow" label="Partly received" tip="Some of the order has arrived" />
-            <Legend cls="bg-sdc-blue" label="On schedule" tip="Nothing here yet, and not late" />
-          </>
-        ) : (
-          <>
-            <Legend cls="bg-green-600" label="Arrives in time" tip="Expected on or before the day the BOM needs it" />
-            <Legend cls="bg-red-600" label="Arrives after it's needed" tip="Expected after the day the BOM needs it" />
-            <Legend cls="bg-sdc-gray-400" label="No required date" tip="Not on the job's BOM" />
-          </>
-        )}
-        <Legend cls="border border-sdc-gray-400 bg-white" label="No date" tip="Total ETO has no expected date for it (in Later)" />
-        <span className="inline-flex items-center gap-1.5" title="When the BOM needs the part. The line runs from the dot (expected) to here: green if it arrives in time, red if after">
-          <span aria-hidden className="inline-block h-2 w-2 rotate-45 border-2 border-sdc-gray-600 bg-white" />
-          Required by the BOM
-        </span>
-        {requiredState !== "ok" && (
-          <span className={requiredState === "failed" ? "text-sdc-red-text" : "text-sdc-gray-400"}>
-            {requiredState === "loading" ? "Loading required dates…" : "Required dates couldn't be read from Total ETO"}
+        </div>
+
+        {/* The key, down the right side. Not a drag handle. */}
+        <aside data-no-pan aria-label="Key" className="flex w-48 shrink-0 cursor-default flex-col gap-4 overflow-y-auto border-l border-sdc-border bg-white px-3 py-3 text-note text-sdc-gray-600">
+          <KeyGroup title="Dots" tip={dotsBy === "status" ? "Coloured by where the PO stands" : "Coloured like the line: does it arrive before the BOM needs it?"}>
+            {dotsBy === "status" ? (
+              <>
+                <Legend cls="bg-sdc-red" label="Late" tip="Expected before today and not here" />
+                <Legend cls="bg-sdc-yellow" label="Partly received" tip="Some of the order has arrived" />
+                <Legend cls="bg-sdc-blue" label="On schedule" tip="Nothing here yet, and not late" />
+              </>
+            ) : (
+              <>
+                <Legend cls="bg-green-600" label="Arrives in time" tip="Expected on or before the day the BOM needs it" />
+                <Legend cls="bg-red-600" label="Arrives after it's needed" tip="Expected after the day the BOM needs it" />
+                <Legend cls="bg-sdc-gray-400" label="No required date" tip="Not on the job's BOM" />
+              </>
+            )}
+            <Legend cls="border border-sdc-gray-400 bg-white" label="No expected date" tip="Total ETO has no expected date for it (in Later)" />
+          </KeyGroup>
+          <KeyGroup title="Lines" tip="Each PO row runs from when it's expected (the dot) to when the BOM needs it (the diamond)">
+            <span className="inline-flex items-center gap-1.5" title="When the BOM needs the part">
+              <span aria-hidden className="inline-block h-2 w-2 shrink-0 rotate-45 border-2 border-sdc-gray-600 bg-white" />
+              Required by the BOM
+            </span>
+            <span className="inline-flex items-center gap-1.5" title="Expected on or before the day the BOM needs it">
+              <span aria-hidden className="inline-block h-0.5 w-4 shrink-0 bg-green-600" />
+              Arrives in time
+            </span>
+            <span className="inline-flex items-center gap-1.5" title="Expected after the day the BOM needs it">
+              <span aria-hidden className="inline-block h-0.5 w-4 shrink-0 bg-red-600" />
+              Arrives after it&apos;s needed
+            </span>
+            {requiredState !== "ok" && (
+              <span className={requiredState === "failed" ? "text-sdc-red-text" : "text-sdc-gray-400"}>
+                {requiredState === "loading" ? "Loading required dates…" : "Required dates couldn't be read from Total ETO"}
+              </span>
+            )}
+          </KeyGroup>
+          <KeyGroup title="Using it" tip="How to move around the timeline">
+            <span>Drag sideways to move through the weeks</span>
+            <span>Hover a PO to pick it out</span>
+            <span>Click a dot or PO number to open it</span>
+          </KeyGroup>
+          <span className="mt-auto border-t border-sdc-border-soft pt-2 text-sdc-gray-400" title="Value not yet received on the POs shown, at PO price">
+            <span className="block font-heading text-base font-bold tabular-nums text-sdc-navy">
+              {usd(rows.reduce((s, r) => s + r.pos.reduce((a, p) => a + p.money.notReceived, 0), 0))}
+            </span>
+            still to arrive
           </span>
-        )}
-        <span className="ml-auto text-sdc-gray-400" title="Click any dot to open its PO">
-          Click a dot to open the PO · {usd(rows.reduce((s, r) => s + r.pos.reduce((a, p) => a + p.money.notReceived, 0), 0))} still to arrive
-        </span>
+        </aside>
       </div>
     </section>
   );
@@ -524,6 +603,26 @@ function PoRow({
           style={{ position: "absolute", left: xE, top: "50%", transform: "translate(-50%, -50%)", pointerEvents: "auto" }}
         />
       </div>
+    </div>
+  );
+}
+
+/** The element whose scrolling moves `el`: the nearest ancestor that scrolls vertically, else the page. */
+function scrollParent(el: HTMLElement): HTMLElement {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === "auto" || oy === "scroll") && p.clientHeight > 0) return p;
+  }
+  return (document.scrollingElement as HTMLElement) ?? document.documentElement;
+}
+
+function KeyGroup({ title, tip, children }: { title: string; tip: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-micro font-bold uppercase tracking-wider text-sdc-gray-400" title={tip}>
+        {title}
+      </span>
+      {children}
     </div>
   );
 }
