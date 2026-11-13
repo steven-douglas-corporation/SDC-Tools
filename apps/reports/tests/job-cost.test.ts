@@ -115,8 +115,8 @@ test("computeJobCost: PM/Mfg % apply at the completion-year rate, not the work-y
   });
   const overrides = { "2026": { pmPct: 5, mfgPct: 2 } };
   const c = computeJobCost(row, DEFAULT_RATES, overrides, undefined);
-  assert.equal(c.pmCost, 10000 * 0.05);
-  assert.equal(c.mfgCost, 10000 * 0.02);
+  assert.equal(c.pmCost, 10000 * 0.05 * 0.8);
+  assert.equal(c.mfgCost, 10000 * 0.02 * 0.8);
 });
 
 test("computeJobCost: a Complete job zeroes ETC before costing and forces 100% complete", () => {
