@@ -5,7 +5,8 @@ import { SupplierAvatar } from "@/components/procurement/PoDetailPanel";
 import { ListCard, ListCardGrid, type ListCardColumn, type ListCardSort } from "@/components/ui/ListCard";
 import type { SortDir } from "@/lib/data-table";
 import { OpenPoDetail } from "@/components/open-pos/OpenPoDetail";
-import { PoTimeline, type TimelinePo, type TimelineRow } from "@/components/open-pos/PoTimeline";
+import { PoTimeline, type DotsBy, type RequiredState, type TimelinePo, type TimelineRow } from "@/components/open-pos/PoTimeline";
+import { loadOpenPoRequiredDates } from "@/lib/open-pos-actions";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -533,7 +534,24 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const [poSort, setPoSort] = useState<ListCardSort | null>(null);
   const [bySupplier, setBySupplier] = useState(false);
   const [timelineBy, setTimelineBy] = useState<"projects" | "suppliers">("projects");
+  const [dotsBy, setDotsBy] = useState<DotsBy>("status");
   const onPoSort = (id: string) => setPoSort((s) => nextPoSort(s, id));
+
+  // The BOM's required dates, for the timeline's lines. Read the first time the Timeline is
+  // opened (not with the page: the cards don't need them), for every line still to arrive.
+  const [required, setRequired] = useState<{ state: RequiredState | "idle"; byLine: ReadonlyMap<string, string> }>({ state: "idle", byLine: new Map() });
+  const loadRequired = () => {
+    if (required.state !== "idle" && required.state !== "failed") return;
+    setRequired((r) => ({ ...r, state: "loading" }));
+    const ids = data.rows.flatMap((r) => r.items.filter((l) => l.quantity > 0 && !(l.receivedQty != null && l.receivedQty >= l.quantity)).map((l) => l.lineId));
+    loadOpenPoRequiredDates(ids)
+      .then((res) => setRequired(res.ok ? { state: "ok", byLine: new Map(Object.entries(res.byLine)) } : { state: "failed", byLine: new Map() }))
+      .catch(() => setRequired({ state: "failed", byLine: new Map() }));
+  };
+  const showView = (v: View) => {
+    setView(v);
+    if (v === "timeline") loadRequired();
+  };
 
   const cur = METRICS.find((m) => m.id === metric)!;
   const jobName = useMemo(() => new Map(data.jobs.map((j) => [j.jobId, j.jobName])), [data.jobs]);
@@ -589,7 +607,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       timelineBy === "projects"
         ? projects.map((p) => {
             const pos = p.pos
-              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items, p.jobId), other: c.row.suppliers.join(", ") || "No supplier", jobId: p.jobId }))
+              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items, p.jobId, required.byLine), other: c.row.suppliers.join(", ") || "No supplier", jobId: p.jobId }))
               .filter((x) => x.dates.outstanding);
             return {
               key: p.jobId,
@@ -606,12 +624,12 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           })
         : suppliers.map((s) => {
             const pos = s.pos
-              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items), other: `Job ${c.row.jobIds.join(", ")}` }))
+              .map((c) => ({ row: c.row, money: c.money, dates: poDates(c.row.items, undefined, required.byLine), other: `Job ${c.row.jobIds.join(", ")}` }))
               .filter((x) => x.dates.outstanding);
             return { key: s.name, label: s.name, sublabel: sub(pos), title: s.name, pos };
           });
     return rows.filter((r) => r.pos.length > 0);
-  }, [timelineBy, projects, suppliers, data.asOf]);
+  }, [timelineBy, projects, suppliers, data.asOf, required.byLine]);
 
 
   if (data.rows.length === 0) {
@@ -666,7 +684,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
               key={id}
               type="button"
               aria-pressed={view === id}
-              onClick={() => setView(id)}
+              onClick={() => showView(id)}
               title={tip}
               className={`${TOOLBAR_BTN_COMPACT} ${view === id ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
             >
@@ -710,6 +728,28 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 onClick={() => setTimelineBy(id)}
                 title={tip}
                 className={`${TOOLBAR_BTN_COMPACT} ${timelineBy === id ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {view === "timeline" && (
+          <div role="group" aria-label="Dot colour" className="flex items-center gap-1 text-note font-semibold text-sdc-gray-600">
+            Dot colour
+            {(
+              [
+                ["status", "Status", "Late, partly received or on schedule. The line's colour says whether it arrives before the BOM needs it"],
+                ["required", "Required date", "The same as the line: green if it arrives on or before the day the BOM needs it, red if after"],
+              ] as const
+            ).map(([id, label, tip]) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={dotsBy === id}
+                onClick={() => setDotsBy(id)}
+                title={tip}
+                className={`${TOOLBAR_BTN_COMPACT} ${dotsBy === id ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
               >
                 {label}
               </button>
@@ -828,6 +868,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           asOf={data.asOf}
           onOpenPo={openRow}
           emptyText="Nothing still to arrive among the POs shown. Try Show all open POs."
+          dotsBy={dotsBy}
+          requiredState={required.state === "idle" ? "loading" : required.state}
         />
       )}
 

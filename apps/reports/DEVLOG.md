@@ -7360,3 +7360,32 @@ clipboard, since nobody clicked on that page. useWorkspaceActions' openInSplitVi
 the params (an open Job Details tab is pointed at them). Already split: the other side
 shows it. Too narrow for two readable panes (fitsSplit on <main>'s width): a new browser
 tab with the same link.
+
+
+## 91. Open POs timeline: a row per PO, expected against the BOM's required date (2026-11-13)
+
+Asked for: each PO visible under its job on the timeline, with lines that show a
+relationship. Settled on one line per PO with two points: when it is expected and when the
+BOM needs the part (Job Details' "Required Date", eps.RequiredDate), green when it arrives
+on or before that day and red when after. Not the PO's own required date (the date we asked
+the vendor for), which only says whether the vendor slipped; the slip ring is gone from the
+rows and the re-promise is in the hover text instead.
+
+Rows: each project (or supplier) is a group, expanded by default into one row per PO still
+to arrive, labelled with the PO number and supplier (or job), sorted by expected date. Expand
+all / Collapse all, or the arrow on a group; collapsed, a group is the old row of dots. A PO
+row is drawn from its next line to arrive, so the expected and required dates are the same
+line's (poDates, now with `required`; vsRequired decides the colour).
+
+Dot colour: Status (late / partly received / on schedule, as before) or Required date (the
+line's green / red). A toggle, to compare the two. A late PO can still be green: it was
+expected after its promise but before the build needs it.
+
+Data: open-po-bom.ts getRequiredDates reads MIN(eps.RequiredDate) per PO line (the panel's
+own join, by line instead of by PO) for every line still to arrive, in IN-list chunks of
+900 validated ids, when the Timeline is first opened (open-pos-actions.ts
+loadOpenPoRequiredDates). The cards don't wait for it. A line whose part is not on the job's
+BOM has no required date and no line.
+
+Dev: the fake BOM's required dates are the PO's date moved by +14 / -12 / +4 / -30 / 0 days
+in turn, so the timeline has late and on-schedule POs on both sides of the line.
