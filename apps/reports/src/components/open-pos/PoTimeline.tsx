@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
-import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
+import { useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type WheelEvent } from "react";
+import { card, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
 import { addDays, daysBetween, mondayOf, stackLines, timelineSlot, vsRequired, type OpenPoMoney, type OpenPoRow, type PoDates, type TimelineSlot } from "@/lib/open-pos-rules";
@@ -105,7 +105,7 @@ function Dot({
       onClick={() => onOpen(p.row, p.jobId)}
       title={tip(p, today, state)}
       aria-label={`PO ${p.row.poNumber}, ${p.dates.expected ? `expected ${md(p.dates.expected)}` : "no date"}`}
-      className={`z-[2] h-2.5 w-2.5 rounded-full ring-2 ring-white motion-interactive hover:scale-150 ${dotClass(p, today, by)}`}
+      className={`z-[2] h-2.5 w-2.5 rounded-full ring-2 ring-white motion-timeline-move hover:ring-sdc-navy ${dotClass(p, today, by)}`}
       style={style}
     />
   );
@@ -137,16 +137,79 @@ export function PoTimeline({
   requiredState: RequiredState;
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  const start = mondayOf(asOf);
-  const slot = (day: string | null) => timelineSlot(day, start, TIMELINE_WEEKS);
-  const weekStarts = Array.from({ length: TIMELINE_WEEKS }, (_, i) => addDays(start, i * 7));
-  const todayPct = slot(asOf).pct;
+  // Zoom (weeks shown) and pan (weeks from this Monday). Calendar weeks either way.
+  const [weeks, setWeeks] = useState<number>(TIMELINE_WEEKS);
+  const [offset, setOffset] = useState(0);
+  // The PO under the pointer: it stands out wherever it appears (a PO split across jobs is
+  // on several rows), and the rest dims.
+  const [hoverPo, setHoverPo] = useState<string | null>(null);
+  const thisMonday = mondayOf(asOf);
+  const start = addDays(thisMonday, offset * 7);
+  const end = addDays(start, weeks * 7 - 1);
+  const slot = (day: string | null) => timelineSlot(day, start, weeks);
+  const weekStarts = Array.from({ length: weeks }, (_, i) => addDays(start, i * 7));
+  const todaySlot = slot(asOf);
+  const todayPct = todaySlot.pct;
+  const todayShown = todaySlot.lane === "track";
+  // Every week's start date while there is room for it; every other one when zoomed out.
+  const labelEvery = weeks > 16 ? 2 : 1;
   const grid = `minmax(180px, 240px) ${SIDE}px minmax(0, 1fr) ${SIDE}px`;
   // A faint line at each week boundary, drawn as the track's background.
   const weekLines = {
-    backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent calc(100% / ${TIMELINE_WEEKS} - 1px), rgb(226 232 240) calc(100% / ${TIMELINE_WEEKS} - 1px), rgb(226 232 240) calc(100% / ${TIMELINE_WEEKS}))`,
+    backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent calc(100% / ${weeks} - 1px), rgb(226 232 240) calc(100% / ${weeks} - 1px), rgb(226 232 240) calc(100% / ${weeks}))`,
   };
-  const todayLine = <div aria-hidden className="pointer-events-none absolute inset-y-0 z-[1] border-l border-dashed border-sdc-navy/60" style={{ left: `${todayPct}%` }} />;
+  const todayLine = todayShown ? (
+    <div aria-hidden className="pointer-events-none absolute inset-y-0 z-[1] border-l border-dashed border-sdc-navy/60 motion-timeline-move" style={{ left: `${todayPct}%` }} />
+  ) : null;
+
+  // ── Drag to pan ─────────────────────────────────────────────────────────────────
+  // Press anywhere on the timeline and drag sideways: it moves a whole week at a time, by
+  // the width of one week on screen. A press that doesn't move is still a click (a dot, a
+  // PO, an arrow); one that did move swallows the click that follows, so letting go over a
+  // dot doesn't also open it. Sideways trackpad scrolling pans the same way.
+  const trackRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ x: number; offset: number; moved: boolean } | null>(null);
+  const swallowClick = useRef(false);
+  const [dragging, setDragging] = useState(false);
+  const wheel = useRef(0);
+  const weekPx = () => (trackRef.current?.clientWidth ?? 600) / weeks;
+  const onPointerDown = (e: PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest("[data-no-pan]")) return;
+    drag.current = { x: e.clientX, offset, moved: false };
+  };
+  const onPointerMove = (e: PointerEvent<HTMLElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.x;
+    if (!d.moved && Math.abs(dx) < 5) return;
+    if (!d.moved) {
+      d.moved = true;
+      setDragging(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    setOffset(d.offset - Math.round(dx / weekPx()));
+  };
+  const onPointerUp = () => {
+    if (drag.current?.moved) swallowClick.current = true;
+    drag.current = null;
+    setDragging(false);
+  };
+  const onClickCapture = (e: MouseEvent<HTMLElement>) => {
+    if (!swallowClick.current) return;
+    swallowClick.current = false;
+    e.stopPropagation();
+    e.preventDefault();
+  };
+  const onWheel = (e: WheelEvent<HTMLElement>) => {
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    wheel.current += e.deltaX;
+    const step = weekPx();
+    if (Math.abs(wheel.current) < step) return;
+    const n = Math.trunc(wheel.current / step);
+    wheel.current -= n * step;
+    setOffset((o) => o + n);
+  };
+
   const sideCell = "border-x border-sdc-border-soft bg-slate-50/60";
   const toggle = (key: string) =>
     setCollapsed((s) => {
@@ -157,56 +220,109 @@ export function PoTimeline({
     });
   const byExpected = (a: TimelinePo, b: TimelinePo) => (a.dates.expected ?? "9999").localeCompare(b.dates.expected ?? "9999");
 
+  const atToday = offset === 0;
+  const ctl = `${TOOLBAR_BTN_COMPACT} !h-7 !px-2`;
+
   return (
-    <section className={card("p-0 overflow-hidden")} aria-label="Timeline">
+    <section
+      className={card(`p-0 overflow-hidden select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`)}
+      aria-label="Timeline"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onClickCapture={onClickCapture}
+      onWheel={onWheel}
+      onMouseLeave={() => setHoverPo(null)}
+    >
+      {/* Controls: rows on the left, zoom and pan on the right. Not a drag handle. */}
+      <div data-no-pan className="flex cursor-default flex-wrap items-center gap-2 border-b border-sdc-border bg-white px-3 py-2 text-note text-sdc-gray-600">
+        <span className="font-semibold" title="One group per project (or supplier), one row per PO still to arrive">
+          {rows.length} {rows.length === 1 ? "group" : "groups"} · {rows.reduce((n, r) => n + r.pos.length, 0)} POs
+        </span>
+        <button type="button" onClick={() => setCollapsed(new Set())} title="Show every PO's own row" className={`${ctl} ${TOOLBAR_BTN_NEUTRAL}`}>
+          Expand all
+        </button>
+        <button type="button" onClick={() => setCollapsed(new Set(rows.map((r) => r.key)))} title="One row of dots per group" className={`${ctl} ${TOOLBAR_BTN_NEUTRAL}`}>
+          Collapse all
+        </button>
+        <span className="ml-auto flex items-center gap-1" role="group" aria-label="Move the weeks shown">
+          <button type="button" onClick={() => setOffset((o) => o - Math.max(1, Math.floor(weeks / 4)))} title="Earlier weeks (or drag the timeline to the right)" aria-label="Earlier weeks" className={`${ctl} ${TOOLBAR_BTN_NEUTRAL}`}>
+            ◂
+          </button>
+          <button
+            type="button"
+            onClick={() => setOffset(0)}
+            disabled={atToday}
+            title={atToday ? "Already starting this week" : "Back to this week"}
+            className={`${ctl} ${TOOLBAR_BTN_NEUTRAL} disabled:opacity-50`}
+          >
+            Today
+          </button>
+          <button type="button" onClick={() => setOffset((o) => o + Math.max(1, Math.floor(weeks / 4)))} title="Later weeks (or drag the timeline to the left)" aria-label="Later weeks" className={`${ctl} ${TOOLBAR_BTN_NEUTRAL}`}>
+            ▸
+          </button>
+          <span className="ml-1 tabular-nums text-sdc-gray-400" title="The weeks shown">
+            {md(start)} – {md(end)}
+          </span>
+        </span>
+        <span className="flex items-center gap-1" role="group" aria-label="Weeks shown">
+          {[4, 8, 12, 26].map((n) => (
+            <button
+              key={n}
+              type="button"
+              aria-pressed={weeks === n}
+              onClick={() => setWeeks(n)}
+              title={`Show ${n} weeks`}
+              className={`${ctl} ${weeks === n ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+            >
+              {n}w
+            </button>
+          ))}
+        </span>
+      </div>
+
       {/* Header: months, then the week each column starts. */}
       <div className="grid border-b border-sdc-border bg-slate-100 text-note text-sdc-gray-600" style={{ gridTemplateColumns: grid }}>
-        <span className="flex flex-col justify-center gap-1 px-3 py-1.5">
-          <span className="font-semibold" title="One group per project (or supplier), one row per PO still to arrive">
-            {rows.length} {rows.length === 1 ? "group" : "groups"} · {rows.reduce((n, r) => n + r.pos.length, 0)} POs
-          </span>
-          <span className="flex gap-1">
-            <button type="button" onClick={() => setCollapsed(new Set())} title="Show every PO's own row" className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL} !h-6 !px-2`}>
-              Expand all
-            </button>
-            <button
-              type="button"
-              onClick={() => setCollapsed(new Set(rows.map((r) => r.key)))}
-              title="One row of dots per group"
-              className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL} !h-6 !px-2`}
-            >
-              Collapse all
-            </button>
-          </span>
+        <span className="self-center px-3 text-label text-sdc-gray-400" title="Drag the timeline sideways to move through the weeks">
+          Drag to move · hover a PO
         </span>
-        <span className="self-center text-center font-bold text-red-700" title={`Expected before the week of ${md(start)} and still not here`}>
-          Late
+        <span
+          className={`self-center text-center font-bold ${atToday ? "text-red-700" : "text-sdc-gray-600"}`}
+          title={atToday ? `Expected before the week of ${md(start)} and still not here` : `Expected before ${md(start)}`}
+        >
+          {atToday ? "Late" : "Earlier"}
         </span>
         {/* Three tiers so nothing overlaps: month, the day each week starts, Today. */}
-        <div className="relative h-[3.25rem]" style={weekLines}>
+        <div ref={trackRef} className="relative h-[3.25rem] overflow-hidden" style={weekLines}>
           {weekStarts.map((w, i) =>
             i === 0 || w.slice(8, 10) <= "07" ? (
-              <span key={`m${w}`} className="absolute top-1 font-semibold text-sdc-navy" style={{ left: `calc(${(i / TIMELINE_WEEKS) * 100}% + 4px)` }}>
+              <span key={`m${w}`} className="absolute top-1 whitespace-nowrap font-semibold text-sdc-navy" style={{ left: `calc(${(i / weeks) * 100}% + 4px)` }}>
                 {MONTHS[Number(w.slice(5, 7)) - 1]}
+                {w.slice(5, 7) === "01" || i === 0 ? ` '${w.slice(2, 4)}` : ""}
               </span>
             ) : null,
           )}
-          {weekStarts.map((w, i) => (
-            <span
-              key={w}
-              className="absolute top-[1.15rem] text-label text-sdc-gray-400"
-              style={{ left: `calc(${(i / TIMELINE_WEEKS) * 100}% + 4px)` }}
-              title={`Week of ${md(w)} to ${md(addDays(w, 6))}`}
-            >
-              {Number(w.slice(8, 10))}
-            </span>
-          ))}
+          {weekStarts.map((w, i) =>
+            i % labelEvery === 0 ? (
+              <span
+                key={w}
+                className="absolute top-[1.15rem] text-label text-sdc-gray-400"
+                style={{ left: `calc(${(i / weeks) * 100}% + 4px)` }}
+                title={`Week of ${md(w)} to ${md(addDays(w, 6))}`}
+              >
+                {Number(w.slice(8, 10))}
+              </span>
+            ) : null,
+          )}
           {todayLine}
-          <span className="absolute bottom-0.5 z-[1] -translate-x-1/2 rounded bg-sdc-navy px-1 text-micro font-bold text-white" style={{ left: `${todayPct}%` }} title={`Today, ${md(asOf)}`}>
-            Today
-          </span>
+          {todayShown && (
+            <span className="absolute bottom-0.5 z-[1] -translate-x-1/2 rounded bg-sdc-navy px-1 text-micro font-bold text-white" style={{ left: `${todayPct}%` }} title={`Today, ${md(asOf)}`}>
+              Today
+            </span>
+          )}
         </div>
-        <span className="self-center text-center font-semibold" title={`Expected after ${md(addDays(start, TIMELINE_WEEKS * 7 - 1))}, or no date (hollow)`}>
+        <span className="self-center text-center font-semibold" title={`Expected after ${md(end)}, or no date (hollow)`}>
           Later
         </span>
       </div>
@@ -233,7 +349,7 @@ export function PoTimeline({
         if (open) {
           return (
             <div key={r.key} className="border-b border-sdc-border last:border-b-0">
-              <div className="grid bg-slate-50" style={{ gridTemplateColumns: grid }}>
+              <div className="grid bg-slate-50" style={{ gridTemplateColumns: grid }} onMouseEnter={() => setHoverPo(null)}>
                 {groupLabel}
                 <div className={sideCell} />
                 <div className="relative" style={weekLines}>
@@ -242,7 +358,21 @@ export function PoTimeline({
                 <div className={sideCell} />
               </div>
               {[...r.pos].sort(byExpected).map((p) => (
-                <PoRow key={p.row.poNumber} p={p} asOf={asOf} slot={slot} grid={grid} weekLines={weekLines} todayPct={todayPct} sideCell={sideCell} dotsBy={dotsBy} requiredState={requiredState} onOpenPo={onOpenPo} />
+                <PoRow
+                  key={p.row.poNumber}
+                  p={p}
+                  asOf={asOf}
+                  slot={slot}
+                  grid={grid}
+                  weekLines={weekLines}
+                  todayLine={todayLine}
+                  sideCell={sideCell}
+                  dotsBy={dotsBy}
+                  requiredState={requiredState}
+                  onOpenPo={onOpenPo}
+                  hover={hoverPo == null ? null : hoverPo === p.row.poNumber}
+                  onHover={setHoverPo}
+                />
               ))}
             </div>
           );
@@ -265,7 +395,7 @@ export function PoTimeline({
           </div>
         );
         return (
-          <div key={r.key} className="grid border-b border-sdc-border last:border-b-0" style={{ gridTemplateColumns: grid }}>
+          <div key={r.key} className="grid border-b border-sdc-border last:border-b-0" style={{ gridTemplateColumns: grid }} onMouseEnter={() => setHoverPo(null)}>
             {groupLabel}
             {side(late)}
             <div className="relative" style={{ ...weekLines, height }}>
@@ -327,22 +457,27 @@ function PoRow({
   slot,
   grid,
   weekLines,
-  todayPct,
+  todayLine,
   sideCell,
   dotsBy,
   requiredState,
   onOpenPo,
+  hover,
+  onHover,
 }: {
   p: TimelinePo;
   asOf: string;
   slot: (day: string | null) => TimelineSlot;
   grid: string;
   weekLines: CSSProperties;
-  todayPct: number;
+  todayLine: ReactNode;
   sideCell: string;
   dotsBy: DotsBy;
   requiredState: RequiredState;
   onOpenPo: (r: OpenPoRow, jobId?: string) => void;
+  /** True: this PO is under the pointer (on this row or another). False: another PO is. Null: none. */
+  hover: boolean | null;
+  onHover: (po: string | null) => void;
 }) {
   const { expected, required } = p.dates;
   const e = slot(expected);
@@ -358,7 +493,11 @@ function PoRow({
   const lineColor = v ? (v.onTime ? "bg-green-600/70" : "bg-red-600/70") : "";
   const mark = v ? (v.onTime ? "border-green-600" : "border-red-600") : "border-sdc-gray-600";
   return (
-    <div className="grid border-t border-sdc-border-soft/60 hover:bg-sdc-blue-light/30" style={{ gridTemplateColumns: grid, height: PO_ROW }}>
+    <div
+      className={`grid border-t border-sdc-border-soft/60 motion-timeline-move ${hover ? "bg-sdc-blue-light/60" : hover === false ? "opacity-35" : ""}`}
+      style={{ gridTemplateColumns: grid, height: PO_ROW }}
+      onMouseEnter={() => onHover(p.row.poNumber)}
+    >
       <button
         type="button"
         onClick={() => onOpenPo(p.row, p.jobId)}
@@ -371,18 +510,18 @@ function PoRow({
       </button>
       <div className={sideCell} style={{ gridRow: 1, gridColumn: 2 }} />
       <div className="relative" style={{ ...weekLines, gridRow: 1, gridColumn: 3 }}>
-        <div aria-hidden className="pointer-events-none absolute inset-y-0 z-[1] border-l border-dashed border-sdc-navy/60" style={{ left: `${todayPct}%` }} />
+        {todayLine}
       </div>
       <div className={sideCell} style={{ gridRow: 1, gridColumn: 4 }} />
       {/* The dot, diamond and line, over all three columns. */}
       <div className="pointer-events-none relative" style={{ gridRow: 1, gridColumn: "2 / 5" }}>
         {v && left && right && (
-          <span aria-hidden className={`absolute top-1/2 h-0.5 -translate-y-1/2 ${lineColor}`} style={{ left, width: `calc((${right}) - (${left}))` }} />
+          <span aria-hidden className={`absolute top-1/2 -translate-y-1/2 motion-timeline-move ${hover ? "h-1" : "h-0.5"} ${lineColor}`} style={{ left, width: `calc((${right}) - (${left}))` }} />
         )}
         {xQ && (
           <span
             title={requiredText(p, requiredState)}
-            className={`pointer-events-auto absolute top-1/2 z-[2] h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-2 bg-white ${mark}`}
+            className={`pointer-events-auto absolute top-1/2 z-[2] h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-2 bg-white motion-timeline-move ${mark}`}
             style={{ left: xQ }}
           />
         )}

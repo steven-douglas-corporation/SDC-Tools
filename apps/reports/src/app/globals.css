@@ -1061,6 +1061,23 @@ table[data-grid] textarea:disabled {
   transition-timing-function: var(--ease-in-out);
 }
 
+/* ── Open POs timeline marks sliding when the weeks change (2026-11-13) ───── */
+/* The third enumerated exception to §36.15: the dots, diamonds and lines on the
+ * timeline are absolutely positioned, so `left` / `width` moves them without
+ * reflowing anything beside them, and the move IS the state change (zoom, pan, a
+ * drag a week at a time). Without it a pan jumps, and the eye loses which dot is
+ * which. Off for reduced motion. */
+.motion-timeline-move {
+  transition-property: left, width, opacity, background-color;
+  transition-duration: var(--motion-panel);
+  transition-timing-function: var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-timeline-move {
+    transition-duration: 0ms;
+  }
+}
+
 /* ── Per-link navigation hint (§36.4) ────────────────────────────────────── */
 /* A fixed-size dot on the sidebar link that was clicked, driven by next/link's
  * useLinkStatus. It answers "did my click land" on the frame of the click, which

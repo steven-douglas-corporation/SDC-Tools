@@ -7389,3 +7389,13 @@ BOM has no required date and no line.
 
 Dev: the fake BOM's required dates are the PO's date moved by +14 / -12 / +4 / -30 / 0 days
 in turn, so the timeline has late and on-schedule POs on both sides of the line.
+
+Dynamic (same day, by request): zoom to 4 / 8 / 12 / 26 weeks; pan with ◂ ▸ (a quarter
+of the weeks shown at a time), Today, dragging the timeline sideways (a week per week-width
+dragged; a drag swallows the click it ends on, a press that doesn't move is still a click),
+or sideways trackpad scrolling. Panned off this week, the left column reads "Earlier", not
+"Late", and the Today line goes when today is off screen. Hovering a PO row highlights that
+PO wherever it is (a PO split across jobs is on each job's group) and dims the rest. Dots,
+diamonds, lines and the Today line slide on a change: `.motion-timeline-move` in
+globals.css, a third enumerated exception to animating layout properties (absolutely
+positioned, so nothing reflows), off for reduced motion.
