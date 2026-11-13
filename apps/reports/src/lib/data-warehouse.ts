@@ -31,6 +31,12 @@ function getPool(): Pool {
   if (!url) throw new Error("The DataWarehouse is not configured: set DATAWAREHOUSE_URL in .env.");
   if (!pool) {
     pool = new Pool({ connectionString: url, max: 3, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000 });
+    // An idle connection the server drops (a Postgres restart, a network blip) is
+    // reported as an "error" event on the pool. With no listener, Node treats it as
+    // unhandled and the whole app process exits. Log it instead: pg has already
+    // discarded that connection, and the next query opens a fresh one. (2026-10-04,
+    // found when Postgres moved to a Windows service and was restarted.)
+    pool.on("error", (err) => console.error("[data-warehouse] idle connection lost:", err.message));
   }
   return pool;
 }
