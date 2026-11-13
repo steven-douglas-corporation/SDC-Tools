@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type WheelEvent } from "react";
+import { useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { card, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -166,12 +166,12 @@ export function PoTimeline({
   // Press anywhere on the timeline and drag sideways: it moves a whole week at a time, by
   // the width of one week on screen. A press that doesn't move is still a click (a dot, a
   // PO, an arrow); one that did move swallows the click that follows, so letting go over a
-  // dot doesn't also open it. Sideways trackpad scrolling pans the same way.
+  // dot doesn't also open it. No wheel / trackpad panning: wheel handling belongs to
+  // ScrollHandoff alone (tests/scroll-handoff.test.ts), and drag plus ◂ ▸ cover it.
   const trackRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; offset: number; moved: boolean } | null>(null);
   const swallowClick = useRef(false);
   const [dragging, setDragging] = useState(false);
-  const wheel = useRef(0);
   const weekPx = () => (trackRef.current?.clientWidth ?? 600) / weeks;
   const onPointerDown = (e: PointerEvent<HTMLElement>) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest("[data-no-pan]")) return;
@@ -200,15 +200,6 @@ export function PoTimeline({
     e.stopPropagation();
     e.preventDefault();
   };
-  const onWheel = (e: WheelEvent<HTMLElement>) => {
-    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-    wheel.current += e.deltaX;
-    const step = weekPx();
-    if (Math.abs(wheel.current) < step) return;
-    const n = Math.trunc(wheel.current / step);
-    wheel.current -= n * step;
-    setOffset((o) => o + n);
-  };
 
   const sideCell = "border-x border-sdc-border-soft bg-slate-50/60";
   const toggle = (key: string) =>
@@ -232,7 +223,6 @@ export function PoTimeline({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onClickCapture={onClickCapture}
-      onWheel={onWheel}
       onMouseLeave={() => setHoverPo(null)}
     >
       {/* Controls: rows on the left, zoom and pan on the right. Not a drag handle. */}
