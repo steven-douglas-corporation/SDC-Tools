@@ -7462,3 +7462,31 @@ Asked for: on Data Management's Job punches tab, the "Hours by department" chart
 row. It shared a row with the punch table on wide screens (3:2), which squeezed the table's
 eleven columns and the chart's department labels. DataQualityExplorer.tsx now stacks them:
 the table full width, then the chart full width under it, as narrower screens already had.
+
+
+## 94. Open POs cards: which way they read, a way back up; a long list in dev (2026-11-13)
+
+Asked for: something showing the direction the cards go, a way back to the top from the
+bottom of them, and plenty of dev POs and cards to see a large list of jobs with varying
+POs and dates.
+
+Guides (ListCardGrid `flow="columns"`, `guides`, on by default): each column is headed
+"Column 2 of 4", and ends with a button. The cards read down a column and on to the top of
+the next, so the card after a column's last one is a screen or more back up: the button
+says so ("Continues at the top of column 3"), scrolls back to the top of the cards and
+flashes the card that comes next (the existing `.motion-flash`). The last column's reads
+"Last card · Back to the top". `scrollMargin` leaves room above the cards for a bar that
+belongs to them; Open POs passes its cards bar's height. One column (a narrow window) gets
+no headings, only the button at the end. Each card sits in a wrapper that is always there,
+so the flash is a class and never remounts the card.
+
+Dev data: with SDC_DEV_FAKE_ETO=1, Open POs adds 36 generated sample jobs (9101 up) to the
+seeded ones (lib/open-pos.ts, dev-fake-eto.ts fakeSampleJobs). Each has 1 to 24 POs of 1 to
+6 lines, bought over the last eight months with lead times of two weeks to four months, a
+quarter of the outstanding lines re-promised, and each PO in one of four states (closed,
+received not invoiced, partly received, nothing received). PO numbers stay six characters:
+T + the sample job's number + the PO's index (T07012). They are NOT seeded into the
+database, so no other dev page changes; the cost is that a sample job's link to Job Details
+finds no job (its POs, the PO panel and the BOM work, being generated from the job number).
+SDC_DEV_FAKE_ETO_SAMPLE_JOBS sets the count (0 for none, at most 80). The seeded jobs'
+fake lines are unchanged. Production never sets the flag.

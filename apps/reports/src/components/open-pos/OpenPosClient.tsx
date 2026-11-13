@@ -855,7 +855,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           {cardCount === 0 && <p className={card("text-center text-sm text-sdc-gray-400")}>No POs match these filters. Try Clear filters.</p>}
           {/* Every card shows all its POs, so cards differ in height: they run down each
               column and continue at the top of the next (ListCardGrid flow="columns"). */}
-          <ListCardGrid min={340} flow="columns" weights={(groupBy === "projects" ? projects : suppliers).map((c) => cardWeight(c.pos, groupBy === "projects" && bySupplier))}>
+          {/* scrollMargin: room for the cards' own bar above, when a column's button scrolls back up. */}
+          <ListCardGrid min={340} flow="columns" scrollMargin={68} weights={(groupBy === "projects" ? projects : suppliers).map((c) => cardWeight(c.pos, groupBy === "projects" && bySupplier))}>
             {groupBy === "projects"
               ? projects.map((p) => (
                   <OpenPoCard

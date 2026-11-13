@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, Fragment, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Children, Fragment, isValidElement, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { sortRows, type SortDir } from "@/lib/data-table";
 import { splitInOrder } from "@/lib/column-flow";
 
@@ -231,7 +231,29 @@ const FLOW_GAP = 12; // px between cards, both ways (Tailwind gap-3)
 // fit at `min`), measured before paint and again on resize; until then, and on the server,
 // CSS columns stand in, which give the same order. Every column is drawn, an empty one
 // included, so two cards on a wide screen stay card-width instead of stretching to half each.
-function ColumnFlow({ children, min, className, weights }: { children: ReactNode; min: number; className: string; weights?: readonly number[] }) {
+//
+// ── Which way the cards read, and the way back up (`guides`) ────────────────────────────
+// Down a column and on to the top of the next is not the order a grid of cards usually
+// reads in, and the next card after the last one in a column is a screen or more back up.
+// So each column is headed "Column 2 of 4", and ends with a button that says where the
+// order goes next ("Continues at the top of column 3") and takes you there: it scrolls back
+// to the top of the cards and flashes the card that comes next. The last column's button is
+// the plain way back to the top.
+function ColumnFlow({
+  children,
+  min,
+  className,
+  weights,
+  guides,
+  scrollMargin,
+}: {
+  children: ReactNode;
+  min: number;
+  className: string;
+  weights?: readonly number[];
+  guides: boolean;
+  scrollMargin: number;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState<number | null>(null);
   useLayoutEffect(() => {
@@ -243,6 +265,18 @@ function ColumnFlow({ children, min, className, weights }: { children: ReactNode
     ro.observe(el);
     return () => ro.disconnect();
   }, [min]);
+
+  // The column whose first card is flashing, after its "continues" button was used.
+  const [flash, setFlash] = useState<number | null>(null);
+  const flashTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(flashTimer.current), []);
+  const toTop = (thenFlash: number | null) => {
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    ref.current?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+    window.clearTimeout(flashTimer.current);
+    setFlash(thenFlash);
+    if (thenFlash != null) flashTimer.current = window.setTimeout(() => setFlash(null), 2000);
+  };
 
   // One outer element for both states, so the width being watched is never unmounted.
   if (columns == null) {
@@ -260,12 +294,39 @@ function ColumnFlow({ children, min, className, weights }: { children: ReactNode
     columns,
   );
   const starts = sizes.map((_, c) => sizes.slice(0, c).reduce((s, n) => s + n, 0));
+  const used = sizes.filter((n) => n > 0).length;
+  const guideBtn =
+    "w-full rounded-md border border-dashed border-sdc-border bg-white/60 px-3 py-1.5 text-center text-label font-medium text-sdc-gray-600 motion-interactive hover:border-sdc-blue hover:text-sdc-blue-dark";
   return (
-    <div ref={ref} className={className}>
+    <div ref={ref} className={className} style={{ scrollMarginTop: scrollMargin }}>
       <div className="flex items-start gap-3">
         {sizes.map((n, c) => (
           <div key={c} className="flex min-w-0 flex-1 flex-col gap-3">
-            {items.slice(starts[c], starts[c] + n)}
+            {guides && used > 1 && n > 0 && (
+              <p className="-mb-1.5 px-1 text-label text-sdc-gray-400" title="Cards read down this column, then continue at the top of the next one">
+                <span aria-hidden>↓ </span>
+                Column {c + 1} of {used}
+              </p>
+            )}
+            {items.slice(starts[c], starts[c] + n).map((child, k) => (
+              // A wrapper per card, always there, so the flash is a class on it and never
+              // remounts the card (which would close whatever was open inside it).
+              <div key={isValidElement(child) && child.key != null ? child.key : k} className={`rounded-lg ${k === 0 && flash === c ? "motion-flash" : ""}`}>
+                {child}
+              </div>
+            ))}
+            {guides && n > 0 && c < used - 1 && (
+              <button type="button" onClick={() => toTop(c + 1)} title={`The next card is at the top of column ${c + 2}. Click to go back up to it`} className={guideBtn}>
+                <span aria-hidden>↑ </span>
+                Continues at the top of column {c + 2}
+              </button>
+            )}
+            {guides && n > 0 && c === used - 1 && items.length > 2 && (
+              <button type="button" onClick={() => toTop(null)} title="This is the last card. Click to go back to the top of the cards" className={guideBtn}>
+                <span aria-hidden>↑ </span>
+                Last card · Back to the top
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -284,7 +345,10 @@ function ColumnFlow({ children, min, className, weights }: { children: ReactNode
  * beside a tall one. The order therefore reads DOWN each column, not across. `weights` is
  * each card's height (or anything proportional, e.g. its row count plus a constant for the
  * header), in the children's order; it decides where the columns are cut so they come out
- * about level (lib/column-flow.ts). Without it every card counts the same.
+ * about level (lib/column-flow.ts). Without it every card counts the same. `guides` (on by
+ * default) heads each column and ends it with a button back to the top of the next;
+ * `scrollMargin` is the room, in px, to leave above the cards when one of those buttons
+ * scrolls back up (e.g. for a toolbar that belongs to them).
  */
 export function ListCardGrid({
   children,
@@ -292,16 +356,20 @@ export function ListCardGrid({
   className = "",
   flow = "rows",
   weights,
+  guides = true,
+  scrollMargin = 12,
 }: {
   children: ReactNode;
   min?: number;
   className?: string;
   flow?: "rows" | "columns";
   weights?: readonly number[];
+  guides?: boolean;
+  scrollMargin?: number;
 }) {
   if (flow === "columns") {
     return (
-      <ColumnFlow min={min} className={className} weights={weights}>
+      <ColumnFlow min={min} className={className} weights={weights} guides={guides} scrollMargin={scrollMargin}>
         {children}
       </ColumnFlow>
     );
