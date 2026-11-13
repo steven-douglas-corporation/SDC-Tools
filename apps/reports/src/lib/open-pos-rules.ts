@@ -194,7 +194,21 @@ export function lineCounts(items: readonly OpenPoLine[], jobId?: string): LineCo
  * can belong to a different line, which would show a slip that never happened.
  * `outstanding` is false when everything has arrived (the PO has no place on the timeline).
  */
-export function poDates(items: readonly OpenPoLine[], jobId?: string): { outstanding: boolean; expected: string | null; original: string | null; revised: boolean } {
+export type PoDates = {
+  outstanding: boolean;
+  expected: string | null;
+  original: string | null;
+  revised: boolean;
+  /** When the BOM needs that same line's part (`requiredByLine`); null when not on the BOM or not loaded. */
+  required: string | null;
+};
+
+export function poDates(
+  items: readonly OpenPoLine[],
+  jobId?: string,
+  /** BOM required date by line id (`pod:<id>`), from loadOpenPoRequiredDates. */
+  requiredByLine?: ReadonlyMap<string, string>,
+): PoDates {
   let next: OpenPoLine | null = null;
   let outstanding = false;
   for (const i of items) {
@@ -205,7 +219,19 @@ export function poDates(items: readonly OpenPoLine[], jobId?: string): { outstan
   }
   const expected = next?.expected ?? null;
   const original = next?.original ?? null;
-  return { outstanding, expected, original, revised: !!(expected && original && expected !== original) };
+  const required = (next && requiredByLine?.get(next.lineId)) ?? null;
+  return { outstanding, expected, original, revised: !!(expected && original && expected !== original), required };
+}
+
+/**
+ * Expected against required, for the timeline's line: on time when it is expected on or
+ * before the day the BOM needs it, late after. `days` is how far apart (always ≥ 0). Null
+ * when either date is missing, so no line is drawn.
+ */
+export function vsRequired(expected: string | null, required: string | null): { onTime: boolean; days: number } | null {
+  if (!expected || !required) return null;
+  const d = daysBetween(required, expected);
+  return { onTime: d <= 0, days: Math.abs(d) };
 }
 
 export type TimelineSlot = { lane: "late" | "track" | "later" | "none"; pct: number };
