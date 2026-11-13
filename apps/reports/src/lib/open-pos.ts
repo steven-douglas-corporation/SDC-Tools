@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { getPartsCostForJobs } from "@/lib/sync-totaleto";
 import { DEFAULT_VISIBLE_STATUSES, validJobTypeFilter } from "@/lib/job-filters";
+import { devFakeEtoEnabled, fakeSampleJobs } from "@/lib/dev-fake-eto";
 import { withTimeoutOrNull } from "@/lib/with-timeout";
 import { buildOpenPos, type OpenPosResult } from "@/lib/open-pos-rules";
 
@@ -26,10 +27,17 @@ function todayYmd(now = new Date()): string {
 }
 
 export async function loadOpenPos(): Promise<OpenPosLoad> {
-  const jobs = await prisma.job.findMany({
+  const jobs: { jobId: string; jobName: string; status: string }[] = await prisma.job.findMany({
     where: { status: { in: [...DEFAULT_VISIBLE_STATUSES] }, ...validJobTypeFilter },
     select: { jobId: true, jobName: true, status: true },
   });
+  // Local development only (SDC_DEV_FAKE_ETO=1, never set in production): generated sample
+  // jobs on top of the seeded few, so the page can be seen with a long list. See
+  // dev-fake-eto.ts for why they are added here and not seeded into the database.
+  if (devFakeEtoEnabled()) {
+    const have = new Set(jobs.map((j) => j.jobId));
+    jobs.push(...fakeSampleJobs().filter((j) => !have.has(j.jobId)));
+  }
   if (jobs.length === 0) return { ok: true, data: buildOpenPos(new Map(), [], todayYmd()) };
 
   const byJob = await withTimeoutOrNull(
