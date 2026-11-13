@@ -45,6 +45,7 @@ const SIDE_PER_LINE = 4; // dots per line in the Late / Later columns
 const SIDE = 72; // px, the Late and Later columns
 const PO_ROW = 24; // px, one PO row
 const MIN_FILL = 360; // px, the shortest the timeline gets when filling the window
+const FILL_MARGIN = 10; // screen px left between the timeline's bottom edge and the window's
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const md = (day: string) => `${MONTHS[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8, 10))}`;
@@ -215,52 +216,42 @@ export function PoTimeline({
     });
   const byExpected = (a: TimelinePo, b: TimelinePo) => (a.dates.expected ?? "9999").localeCompare(b.dates.expected ?? "9999");
 
-  // ── Fill the rest of the window, without the page scrolling ─────────────────────
-  // The timeline takes whatever height is left below everything above it, less whatever
-  // follows it on the page, so the page itself doesn't scroll and the rows scroll inside
-  // (under a sticky week header). Measured in screen px and converted to the section's own
-  // CSS px, because the app's zoom makes the two differ. One correction pass trims any
-  // overflow the estimate left (the page's own bottom padding). Never under MIN_FILL px.
+  // ── Reach the bottom of the window ──────────────────────────────────────────────
+  // The timeline takes the height from where it starts down to the bottom of the window
+  // (with the page scrolled to the top), less a small margin, and its rows scroll inside
+  // under a sticky week header. Whatever follows it on the page (the Scheduler note, the
+  // Experimental badge, the page's bottom padding) sits below, a short scroll away: taking
+  // that off as well left the timeline too short to be useful (2026-11-13, by request).
+  // Measured in screen px and converted to the section's own CSS px, because the app's
+  // zoom makes the two differ. Never under MIN_FILL px.
   const sectionRef = useRef<HTMLElement>(null);
   const [fillHeight, setFillHeight] = useState<number | null>(null);
-  const pad = useRef(0);
   useLayoutEffect(() => {
     const el = sectionRef.current;
     const parent = el?.parentElement;
     if (!el || !parent) return;
     const scroller = scrollParent(el);
     const isDoc = scroller === document.scrollingElement;
-    let frame = 0;
-    const measure = (correct: boolean) => {
+    const measure = () => {
       const r = el.getBoundingClientRect();
       const sEl = el.offsetHeight ? r.height / el.offsetHeight : 1;
       const sr = scroller.getBoundingClientRect();
       const sSc = isDoc || !scroller.offsetHeight ? 1 : sr.height / scroller.offsetHeight;
       const viewTop = isDoc ? 0 : sr.top;
       const view = scroller.clientHeight * sSc;
-      if (correct) {
-        const over = (scroller.scrollHeight - scroller.clientHeight) * sSc;
-        if (over > 0.5) pad.current += over;
-      }
       const topInContent = r.top - viewTop + scroller.scrollTop * sSc;
-      const after = parent.getBoundingClientRect().bottom - r.bottom;
-      const h = Math.max(MIN_FILL, Math.floor((view - topInContent - after - pad.current) / sEl));
-      setFillHeight(h);
+      setFillHeight(Math.max(MIN_FILL, Math.floor((view - topInContent - FILL_MARGIN) / sEl)));
     };
-    const run = () => {
-      cancelAnimationFrame(frame);
-      measure(false);
-      frame = requestAnimationFrame(() => measure(true));
-    };
-    run();
-    const ro = new ResizeObserver(run);
+    measure();
+    // The window, and anything above the timeline changing height (the chart, the filters
+    // wrapping onto another line), move where it starts.
+    const ro = new ResizeObserver(measure);
     ro.observe(scroller);
     for (const sib of Array.from(parent.children)) if (sib !== el) ro.observe(sib);
-    window.addEventListener("resize", run);
+    window.addEventListener("resize", measure);
     return () => {
-      cancelAnimationFrame(frame);
       ro.disconnect();
-      window.removeEventListener("resize", run);
+      window.removeEventListener("resize", measure);
     };
   }, []);
 

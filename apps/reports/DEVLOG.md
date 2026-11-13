@@ -7446,3 +7446,11 @@ card view passes neither prop and is unchanged.
 
 The two-or-three-way switch is Job Details' `Segmented`, moved to components/ui/Segmented
 (with hover text and aria-pressed added) so both pages draw the same control.
+
+
+Timeline height, changed the same day (by request): it now reaches the bottom of the window
+(10px short of it) instead of also leaving room for what follows it on the page. That had
+taken the Scheduler note, the Experimental badge and the page's bottom padding off its
+height, which left it too short. Those now sit below it, a short scroll away, and the
+overflow-trimming pass is gone. The Experimental badge is not pinned to the window's bottom
+on the Timeline view, where it would cover the last PO labels.
