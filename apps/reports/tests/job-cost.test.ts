@@ -156,6 +156,30 @@ test("computeJobCost: ETC (future) hours always cost at the default rate, never 
   assert.equal(c.profit, 0 - 10 * DEFAULT_RATES.engRate);
 });
 
+test("computeJobCost: totalCost is labour only — (worked + ETC hours) x rate — and leaves profit as it was", () => {
+  const row = baseRow({
+    status: "Active",
+    salesPrice: 1_000_000,
+    hoursByYear: {},
+    engineeringHours: 100,
+    shopHours: 200,
+    etcEngHours: 10,
+    etcShopHours: 20,
+    etcPartsCost: 0,
+    partCost: 0,
+    partInvoiced: 0,
+    completeDate: null,
+  });
+  const c = computeJobCost(row, DEFAULT_RATES, {}, undefined);
+  // No per-year hours, so worked hours cost at the default rates; ETC hours always do.
+  assert.equal(c.totalCost, (100 + 10) * DEFAULT_RATES.engRate + (200 + 20) * DEFAULT_RATES.shopRate);
+  // Profit still subtracts PM and Mfg (percent of sales) and parts, exactly as before.
+  assert.equal(c.profit, 1_000_000 - (c.totalCost + c.pmCost + c.mfgCost + c.partsProjected));
+  // A Complete job zeroes ETC first, so only worked hours remain.
+  const done = computeJobCost({ ...row, status: "Complete" }, DEFAULT_RATES, {}, undefined);
+  assert.equal(done.totalCost, 100 * DEFAULT_RATES.engRate + 200 * DEFAULT_RATES.shopRate);
+});
+
 test("computeJobCost: profit is null with no sales price on file, not zero", () => {
   const row = baseRow({ salesPrice: null });
   const c = computeJobCost(row, DEFAULT_RATES, {}, undefined);
@@ -250,7 +274,7 @@ test("computeJobCost: profit subtracts the projected parts figure and exposes it
 // ── The export's totals row never sums a percentage ─────────────────────────
 
 function computed(o: Partial<JobCostComputed>): JobCostComputed {
-  return { ...baseRow(), pmCost: 0, mfgCost: 0, laborCost: 0, partsProjected: 0, profit: null, margin: null, ...o };
+  return { ...baseRow(), pmCost: 0, mfgCost: 0, laborCost: 0, totalCost: 0, partsProjected: 0, profit: null, margin: null, ...o };
 }
 
 test("jobCostTotals: margin is Σprofit ÷ Σsales, not Σ of the row margins", () => {
@@ -313,7 +337,7 @@ test("Profitability Type: read from Job.type, drawn after Customer, filterable, 
 test("Service & Spares hours are display-only: no cost, profit, margin or ETC figure moves with them", () => {
   const without = computeJobCost(baseRow({ serviceHours: null }), DEFAULT_RATES, {}, undefined);
   const withHours = computeJobCost(baseRow({ serviceHours: 5000 }), DEFAULT_RATES, {}, undefined);
-  for (const k of ["laborCost", "pmCost", "mfgCost", "profit", "margin", "partsProjected", "etcEngHours", "etcShopHours", "actualHours"] as const) {
+  for (const k of ["laborCost", "totalCost", "pmCost", "mfgCost", "profit", "margin", "partsProjected", "etcEngHours", "etcShopHours", "actualHours"] as const) {
     assert.equal(withHours[k], without[k], k);
   }
 });

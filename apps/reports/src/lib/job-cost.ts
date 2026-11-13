@@ -64,6 +64,13 @@ export type JobCostComputed = JobCostRow & {
   pmCost: number;
   mfgCost: number;
   laborCost: number;
+  /**
+   * Total Cost column (2026-11-13): labour only, hours × rate — (Eng Hrs + ETC Eng) × Eng rate
+   * + (Shop Hrs + ETC Shop) × Shop rate. Worked hours at the Rate Matrix rate for the year (or the
+   * manual allocation), ETC hours at the default rate. Excludes PM $, Mfg $ and parts; `profit`
+   * is untouched and equals sales − (totalCost + pmCost + mfgCost + partsProjected).
+   */
+  totalCost: number;
   /** The parts figure profit actually subtracts — see `partsCostForProfit`. */
   partsProjected: number;
   profit: number | null;
@@ -202,6 +209,7 @@ export function computeJobCost(
   const etcShopHours = isComplete ? 0 : row.etcShopHours;
   const etcPartsCost = isComplete ? 0 : row.etcPartsCost;
 
+  const totalCost = blendedLabor + (etcEngHours || 0) * def.engRate + (etcShopHours || 0) * def.shopRate;
   const x = laborCost + (etcEngHours || 0) * def.engRate + (etcShopHours || 0) * def.shopRate;
   // The Parts Purchased / Parts Invoiced COLUMNS keep showing commitment and
   // GL-posted actual respectively — those labels are honest. Only what profit
@@ -211,7 +219,7 @@ export function computeJobCost(
   const margin = profit != null && sales ? (profit / sales) * 100 : null;
   const percentComplete = isComplete ? 100 : row.percentComplete;
 
-  return { ...row, pmCost, mfgCost, laborCost, partsProjected: y, profit, margin, percentComplete, etcEngHours, etcShopHours, etcPartsCost };
+  return { ...row, pmCost, mfgCost, laborCost, totalCost, partsProjected: y, profit, margin, percentComplete, etcEngHours, etcShopHours, etcPartsCost };
 }
 
 // ── The export's totals row (2026-09-14) ─────────────────────────────────────
@@ -224,7 +232,7 @@ export function computeJobCost(
 // summed on the assumption that it is additive.
 export const JOB_COST_ADDITIVE_KEYS: ReadonlySet<string> = new Set([
   "actualHours", "engineeringHours", "shopHours", "otherHours", "serviceHours",
-  "pmCost", "mfgCost", "laborCost",
+  "pmCost", "mfgCost", "laborCost", "totalCost",
   "etcEngHours", "etcShopHours", "etcPartsCost",
   "partCost", "partInvoiced", "partsProjected", "salesPrice", "profit",
 ]);
