@@ -23,6 +23,11 @@ import { dayOf, hasInvoiceBalance, lineLeftToInvoice } from "@/lib/left-to-invoi
 // figures grew. Charge lines are left out of the delivery side because nothing arrives at
 // the dock for them: a fully billed PO with a freight line would otherwise never close.
 //
+// Since 2026-11-13 that holds for EVERY delivery figure, not only the open rule
+// (`receivable`): late, not yet received, the chart, next due, the timeline and the status.
+// Before, a PO whose parts had all arrived still read Late, red on the timeline, on the
+// strength of a freight line's expected date, next to a card saying "3/3 rcvd".
+//
 // Caveat: Total ETO reads "no receipt logged" as 0 received (sync-totaleto.ts ReceivedQty),
 // so a line nobody ever receives (a service, a drop-ship to site) reads as not arrived.
 //
@@ -178,7 +183,7 @@ export function addDays(day: string, days: number): string {
 export type LineCounts = { lines: number; received: number; pieces: number; piecesReceived: number };
 
 // Charges billed as PO lines, not parts: nothing arrives at the dock for them, so they are
-// left out of the received counts. The same part numbers Job Details' parts cards leave out
+// left out of the received counts and every delivery figure (see `receivable`). The same part numbers Job Details' parts cards leave out
 // (job-bom.ts PO_SQL: ItemCompanyID NOT IN ('Shipping', 'FEE', 'TARIFF')). Matched ignoring
 // case and spaces, as SQL Server's default collation compares them.
 const CHARGE_PART_NUMBERS = new Set(["SHIPPING", "FEE", "TARIFF"]);
@@ -229,7 +234,7 @@ export function poDates(
   let next: OpenPoLine | null = null;
   let outstanding = false;
   for (const i of items) {
-    if (i.quantity <= 0 || (jobId != null && i.jobId !== jobId)) continue;
+    if (i.quantity <= 0 || isChargeLine(i) || (jobId != null && i.jobId !== jobId)) continue;
     if (i.receivedQty != null && i.receivedQty >= i.quantity) continue;
     outstanding = true;
     if (i.expected && (!next?.expected || i.expected < next.expected)) next = i;
@@ -295,7 +300,7 @@ export function stackLines(spans: readonly (number | { from: number; to: number 
 export function nextUpcoming(items: readonly OpenPoLine[], today: string, jobId?: string): string | null {
   let next: string | null = null;
   for (const i of items) {
-    if (i.quantity <= 0 || (jobId != null && i.jobId !== jobId)) continue;
+    if (i.quantity <= 0 || isChargeLine(i) || (jobId != null && i.jobId !== jobId)) continue;
     if (i.receivedQty != null && i.receivedQty >= i.quantity) continue;
     if (i.expected && i.expected >= today && (!next || i.expected < next)) next = i.expected;
   }
@@ -360,7 +365,7 @@ export function moneyOf(lines: readonly PartsCostLine[], today: string): OpenPoM
     m.received += received;
     m.notReceived += outstanding;
     m.receivedNotInvoiced += Math.max(0, received - l.actualAmount);
-    if (outstanding > 0 && !isChargeLine(l)) m.invoicedNotReceived += Math.min(outstanding, Math.max(0, l.actualAmount - received));
+    if (outstanding > 0) m.invoicedNotReceived += Math.min(outstanding, Math.max(0, l.actualAmount - received));
     if (outstanding > 0) {
       const due = lineDue(l);
       if (due && due < today) m.late += outstanding;
@@ -373,12 +378,15 @@ export function moneyOf(lines: readonly PartsCostLine[], today: string): OpenPoM
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/** A line that can be received: a real PO line with a positive quantity. */
-const receivable = (l: PartsCostLine) => l.lineId.startsWith("pod:") && l.quantity > 0;
+/**
+ * A line that can be received: a real PO line with a positive quantity that is a part, not a
+ * shipping / fee / tariff charge (`isChargeLine`). Every delivery figure goes through this.
+ */
+const receivable = (l: PartsCostLine) => l.lineId.startsWith("pod:") && l.quantity > 0 && !isChargeLine(l);
 const receiptKnown = (l: PartsCostLine) => typeof l.receivedQty === "number";
 const fullyReceived = (l: PartsCostLine) => receiptKnown(l) && (l.receivedQty as number) >= l.quantity;
 /** The delivery side of "open": a part line (not a charge) that has not fully arrived. */
-const owesDelivery = (l: PartsCostLine) => receivable(l) && !isChargeLine(l) && receiptKnown(l) && !fullyReceived(l);
+const owesDelivery = (l: PartsCostLine) => receivable(l) && receiptKnown(l) && !fullyReceived(l);
 
 /**
  * When a line is due, for "late" and "next due": the re-promised date when Total ETO has one,
