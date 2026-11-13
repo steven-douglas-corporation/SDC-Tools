@@ -125,9 +125,31 @@ export function isUtilityJob(jobId: string): boolean {
   return UTILITY_JOB_IDS.has(jobId) || !jobId.trim();
 }
 
-/** The global year-matrix override for one year, else the default — never zero-filled. */
+/** The Rate Matrix has one row per year from FIRST to LAST. */
+export const RATE_MATRIX_FIRST_YEAR = 2022;
+export const RATE_MATRIX_LAST_YEAR = 2025;
+/** The matrix's years, newest first (what the Rate Matrix shows). */
+export const RATE_MATRIX_YEARS: string[] = Array.from(
+  { length: RATE_MATRIX_LAST_YEAR - RATE_MATRIX_FIRST_YEAR + 1 },
+  (_, i) => String(RATE_MATRIX_LAST_YEAR - i),
+);
+
+/**
+ * The rates for one year (a year worked, or a job's completion year):
+ *   before 2022      -> the 2022 row's rates
+ *   2022 to 2025     -> that year's own row
+ *   2026 and later   -> the default rates
+ * A blank cell in a row means "use the default" for that rate. Never zero-filled.
+ * Rows saved for years outside 2022-2025 (older saves) are ignored.
+ */
 export function rateForYear(year: string, def: CostRates, overrides: YearRateOverrides): CostRates {
-  const o = overrides[year] ?? {};
+  const n = Number(year);
+  let key = year;
+  if (Number.isFinite(n)) {
+    if (n > RATE_MATRIX_LAST_YEAR) return def;
+    if (n < RATE_MATRIX_FIRST_YEAR) key = String(RATE_MATRIX_FIRST_YEAR);
+  }
+  const o = overrides[key] ?? {};
   return {
     engRate: o.engRate ?? def.engRate,
     shopRate: o.shopRate ?? def.shopRate,
