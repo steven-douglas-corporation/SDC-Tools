@@ -7490,3 +7490,11 @@ database, so no other dev page changes; the cost is that a sample job's link to 
 finds no job (its POs, the PO panel and the BOM work, being generated from the job number).
 SDC_DEV_FAKE_ETO_SAMPLE_JOBS sets the count (0 for none, at most 80). The seeded jobs'
 fake lines are unchanged. Production never sets the flag.
+
+
+Search (same day, by request): one search box in the Filter row, over every view. It looks
+in each PO's number, supplier, the jobs it charges (number and name) and the part numbers
+and descriptions on its lines, by the tables' own rule (lib/data-table.ts searchRows): a PO
+shows when it contains every word typed, anywhere, in any order. The line under the filters
+says what is being matched, and Clear filters empties the box too. The Table view's own
+search box is gone (DataTable `search={false}`), so the page has one search, not two.

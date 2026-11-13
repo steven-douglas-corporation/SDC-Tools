@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { SupplierAvatar } from "@/components/procurement/PoDetailPanel";
 import { ListCard, ListCardGrid, type ListCardColumn, type ListCardSort } from "@/components/ui/ListCard";
 import { Segmented } from "@/components/ui/Segmented";
-import type { SortDir } from "@/lib/data-table";
+import { searchRows, type SortDir, type TableColumnLogic } from "@/lib/data-table";
 import { OpenPoDetail } from "@/components/open-pos/OpenPoDetail";
 import { PoTimeline, type DotsBy, type RequiredState, type TimelinePo, type TimelineRow } from "@/components/open-pos/PoTimeline";
 import { loadOpenPoRequiredDates } from "@/lib/open-pos-actions";
@@ -552,6 +552,7 @@ function OpenPoCard({
 export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosResult; schedulerVendorPosUrl?: string }) {
   const [metric, setMetric] = useState<MetricId>("leftToInvoice");
   const [partialOnly, setPartialOnly] = useState(false);
+  const [query, setQuery] = useState("");
   const [view, setView] = useState<View>("cards");
   const [groupBy, setGroupBy] = useState<GroupBy>("projects");
   // The PO open in the panel, and which of its jobs' BOM the panel shows (the card's job on a
@@ -596,9 +597,27 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const cur = METRICS.find((m) => m.id === metric)!;
   const jobName = useMemo(() => new Map(data.jobs.map((j) => [j.jobId, j.jobName])), [data.jobs]);
 
+  // What the search box looks through, per PO: its number, supplier, the jobs it charges
+  // (number and name) and the parts on its lines. The app's table search rule (searchRows):
+  // a PO shows when it contains every word typed, in any of these, in any order.
+  const searchIn = useMemo(
+    (): TableColumnLogic<OpenPoRow>[] => [
+      { id: "po", value: (r) => r.poNumber },
+      { id: "supplier", value: (r) => r.suppliers.join(" ") },
+      { id: "jobs", value: (r) => r.jobIds.map((j) => `${j} ${jobName.get(j) ?? ""}`).join(" ") },
+      { id: "parts", value: (r) => r.items.map((l) => `${l.partNumber ?? ""} ${l.description ?? ""}`).join(" ") },
+    ],
+    [jobName],
+  );
+
   const shown = useMemo(
-    () => data.rows.filter((r) => inMetric(r, metric) && (!partialOnly || r.partiallyReceived)),
-    [data.rows, metric, partialOnly],
+    () =>
+      searchRows(
+        data.rows.filter((r) => inMetric(r, metric) && (!partialOnly || r.partiallyReceived)),
+        searchIn,
+        query,
+      ),
+    [data.rows, metric, partialOnly, searchIn, query],
   );
 
   const tiles = useMemo(
@@ -676,7 +695,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     return <div className={card()}>No open purchase orders on Active or HeadStart projects as of {fmtDate(data.asOf)}.</div>;
   }
 
-  const filtered = metric !== "leftToInvoice" || partialOnly;
+  const searching = query.trim() !== "";
+  const filtered = metric !== "leftToInvoice" || partialOnly || searching;
   const shownJobs = new Set(shown.flatMap((r) => r.jobIds)).size;
   const cardCount = groupBy === "projects" ? projects.length : suppliers.length;
   const poSortDef = PO_SORTS.find((s) => s.id === poSort?.id);
@@ -736,6 +756,24 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           })}
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {/* Search: a third filter, over every view. The same box as Job Details' Parts List. */}
+          <label
+            className={`flex h-8 w-72 max-w-full items-center gap-2 rounded-md border bg-white px-2.5 ${searching ? "border-sdc-blue" : "border-sdc-border"}`}
+            title="Type one or more words; a PO shows when it contains every word. Looks in the PO number, supplier, job number and name, and the part numbers and descriptions on its lines"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-sdc-gray-400" aria-hidden>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search PO, supplier, job or part…"
+              aria-label="Search open POs"
+              className="w-full border-none bg-transparent text-xs text-sdc-navy outline-none placeholder:text-sdc-gray-400"
+            />
+          </label>
           <button
             type="button"
             aria-pressed={partialOnly}
@@ -752,6 +790,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             </span>{" "}
             on {shownJobs} {shownJobs === 1 ? "job" : "jobs"}: {cur.label}
             {partialOnly ? ", partially received only" : ""}
+            {searching ? `, matching "${query.trim()}"` : ""}
             {filtered ? ` · ${data.rows.length - shown.length} other open POs hidden` : ""}
           </span>
           {filtered && (
@@ -760,8 +799,9 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
               onClick={() => {
                 setMetric("leftToInvoice");
                 setPartialOnly(false);
+                setQuery("");
               }}
-              title="Back to Left to invoice with nothing else filtered: every PO still owing an invoice"
+              title="Back to Left to invoice with nothing else filtered and the search emptied: every PO still owing an invoice"
               className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
             >
               Clear filters
@@ -942,8 +982,9 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             label="Open POs"
             defaultSort={{ id: metric === "leftToInvoice" ? "lti" : "notReceived", dir: "desc" }}
             paging="pages"
-            searchPlaceholder="Search PO, supplier or job…"
-            emptyText="No POs match."
+            // The page's own search (in Filter) covers every view, so the table has none of its own.
+            search={false}
+            emptyText="No POs match. Try Clear filters."
             onRowClick={(r) => openRow(r)}
           />
         </section>
