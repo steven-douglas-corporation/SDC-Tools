@@ -68,4 +68,5 @@ test("the sample jobs differ: few POs and many, late and still to come, on the s
   assert.ok(open.rows.some((r) => r.nextDue != null && r.nextDue > today), "some are still to come");
   assert.ok(open.rows.some((r) => r.partiallyReceived), "some are partly received");
   assert.ok(open.rows.some((r) => r.revised), "some were re-promised");
+  assert.ok(open.rows.some((r) => r.money.invoicedNotReceived > 0 && r.leftToInvoice === 0), "some are paid for and not here yet");
 });

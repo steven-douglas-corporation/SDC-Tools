@@ -83,8 +83,9 @@ export function fakeSampleJobs(): { jobId: string; jobName: string; status: stri
 // from 1 PO to a couple of dozen, 1 to 6 lines each, bought any time in the last eight months
 // with lead times from two weeks to four months, so expected dates run from long overdue to
 // months out. Each PO is in one of four states (all received and invoiced, so not open;
-// received and waiting on the invoice; partly received; nothing received yet), and a
-// quarter of the outstanding lines have been re-promised. Deterministic per job, like the rest.
+// received and waiting on the invoice; partly received; nothing received yet, a third of
+// those already billed in full), and a quarter of the outstanding lines have been
+// re-promised. Deterministic per job, like the rest.
 function sampleLines(n: number): PartsCostLine[] {
   const rand = seeded(n * 104729);
   const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)];
@@ -119,7 +120,11 @@ function sampleLines(n: number): PartsCostLine[] {
       const receivedQty = state === "closed" || state === "received" ? qty : state === "partial" ? (k === 0 ? qty : k === 1 ? Math.floor(qty / 2) : 0) : 0;
       const outstanding = receivedQty < qty;
       const expected = outstanding && rand() < 0.25 ? day(required, 7 + Math.floor(rand() * 36)) : required;
-      const invoiced = state === "closed" && canInvoice ? gross : state === "partial" && canInvoice && k === 0 ? r2(gross * 0.4) : 0;
+      // Every third PO with nothing here yet is billed in full anyway (a prepayment), for
+      // Open POs' "Invoiced, not received". Decided by its index, not a draw, so every
+      // other figure is unchanged.
+      const prepaid = state === "open" && canInvoice && p % 3 === 0;
+      const invoiced = (state === "closed" || prepaid) && canInvoice ? gross : state === "partial" && canInvoice && k === 0 ? r2(gross * 0.4) : 0;
       out.push({
         lineId: `pod:${n * 1000 + i}`,
         itemId: null,
