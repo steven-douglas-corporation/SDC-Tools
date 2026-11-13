@@ -22,7 +22,8 @@
  * ── Deploy an update ─────────────────────────────────────────────────────────
  *   Automatic: sdc-updater-hub polls GitHub every 2-5 min — no manual steps needed.
  *   Manual:    git pull && npm run deploy
- *   Shell app: electron-updater checks GitHub Releases every 30 min (OTA).
+ *   Shell app: electron-updater checks the internal feed on :4015 (served by
+ *              sdc-updater-hub, mirrors the newest GitHub Release).
  *
  * ── Environment ──────────────────────────────────────────────────────────────
  *   Each app loads its own .env file via dotenv (from its cwd).
