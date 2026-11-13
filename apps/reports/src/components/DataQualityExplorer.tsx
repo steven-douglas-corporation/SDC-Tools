@@ -223,7 +223,11 @@ export function DataQualityExplorer({ data }: { data: PunchExplorer }) {
         )}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[3fr_2fr]">
+      {/* One column: the table, then the chart in a row of its own (2026-11-13, by request).
+          They used to share a row on wide screens, 3:2, which squeezed the table's eleven
+          columns and the chart's department labels alike. minmax(0, 1fr) so the wide table
+          scrolls inside its box instead of stretching the page. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
         {/* Punch table — the report's main visual, same columns and same order. */}
         <div className={card("p-0")}>
           <div ref={scrollRef} className="max-h-[26rem] overflow-auto styled-scrollbar rounded-xl">

@@ -7454,3 +7454,11 @@ taken the Scheduler note, the Experimental badge and the page's bottom padding o
 height, which left it too short. Those now sit below it, a short scroll away, and the
 overflow-trimming pass is gone. The Experimental badge is not pinned to the window's bottom
 on the Timeline view, where it would cover the last PO labels.
+
+
+## 93. Data Management: "Hours by department" in a row of its own (2026-11-13)
+
+Asked for: on Data Management's Job punches tab, the "Hours by department" chart in its own
+row. It shared a row with the punch table on wide screens (3:2), which squeezed the table's
+eleven columns and the chart's department labels. DataQualityExplorer.tsx now stacks them:
+the table full width, then the chart full width under it, as narrower screens already had.
