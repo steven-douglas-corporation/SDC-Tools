@@ -2,6 +2,7 @@ import { PageTitle } from "@/components/ui/Typography";
 import { PAGE_SHELL, card } from "@/components/ui/classnames";
 import { JobHoursDashboard } from "@/components/JobHoursDashboard";
 import { IndicatorCard } from "@/components/charts/IndicatorCard";
+import { HoursFreshnessBanner } from "@/components/HoursFreshnessBanner";
 import { JobSelect } from "@/components/JobSelect";
 import { JobAnalysisDropdown } from "@/components/JobAnalysisDropdown";
 import { JobSwitchProvider, JobSwitchBody } from "@/components/JobSwitch";
@@ -233,6 +234,7 @@ export async function JobHoursView({ params }: { params: { jobs?: string; job?: 
           ones land. See components/JobSwitch.tsx. */}
       {/* Analysis sits above the Job Details heading. Loads its figures on open. */}
       <JobAnalysisDropdown />
+      <HoursFreshnessBanner />
       <JobSwitchProvider selected={selectedJobIds}>
       <div className="mb-1 flex flex-wrap items-end justify-between gap-4">
         <PageTitle>Job Details</PageTitle>

@@ -40,6 +40,13 @@ export const SYNC_SOURCES = [
   // freshness, staleness and failure show here — a broken temp report never stops the hours
   // (lib/temp-punches.ts). The step reports on what the hours pass already read.
   { source: "temp_punches", label: "Temp punches (Paylocity report)", monthScoped: false },
+  // Whether the warehouse's own daily load ran (2026-11-13). The hours step above can
+  // only see the rows the warehouse holds, so a load that never ran looked healthy
+  // there for three days. This reads the warehouse's run log against its schedule
+  // ("Integration"."JobHealth") and the hours' date against the prior business day.
+  // After hours_actual, because it compares against the date that step just stamped.
+  // See lib/warehouse-load-check.ts.
+  { source: "warehouse_load", label: "Warehouse load schedule (Paylocity)", monthScoped: false },
   // Its own stage rather than a silent part of the one above, so a manager watching a
   // refresh sees "Calculating Undefined Hours…" (§42.15) — and so the totals and the
   // punch rows behind them are written together (§42.10-42.12).

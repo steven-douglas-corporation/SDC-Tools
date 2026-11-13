@@ -65,6 +65,7 @@ import { JobCellMenuHost } from "@/components/JobCellMenuHost";
 import { jobCellMenuProps } from "@/lib/job-cell-menu";
 import { getSchedulerLinkContext, schedulerScheduleUrl } from "@/lib/scheduler-link";
 import { BUTTON_SECONDARY, ETC_COL_W, GRID_SCROLLER, PAGE_SHELL, PARTS_COL_W, TABLE_GRID, TABLE_HEADER_ROW, TOOLBAR_MIN_W } from "@/components/ui/classnames";
+import { HoursFreshnessBanner } from "@/components/HoursFreshnessBanner";
 import { diffCellStyle, diffTotalStyle, DIFF_CEILING } from "@/components/ui/etc-diff-colors";
 import { abbreviateLabel } from "@/lib/abbrev";
 import { DragScroll } from "@/components/DragScroll";
@@ -1178,6 +1179,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
       <p className="mb-4 text-sm text-sdc-gray-600">
         {`${visibleJobs.length}${billableFilterActive ? ` of ${jobs.length}` : ""} ${monthIsLocked ? "job" : "active job"}${visibleJobs.length === 1 ? "" : "s"} — replaces the "Managers Fill Out" sheet.`}
       </p>
+      <HoursFreshnessBanner />
 
       {/* ── Two rows, not three (2026-08-05, by request) ──────────────────────
           This was ONE wrapping row holding the controls, the two status chips and the
