@@ -11,6 +11,7 @@ import { loadOpenPoRequiredDates } from "@/lib/open-pos-actions";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
+import { hasInvoiceBalance } from "@/lib/left-to-invoice";
 import {
   addCounts,
   addDays,
@@ -28,14 +29,18 @@ import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 
 // For managers first (the Scheduler's Vendor POs page is the buyers' worklist).
 //
-// Five tiles, one per money measure. Clicking a tile lists the POs that carry that measure
-// and sorts by it; the project table shows all five as columns, the chosen one tinted, and
-// its Total row always equals the chosen tile. "Left to invoice" is every open PO, so it is
-// the default and the "show all" state. All client-side: the server sent every open PO.
+// Six tiles, one question each. "All open" is the default and the "show all" state: a PO is
+// open while it owes a delivery or an invoice (open-pos-rules.ts). Then the delivery side
+// (Late, Not yet received), the two mirrors side by side (Invoiced, not received / Received,
+// not invoiced), and the invoice side (Not yet invoiced). Each tile but All open shows the
+// money behind it and lists the POs that carry that money; All open shows its PO count, and
+// its cards are ordered by Left to invoice. All client-side: the server sent every open PO.
 
-type MetricId = "late" | "notReceived" | "next4Weeks" | "receivedNotInvoiced" | "leftToInvoice";
+/** The money measures a tile can be about (keys of OpenPoMoney). */
+type MetricId = "late" | "notReceived" | "invoicedNotReceived" | "receivedNotInvoiced" | "leftToInvoice";
+type TileId = "all" | MetricId;
 // Three separate choices, each with its own control, so no button does two jobs:
-//   Filter   WHICH POs: the five totals (one at a time) and "Only partially received".
+//   Filter   WHICH POs: the six tiles (one at a time) and "Only partially received".
 //   View     HOW they are drawn: cards, the timeline, or one table.
 //   Group by WHAT a card or timeline group is: a project or a supplier. Not for the table,
 //            which is one flat list of POs.
@@ -49,15 +54,31 @@ const countsText = (c: LineCounts) => `${c.received} of ${c.lines} ${c.lines ===
 const countsTip = (c: LineCounts) =>
   `${c.received} of ${c.lines} PO lines fully received (${c.piecesReceived} of ${c.pieces} pieces). A line counts once all of it has arrived`;
 
-const METRICS: { id: MetricId; label: string; short: string; hint: string }[] = [
-  { id: "late", label: "Late", short: "Late", hint: "Not yet received, on lines past their expected date" },
-  { id: "notReceived", label: "Not yet received", short: "Not yet received", hint: "Ordered quantity not yet received, at PO price" },
-  { id: "next4Weeks", label: "Expected in the next 4 weeks", short: "Next 4 weeks", hint: "Not yet received, expected from today through the next 28 days" },
-  { id: "receivedNotInvoiced", label: "Received, not invoiced", short: "Received, not invoiced", hint: "Received at PO price, less what has been invoiced on that line" },
-  { id: "leftToInvoice", label: "Left to invoice", short: "Left to invoice", hint: "Every open PO. Same figure as Job Details' Left to Invoice" },
+const METRIC_IDS: MetricId[] = ["late", "notReceived", "invoicedNotReceived", "receivedNotInvoiced", "leftToInvoice"];
+
+/** `metric`: the money a tile's cards show and sort by. All open has none of its own. */
+const TILES: { id: TileId; metric: MetricId; label: string; short: string; hint: string }[] = [
+  { id: "all", metric: "leftToInvoice", label: "All open", short: "Left to invoice", hint: "Every PO still owing a delivery or an invoice" },
+  { id: "late", metric: "late", label: "Late", short: "Late", hint: "Not yet received, on lines past their expected date" },
+  { id: "notReceived", metric: "notReceived", label: "Not yet received", short: "Not yet received", hint: "Ordered quantity not yet received, at PO price" },
+  {
+    id: "invoicedNotReceived",
+    metric: "invoicedNotReceived",
+    label: "Invoiced, not received",
+    short: "Invoiced, not received",
+    hint: "Invoiced beyond what has arrived, on part lines still to come: paid for, not here yet",
+  },
+  { id: "receivedNotInvoiced", metric: "receivedNotInvoiced", label: "Received, not invoiced", short: "Received, not invoiced", hint: "Received at PO price, less what has been invoiced on that line" },
+  {
+    id: "leftToInvoice",
+    metric: "leftToInvoice",
+    label: "Not yet invoiced",
+    short: "Left to invoice",
+    hint: "Left to invoice is not $0.00, including any invoiced more than ordered. Same figure as Job Details' Left to Invoice",
+  },
 ];
 
-const inMetric = (r: OpenPoRow, id: MetricId) => (id === "leftToInvoice" ? true : r.money[id] > 0);
+const inTile = (r: OpenPoRow, id: TileId) => (id === "all" ? true : id === "leftToInvoice" ? hasInvoiceBalance(r.leftToInvoice) : r.money[id] > 0);
 const sumMoney = (ms: OpenPoMoney[], id: MetricId) => Math.round(ms.reduce((s, m) => s + m[id], 0) * 100) / 100;
 const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
@@ -319,7 +340,7 @@ function groupCard(pos: CardPo[], metric: MetricId) {
     pos: [...pos].sort((a, b) => b.money[metric] - a.money[metric]),
     ordered: ms.reduce((s, m) => s + m.ordered, 0),
     received: ms.reduce((s, m) => s + m.received, 0),
-    totals: Object.fromEntries(METRICS.map((m) => [m.id, sumMoney(ms, m.id)])) as Record<MetricId, number>,
+    totals: Object.fromEntries(METRIC_IDS.map((id) => [id, sumMoney(ms, id)])) as Record<MetricId, number>,
     oldestLate: Math.max(0, ...pos.filter((p) => p.money.late > 0).map((p) => p.row.daysLate ?? 0)),
     soonest: due.length ? due.reduce((a, b) => (a <= b ? a : b)) : null,
     counts: pos.reduce((c, p) => addCounts(c, p.counts), NO_COUNTS),
@@ -385,7 +406,7 @@ const linesText = (p: number) => (p >= 90 ? "text-sdc-green-text" : p >= 60 ? "t
 const METRIC_PHRASE: Record<MetricId, string> = {
   late: "late",
   notReceived: "not yet received",
-  next4Weeks: "expected in 4 weeks",
+  invoicedNotReceived: "invoiced, not received",
   receivedNotInvoiced: "received, not invoiced",
   leftToInvoice: "left to invoice",
 };
@@ -417,7 +438,8 @@ function OpenPoCard({
   /** What comes before the item count, e.g. "8 POs" or "3 POs · 2 jobs". */
   subtitle: string;
   avatar?: ReactNode;
-  metric: (typeof METRICS)[number];
+  /** The selected tile; its `metric` is the money the subtitle shows. */
+  metric: (typeof TILES)[number];
   money: Record<MetricId, number> & { ordered: number; received: number };
   counts: LineCounts;
   oldestLate: number;
@@ -504,8 +526,8 @@ function OpenPoCard({
       title={title}
       titleTip={titleTip}
       subtitle={
-        <span title={`${countsTip(counts)}. ${metric.label}: ${usdExact(money[metric.id])}, the selected tile`}>
-          {subtitle} · {counts.lines} {counts.lines === 1 ? "item" : "items"} · {usd(money[metric.id])} {METRIC_PHRASE[metric.id]}
+        <span title={`${countsTip(counts)}. ${METRIC_PHRASE[metric.metric]}: ${usdExact(money[metric.metric])}, for the selected tile (${metric.label})`}>
+          {subtitle} · {counts.lines} {counts.lines === 1 ? "item" : "items"} · {usd(money[metric.metric])} {METRIC_PHRASE[metric.metric]}
         </span>
       }
       avatar={avatar}
@@ -550,7 +572,7 @@ function OpenPoCard({
 }
 
 export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosResult; schedulerVendorPosUrl?: string }) {
-  const [metric, setMetric] = useState<MetricId>("leftToInvoice");
+  const [tile, setTile] = useState<TileId>("all");
   const [partialOnly, setPartialOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<View>("cards");
@@ -594,7 +616,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     if (v === "timeline") loadRequired();
   };
 
-  const cur = METRICS.find((m) => m.id === metric)!;
+  const cur = TILES.find((t) => t.id === tile)!;
+  const metric = cur.metric;
   const jobName = useMemo(() => new Map(data.jobs.map((j) => [j.jobId, j.jobName])), [data.jobs]);
 
   // What the search box looks through, per PO: its number, supplier, the jobs it charges
@@ -613,18 +636,18 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const shown = useMemo(
     () =>
       searchRows(
-        data.rows.filter((r) => inMetric(r, metric) && (!partialOnly || r.partiallyReceived)),
+        data.rows.filter((r) => inTile(r, tile) && (!partialOnly || r.partiallyReceived)),
         searchIn,
         query,
       ),
-    [data.rows, metric, partialOnly, searchIn, query],
+    [data.rows, tile, partialOnly, searchIn, query],
   );
 
   const tiles = useMemo(
     () =>
-      METRICS.map((m) => {
-        const rows = data.rows.filter((r) => inMetric(r, m.id));
-        return { ...m, value: sumMoney(rows.map((r) => r.money), m.id), pos: rows.length, jobs: new Set(rows.flatMap((r) => r.jobIds)).size };
+      TILES.map((t) => {
+        const rows = data.rows.filter((r) => inTile(r, t.id));
+        return { ...t, value: sumMoney(rows.map((r) => r.money), t.metric), pos: rows.length, jobs: new Set(rows.flatMap((r) => r.jobIds)).size };
       }),
     [data.rows],
   );
@@ -696,7 +719,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   }
 
   const searching = query.trim() !== "";
-  const filtered = metric !== "leftToInvoice" || partialOnly || searching;
+  const filtered = tile !== "all" || partialOnly || searching;
   const shownJobs = new Set(shown.flatMap((r) => r.jobIds)).size;
   const cardCount = groupBy === "projects" ? projects.length : suppliers.length;
   const poSortDef = PO_SORTS.find((s) => s.id === poSort?.id);
@@ -722,34 +745,35 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       <WeekChart weeks={data.weeks} />
 
       {/* ── Filter: WHICH POs ───────────────────────────────────────────────────────
-          The five totals and "Only partially received" sit under one label, with one line
+          The six tiles and "Only partially received" sit under one label, with one line
           saying what they leave on screen and one button that clears them all. */}
       <section aria-labelledby="op-filter" className="flex flex-col gap-2">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
           <h2 id="op-filter" className={CONTROL_LABEL}>
             Filter
           </h2>
-          <span className="text-note text-sdc-gray-400">Pick a total to list the POs behind it. Left to invoice is every open PO.</span>
+          <span className="text-note text-sdc-gray-400">A PO is open until it is both received and invoiced. Pick a tile to list the POs behind it.</span>
         </div>
-        <div role="group" aria-label="Filter by total. Choose one to list those POs" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <div role="group" aria-label="Filter by tile. Choose one to list those POs" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           {tiles.map((t) => {
-            const on = t.id === metric;
+            const on = t.id === tile;
+            const all = t.id === "all";
             return (
               <button
                 key={t.id}
                 type="button"
                 aria-pressed={on}
-                onClick={() => setMetric(t.id)}
-                title={`${t.hint}. ${usdExact(t.value)}. Click to list only these POs`}
+                onClick={() => setTile(t.id)}
+                title={`${t.hint}. ${all ? `${t.pos} POs` : usdExact(t.value)}. Click to list ${all ? "every open PO" : "only these POs"}`}
                 className={`flex flex-col gap-0.5 rounded-xl p-4 text-left motion-interactive ${
                   on ? "border-2 border-sdc-navy bg-sdc-blue-light/50" : "border border-sdc-border bg-white hover:border-sdc-gray-400"
                 }`}
               >
                 <span className="text-note font-semibold text-sdc-gray-600">{t.label}</span>
-                <span className={`font-heading text-xl font-bold tabular-nums ${t.id === "late" ? "text-red-700" : "text-sdc-navy"}`}>{usd(t.value)}</span>
-                <span className="text-note text-sdc-gray-400">
-                  {t.pos} POs · {t.jobs} jobs
+                <span className={`font-heading text-xl font-bold tabular-nums ${t.id === "late" ? "text-red-700" : "text-sdc-navy"}`}>
+                  {all ? `${t.pos} ${t.pos === 1 ? "PO" : "POs"}` : usd(t.value)}
                 </span>
+                <span className="text-note text-sdc-gray-400">{all ? `${t.jobs} jobs` : `${t.pos} POs · ${t.jobs} jobs`}</span>
                 <span className={`mt-1 text-note font-semibold ${on ? "text-sdc-navy" : "text-sdc-blue"}`}>{on ? "Showing these" : "Show these"}</span>
               </button>
             );
@@ -781,7 +805,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             title="A second filter, on top of the total chosen above: only POs where some of the order has arrived and the rest is still expected"
             className={`${TOOLBAR_BTN_COMPACT} ${partialOnly ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
           >
-            {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inMetric(r, metric) && r.partiallyReceived).length})
+            {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inTile(r, tile) && r.partiallyReceived).length})
           </button>
           <span role="status" className="text-sm text-sdc-gray-600" title={`${cur.hint}. Open POs shown below, and the jobs they charge`}>
             Showing{" "}
@@ -797,11 +821,11 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             <button
               type="button"
               onClick={() => {
-                setMetric("leftToInvoice");
+                setTile("all");
                 setPartialOnly(false);
                 setQuery("");
               }}
-              title="Back to Left to invoice with nothing else filtered and the search emptied: every PO still owing an invoice"
+              title="Back to All open with nothing else filtered and the search emptied: every PO still owing a delivery or an invoice"
               className={`${TOOLBAR_BTN_COMPACT} ${TOOLBAR_BTN_NEUTRAL}`}
             >
               Clear filters
@@ -980,7 +1004,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             columns={LIST_COLUMNS}
             rowKey={(r) => r.poNumber}
             label="Open POs"
-            defaultSort={{ id: metric === "leftToInvoice" ? "lti" : "notReceived", dir: "desc" }}
+            defaultSort={{ id: metric === "leftToInvoice" || metric === "receivedNotInvoiced" ? "lti" : "notReceived", dir: "desc" }}
             paging="pages"
             // The page's own search (in Filter) covers every view, so the table has none of its own.
             search={false}

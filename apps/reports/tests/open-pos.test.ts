@@ -6,8 +6,8 @@ import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import { lineLeftToInvoice } from "../src/lib/left-to-invoice";
 import { buildOpenPos, isChargeLine, lineCounts, nextUpcoming, poDates, stackLines, timelineSlot, vsRequired, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
 
-// Open POs: a PO is open when its signed Left to Invoice is not $0.00, the Parts List's own
-// filter applied per PO. Receipts only decide the Status column.
+// Open POs: a PO is open when its signed Left to Invoice is not $0.00 (the Parts List's own
+// filter applied per PO) OR a part line has not fully arrived.
 
 const TODAY = "2026-11-06";
 const JOBS: OpenPoJob[] = [
@@ -54,6 +54,58 @@ test("fully invoiced POs are not open; partly invoiced and over-invoiced ones ar
   assert.equal(r.rows.find((x) => x.poNumber === "B")!.leftToInvoice, 60);
   assert.equal(r.rows.find((x) => x.poNumber === "C")!.status, "over-invoiced");
   assert.equal(r.rows.find((x) => x.poNumber === "C")!.leftToInvoice, -30);
+});
+
+test("a PO invoiced in full but not yet delivered is open, and adds nothing to the open value", () => {
+  const lines = new Map([
+    [
+      "1101",
+      [
+        line({ po: "PREPAID", total: 100, posted: 100, receivedQty: 0, requiredDate: "2026-12-01" }),
+        line({ po: "OWED", total: 50, posted: 0, receivedQty: 1 }),
+      ],
+    ],
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY);
+  const prepaid = r.rows.find((x) => x.poNumber === "PREPAID")!;
+  assert.ok(prepaid, "listed although nothing is left to invoice");
+  assert.equal(prepaid.leftToInvoice, 0);
+  assert.equal(prepaid.status, "awaiting-delivery");
+  assert.equal(prepaid.money.invoicedNotReceived, 100);
+  assert.equal(r.totals.openPos, 2);
+  // The money is the rest of the app's: only OWED's $50 is left to invoice.
+  assert.equal(r.totals.openValue, 50);
+});
+
+test("charge lines never keep a PO open on delivery; a part line does", () => {
+  const lines = new Map([
+    [
+      "1101",
+      [
+        // Parts here, everything billed, the freight line never 'received': closed.
+        line({ po: "FRT", total: 100, posted: 100, receivedQty: 1, partNumber: "ABC-1" }),
+        line({ po: "FRT", total: 40, posted: 40, receivedQty: 0, partNumber: "Shipping" }),
+        // A credit has nothing to receive: closed.
+        line({ po: "CR", total: -20, posted: -20, quantity: -1, receivedQty: 0 }),
+        // A part line still to come keeps a fully billed PO open.
+        line({ po: "PART", total: 100, posted: 100, receivedQty: 1, partNumber: "ABC-1" }),
+        line({ po: "PART", total: 30, posted: 30, receivedQty: 0, partNumber: "ABC-2" }),
+      ],
+    ],
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY);
+  assert.deepEqual(r.rows.map((x) => x.poNumber), ["PART"]);
+});
+
+test("invoiced, not received is the posted money beyond what arrived, capped at what is still to come", () => {
+  // 10 × $10, 4 here ($40). $80 posted: $40 of it is for parts not here yet.
+  assert.equal(moneyOf([line({ po: "I", total: 100, quantity: 10, unitPrice: 10, receivedQty: 4, posted: 80 })], TODAY).invoicedNotReceived, 40);
+  // $150 posted (over-invoiced): capped at the $60 still to arrive.
+  assert.equal(moneyOf([line({ po: "I", total: 100, quantity: 10, unitPrice: 10, receivedQty: 4, posted: 150 })], TODAY).invoicedNotReceived, 60);
+  // Posted less than received: nothing paid ahead.
+  assert.equal(moneyOf([line({ po: "I", total: 100, quantity: 10, unitPrice: 10, receivedQty: 4, posted: 25 })], TODAY).invoicedNotReceived, 0);
+  // A billed freight charge is not a part paid ahead.
+  assert.equal(moneyOf([line({ po: "I", total: 40, posted: 40, receivedQty: 0, partNumber: "FEE" })], TODAY).invoicedNotReceived, 0);
 });
 
 test("the balance is the shared per-line Left to Invoice, summed", () => {
@@ -146,7 +198,7 @@ test("still to arrive is the unreceived quantity at PO price", () => {
   assert.equal(r.jobs[0].awaitingDeliveryValue, 70);
 });
 
-test("the five tile measures, by value at PO price", () => {
+test("the tile measures, by value at PO price", () => {
   const ls = [
     // 10 × $10: 4 received, the rest late (expected Oct 1). $25 posted against it.
     line({ po: "M", total: 100, quantity: 10, unitPrice: 10, receivedQty: 4, requiredDate: "2026-10-01", posted: 25 }),
@@ -156,7 +208,7 @@ test("the five tile measures, by value at PO price", () => {
     line({ po: "M", total: 100, quantity: 2, unitPrice: 50, receivedQty: 0, requiredDate: "2026-12-18" }),
   ];
   const m = moneyOf(ls, TODAY);
-  assert.deepEqual(m, { ordered: 300, received: 40, notReceived: 260, late: 60, next4Weeks: 100, receivedNotInvoiced: 15, leftToInvoice: 275 });
+  assert.deepEqual(m, { ordered: 300, received: 40, notReceived: 260, late: 60, next4Weeks: 100, receivedNotInvoiced: 15, invoicedNotReceived: 0, leftToInvoice: 275 });
   const r = buildOpenPos(new Map([["1101", ls]]), JOBS, TODAY);
   assert.equal(r.rows[0].partiallyReceived, true);
   assert.equal(r.rows[0].lateSince, "2026-10-01");

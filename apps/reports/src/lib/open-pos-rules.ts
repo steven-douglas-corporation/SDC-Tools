@@ -1,24 +1,35 @@
 import type { PartsCostLine } from "@/lib/sync-totaleto";
 import { dayOf, hasInvoiceBalance, lineLeftToInvoice } from "@/lib/left-to-invoice";
 
-// ── Open POs: purchase orders that still owe an invoice, today ───────────────
+// ── Open POs: purchase orders that still owe an invoice OR a delivery, today ─
 //
 // For procurement / supply chain. Every other screen that shows PO money is organised
 // around something else (a part, a job-month, a delivery date, a cash month); this one
 // is organised around the purchase order.
 //
+// ── What "open" means (2026-11-13) ───────────────────────────────────────────
+//
+// A PO is open until it is both fully invoiced and fully received. Either side keeps it
+// on the page:
+//   - money: its signed Left to Invoice is not $0.00 at cent precision
+//     (`hasInvoiceBalance`), the Parts List's "Left to invoice" filter applied per PO, so an
+//     over-invoiced PO shows up next to the ones still owed;
+//   - delivery: a part line (positive quantity, not a shipping / fee / tariff charge,
+//     `isChargeLine`) has not fully arrived.
+// Until 2026-11-13 it was money only, which hid every PO invoiced before its parts came
+// (a prepayment): money out, parts not in, and nowhere on the page. The money figures did
+// not change with the widening: such a PO's Left to Invoice is $0.00, so every Left to
+// Invoice total here still equals the rest of the app's; only PO counts and the delivery
+// figures grew. Charge lines are left out of the delivery side because nothing arrives at
+// the dock for them: a fully billed PO with a freight line would otherwise never close.
+//
+// Caveat: Total ETO reads "no receipt logged" as 0 received (sync-totaleto.ts ReceivedQty),
+// so a line nobody ever receives (a service, a drop-ship to site) reads as not arrived.
+//
 // ── No second formula ────────────────────────────────────────────────────────
 //
 // Built from the SAME PartsCostLine rows the Parts List, Monthly ETC and PO-across-jobs
 // read (getPartsCostForJobs), and the money is the same per-line `lineLeftToInvoice`.
-// "Open" is the Parts List's "Left to invoice" filter applied per PO: the PO's signed
-// balance is not $0.00 at cent precision (`hasInvoiceBalance`), so an over-invoiced PO
-// shows up next to the ones still owed, as it does on the Parts List since 2026-10-08.
-//
-// Deliberately NOT part of "open": receipts. A PO invoiced in full but not fully logged as
-// received (a prepayment, or a receipt nobody logged) is not listed. Receipt status only
-// decides the Status column of a PO that is already open on money. Widening it would make
-// this page disagree with every Left to Invoice figure in the app.
 //
 // Extra Costs (`ec:` lines: freight, fees, tariffs) are AP documents, not purchase orders,
 // so they are left out. That is the one reason a job's "Open PO value" here can differ
@@ -40,7 +51,7 @@ export const OPEN_PO_STATUS_LABEL: Record<OpenPoStatus, string> = {
 export type OpenPoJob = { jobId: string; jobName: string; status: string };
 
 /**
- * The page's five money measures (the tiles), for any set of PO lines: a whole PO, or one
+ * The page's money measures (the tiles' figures), for any set of PO lines: a whole PO, or one
  * job's share of it. Delivery figures are at PO price (quantity × unit price) and only count
  * lines whose receipts are known; `leftToInvoice` is the shared per-line formula, signed.
  */
@@ -55,6 +66,12 @@ export type OpenPoMoney = {
   next4Weeks: number;
   /** Received at PO price, less what has been invoiced (GL-posted) on that line; never negative. */
   receivedNotInvoiced: number;
+  /**
+   * The mirror of `receivedNotInvoiced`: on part lines not fully received, what has been
+   * invoiced (GL-posted) beyond the value received, capped at the value still to arrive.
+   * Money paid out for parts that are not here yet (a prepayment). Charge lines are left out.
+   */
+  invoicedNotReceived: number;
   leftToInvoice: number;
 };
 
@@ -317,9 +334,18 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((t(b) - t(a)) / 86_400_000);
 }
 
-const zeroMoney = (): OpenPoMoney => ({ ordered: 0, received: 0, notReceived: 0, late: 0, next4Weeks: 0, receivedNotInvoiced: 0, leftToInvoice: 0 });
+const zeroMoney = (): OpenPoMoney => ({
+  ordered: 0,
+  received: 0,
+  notReceived: 0,
+  late: 0,
+  next4Weeks: 0,
+  receivedNotInvoiced: 0,
+  invoicedNotReceived: 0,
+  leftToInvoice: 0,
+});
 
-/** The five measures for a set of lines. Pure; `today` is `YYYY-MM-DD`. */
+/** The money measures for a set of lines. Pure; `today` is `YYYY-MM-DD`. */
 export function moneyOf(lines: readonly PartsCostLine[], today: string): OpenPoMoney {
   const m = zeroMoney();
   const horizon = addDays(today, NEXT_WEEKS_DAYS - 1);
@@ -334,6 +360,7 @@ export function moneyOf(lines: readonly PartsCostLine[], today: string): OpenPoM
     m.received += received;
     m.notReceived += outstanding;
     m.receivedNotInvoiced += Math.max(0, received - l.actualAmount);
+    if (outstanding > 0 && !isChargeLine(l)) m.invoicedNotReceived += Math.min(outstanding, Math.max(0, l.actualAmount - received));
     if (outstanding > 0) {
       const due = lineDue(l);
       if (due && due < today) m.late += outstanding;
@@ -350,6 +377,8 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const receivable = (l: PartsCostLine) => l.lineId.startsWith("pod:") && l.quantity > 0;
 const receiptKnown = (l: PartsCostLine) => typeof l.receivedQty === "number";
 const fullyReceived = (l: PartsCostLine) => receiptKnown(l) && (l.receivedQty as number) >= l.quantity;
+/** The delivery side of "open": a part line (not a charge) that has not fully arrived. */
+const owesDelivery = (l: PartsCostLine) => receivable(l) && !isChargeLine(l) && receiptKnown(l) && !fullyReceived(l);
 
 /**
  * When a line is due, for "late" and "next due": the re-promised date when Total ETO has one,
@@ -377,7 +406,8 @@ export function poStatus(x: { leftToInvoice: number; receiptsKnown: boolean; lin
 }
 
 /**
- * Group every job's lines into POs and keep the open ones.
+ * Group every job's lines into POs and keep the open ones: a money balance, or a part line
+ * still to arrive (see the header).
  *
  * `today` is a `YYYY-MM-DD` string, compared lexically like every other date in the
  * parts path (left-to-invoice.ts: no Date is built from a feed value).
@@ -403,7 +433,7 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
   for (const [poNumber, acc] of byPo) {
     const lines = acc.lines.map((x) => x.line);
     const leftToInvoice = lines.reduce((s, l) => s + lineLeftToInvoice(l), 0);
-    if (!hasInvoiceBalance(leftToInvoice)) continue;
+    if (!hasInvoiceBalance(leftToInvoice) && !lines.some(owesDelivery)) continue;
 
     let nextDue: string | null = null;
     let originalDue: string | null = null;
