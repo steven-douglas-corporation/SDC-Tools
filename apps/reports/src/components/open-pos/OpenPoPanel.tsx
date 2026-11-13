@@ -82,10 +82,11 @@ export function OpenPoPanel({
       onClose={onClose}
     >
       <div className="flex flex-col gap-4 p-4">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Stat label="Ordered" value={usd(m.ordered)} />
           <Stat label="Not yet received" value={usd(m.notReceived)} />
           <Stat label="Late" value={usd(m.late)} tone={m.late > 0 ? "danger" : undefined} />
+          <Stat label="Invoiced, not received" value={usd(m.invoicedNotReceived)} />
           <Stat label="Received, not invoiced" value={usd(m.receivedNotInvoiced)} />
           <Stat label="Left to invoice" value={usd(m.leftToInvoice)} />
         </div>

@@ -7,10 +7,11 @@ import { auth } from "@/lib/auth";
 import { getSchedulerBaseUrlForRequest } from "@/lib/scheduler-link";
 import { withSchedulerSso } from "@/lib/scheduler-sso";
 
-// "Open POs" — every purchase order that still owes an invoice, today, across the
-// Active and HeadStart jobs. For procurement / supply chain: which POs are late, what is
-// still to arrive, what has arrived and is waiting on the supplier's bill, and how much
-// each job has committed but not yet been invoiced for.
+// "Open POs" — every purchase order that still owes a delivery or an invoice, today,
+// across the Active and HeadStart jobs. For procurement / supply chain: which POs are late,
+// what is still to arrive, what has been paid for but not arrived, what has arrived and is
+// waiting on the supplier's bill, and how much each job has committed but not yet been
+// invoiced for.
 //
 // The figures are the Parts List's, by construction (lib/open-pos-rules.ts): same lines,
 // same per-line Left to Invoice. Today only; no as-of date (yet).
@@ -26,7 +27,7 @@ export async function OpenPosView() {
       <div className="flex flex-col gap-4">
         <PageTitle>Open POs</PageTitle>
         <p className="-mt-2 text-note text-sdc-gray-400">
-          Purchase orders still owing an invoice, as of today, across every Active and HeadStart project. Money from Total
+          Purchase orders still owing a delivery or an invoice, as of today, across every Active and HeadStart project. Money from Total
           ETO, the same figures as Job Details &gt; Procurement.
         </p>
         {result.ok ? (
