@@ -115,8 +115,8 @@ test("computeJobCost: PM/Mfg % apply at the completion-year rate, not the work-y
   });
   const overrides = { "2026": { pmPct: 5, mfgPct: 2 } };
   const c = computeJobCost(row, DEFAULT_RATES, overrides, undefined);
-  assert.equal(c.pmCost, 10000 * 0.05);
-  assert.equal(c.mfgCost, 10000 * 0.02);
+  assert.equal(c.pmCost, 10000 * 0.05 * 0.8);
+  assert.equal(c.mfgCost, 10000 * 0.02 * 0.8);
 });
 
 test("computeJobCost: a Complete job zeroes ETC before costing and forces 100% complete", () => {
@@ -201,9 +201,9 @@ test("computeJobCost: margin is profit as a percentage of sales", () => {
     completeDate: null,
   });
   const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
-  // x = laborCost (0 + PM/Mfg on 1000 at 10%/10% = 200) = 200; y = 200
-  assert.equal(c.profit, 1000 - 200 - 200);
-  assert.equal(c.margin, ((1000 - 200 - 200) / 1000) * 100);
+  // x = laborCost (0 + PM/Mfg on 1000 at 10%/10% x 0.8 = 160) = 160; y = 200
+  assert.equal(c.profit, 1000 - 160 - 200);
+  assert.equal(c.margin, ((1000 - 160 - 200) / 1000) * 100);
 });
 
 test("isUtilityJob matches the known clearing/placeholder IDs and blank IDs, not real jobs", () => {
@@ -263,8 +263,8 @@ test("computeJobCost: profit subtracts the projected parts figure and exposes it
   });
   const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
   assert.equal(c.partsProjected, 170_000);
-  // x = PM 10% + Mfg 10% of sales = 200k; y = 170k
-  assert.equal(c.profit, 1_000_000 - 200_000 - 170_000);
+  // x = (PM 10% + Mfg 10% of sales = 200k) x 0.8 = 160k; y = 170k
+  assert.equal(c.profit, 1_000_000 - 160_000 - 170_000);
   // The columns keep their honest meanings: Purchased is still commitment.
   assert.equal(c.partCost, 150_000);
   assert.equal(c.partInvoiced, 100_000);

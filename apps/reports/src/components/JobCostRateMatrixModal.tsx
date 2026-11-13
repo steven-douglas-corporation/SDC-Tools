@@ -130,7 +130,7 @@ export function JobCostRateMatrixModal({
     >
       <div ref={dialogRef} className="max-h-[calc(var(--app-vh)_*_0.85)] w-full max-w-2xl overflow-auto rounded-xl border border-sdc-border bg-white p-5 shadow-lg">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-heading text-base font-semibold text-sdc-navy">Rate Matrix — rates by year</h2>
+          <h2 className="font-heading text-base font-semibold text-sdc-navy">Rate Matrix — Actual Values by Section</h2>
           <button className="text-2xl leading-none text-sdc-gray-400 hover:text-sdc-navy" aria-label="Close" onClick={requestClose}>×</button>
         </div>
 
