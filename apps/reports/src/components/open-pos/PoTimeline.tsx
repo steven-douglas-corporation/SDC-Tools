@@ -129,6 +129,7 @@ export function PoTimeline({
   emptyText,
   dotsBy,
   requiredState,
+  controls,
 }: {
   rows: TimelineRow[];
   asOf: string;
@@ -136,6 +137,8 @@ export function PoTimeline({
   emptyText: string;
   dotsBy: DotsBy;
   requiredState: RequiredState;
+  /** The page's own controls for this view (group order, dot colour), shown in the timeline's bar. */
+  controls?: ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   // Zoom (weeks shown) and pan (weeks from this Monday). Calendar weeks either way.
@@ -288,6 +291,12 @@ export function PoTimeline({
         <button type="button" onClick={() => setCollapsed(new Set(rows.map((r) => r.key)))} title="One row of dots per group" className={`${ctl} ${TOOLBAR_BTN_NEUTRAL}`}>
           Collapse all
         </button>
+        {controls && (
+          <>
+            <span aria-hidden className="hidden h-6 w-px bg-sdc-border sm:block" />
+            <span className="flex flex-wrap items-center gap-x-4 gap-y-2">{controls}</span>
+          </>
+        )}
         <span className="ml-auto flex items-center gap-1" role="group" aria-label="Move the weeks shown">
           <button type="button" onClick={() => setOffset((o) => o - Math.max(1, Math.floor(weeks / 4)))} title="Earlier weeks (or drag the timeline to the right)" aria-label="Earlier weeks" className={`${ctl} ${TOOLBAR_BTN_NEUTRAL}`}>
             ◂

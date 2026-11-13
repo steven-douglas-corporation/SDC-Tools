@@ -7408,3 +7408,41 @@ scroll inside under a sticky week header. Measured on screen and converted to CS
 app's zoom makes the two differ), re-measured on resize and when the content around it
 changes, with one pass that trims leftover overflow (the page's own bottom padding). Never
 under 360px: on a window too short for that, the page scrolls a little instead.
+
+
+## 92. Open POs: Filter, View and Group by as separate controls; full-height cards in columns (2026-11-13)
+
+Asked for: it wasn't clear what each button on the page did. "By project / By supplier"
+sat in one row with "Timeline" and "All POs" (two groupings and two views as four
+alternatives); "Only partially received" was a filter beside them while the five totals
+above were filters too; the timeline had its own "Rows: Projects / Suppliers", the same
+choice under another name; and one "Sort" menu did not say whether it moved the cards or
+the POs in them.
+
+Now three choices, each with its own labelled control:
+- Filter (which POs): the five totals and "Only partially received" under one "Filter"
+  label, one line saying what is showing ("Showing 29 POs on 6 jobs: Late · 19 other open
+  POs hidden") and one "Clear filters".
+- View (how they are drawn): Cards / Timeline / Table.
+- Group by (what a card or timeline group is): Project / Supplier. One switch for Cards and
+  the Timeline, replacing the timeline's "Rows". Not shown for the Table, which is one flat
+  list of POs.
+
+Sorting sits in the bar of the view it sorts. Cards: "N project cards · Order cards by",
+then, after a divider, "Inside each card · Order POs by" with a button naming the direction
+in words ("Soonest first" / "Latest first"), kept in step with a click on a column header
+(one state), and "Split by supplier" (project cards only; it used to read "Group by
+supplier", which now means something else). Timeline: "Order projects by" and "Dot colour"
+moved into the timeline's own bar (PoTimeline `controls`).
+
+Cards show every PO (ListCard `fullHeight`: no scrolling list inside) and run down columns,
+continuing at the top of the next (ListCardGrid `flow="columns"`), so cards of different
+heights leave no gaps. Not CSS columns, which fill one column after another and leave the
+last ones empty when there are few cards (six cards in four columns: 2, 2, 2 and a blank):
+lib/column-flow.ts splitInOrder cuts the ordered cards so the tallest column is as short as
+it can be and every column gets a card (2, 2, 1, 1). The column count comes from the
+container's width, measured before paint; on the server CSS columns stand in. Job Details'
+card view passes neither prop and is unchanged.
+
+The two-or-three-way switch is Job Details' `Segmented`, moved to components/ui/Segmented
+(with hover text and aria-pressed added) so both pages draw the same control.
