@@ -258,9 +258,10 @@ const fmtPct = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);
 // running job (blue). A pill, not plain text, so status reads at a glance in
 // a column that's otherwise all numbers.
 function statusTone(status: string): string {
-  if (status === "Complete") return "bg-sdc-green-bg text-sdc-green-text";
-  if (status === "HeadStart") return "bg-sdc-yellow-bg text-sdc-yellow-text";
-  return "bg-sdc-blue-light text-sdc-blue-dark";
+  // Plain coloured text, no pill (2026-11-13): Active/other blue, Complete green, HeadStart amber.
+  if (status === "Complete") return "text-sdc-green-text";
+  if (status === "HeadStart") return "text-sdc-yellow-text";
+  return "text-sdc-blue-dark";
 }
 
 // One frozen pane: Job Id + Job Name. Status and Customer stay in the normal
@@ -1150,7 +1151,7 @@ export function JobCostExplorer({
            out on its own terms. The min() keeps today's safe, viewport-relative
            behavior as the FLOOR on a normal screen, while capping at 40 rows'
            worth on any screen tall enough to otherwise show more. */
-        <div data-scroll-key="profitability-grid" className={`${GRID_SCROLLER} rounded-xl max-h-[min(87.5rem,calc(var(--app-vh)_-_11rem))]`}>
+        <div data-scroll-key="profitability-grid" className={`${GRID_SCROLLER} max-h-[min(87.5rem,calc(var(--app-vh)_-_11rem))]`}>
           {/* Still not TABLE_GRID (2026-08-12): that token draws a uniform
               #808080 line around every cell, which is the right call for the
               Projects/Monthly ETC grids (people EDIT cells there, and a
@@ -1194,11 +1195,11 @@ export function JobCostExplorer({
                     <th
                       key={i}
                       colSpan={b.span}
-                      className={`px-2 py-0.5 text-center text-label font-semibold uppercase tracking-wider ${meta.band} ${meta.text} ${
-                        b.frozen ? "frozen-col frozen-col-last sticky left-0 z-10" : ""
+                      className={`px-2 py-0.5 text-center text-label font-semibold uppercase tracking-wider ${b.group === "identity" ? "bg-white" : meta.band} ${meta.text} ${
+                        b.frozen ? "frozen-col sticky left-0 z-10" : ""
                       } ${isLastBand ? "" : "border-r border-sdc-border"}`}
                     >
-                      {repeatsPrev ? "" : meta.label}
+                      {repeatsPrev || b.group === "identity" ? "" : meta.label}
                     </th>
                   );
                 })}
@@ -1211,7 +1212,7 @@ export function JobCostExplorer({
                   align="left"
                   sort={sortState}
                   onSort={toggleSort}
-                  className={`frozen-col sticky left-0 z-10 bg-sdc-gray-100 px-2 py-1 align-bottom ${JOB_ID_COL_W} ${COL_BORDER_SOFT}`}
+                  className={`frozen-col sticky left-0 z-10 bg-white px-2 py-1 align-bottom ${JOB_ID_COL_W} ${COL_BORDER_SOFT}`}
                 />
                 <SortableTh
                   label="Job Name"
@@ -1220,7 +1221,7 @@ export function JobCostExplorer({
                   align="left"
                   sort={sortState}
                   onSort={toggleSort}
-                  className={`frozen-col frozen-col-last sticky ${JOB_NAME_LEFT} z-10 border-r border-sdc-border bg-sdc-gray-100 px-2 py-1 align-bottom`}
+                  className={`frozen-col sticky ${JOB_NAME_LEFT} z-10 border-r border-sdc-border bg-white px-2 py-1 align-bottom`}
                   style={jobNameStyle}
                 >
                   <ColResizeHandle label="Job Name" onResize={(w) => resizeCol("jobName", w)} onCommit={commitColW} onReset={() => resetCol("jobName")} min={120} max={720} />
@@ -1282,8 +1283,8 @@ export function JobCostExplorer({
                 // opaque for the two frozen cells, which must stay solid on
                 // every axis of scroll or the columns sliding underneath them
                 // would show through (§ frozen-col doc comment, globals.css).
-                const zebra = i % 2 === 1 ? "bg-sdc-gray-50/60" : "";
-                const zebraFrozen = i % 2 === 1 ? "bg-sdc-gray-50" : "bg-white";
+                const zebra = i % 2 === 1 ? "bg-sdc-gray-50 group-hover:bg-sdc-blue-light" : "bg-white group-hover:bg-sdc-blue-light";
+                const zebraFrozen = zebra; // identical fill for pinned and scrolling cells, so a row reads as one band
                 return (
                   <tr key={r.jobId} className="group motion-interactive hover:bg-sdc-blue-light/40">
                     <td className={`frozen-col sticky left-0 z-10 border-b border-sdc-border-soft px-2 py-1.5 text-left align-middle ${JOB_ID_COL_W} ${COL_BORDER_SOFT} ${zebraFrozen} group-hover:bg-sdc-blue-light`}>
@@ -1299,7 +1300,7 @@ export function JobCostExplorer({
                       )}
                     </td>
                     <td
-                      className={`frozen-col frozen-col-last sticky ${JOB_NAME_LEFT} z-10 truncate border-b border-r border-b-sdc-border-soft border-r-sdc-border px-2 py-1.5 text-left align-middle ${zebraFrozen} group-hover:bg-sdc-blue-light`}
+                      className={`frozen-col sticky ${JOB_NAME_LEFT} z-10 truncate border-b border-r border-b-sdc-border-soft border-r-sdc-border px-2 py-1.5 text-left align-middle ${zebraFrozen} group-hover:bg-sdc-blue-light`}
                       style={jobNameStyle}
                     >
                       <Link href={`/job-hours?jobs=${r.jobId}`} className="hover:underline" title={r.jobName || "Open in Job Details"}>
@@ -1319,7 +1320,7 @@ export function JobCostExplorer({
                       <td className={`whitespace-nowrap px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("jobType")} ${zebra}`}>{r.jobType || "—"}</td>
                     )}
                     <td className={`whitespace-nowrap px-2 py-1.5 text-left align-middle border-b border-sdc-border-soft ${vBorder("status")} ${zebra}`}>
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-label font-semibold ${statusTone(r.status)}`}>{r.status}</span>
+                      <span className={statusTone(r.status)}>{r.status}</span>
                     </td>
                     {!hiddenCols.has("salesPrice") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("salesPrice")} ${zebra}`}>{fmtMoney(r.salesPrice)}</td>}
                     {!hiddenCols.has("startDate") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("startDate")} ${zebra}`}>{r.startDate ?? "—"}</td>}
