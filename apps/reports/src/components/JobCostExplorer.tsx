@@ -617,6 +617,8 @@ export function JobCostExplorer({
       if (av == null) return 1;
       if (bv == null) return -1;
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * sortDir;
+      // Job Ids sort by number (1101 before 10001), not as text; other text columns stay as before.
+      if (sortKey === "jobId") return String(av).localeCompare(String(bv), undefined, { numeric: true }) * sortDir;
       return String(av).localeCompare(String(bv)) * sortDir;
     });
     return out;
