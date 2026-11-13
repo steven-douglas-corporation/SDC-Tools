@@ -97,6 +97,35 @@ test("charge lines never keep a PO open on delivery; a part line does", () => {
   assert.deepEqual(r.rows.map((x) => x.poNumber), ["PART"]);
 });
 
+test("a PO whose parts have all arrived is not late on a freight line's date", () => {
+  // Parts here; the freight line is never 'received' and its date passed long ago. Still
+  // open on money (nothing invoiced yet), so it is listed: as received, not as late.
+  const lines = new Map([
+    [
+      "1101",
+      [
+        line({ po: "HERE", total: 100, quantity: 10, unitPrice: 10, receivedQty: 10, requiredDate: "2026-10-01", partNumber: "ABC-1" }),
+        line({ po: "HERE", total: 40, receivedQty: 0, requiredDate: "2026-10-01", partNumber: "Shipping" }),
+      ],
+    ],
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY);
+  const row = r.rows[0];
+  assert.equal(row.status, "awaiting-invoice");
+  assert.equal(row.linesPastDue, 0);
+  assert.equal(row.nextDue, null);
+  assert.equal(row.lateSince, null);
+  assert.deepEqual(
+    { ordered: row.money.ordered, notReceived: row.money.notReceived, late: row.money.late },
+    { ordered: 100, notReceived: 0, late: 0 },
+  );
+  assert.equal(r.weeks.reduce((s, w) => s + w.notReceived, 0), 0);
+  // Off the timeline: nothing left to arrive.
+  assert.equal(poDates(row.items).outstanding, false);
+  assert.equal(nextUpcoming(row.items, "2026-09-01"), null);
+  assert.equal(r.jobs[0].awaitingDeliveryValue, 0);
+});
+
 test("invoiced, not received is the posted money beyond what arrived, capped at what is still to come", () => {
   // 10 × $10, 4 here ($40). $80 posted: $40 of it is for parts not here yet.
   assert.equal(moneyOf([line({ po: "I", total: 100, quantity: 10, unitPrice: 10, receivedQty: 4, posted: 80 })], TODAY).invoicedNotReceived, 40);

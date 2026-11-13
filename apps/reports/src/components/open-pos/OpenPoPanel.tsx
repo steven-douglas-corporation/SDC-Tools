@@ -156,9 +156,17 @@ export function OpenPoPanel({
                     </td>
                     <td
                       className={`whitespace-nowrap px-2 py-1.5 font-mono text-label ${late ? "font-semibold text-sdc-red-text" : "text-sdc-gray-600"}`}
-                      title={repromised ? `Re-promised by the vendor. Originally due ${fmtDate(l.original)}` : outstanding(l) <= 0 ? "Everything on this line has arrived" : undefined}
+                      title={
+                        isChargeLine(l)
+                          ? "A charge, not a part: nothing to deliver"
+                          : repromised
+                            ? `Re-promised by the vendor. Originally due ${fmtDate(l.original)}`
+                            : outstanding(l) <= 0
+                              ? "Everything on this line has arrived"
+                              : undefined
+                      }
                     >
-                      {l.quantity <= 0 ? "–" : outstanding(l) <= 0 ? "Here" : l.expected ? fmtDate(l.expected) : "No date"}
+                      {l.quantity <= 0 || isChargeLine(l) ? "–" : outstanding(l) <= 0 ? "Here" : l.expected ? fmtDate(l.expected) : "No date"}
                       {repromised && <span className="text-sdc-blue"> ↻</span>}
                     </td>
                     <td className="px-2 py-1.5 text-right font-mono text-label tabular-nums text-sdc-navy" title={usdExact(l.leftToInvoice)}>
@@ -199,8 +207,8 @@ export function OpenPoPanel({
   );
 }
 
-/** Quantity still to arrive on a line (0 when receipts are unknown or it is a credit). */
+/** Quantity still to arrive on a line (0 when receipts are unknown, or it is a credit or a charge). */
 function outstanding(l: OpenPoLine): number {
-  if (l.receivedQty == null || l.quantity <= 0) return 0;
+  if (l.receivedQty == null || l.quantity <= 0 || isChargeLine(l)) return 0;
   return Math.max(0, l.quantity - l.receivedQty);
 }
