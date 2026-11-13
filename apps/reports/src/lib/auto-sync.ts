@@ -509,6 +509,37 @@ export async function runAllSyncs(
         );
       });
 
+      // ── Did the warehouse load run, and did the hours move? (2026-11-13) ──────
+      //
+      // Runs after hours_actual so it compares against the date that step just
+      // stamped. A problem is THROWN, so `step` records it as "Failed: …" on this
+      // source's row: the Data Sync card turns red, the hours pages' banner shows the
+      // reason, and nothing new had to learn a status prefix. Before throwing, the
+      // row's refreshedThrough is set to the last successful load, so the card says
+      // how old the data really is rather than when this check last ran.
+      await step("warehouse_load", labelFor("warehouse_load"), false, async () => {
+        const { warehouseConfigured } = await import("@/lib/data-warehouse");
+        if (!warehouseConfigured()) return null;
+        const { readWarehouseJobHealth, notifyWarehouseLoad } = await import("@/lib/warehouse-health");
+        const { evaluateWarehouseLoad } = await import("@/lib/warehouse-load-check");
+        const jobs = await readWarehouseJobHealth();
+        if (jobs.length === 0) {
+          return { skip: "No warehouse jobs are registered yet: apply tools/data-warehouse/sql/07_monitoring.sql." };
+        }
+        const hours = await prisma.powerBiFreshness.findUnique({
+          where: { source: "hours_actual" },
+          select: { refreshedThrough: true },
+        });
+        const check = evaluateWarehouseLoad({
+          jobs,
+          hoursThrough: hours?.refreshedThrough ? hours.refreshedThrough.toISOString().slice(0, 10) : null,
+        });
+        await notifyWarehouseLoad(check);
+        if (check.lastSucceededAt) await recordSyncSuccess("warehouse_load", check.lastSucceededAt);
+        if (!check.ok) throw new Error(check.problems.join(" "));
+        return check.summary;
+      });
+
       // ── Undefined Hours, as its own stage (§42.10, §42.14 stage 10) ───────────
       //
       // Writes the per-month totals the KPI card reads AND the punch-level rows the

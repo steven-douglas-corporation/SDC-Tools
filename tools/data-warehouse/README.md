@@ -15,11 +15,13 @@ depends on each: [DECOMMISSIONING.md](DECOMMISSIONING.md).
 
 Most urgent first.
 
-1. **Done 2026-10-04:** Postgres runs as the `DataWarehousePostgres` Windows service
-   (`NetworkService`, automatic start, logs in `pgdata\log`), and the load is scheduled daily
-   at 06:30 (Task Scheduler `\DataWarehouse\Paylocity ingest`, runs as `jculp`, test run
-   succeeded as batch 7). The task stores Jon's Windows password: if he changes it, re-register
-   the task. Moving it to a dedicated service account is the lasting fix.
+1. **Done 2026-10-04, account changed 2026-11-13:** Postgres runs as the `DataWarehousePostgres`
+   Windows service (`NetworkService`, automatic start, logs in `pgdata\log`), and the load is
+   scheduled daily at 05:30 (Task Scheduler `\DataWarehouse\Paylocity ingest`). It ran as `jculp`
+   until 11/9, when Jon changed his Windows password and the task could no longer start: no
+   load on 11/10-11/12, and nothing said so. It now runs as the local service account
+   `SERVER-APP1\svc-datawarehouse` (see "The service account" below), and a missed load is
+   caught by `sql/07_monitoring.sql` (see "Monitoring").
 2. **Updater fix, PR #82.** Without it, the next dependency change (e.g. a Dependabot merge)
    breaks the production build again. After merging: `pm2 restart sdc-updater-hub`.
 3. **Firewall rule** for 5432 (below). The domain profile already allows inbound, so this is
@@ -37,6 +39,8 @@ sql/      01_schema.sql             tracking tables ("Integration") and raw laye
           03_dimensions.sql         "Dimension"."Date", "Dimension"."Employee" and its load
           04_facts.sql              "Fact"."JobHours", its load, and "Integration"."RefreshWarehouse"()
           05_access.sql             read-only login for the reports app (reports_app)
+          06_people.sql             people's Windows sign-in roles
+          07_monitoring.sql         expected jobs, holidays, "Integration"."JobHealth" (see Monitoring)
           (all safe to re-run; apply in order)
 checks/   read-only queries to run after a change or when something looks off (temp_punches.sql)
 ingest/   paylocity_ingest.py, its settings and tests
@@ -144,8 +148,9 @@ in SQL too (`"DataWarehouse"`), but not in connection strings.
 | PostgreSQL 17 | `D:\DataWarehouse\pgsql` (binaries), `D:\DataWarehouse\pgdata` (data), port 5432 on `localhost` and `10.0.0.7` |
 | Deployed loader | `D:\DataWarehouse\ingest` |
 | Files | `D:\DataWarehouse\paylocity\incoming` and `\archive\yyyy\mm\<folder>` |
-| Logs | `D:\DataWarehouse\logs` |
-| Passwords | Windows Credential Manager of the account running the job: `datawarehouse-postgres` (logins `postgres`, `dw_loader`) and `datawarehouse-paylocity-sftp` (login `paylocity`) |
+| Logs | `D:\DataWarehouse\logs`: `paylocity_ingest.log` (each scheduled run appends its output) and Postgres's own logs |
+| Job account | `SERVER-APP1\svc-datawarehouse` (local, password never expires; password in the team password manager) |
+| Passwords | Windows Credential Manager of `svc-datawarehouse`: `datawarehouse-postgres` (login `dw_loader`) and `datawarehouse-paylocity-sftp` (login `paylocity`). Masters in the team password manager |
 
 ## Access
 
@@ -279,18 +284,86 @@ D:\DataWarehouse\pgsql\bin\pg_ctl.exe register -N DataWarehousePostgres -U "NT A
 Start-Service DataWarehousePostgres
 ```
 
-Then schedule the daily run (06:30, after the last Paylocity export lands at ~06:01).
-It runs as the account whose Credential Manager holds the passwords:
+Then schedule the daily run. It runs as `svc-datawarehouse` (below), never as a person:
+a person's password changes, and the task silently stops starting.
 
 ```powershell
-$action  = New-ScheduledTaskAction -Execute "C:\Python314\python.exe" -Argument 'D:\DataWarehouse\ingest\paylocity_ingest.py --settings D:\DataWarehouse\ingest\settings.toml' -WorkingDirectory D:\DataWarehouse\ingest
-$trigger = New-ScheduledTaskTrigger -Daily -At 6:30am
-Register-ScheduledTask -TaskPath "\DataWarehouse\" -TaskName "Paylocity ingest" -Action $action -Trigger $trigger -User "STEVENDOUGLAS\jculp" -Password (Read-Host "Password for STEVENDOUGLAS\jculp")
+$action  = New-ScheduledTaskAction -Execute "C:\Windows\System32\cmd.exe" -Argument '/c C:\Python314\python.exe D:\DataWarehouse\ingest\paylocity_ingest.py --settings D:\DataWarehouse\ingest\settings.toml >> D:\DataWarehouse\logs\paylocity_ingest.log 2>&1' -WorkingDirectory D:\DataWarehouse\ingest
+$trigger = New-ScheduledTaskTrigger -Daily -At 5:30am
+Register-ScheduledTask -TaskPath "\DataWarehouse\" -TaskName "Paylocity ingest" -Action $action -Trigger $trigger -User "SERVER-APP1\svc-datawarehouse" -Password (Read-Host "Password for svc-datawarehouse")
 ```
 
-Later, move the task to a service account: store both passwords in its Credential
-Manager (`python -m keyring set <service> <login>` while logged in as it) and
-re-register the task as that account.
+The script prints its log to the console, so the `cmd /c … >> …log 2>&1` wrapper is what
+keeps it: without it a failed run leaves only "0x1" in Task Scheduler.
+
+### The service account (set up 2026-11-13)
+
+A **local** account is enough: SFTP and Postgres both sign in with stored passwords,
+and every path is on `D:`. In an admin PowerShell on SERVER-APP1:
+
+```powershell
+$pw = Read-Host -AsSecureString "Password"
+New-LocalUser -Name svc-datawarehouse -Password $pw -FullName "DataWarehouse ingest service" -Description "Runs the DataWarehouse Paylocity ingest task" -PasswordNeverExpires -AccountNeverExpires
+icacls D:\DataWarehouse /grant "svc-datawarehouse:(OI)(CI)M"
+```
+
+**Python packages must be installed for all users.** A plain `pip install` as yourself
+puts them in your own profile, which the service account can't see ("No module named
+keyring"). In the admin PowerShell, ignore your user folder so pip doesn't report
+"already satisfied":
+
+```powershell
+$env:PYTHONNOUSERSITE = "1"
+C:\Python314\python.exe -m pip install -r D:\DataWarehouse\ingest\requirements.txt
+```
+
+**Store the passwords with `cmdkey`, in a window running as the account:**
+
+```
+runas /user:SERVER-APP1\svc-datawarehouse cmd
+cmdkey /generic:datawarehouse-paylocity-sftp /user:paylocity /pass
+cmdkey /generic:datawarehouse-postgres /user:dw_loader /pass
+```
+
+Not `python -m keyring set`: under `runas` it saved them for that window's session
+only. The window's own test runs worked, and the scheduled run failed with "No SFTP
+password stored". `cmdkey /list` must show both with no "Saved for this logon only".
+The prompts ignore pasting, so type the passwords. Check from a **new** `runas` window
+(prints lengths, not passwords):
+
+```
+C:\Python314\python.exe -c "import keyring; print(len(keyring.get_password('datawarehouse-paylocity-sftp','paylocity') or ''), len(keyring.get_password('datawarehouse-postgres','dw_loader') or ''))"
+```
+
+Then `--dry-run` (signs in to SFTP and lists files, touches nothing), then the task's
+**Run**, and `"Integration"."Batch"` should get a `succeeded` row.
+
+## Monitoring (2026-11-13)
+
+`sql/07_monitoring.sql` answers "is a load **missing**?". A task that never starts
+writes no failed row, so checking for failures alone saw nothing for three days.
+
+- `"Integration"."ExpectedJob"`: one row per job to watch. `"JobName"` is the tag the job
+  writes into `"Integration"."Batch"`, and `"DueBy"` is the Eastern time it must have
+  succeeded by on business days. To watch a new job, insert a row.
+- `"Dimension"."Date"."IsHoliday"`: company holidays, so the day after one isn't flagged
+  (nobody punched, so the hours legitimately stop the day before). Mark each year's:
+  `UPDATE "Dimension"."Date" SET "IsHoliday" = true, "HolidayName" = 'Thanksgiving' WHERE "Date" = '2026-11-26';`
+- `"Integration"."JobHealth"`: per job, the last run, the last success, the latest
+  business-day deadline (`"DueSince"`), whether it was missed (`"IsOverdue"`), and the day
+  the data should reach (`"ExpectedDataThrough"`).
+
+The reports app reads `JobHealth` every hour (source `warehouse_load`). When a job is
+overdue, or the hours are behind `"ExpectedDataThrough"`, the Dashboard's Data Sync card
+turns red, Job Details and Monthly ETC show a banner with the reason, and, if
+`DATA_ALERT_TEAMS_WEBHOOK_URL` is set in the app's `.env`, Teams gets one post per
+business day until it clears, then a "current again" post.
+
+Check by hand:
+
+```sql
+SELECT * FROM "Integration"."JobHealth";
+```
 
 ## Day to day
 
