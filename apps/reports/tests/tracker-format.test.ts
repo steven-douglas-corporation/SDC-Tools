@@ -75,3 +75,15 @@ test("a parent's own hours are compared with the cards under it, in words", asyn
   );
   assert.match(uncountedComparison(60, 6, 1), /1 of them has no estimate yet/);
 });
+
+test("what a forecast leaves out is said in whole phrases, without counting a card twice", async () => {
+  const { leftOutOfForecast } = await import("../src/modules/tracker/components/format");
+  assert.deepEqual(leftOutOfForecast(0, 0, 0), []);
+  assert.deepEqual(leftOutOfForecast(1, 1, 0), ["1 card has no forecast date: it has no estimate"]);
+  assert.deepEqual(leftOutOfForecast(3, 3, 0), ["3 cards have no forecast date: none of them has an estimate"]);
+  assert.deepEqual(leftOutOfForecast(3, 1, 0), ["3 cards have no forecast date, 1 for lack of an estimate"]);
+  assert.deepEqual(leftOutOfForecast(2, 0, 1), [
+    "2 cards have no forecast date",
+    "1 card has hours left that nobody has confirmed lately",
+  ]);
+});

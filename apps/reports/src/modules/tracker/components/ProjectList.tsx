@@ -15,7 +15,8 @@ import {
 import { EmptyState } from "@/components/ui/EmptyState";
 import { createProjectAction, setProjectRankAction, setProjectStateAction } from "../actions";
 import type { ProjectListItem } from "../service/queries";
-import { hours, shortDate } from "./format";
+import { hours, leftOutOfForecast, shortDate } from "./format";
+import { P80Help } from "./HelpTip";
 
 // The tracker's front page: every project the person can see, in stack-rank order, with the
 // forecast beside the target and the work the forecast leaves out beside both.
@@ -206,18 +207,18 @@ export function ProjectList({
                 <th className="px-3 py-2.5">Remaining</th>
                 <th className="px-3 py-2.5">Target</th>
                 <th className="px-3 py-2.5">Forecast</th>
-                <th className="px-3 py-2.5">P80</th>
+                <th className="px-3 py-2.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    P80 <P80Help />
+                  </span>
+                </th>
                 <th className="px-3 py-2.5">Against target</th>
                 <th className="px-3 py-2.5 text-left">Left out of the forecast</th>
               </tr>
             </thead>
             <tbody>
               {projects.map((p) => {
-                const leftOut = [
-                  p.unscheduledTasks > 0 && `${p.unscheduledTasks} not forecast`,
-                  p.unestimatedTasks > 0 && `${p.unestimatedTasks} with no estimate`,
-                  p.staleTasks > 0 && `${p.staleTasks} with stale remaining effort`,
-                ].filter(Boolean);
+                const leftOut = leftOutOfForecast(p.unscheduledTasks, p.unestimatedTasks, p.staleTasks);
                 return (
                   <tr key={p.id} className={`border-b border-sdc-border-soft text-center ${TABLE_ROW_HOVER}`}>
                     <td className="px-3 py-2.5 tabular-nums">
@@ -247,7 +248,7 @@ export function ProjectList({
                       <Risk p={p} />
                     </td>
                     <td className="px-3 py-2.5 text-left text-xs text-sdc-gray-600">
-                      {leftOut.length ? leftOut.join(" · ") : "Nothing"}
+                      {leftOut.length ? leftOut.map((line) => <div key={line}>{line}</div>) : "Nothing"}
                     </td>
                   </tr>
                 );

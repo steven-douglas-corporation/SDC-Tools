@@ -12,6 +12,7 @@ import { listMembers } from "@/modules/tracker/service/people";
 import { Board } from "@/modules/tracker/components/Board";
 import { Members } from "@/modules/tracker/components/Members";
 import { ProjectViews } from "@/modules/tracker/components/ProjectViews";
+import { P80Help } from "@/modules/tracker/components/HelpTip";
 import { hours, shortDate } from "@/modules/tracker/components/format";
 
 const plural = (label: string) => (label.endsWith("y") ? `${label.slice(0, -1)}ies` : `${label}s`);
@@ -72,7 +73,10 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
       <dl className="mb-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
         {facts.map(([label, value]) => (
           <div key={label}>
-            <dt className="text-xs uppercase tracking-wider text-sdc-gray-600">{label}</dt>
+            <dt className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-sdc-gray-600">
+              {label}
+              {label === "P80" && <P80Help />}
+            </dt>
             <dd className="font-semibold text-sdc-navy">{value}</dd>
           </div>
         ))}

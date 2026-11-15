@@ -40,6 +40,29 @@ export function uncountedComparison(own: number, under: number, unsized: number)
   return `The cards under it have ${hours(under)} left, ${compared}.${missing}`;
 }
 
+/**
+ * What a project's forecast leaves out, as short phrases. A card with no estimate is one of the
+ * cards with no forecast date, so it is given as the reason, not counted a second time.
+ */
+export function leftOutOfForecast(noDate: number, noEstimate: number, unconfirmed: number): string[] {
+  const out: string[] = [];
+  if (noDate > 0) {
+    const why =
+      noEstimate <= 0
+        ? ""
+        : noEstimate >= noDate
+          ? noDate === 1
+            ? ": it has no estimate"
+            : ": none of them has an estimate"
+          : `, ${noEstimate} for lack of an estimate`;
+    out.push(`${noDate} card${noDate === 1 ? " has" : "s have"} no forecast date${why}`);
+  }
+  if (unconfirmed > 0) {
+    out.push(`${unconfirmed} card${unconfirmed === 1 ? " has" : "s have"} hours left that nobody has confirmed lately`);
+  }
+  return out;
+}
+
 type ReasonInput = Pick<
   BoardTask,
   | "driver"
