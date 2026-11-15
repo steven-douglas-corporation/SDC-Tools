@@ -6,8 +6,8 @@ and what is still open. Uncertain items are tracked in the SDC IT RAID Log workb
 (`SDC_IT_RAID_Log.xlsx`, kept outside this repo), under Scope = "Project Tracker". IDs below
 such as D-08 or R-06 refer to rows in that workbook.
 
-Status: draft, 2026-11-14. The schema, the forecast engine and the service layer are built and
-`apps/tracker`. There is no service, API or UI yet, and nothing is deployed. This work moves into `apps/reports` as the first module of the one SDC app (ADR 0006).
+Status: draft, updated 2026-11-15. The schema, the forecast engine, the service layer and a first
+set of screens are built and tested as a module of SDC Reports (`apps/reports/src/modules/tracker`). Nothing is deployed. In a running copy the screens are visible only to the ELT role.
 
 ## Decided
 
@@ -114,17 +114,19 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 37 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its 45 tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
-| Piece                     | Where, under `apps/reports`              |
-| ------------------------- | ---------------------------------------- |
-| Schema and database roles | `db/tracker/migrations/`                 |
-| Forecast engine           | `src/modules/tracker/forecast/engine.ts` |
-| Service layer             | `src/modules/tracker/service/`           |
-| Database connection       | `src/modules/tracker/db.ts`              |
-| Forecast job              | `scripts/tracker/run-forecast.ts`        |
-| Tests                     | `tests/tracker-*.test.ts`                |
+| Piece                     | Where, under `apps/reports`                                                 |
+| ------------------------- | --------------------------------------------------------------------------- |
+| Schema and database roles | `db/tracker/migrations/`                                                    |
+| Forecast engine           | `src/modules/tracker/forecast/engine.ts`                                    |
+| Service layer             | `src/modules/tracker/service/`                                              |
+| Database connection       | `src/modules/tracker/db.ts`                                                 |
+| Forecast job              | `scripts/tracker/run-forecast.ts`                                           |
+| Screen actions            | `src/modules/tracker/actions.ts`                                            |
+| Screens                   | `src/app/(app)/tracker/` (thin pages) and `src/modules/tracker/components/` |
+| Tests                     | `tests/tracker-*.test.ts`                                                   |
 
 ### Schema
 
@@ -189,10 +191,31 @@ one transaction.
   project that is on hold or has no stack rank is reported with that reason. A quick run leaves
   the last simulation's P50 and P80 in place.
 
+### Screens
+
+Reached from a "Project Tracker" entry in the sidebar, which only roles holding `tracker:view`
+see. Both permissions ship off for every role, so on a fresh deploy that is ELT alone.
+
+- **Project list** (`/tracker`): projects in stack-rank order with the target, the forecast, P80,
+  whether it is at risk, and the work the forecast leaves out. New projects are created here;
+  ELT sets the stack rank and a manager makes a ranked project active.
+- **Board** (`/tracker/KEY`): one column per status. A card shows who has it, the hours left, the
+  due date, the forecast dates and one sentence on why it starts when it does, or why it is not
+  forecast. Tasks are added at the top, moved with a status menu on the card, and edited in place.
+  Moving a card to a blocked status asks what is blocking it and when it is expected to clear.
+- After every change the quick forecast is re-run, so the dates on screen are never older than
+  the last edit. The simulation is never run from a screen.
+- A quick run drops the last simulation's P50 and P80 when they can no longer be true (made for
+  another day, or earlier than the new forecast date). Risk is then judged on the plain forecast
+  until the next simulation.
+- This app's users are copied into the tracker's list of people, so anyone can be assigned work
+  before they have opened the tracker.
+
 ### Not built, and known limits
 
-- No screens and no API routes, so nobody can use it yet. No permission keys have been added to
-  Reports for it either.
+- No API routes yet, so AI tools and other systems cannot reach it. Cards are moved with a menu,
+  not by dragging. There is no screen yet for dependencies, members, time off, capacity, sprints,
+  role pools, a task's history or comments; the service supports the first two.
 - Run against a real server once, by hand (2026-11-15): the migrations, the service and the
   forecast job passed against PostgreSQL 16 in the dev Docker container, through the production
   driver and under the restricted logins. That check is not automated; the tests that run on
@@ -200,7 +223,6 @@ one transaction.
 - The forecast refuses to run if the global capacity default is missing. That run against a real
   server is what showed the need: without the row every person had zero hours and all work was
   reported as "no capacity".
-- A signed-in Reports user is not yet linked to a tracker person; `ensurePerson` exists for that.
 - A dependency on a parent task is ignored by the forecast. Only tasks that carry effort
   themselves are scheduled.
 - A failed forecast run leaves no record: the run row is rolled back with everything else.

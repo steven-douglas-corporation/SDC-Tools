@@ -459,6 +459,100 @@ test("forecast run: the spec's worked example, built through the service and rea
   assert.ok(b1After.p80, "P80 from the earlier simulation is still there");
 });
 
+test("forecast run: a quick run on a later day drops the old simulation's P80 instead of showing it stale", async () => {
+  const before = await rows<{ n: number }>(
+    `SELECT count(*)::int AS n FROM tracker.task_forecast WHERE p80_finish IS NOT NULL`,
+  );
+  assert.ok(before[0]!.n > 0, "the earlier simulation left P80 dates to drop");
+
+  await runForecast(db, { asOf: "2026-11-12", triggeredBy: "change" });
+  const tasks = await rows(
+    `SELECT 1 FROM tracker.task_forecast WHERE p80_finish IS NOT NULL OR simulation_run_id IS NOT NULL`,
+  );
+  assert.equal(tasks.length, 0);
+  const roll = await rows<{ p80: string | null; basis: string | null; at_risk: boolean | null }>(
+    `SELECT p80_finish::text AS p80, at_risk_basis AS basis, at_risk FROM tracker.project_rollup WHERE key IN ('ALPHA', 'BRAIN')`,
+  );
+  for (const r of roll) {
+    assert.equal(r.p80, null);
+    assert.equal(r.basis, "single schedule", "risk falls back to the plain forecast until the next simulation");
+    assert.equal(r.at_risk, false);
+  }
+});
+
+test("screens: a person sees only their projects, an admin sees all, and a board carries each task's forecast", async () => {
+  const { listProjects, getBoard } = await import("../src/modules/tracker/service/queries");
+  const { ensurePeople } = await import("../src/modules/tracker/service/projects");
+
+  const mine = await listProjects(db, cal);
+  assert.deepEqual(
+    mine.map((p) => p.key),
+    [],
+    "Cal is a member of nothing",
+  );
+  const all = await listProjects(db, { ...cal, admin: true });
+  assert.ok(all.length >= 3);
+  assert.deepEqual(
+    all.filter((p) => p.state === "active").map((p) => p.key),
+    ["ALPHA", "BRAIN"],
+    "open projects first, in rank order",
+  );
+  assert.ok(
+    all.every((p) => p.myRole === "manager"),
+    "an admin is a manager everywhere",
+  );
+
+  await refuses(() => getBoard(db, cal, "ALPHA"), "not_found");
+  await refuses(() => getBoard(db, ana, "NOPE"), "not_found");
+
+  const board = await getBoard(db, ana, "alpha");
+  assert.equal(board.project.key, "ALPHA");
+  assert.equal(board.project.myRole, "manager");
+  assert.deepEqual(
+    board.statuses.map((s) => s.category),
+    ["todo", "todo", "in_progress", "in_progress", "blocked", "done", "cancelled"],
+  );
+  assert.equal(board.forecastAsOf, "2026-11-12");
+  const a3 = board.tasks.find((t) => t.title === "A3")!;
+  assert.equal(a3.key, "ALPHA-3");
+  assert.equal(a3.driver, "predecessor");
+  assert.equal(a3.driverTaskKey, "ALPHA-2", "the reason names the task by its key, not its id");
+  assert.equal(a3.assigneeName, "Ana Lopez");
+  assert.equal(typeof a3.remainingHours, "number");
+  const a1 = board.tasks.find((t) => t.title === "A1")!;
+  assert.ok(a1.actualCompletionDate, "a finished task keeps its completion date");
+  assert.equal(a1.forecastFinish, null, "and has no forecast");
+  assert.deepEqual(board.buckets.map((b) => [b.label, b.hours]).slice(0, 2), [
+    ["Half a day or less", 3],
+    ["1 Day", 6],
+  ]);
+
+  // The app's users are copied in so they can be assigned work; names are corrected, nobody is removed.
+  const count = async () => Number((await rows<{ n: number }>(`SELECT count(*)::int AS n FROM tracker.person`))[0]!.n);
+  const start = await count();
+  await ensurePeople(db, [
+    { email: "New.Person@example.test", displayName: "New Person" },
+    { email: "ben@example.test", displayName: "Ben Renamed" },
+  ]);
+  assert.equal(await count(), start + 1);
+  const [ben2] = await rows<{ display_name: string }>(`SELECT display_name FROM tracker.person WHERE id = $1`, [
+    ben.personId,
+  ]);
+  assert.equal(ben2!.display_name, "Ben Renamed");
+});
+
+test("the app's all-access flag stands in for the tracker's admin role", async () => {
+  const p = await createProject(db, ana, { key: "ADMIN", name: "Admin flag" });
+  await refuses(() => setPortfolioRanks(db, cal, [{ projectId: p.id, rank: 77 }]), "forbidden");
+  await setPortfolioRanks(db, { ...cal, admin: true }, [{ projectId: p.id, rank: 77 }]);
+  const t = await createTask(
+    db,
+    { ...cal, admin: true },
+    { projectId: p.id, title: "by an admin who is not a member" },
+  );
+  assert.equal(t.key, "ADMIN-1");
+});
+
 test("forecast run: a missing global capacity default is an error, not a silent zero", async () => {
   // Last on purpose: it removes the row every other forecast test relies on.
   await pg.exec(`DELETE FROM tracker.capacity_setting WHERE scope = 'global'`);

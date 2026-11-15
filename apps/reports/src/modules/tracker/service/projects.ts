@@ -44,6 +44,30 @@ export async function ensurePerson(db: Database, input: { email: string; display
 }
 
 /**
+ * Makes sure each of these people has a tracker record, in one statement. Used to keep the
+ * tracker's list of people in step with the app's users, so anyone can be assigned work
+ * before they have opened the tracker themselves. Never removes or deactivates anyone.
+ */
+export async function ensurePeople(db: Database, people: { email: string; displayName: string }[]): Promise<void> {
+  const rows = people
+    .map((p) => ({
+      email: p.email.trim().toLowerCase(),
+      display_name: p.displayName.trim() || p.email.trim().toLowerCase(),
+    }))
+    .filter((p) => p.email);
+  if (rows.length === 0) return;
+  await db.transaction(async (tx) => {
+    await tx.query(
+      `INSERT INTO tracker.person (email, display_name)
+       SELECT x.email, x.display_name FROM jsonb_to_recordset($1::jsonb) AS x(email text, display_name text)
+       ON CONFLICT (email) DO UPDATE SET display_name = EXCLUDED.display_name
+         WHERE tracker.person.display_name IS DISTINCT FROM EXCLUDED.display_name`,
+      [JSON.stringify(rows)],
+    );
+  });
+}
+
+/**
  * Creates a project in the planned state with the default board columns, owned by the actor,
  * who becomes its first manager. It has no stack rank yet, so its work is not forecast until
  * the portfolio owner ranks it.

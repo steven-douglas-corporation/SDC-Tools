@@ -17,6 +17,13 @@ export interface Database {
 /** The person doing something. Every change is recorded against them. */
 export interface Actor {
   personId: number;
+  /**
+   * True when the app has already established that this person may do anything in the
+   * tracker (in this app: the ELT role). Set by the layer that knows the signed-in user,
+   * never from anything a browser sends. It stands in for the tracker's own admin role, so
+   * the two lists of "who is all-access" cannot drift apart.
+   */
+  admin?: boolean;
 }
 
 export type TrackerErrorCode = "not_found" | "forbidden" | "invalid" | "conflict";

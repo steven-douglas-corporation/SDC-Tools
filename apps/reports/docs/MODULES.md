@@ -11,11 +11,11 @@ are already working in that area.
 
 ```
 src/modules/<module>/
-  service/        the module's logic, and the only code that touches its tables
-  db.ts           the module's PostgreSQL connection (server-only)
-  actions.ts      "use server" entry points for the module's own screens
-  components/     the module's React components
-  types.ts        types shared across the module
+  service/          the module's logic, and the only code that touches its tables
+  db.ts             the module's PostgreSQL connection (server-only)
+  current-actor.ts  turns this app's signed-in user into the module's own record of a person
+  actions.ts        "use server" entry points for the module's own screens
+  components/       the module's React components
 
 src/app/(app)/<module>/     pages: thin, they call service functions to read
 src/app/api/<module>/       route handlers for AI tools and other systems
@@ -27,8 +27,10 @@ tests/<module>-*.test.ts    flat, like every other test here
 
 ## Rules
 
-**One write path.** Only files in `service/` import `db.ts`. Pages, actions, route handlers and
-components never run SQL against the module's tables.
+**One write path.** Only files in `service/` run SQL against the module's tables. Pages,
+actions and route handlers import `db.ts` for one purpose: to hand the module's database
+connection to a service function. They never query with it themselves, and components never
+see it at all.
 
 **Two doors, one room.** A server action and an API route are two ways into the same service
 function. Each checks permission and calls the service; neither holds business rules.
@@ -42,6 +44,10 @@ function. Each checks permission and calls the service; neither holds business r
   `requireApiPermission`. Every action and every route handler checks, reads included.
 - Access to one record, such as membership of a project, is checked inside the service function
   after the module permission.
+
+**All-access is decided in one place.** This app's ELT role is all-access. `current-actor.ts`
+passes that to the service as a flag on the acting person, set from the session and never from
+anything a browser sends, so a module does not keep a second list of who can do everything.
 
 **Hidden until ready.** A new module's permissions are seeded off for every role except its
 pilot users. With no permission there is no sidebar entry and no route.

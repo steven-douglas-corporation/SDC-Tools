@@ -90,6 +90,19 @@ export type Permission =
   | "users:manage"
   | "permissions:manage"
   | "tm:view"
+  // ── Project Tracker (2026-11-15) ──────────────────────────────────────────
+  //
+  // The first module added to this app (docs/MODULES.md). Both keys ship OFF for
+  // every role: only ELT sees the tracker, through its wildcard, until a pilot
+  // role is ticked on /admin/permissions. That is what "hidden until ready"
+  // means here — no sidebar entry and no route for anyone else.
+  //
+  // VIEW opens the tracker. EDIT is what lets someone create projects and tasks
+  // and move them. Inside the tracker a person also needs a role on the
+  // particular project (the module's own check); these two only decide who can
+  // reach it at all.
+  | "tracker:view"
+  | "tracker:edit"
   // ── Feedback (2026-09-17) ─────────────────────────────────────────────────
   //
   // SUBMIT is seeded ON for every role, and that is the point rather than an

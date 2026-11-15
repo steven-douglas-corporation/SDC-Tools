@@ -353,6 +353,33 @@ export async function runForecast(db: Database, options: ForecastRunOptions): Pr
           WHERE f.project_id = x.project_id`,
         [runId, JSON.stringify(projectPct)],
       );
+    } else {
+      // A quick run keeps the last simulation's P50 and P80 only while they can still be true.
+      // They are dropped when the simulation was made for a different day, or when the new
+      // single schedule already finishes after the old P80: a "pessimistic" date earlier than
+      // the plain forecast is worse than no date. The roll-up then judges risk on the single
+      // schedule until the next simulation. (Seen on the first real board: forecast Nov 30
+      // beside a P80 of Nov 25 left over from an earlier run.)
+      await tx.query(
+        `UPDATE tracker.task_forecast f
+            SET p50_finish = NULL, p80_finish = NULL, simulation_run_id = NULL
+          WHERE f.simulation_run_id IS NOT NULL
+            AND (f.scheduled_finish IS NULL
+                 OR f.p80_finish IS NULL
+                 OR f.p80_finish < f.scheduled_finish
+                 OR (SELECT r.as_of_date FROM tracker.schedule_run r WHERE r.id = f.simulation_run_id) <> $1::date)`,
+        [options.asOf],
+      );
+      await tx.query(
+        `UPDATE tracker.project_forecast f
+            SET p50_finish = NULL, p80_finish = NULL, simulation_run_id = NULL
+          WHERE f.simulation_run_id IS NOT NULL
+            AND (f.finish_date IS NULL
+                 OR f.p80_finish IS NULL
+                 OR f.p80_finish < f.finish_date
+                 OR (SELECT r.as_of_date FROM tracker.schedule_run r WHERE r.id = f.simulation_run_id) <> $1::date)`,
+        [options.asOf],
+      );
     }
 
     // Nightly runs are kept so the drift of each project's forecast can be charted.

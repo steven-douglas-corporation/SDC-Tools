@@ -9,6 +9,7 @@ export type GlobalRole = "admin" | "portfolio_owner";
 const RANK: Record<ProjectRole, number> = { viewer: 1, contributor: 2, manager: 3 };
 
 export async function hasGlobalRole(tx: Tx, actor: Actor, role: GlobalRole): Promise<boolean> {
+  if (actor.admin) return true;
   const { rows } = await tx.query(
     `SELECT 1 FROM tracker.person_global_role WHERE person_id = $1 AND (role::text = $2 OR role::text = 'admin')`,
     [actor.personId, role],

@@ -23,7 +23,7 @@ export type PermissionCatalogEntry = {
   indent?: boolean;
 };
 
-export const PERMISSION_SECTIONS = ["General", "Projects", "Monthly ETC", "Hours", "Standards", "Financial", "Feedback", "Administration"] as const;
+export const PERMISSION_SECTIONS = ["General", "Projects", "Monthly ETC", "Hours", "Standards", "Financial", "Project Tracker", "Feedback", "Administration"] as const;
 
 export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   // Display labels only. The permission KEYS stay `job-hour-details:*` — they are
@@ -61,6 +61,11 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   // different jobs. Submit ships ON for every role; View and Triage ship
   // MANAGER-only (see permissions.ts). Ticking View for PM or Sales is what
   // lets those submitters read the response to their own reports.
+  // The Project Tracker module (2026-11-15). Both ship OFF for every role, so
+  // until a box here is ticked only ELT can see it. Edit without View does
+  // nothing useful: the page itself needs View.
+  { keys: ["tracker:view"], label: "Project Tracker — View", section: "Project Tracker" },
+  { keys: ["tracker:edit"], label: "Project Tracker — Edit (create and change projects and tasks)", section: "Project Tracker" },
   { keys: ["feedback:submit"], label: "Feedback — Submit (the Flag button)", section: "Feedback" },
   { keys: ["feedback:view"], label: "Feedback — View the queue", section: "Feedback" },
   { keys: ["feedback:triage"], label: "Feedback — Triage (status, assign, respond)", section: "Feedback" },
