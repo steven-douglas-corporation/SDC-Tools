@@ -200,7 +200,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <div className="space-y-4">
-        <Section title={task.kindLabel}>
+        <Section title="Card">
           <div className="space-y-3">
             <label className="flex flex-col gap-1">
               <span className={LABEL}>Title</span>
