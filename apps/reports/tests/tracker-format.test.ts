@@ -63,3 +63,15 @@ test("unscheduled work is explained in plain words, never dropped silently", () 
   assert.equal(why("something new"), "Not forecast: something new.");
   assert.equal(forecastReason({ ...base, forecastFinish: null }), "No forecast yet.");
 });
+
+test("a parent's own hours are compared with the cards under it, in words", async () => {
+  const { uncountedComparison } = await import("../src/modules/tracker/components/format");
+  assert.equal(uncountedComparison(60, 6, 0), "The cards under it have 6 h left, 54 h less than this card says.");
+  assert.equal(uncountedComparison(18, 18, 0), "The cards under it have 18 h left, the same as this card says.");
+  assert.equal(uncountedComparison(12, 30, 0), "The cards under it have 30 h left, 18 h more than this card says.");
+  assert.equal(
+    uncountedComparison(60, 6, 2),
+    "The cards under it have 6 h left, 54 h less than this card says. 2 of them have no estimate yet, so their total is too low.",
+  );
+  assert.match(uncountedComparison(60, 6, 1), /1 of them has no estimate yet/);
+});

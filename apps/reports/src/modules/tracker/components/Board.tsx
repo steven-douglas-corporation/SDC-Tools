@@ -7,7 +7,7 @@ import { confirmRemainingAction, createTaskAction, moveTaskAction, updateTaskAct
 import type { Board as BoardData, BoardStatus, BoardTask } from "../service/queries";
 import type { OpenCard } from "../service/tasks";
 import { CloseUnderPrompt } from "./CloseUnderPrompt";
-import { forecastReason, hours, shortDate } from "./format";
+import { forecastReason, hours, shortDate, uncountedComparison } from "./format";
 
 /** A move that is waiting for an answer about the open cards under the card being closed. */
 interface CloseAsk {
@@ -450,7 +450,8 @@ function Card({
       {task.uncountedHours != null && (
         <p className="mt-1 text-xs text-sdc-yellow-text">
           {hours(task.uncountedHours)} entered on this card {task.uncountedHours === 1 ? "is" : "are"} not counted,
-          because cards sit under it. Open it to clear them.
+          because cards sit under it.{" "}
+          {uncountedComparison(task.uncountedHours, task.rollup?.remainingHours ?? 0, task.unsizedUnder)}
         </p>
       )}
       {task.blockedReason && <p className="mt-1 text-xs text-sdc-red-text">Blocked: {task.blockedReason}</p>}

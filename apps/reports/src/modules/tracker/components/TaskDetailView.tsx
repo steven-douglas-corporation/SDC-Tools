@@ -17,7 +17,7 @@ import {
 import type { LinkedTask, TaskDetail } from "../service/task-detail";
 import type { OpenCard } from "../service/tasks";
 import { CloseUnderPrompt } from "./CloseUnderPrompt";
-import { forecastReason, hours, shortDate } from "./format";
+import { forecastReason, hours, shortDate, uncountedComparison } from "./format";
 
 // One task, in full: what people typed, what the forecast says and why, what it waits on and
 // what waits on it, the conversation about it, and everything that has happened to it.
@@ -256,8 +256,9 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
               <div className="flex flex-wrap items-center gap-3 rounded-lg border border-sdc-border bg-sdc-yellow-bg px-3 py-2 text-sm text-sdc-yellow-text">
                 <p className="min-w-[14rem] flex-1">
                   {hours(task.uncountedHours)} entered on this card {task.uncountedHours === 1 ? "is" : "are"} not
-                  counted. Cards sit under it, so the forecast uses their hours. If those cards cover the work, clear
-                  the hours here. If they do not yet, add the rest as cards under it.
+                  counted, because cards sit under it and the forecast uses theirs.{" "}
+                  {uncountedComparison(task.uncountedHours, task.rollup?.remainingHours ?? 0, task.unsizedUnder)} If the
+                  cards cover the work, clear the hours here. If they do not yet, add the rest as cards under it.
                 </p>
                 {mayChange && (
                   <button

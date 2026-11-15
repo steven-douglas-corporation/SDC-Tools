@@ -1,6 +1,14 @@
 import { TrackerError, one, type Actor, type Database } from "./database";
 import { projectRole, type ProjectRole } from "./access";
-import { rollUp, uncountedHours, type BoardStatus, type BoardTask, type WorkKind, type WorkRollup } from "./queries";
+import {
+  rollUp,
+  uncountedHours,
+  unsizedUnder,
+  type BoardStatus,
+  type BoardTask,
+  type WorkKind,
+  type WorkRollup,
+} from "./queries";
 
 // Everything the task page shows about one task: its fields, its forecast, what it waits on and
 // what waits on it, its comments, and its history. History is the status log and the change log
@@ -65,6 +73,8 @@ export interface TaskDetail {
   rollup: WorkRollup | null;
   /** Hours entered on this card that the forecast does not count, because cards sit under it. */
   uncountedHours: number | null;
+  /** Open work cards under this one with no estimate, so what they add up to is known to be low. */
+  unsizedUnder: number;
   /** Every kind a card can be given, top of the hierarchy first. */
   kinds: WorkKind[];
   /** Cards in the same project this one could sit under, with the level each counts as. */
@@ -293,15 +303,17 @@ export async function getTaskDetail(
     // A card with cards under it has no forecast of its own, so it shows what they add up to.
     // The same sum the board uses, over the whole project, so the two screens cannot disagree.
     let rollups = new Map<number, WorkRollup>();
+    let unsized = 0;
     if (children.rows.length) {
       const all = await tx.query<{
         id: number;
         parent_task_id: number | null;
         category: BoardStatus["category"];
         left_hours: number | null;
+        type: string;
         forecast_finish: string | null;
       }>(
-        `SELECT o.id, o.parent_task_id, os.category,
+        `SELECT o.id, o.parent_task_id, os.category, o.type,
                 coalesce(o.remaining_effort_hours, o.effort_estimate_hours)::float8 AS left_hours,
                 f.scheduled_finish::text AS forecast_finish
            FROM tracker.task o
@@ -321,6 +333,15 @@ export async function getTaskDetail(
           forecastFinish: o.forecast_finish,
         })),
       );
+      unsized =
+        unsizedUnder(
+          all.rows.map((o) => ({
+            id: Number(o.id),
+            parentId: o.parent_task_id == null ? null : Number(o.parent_task_id),
+            open: o.category !== "done" && o.category !== "cancelled",
+            sized: o.type === "milestone" || o.left_hours != null,
+          })),
+        ).get(taskId) ?? 0;
     }
     const kinds = await tx.query<WorkKind>(`SELECT key, label, level FROM tracker.work_kind ORDER BY sort_order`);
     // Only a card with a kind above the lowest level can have anything under it.
@@ -465,6 +486,7 @@ export async function getTaskDetail(
         forecastFinish: rollups.get(Number(c.id))?.forecastFinish ?? c.forecast_finish,
       })),
       rollup: rollups.get(taskId) ?? null,
+      unsizedUnder: unsized,
       uncountedHours: uncountedHours(
         rollups.has(taskId),
         t.status_category,

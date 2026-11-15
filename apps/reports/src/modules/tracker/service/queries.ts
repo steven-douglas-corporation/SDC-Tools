@@ -182,6 +182,34 @@ export function rollUp(tasks: RollupInput[]): Map<number, WorkRollup> {
   return result;
 }
 
+/**
+ * For every card with cards under it: how many open work cards beneath it, however deep, have
+ * no hours at all. While that is above zero, what the cards under a parent add up to is too low.
+ */
+export function unsizedUnder(
+  tasks: { id: number; parentId: number | null; open: boolean; sized: boolean }[],
+): Map<number, number> {
+  const children = new Map<number, typeof tasks>();
+  for (const t of tasks) {
+    if (t.parentId == null) continue;
+    const list = children.get(t.parentId);
+    if (list) list.push(t);
+    else children.set(t.parentId, [t]);
+  }
+  const result = new Map<number, number>();
+  const visit = (id: number): number => {
+    let n = 0;
+    for (const kid of children.get(id) ?? []) {
+      if (children.has(kid.id)) n += visit(kid.id);
+      else if (kid.open && !kid.sized) n++;
+    }
+    result.set(id, n);
+    return n;
+  };
+  for (const id of children.keys()) if (!result.has(id)) visit(id);
+  return result;
+}
+
 /** The hours on a parent card that the forecast leaves out, or null when there are none to flag. */
 export function uncountedHours(
   isParent: boolean,
@@ -214,6 +242,8 @@ export interface BoardTask {
    * Null when there is nothing to flag.
    */
   uncountedHours: number | null;
+  /** For a parent: open work cards under it with no estimate, so its totals are known to be low. */
+  unsizedUnder: number;
   statusId: number;
   priority: number;
   assigneePersonId: number | null;
@@ -365,6 +395,16 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
       })),
     );
 
+    const unsized = unsizedUnder(
+      tasks.rows.map((t) => ({
+        id: Number(t.id),
+        parentId: t.parent_task_id == null ? null : Number(t.parent_task_id),
+        open: t.category !== "done" && t.category !== "cancelled",
+        // A milestone never has hours, so it is not "missing an estimate".
+        sized: t.type === "milestone" || t.remaining_hours != null || t.estimate_hours != null,
+      })),
+    );
+
     return {
       project: toProject(header, admin),
       statuses: statuses.rows.map((s) => ({
@@ -387,6 +427,7 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
           t.remaining_hours == null ? null : Number(t.remaining_hours),
           t.estimate_hours == null ? null : Number(t.estimate_hours),
         ),
+        unsizedUnder: unsized.get(Number(t.id)) ?? 0,
         statusId: Number(t.status_id),
         priority: Number(t.priority),
         assigneePersonId: t.assignee_person_id == null ? null : Number(t.assignee_person_id),

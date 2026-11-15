@@ -1116,3 +1116,27 @@ test("a parent's own hours are flagged as not counted, and can be cleared", asyn
   assert.equal(uncountedHours(false, "todo", 18, 18), null);
   assert.equal(uncountedHours(true, "todo", 0, 18), null, "hours left of zero means nothing is left to count");
 });
+
+test("a parent knows how many open work cards under it have no estimate", async () => {
+  const { unsizedUnder, getBoard } = await import("../src/modules/tracker/service/queries");
+  const { getTaskDetail } = await import("../src/modules/tracker/service/task-detail");
+  const n = unsizedUnder([
+    { id: 1, parentId: null, open: true, sized: false }, // a parent: never counted itself
+    { id: 2, parentId: 1, open: true, sized: false },
+    { id: 3, parentId: 1, open: true, sized: true },
+    { id: 4, parentId: 1, open: false, sized: false }, // finished: nothing left to estimate
+    { id: 5, parentId: 1, open: true, sized: false }, // a parent in the middle
+    { id: 6, parentId: 5, open: true, sized: false },
+  ]);
+  assert.deepEqual([n.get(1), n.get(5), n.has(2)], [2, 1, false]);
+
+  const p = await createProject(db, ana, { key: "SIZE", name: "Sizes" });
+  const top = await createTask(db, ana, { projectId: p.id, title: "Top", kind: "story", effortEstimateHours: 30 });
+  await createTask(db, ana, { projectId: p.id, title: "Sized", parentTaskId: top.id, effortEstimateHours: 6 });
+  await createTask(db, ana, { projectId: p.id, title: "Not sized", parentTaskId: top.id });
+  await createTask(db, ana, { projectId: p.id, title: "A date", parentTaskId: top.id, type: "milestone" });
+  const card = (await getBoard(db, ana, "SIZE")).tasks.find((c) => c.key === "SIZE-1")!;
+  assert.deepEqual([card.uncountedHours, card.rollup?.remainingHours, card.unsizedUnder], [30, 6, 1]);
+  const page = await getTaskDetail(db, ana, "SIZE", top.number);
+  assert.deepEqual([page.uncountedHours, page.rollup?.remainingHours, page.unsizedUnder], [30, 6, 1]);
+});

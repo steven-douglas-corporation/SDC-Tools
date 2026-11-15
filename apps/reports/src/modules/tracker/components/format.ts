@@ -21,6 +21,25 @@ export function hours(value: number | null | undefined): string {
   return `${Number.isInteger(value) ? value : Math.round(value * 10) / 10} h`;
 }
 
+/**
+ * How the hours typed on a parent compare with what the cards under it add up to. This is the
+ * check a person makes before clearing the parent's own hours, so the screen makes it for them.
+ */
+export function uncountedComparison(own: number, under: number, unsized: number): string {
+  const gap = Math.round((own - under) * 10) / 10;
+  const compared =
+    gap > 0
+      ? `${hours(gap)} less than this card says`
+      : gap < 0
+        ? `${hours(-gap)} more than this card says`
+        : "the same as this card says";
+  const missing =
+    unsized > 0
+      ? ` ${unsized} of them ${unsized === 1 ? "has" : "have"} no estimate yet, so their total is too low.`
+      : "";
+  return `The cards under it have ${hours(under)} left, ${compared}.${missing}`;
+}
+
 type ReasonInput = Pick<
   BoardTask,
   | "driver"
