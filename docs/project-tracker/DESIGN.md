@@ -6,7 +6,7 @@ and what is still open. Uncertain items are tracked in the SDC IT RAID Log workb
 (`SDC_IT_RAID_Log.xlsx`, kept outside this repo), under Scope = "Project Tracker". IDs below
 such as D-08 or R-06 refer to rows in that workbook.
 
-Status: draft, 2026-11-14. The schema and the forecast engine are built and tested in
+Status: draft, 2026-11-14. The schema, the forecast engine and the service layer are built and
 `apps/tracker`. There is no service, API or UI yet, and nothing is deployed. This work moves into `apps/reports` as the first module of the one SDC app (ADR 0006).
 
 ## Decided
@@ -113,13 +113,23 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 
 ## What is built
 
-Everything is in `apps/tracker`. Run `npm test` there: 27 tests, no database server needed.
+The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
+describes. Its 36 tests run with Reports' own `npm test` and need no database server: they load
+the schema into a real Postgres engine that runs inside the test.
 
-### Schema: `apps/tracker/db/migrations`
+| Piece                     | Where, under `apps/reports`              |
+| ------------------------- | ---------------------------------------- |
+| Schema and database roles | `db/tracker/migrations/`                 |
+| Forecast engine           | `src/modules/tracker/forecast/engine.ts` |
+| Service layer             | `src/modules/tracker/service/`           |
+| Database connection       | `src/modules/tracker/db.ts`              |
+| Forecast job              | `scripts/tracker/run-forecast.ts`        |
+| Tests                     | `tests/tracker-*.test.ts`                |
+
+### Schema
 
 `0001_schema.sql` replaces the 2026-11-11 draft. `0002_roles.sql` adds the three database roles
-that enforce the one write path. The tests load both into a real Postgres engine and check each
-rule below.
+that enforce the one write path.
 
 - `blocked` status category, with a reason and an expected-unblock date on the task.
 - `due_date`, a required reason for `not_before_date`, and a last-updated stamp for remaining
@@ -139,7 +149,7 @@ rule below.
   unscheduled, unestimated and stale tasks. A parent's hours are not counted on top of its subtasks.
 - Only finish-to-start dependencies; the other three types were removed until the engine supports them.
 
-### Forecast engine: `apps/tracker/src/forecast/engine.ts`
+### Forecast engine
 
 A TypeScript port of the Python prototype. It reproduces the spec's worked example date for
 date, which is kept as a test.
@@ -155,20 +165,48 @@ date, which is kept as a test.
 - Speed on a development PC: a 1,000-task schedule in about 10 ms; 2,000 simulation runs of it
   in about 26 s. A schedule after every change is fine; the simulation belongs in a nightly job.
 
+### Service layer
+
+The only code that touches the tracker's tables. Each function does its work and its logging in
+one transaction.
+
+- People: a tracker person is created the first time an email is seen, which is how a
+  signed-in user is matched to their work.
+- Projects: create (default columns, creator as manager), change target date, state, priority or
+  owner with a change-log row each, manage members, and set stack ranks, several at once so two
+  projects can swap.
+- Tasks: create with a number from the project's counter and the first status-log row; edit with
+  a change-log row per tracked field; the first estimated completion date becomes the baseline
+  and is never replaced; confirm remaining effort without changing it; archive.
+- Status changes: the status-log row, the actual completion date set on entering done and
+  cleared on leaving it, and a required reason for a blocked status.
+- Dependencies: a link that would create a loop is refused; adding and removing are logged on
+  the waiting task.
+- Access: a project role (viewer, contributor, manager) is checked on every change; ranking is
+  for the portfolio owner; an admin can do anything.
+- Forecast run: loads tasks, people, capacity, time off, allocations, pools and holidays from
+  the tables, runs the engine, and replaces the stored forecast in one transaction. Work in a
+  project that is on hold or has no stack rank is reported with that reason. A quick run leaves
+  the last simulation's P50 and P80 in place.
+
 ### Not built, and known limits
 
-- No service layer, API, sign-in or UI. Nothing reads from or writes to the tables yet, so the
-  rules the schema leaves to the service (cycle rejection, status and change logging, a reason
-  when a task is blocked, task numbering) exist only as comments.
-- The engine takes and returns plain objects. Loading inputs from the tables and writing
-  `task_forecast` is not written.
+- No screens and no API routes, so nobody can use it yet. No permission keys have been added to
+  Reports for it either.
+- The service has only been run against the in-process test database. It has not been run
+  against a PostgreSQL server through the production driver, and there is no script that applies
+  the migrations to a server.
+- A signed-in Reports user is not yet linked to a tracker person; `ensurePerson` exists for that.
+- A dependency on a parent task is ignored by the forecast. Only tasks that carry effort
+  themselves are scheduled.
+- A failed forecast run leaves no record: the run row is rolled back with everything else.
 - Dependency lag is in calendar days. Whether it should be working days is undecided.
 - The simulation's range (0.8 to 1.5, or a bucket's low and high hours) and its shared-error
   weight (0.5) are placeholders until there is history to calibrate them (RAID R-06).
 - Allocation release looks at whether a project has any work for the person in the run, not day
   by day, and does not count pool tasks.
 - A coarse task larger than the biggest bucket (for example 120 hours for one job and function)
-  can be stored, but the "choose a bucket" rule for ordinary tasks is left to the service.
+  can be stored with typed hours; nothing yet stops an ordinary task doing the same.
 - The AI estimate suggestion has no columns yet.
 - The 2026-11-11 Word spec has not been rewritten; this document and the code supersede it
   where they differ.

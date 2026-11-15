@@ -1,0 +1,540 @@
+import { TrackerError, assertIsoDate, one, type Actor, type Database, type Tx } from "./database";
+import { requireProjectRole } from "./access";
+
+// Everything that changes a task goes through this file, so the status log, the change log and
+// the completion dates are always written in the same transaction as the change itself.
+
+export interface NewTask {
+  projectId: number;
+  title: string;
+  description?: string | null;
+  type?: "task" | "milestone";
+  assigneePersonId?: number | null;
+  rolePoolId?: number | null;
+  priority?: number;
+  /** One of the company-standard sizes. Its hours become the estimate. */
+  effortBucketId?: number | null;
+  /** Only for work too large for a bucket, such as one line per job and function. */
+  effortEstimateHours?: number | null;
+  remainingEffortHours?: number | null;
+  plannedStartDate?: string | null;
+  estimatedCompletionDate?: string | null;
+  dueDate?: string | null;
+  notBeforeDate?: string | null;
+  notBeforeReason?: string | null;
+  parentTaskId?: number | null;
+  statusId?: number;
+  sprintId?: number | null;
+  jobNumber?: string | null;
+  sectionCode?: string | null;
+  functionCode?: string | null;
+}
+
+export interface TaskChanges {
+  title?: string;
+  description?: string | null;
+  assigneePersonId?: number | null;
+  rolePoolId?: number | null;
+  priority?: number;
+  effortBucketId?: number | null;
+  effortEstimateHours?: number | null;
+  remainingEffortHours?: number | null;
+  plannedStartDate?: string | null;
+  estimatedCompletionDate?: string | null;
+  dueDate?: string | null;
+  notBeforeDate?: string | null;
+  notBeforeReason?: string | null;
+  expectedUnblockDate?: string | null;
+  sprintId?: number | null;
+}
+
+interface TaskRow {
+  id: number;
+  project_id: number;
+  status_id: number;
+  type: "task" | "milestone";
+  assignee_person_id: number | null;
+  role_pool_id: number | null;
+  priority: number;
+  effort_bucket_id: number | null;
+  effort_estimate_hours: string | null;
+  remaining_effort_hours: string | null;
+  planned_start_date: string | null;
+  estimated_completion_date: string | null;
+  baseline_completion_date: string | null;
+  due_date: string | null;
+  not_before_date: string | null;
+  expected_unblock_date: string | null;
+  actual_completion_date: string | null;
+  sprint_id: number | null;
+  archived_at: unknown;
+}
+
+const TASK_COLUMNS = `id, project_id, status_id, type, assignee_person_id, role_pool_id, priority, effort_bucket_id,
+  effort_estimate_hours::text, remaining_effort_hours::text, planned_start_date::text,
+  estimated_completion_date::text, baseline_completion_date::text, due_date::text, not_before_date::text,
+  expected_unblock_date::text, actual_completion_date::text, sprint_id, archived_at`;
+
+async function lockTask(tx: Tx, taskId: number): Promise<TaskRow> {
+  const row = await one<TaskRow>(
+    tx,
+    `SELECT ${TASK_COLUMNS} FROM tracker.task WHERE id = $1 FOR UPDATE`,
+    [taskId],
+    "Task",
+  );
+  if (row.archived_at) throw new TrackerError("invalid", "This task is archived.");
+  return { ...row, id: Number(row.id), project_id: Number(row.project_id), status_id: Number(row.status_id) };
+}
+
+async function logTaskChange(
+  tx: Tx,
+  taskId: number,
+  field: string,
+  oldValue: unknown,
+  newValue: unknown,
+  actor: Actor,
+  reason: string | null,
+): Promise<void> {
+  await tx.query(
+    `INSERT INTO tracker.task_change_log (task_id, field, old_value, new_value, changed_by, reason)
+     VALUES ($1, $2::tracker.task_tracked_field, $3, $4, $5, $6)`,
+    [
+      taskId,
+      field,
+      oldValue == null ? null : String(oldValue),
+      newValue == null ? null : String(newValue),
+      actor.personId,
+      reason,
+    ],
+  );
+}
+
+function assertHours(value: number | null | undefined, label: string): void {
+  if (value == null) return;
+  if (!Number.isFinite(value) || value < 0) throw new TrackerError("invalid", `${label} must be zero or more hours.`);
+}
+
+function assertPriority(value: number | undefined): void {
+  if (value === undefined) return;
+  if (!Number.isInteger(value) || value < 1 || value > 5) {
+    throw new TrackerError("invalid", "Priority is a whole number from 1 (highest) to 5.");
+  }
+}
+
+async function bucketHours(tx: Tx, bucketId: number): Promise<number> {
+  const b = await one<{ hours: string }>(
+    tx,
+    `SELECT hours::text FROM tracker.effort_bucket WHERE id = $1 AND active`,
+    [bucketId],
+    "Estimate size",
+  );
+  return Number(b.hours);
+}
+
+/** Same number of hours, whatever text form the database returned them in. */
+function sameHours(a: string | number | null, b: string | number | null): boolean {
+  if (a == null || b == null) return a == null && b == null;
+  return Number(a) === Number(b);
+}
+
+/**
+ * Creates a task. Its number comes from the project's counter, it starts in the project's first
+ * "to do" column unless a status is given, and the first status-log row is written with it.
+ * The first estimated completion date typed becomes the baseline that slip is measured against.
+ */
+export async function createTask(
+  db: Database,
+  actor: Actor,
+  input: NewTask,
+): Promise<{ id: number; number: number; key: string }> {
+  if (!input.title.trim()) throw new TrackerError("invalid", "A task needs a title.");
+  assertPriority(input.priority);
+  assertHours(input.effortEstimateHours, "The estimate");
+  assertHours(input.remainingEffortHours, "Remaining effort");
+  assertIsoDate(input.plannedStartDate, "Planned start");
+  assertIsoDate(input.estimatedCompletionDate, "Estimated completion");
+  assertIsoDate(input.dueDate, "Due date");
+  assertIsoDate(input.notBeforeDate, "Not-before date");
+  if (input.notBeforeDate && !input.notBeforeReason?.trim()) {
+    throw new TrackerError("invalid", "A not-before date needs a reason.");
+  }
+  const type = input.type ?? "task";
+
+  return db.transaction(async (tx) => {
+    await requireProjectRole(tx, input.projectId, actor, "contributor");
+    // Locking the project row is what makes task numbers gap-free and unique under concurrency.
+    const project = await one<{ key: string; next_task_number: number }>(
+      tx,
+      `SELECT key, next_task_number FROM tracker.project WHERE id = $1 FOR UPDATE`,
+      [input.projectId],
+      "Project",
+    );
+    const number = Number(project.next_task_number);
+    await tx.query(`UPDATE tracker.project SET next_task_number = next_task_number + 1 WHERE id = $1`, [
+      input.projectId,
+    ]);
+
+    let statusId = input.statusId;
+    if (statusId === undefined) {
+      const s = await one<{ id: number }>(
+        tx,
+        `SELECT id FROM tracker.workflow_status WHERE project_id = $1 AND category = 'todo' ORDER BY sort_order LIMIT 1`,
+        [input.projectId],
+        "A to-do status for this project",
+      );
+      statusId = Number(s.id);
+    }
+
+    let estimate = input.effortEstimateHours ?? null;
+    if (type === "milestone") {
+      if ((estimate ?? 0) > 0 || (input.remainingEffortHours ?? 0) > 0 || input.effortBucketId) {
+        throw new TrackerError("invalid", "A milestone carries no effort.");
+      }
+      estimate = null;
+    } else if (input.effortBucketId != null) {
+      estimate = await bucketHours(tx, input.effortBucketId);
+    }
+
+    const rank = await one<{ next: string }>(
+      tx,
+      `SELECT (coalesce(max(board_rank), 0) + 1)::text AS next FROM tracker.task WHERE project_id = $1 AND status_id = $2`,
+      [input.projectId, statusId],
+      "Board position",
+    );
+
+    const row = await one<{ id: number }>(
+      tx,
+      `INSERT INTO tracker.task
+         (project_id, number, parent_task_id, type, title, description, assignee_person_id, role_pool_id,
+          reporter_person_id, status_id, priority, effort_bucket_id, effort_estimate_hours, remaining_effort_hours,
+          not_before_date, not_before_reason, planned_start_date, estimated_completion_date,
+          baseline_completion_date, due_date, sprint_id, job_number, section_code, function_code, board_rank)
+       VALUES ($1, $2, $3, $4::tracker.task_type, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+               $15, $16, $17, $18, $18, $19, $20, $21, $22, $23, $24)
+       RETURNING id`,
+      [
+        input.projectId,
+        number,
+        input.parentTaskId ?? null,
+        type,
+        input.title.trim(),
+        input.description ?? null,
+        input.assigneePersonId ?? null,
+        input.rolePoolId ?? null,
+        actor.personId,
+        statusId,
+        input.priority ?? 3,
+        type === "milestone" ? null : (input.effortBucketId ?? null),
+        estimate,
+        input.remainingEffortHours ?? null,
+        input.notBeforeDate ?? null,
+        input.notBeforeReason?.trim() || null,
+        input.plannedStartDate ?? null,
+        input.estimatedCompletionDate ?? null,
+        input.dueDate ?? null,
+        input.sprintId ?? null,
+        input.jobNumber ?? null,
+        input.sectionCode ?? null,
+        input.functionCode ?? null,
+        rank.next,
+      ],
+      "Task",
+    );
+    const id = Number(row.id);
+    await tx.query(
+      `INSERT INTO tracker.status_log (task_id, from_status_id, to_status_id, changed_by) VALUES ($1, NULL, $2, $3)`,
+      [id, statusId, actor.personId],
+    );
+    return { id, number, key: `${project.key}-${number}` };
+  });
+}
+
+/**
+ * Changes a task's fields. Changes to dates, effort, assignee, pool, sprint and priority are
+ * logged with who made them and an optional reason. Title and description are not logged.
+ */
+export async function updateTask(
+  db: Database,
+  actor: Actor,
+  taskId: number,
+  changes: TaskChanges,
+  reason?: string | null,
+): Promise<void> {
+  assertPriority(changes.priority);
+  assertHours(changes.effortEstimateHours, "The estimate");
+  assertHours(changes.remainingEffortHours, "Remaining effort");
+  assertIsoDate(changes.plannedStartDate, "Planned start");
+  assertIsoDate(changes.estimatedCompletionDate, "Estimated completion");
+  assertIsoDate(changes.dueDate, "Due date");
+  assertIsoDate(changes.notBeforeDate, "Not-before date");
+  assertIsoDate(changes.expectedUnblockDate, "Expected unblock date");
+  if (changes.title !== undefined && !changes.title.trim()) throw new TrackerError("invalid", "A task needs a title.");
+
+  await db.transaction(async (tx) => {
+    const cur = await lockTask(tx, taskId);
+    await requireProjectRole(tx, cur.project_id, actor, "contributor");
+    const why = reason ?? null;
+    const set: string[] = [];
+    const params: unknown[] = [taskId];
+    const assign = (column: string, value: unknown, cast = "") => {
+      params.push(value);
+      set.push(`${column} = $${params.length}${cast}`);
+    };
+
+    if (changes.title !== undefined) assign("title", changes.title.trim());
+    if (changes.description !== undefined) assign("description", changes.description);
+
+    // A bucket sets the estimate; a typed estimate clears the bucket.
+    let newEstimate: number | null | undefined;
+    if (changes.effortBucketId !== undefined && changes.effortBucketId !== null) {
+      newEstimate = await bucketHours(tx, changes.effortBucketId);
+      assign("effort_bucket_id", changes.effortBucketId);
+    } else if (changes.effortEstimateHours !== undefined) {
+      newEstimate = changes.effortEstimateHours;
+      assign("effort_bucket_id", null);
+    } else if (changes.effortBucketId === null) {
+      assign("effort_bucket_id", null);
+    }
+    if (newEstimate !== undefined && !sameHours(cur.effort_estimate_hours, newEstimate)) {
+      if (cur.type === "milestone" && (newEstimate ?? 0) > 0)
+        throw new TrackerError("invalid", "A milestone carries no effort.");
+      assign("effort_estimate_hours", newEstimate);
+      await logTaskChange(tx, taskId, "effort_estimate_hours", cur.effort_estimate_hours, newEstimate, actor, why);
+    }
+
+    if (
+      changes.remainingEffortHours !== undefined &&
+      !sameHours(cur.remaining_effort_hours, changes.remainingEffortHours)
+    ) {
+      if (cur.type === "milestone" && (changes.remainingEffortHours ?? 0) > 0) {
+        throw new TrackerError("invalid", "A milestone carries no effort.");
+      }
+      assign("remaining_effort_hours", changes.remainingEffortHours);
+      await logTaskChange(
+        tx,
+        taskId,
+        "remaining_effort_hours",
+        cur.remaining_effort_hours,
+        changes.remainingEffortHours,
+        actor,
+        why,
+      );
+    }
+
+    const tracked: [keyof TaskChanges, keyof TaskRow, string, string, string][] = [
+      ["assigneePersonId", "assignee_person_id", "assignee_person_id", "assignee", ""],
+      ["rolePoolId", "role_pool_id", "role_pool_id", "role_pool", ""],
+      ["priority", "priority", "priority", "priority", ""],
+      ["sprintId", "sprint_id", "sprint_id", "sprint", ""],
+      ["plannedStartDate", "planned_start_date", "planned_start_date", "planned_start_date", "::date"],
+      [
+        "estimatedCompletionDate",
+        "estimated_completion_date",
+        "estimated_completion_date",
+        "estimated_completion_date",
+        "::date",
+      ],
+      ["dueDate", "due_date", "due_date", "due_date", "::date"],
+      ["expectedUnblockDate", "expected_unblock_date", "expected_unblock_date", "expected_unblock_date", "::date"],
+    ];
+    for (const [key, curKey, column, field, cast] of tracked) {
+      const next = changes[key];
+      if (next === undefined) continue;
+      const before = cur[curKey] as string | number | null;
+      const same = before == null || next == null ? before == null && next == null : String(before) === String(next);
+      if (same) continue;
+      assign(column, next, cast);
+      await logTaskChange(tx, taskId, field, before, next, actor, why);
+    }
+
+    // The first estimated completion date ever typed is the baseline, and it is never replaced.
+    if (changes.estimatedCompletionDate && cur.baseline_completion_date == null) {
+      assign("baseline_completion_date", changes.estimatedCompletionDate, "::date");
+    }
+
+    if (changes.notBeforeDate !== undefined && changes.notBeforeDate !== cur.not_before_date) {
+      if (changes.notBeforeDate && !(changes.notBeforeReason ?? "").trim()) {
+        throw new TrackerError("invalid", "A not-before date needs a reason.");
+      }
+      assign("not_before_date", changes.notBeforeDate, "::date");
+      assign("not_before_reason", changes.notBeforeDate ? (changes.notBeforeReason as string).trim() : null);
+      await logTaskChange(
+        tx,
+        taskId,
+        "not_before_date",
+        cur.not_before_date,
+        changes.notBeforeDate,
+        actor,
+        why ?? (changes.notBeforeDate ? (changes.notBeforeReason as string).trim() : null),
+      );
+    }
+
+    if (set.length) await tx.query(`UPDATE tracker.task SET ${set.join(", ")} WHERE id = $1`, params);
+  });
+}
+
+/** "I checked, the remaining effort is still right": refreshes its date without changing it. */
+export async function confirmRemainingEffort(db: Database, actor: Actor, taskId: number): Promise<void> {
+  await db.transaction(async (tx) => {
+    const cur = await lockTask(tx, taskId);
+    await requireProjectRole(tx, cur.project_id, actor, "contributor");
+    await tx.query(`UPDATE tracker.task SET remaining_effort_updated_at = now() WHERE id = $1`, [taskId]);
+  });
+}
+
+/**
+ * Moves a task to another status (a drag on the board). In one transaction it writes the
+ * status-log row, sets the actual completion date on entering a done status and clears it on
+ * leaving one, and requires a reason for a blocked status.
+ */
+export async function changeStatus(
+  db: Database,
+  actor: Actor,
+  taskId: number,
+  toStatusId: number,
+  options: { note?: string | null; blockedReason?: string | null; expectedUnblockDate?: string | null } = {},
+): Promise<void> {
+  assertIsoDate(options.expectedUnblockDate, "Expected unblock date");
+  await db.transaction(async (tx) => {
+    const cur = await lockTask(tx, taskId);
+    await requireProjectRole(tx, cur.project_id, actor, "contributor");
+    if (cur.status_id === toStatusId) return;
+
+    const statuses = await tx.query<{ id: number; project_id: number; category: string }>(
+      `SELECT id, project_id, category FROM tracker.workflow_status WHERE id = ANY(ARRAY[$1::bigint, $2::bigint])`,
+      [cur.status_id, toStatusId],
+    );
+    const from = statuses.rows.find((s) => Number(s.id) === cur.status_id);
+    const to = statuses.rows.find((s) => Number(s.id) === toStatusId);
+    if (!to || Number(to.project_id) !== cur.project_id) {
+      throw new TrackerError("invalid", "That status belongs to a different project.");
+    }
+    const blockedReason = options.blockedReason?.trim() || null;
+    if (to.category === "blocked" && !blockedReason) {
+      throw new TrackerError("invalid", "Say what is blocking this task.");
+    }
+
+    const rank = await one<{ next: string }>(
+      tx,
+      `SELECT (coalesce(max(board_rank), 0) + 1)::text AS next FROM tracker.task WHERE project_id = $1 AND status_id = $2`,
+      [cur.project_id, toStatusId],
+      "Board position",
+    );
+    await tx.query(
+      `UPDATE tracker.task
+          SET status_id = $2,
+              board_rank = $3::numeric,
+              actual_completion_date = CASE WHEN $4 THEN coalesce(actual_completion_date, CURRENT_DATE) ELSE NULL END,
+              blocked_reason = $5,
+              expected_unblock_date = $6::date
+        WHERE id = $1`,
+      [
+        taskId,
+        toStatusId,
+        rank.next,
+        to.category === "done",
+        to.category === "blocked" ? blockedReason : null,
+        to.category === "blocked" ? (options.expectedUnblockDate ?? null) : null,
+      ],
+    );
+    await tx.query(
+      `INSERT INTO tracker.status_log (task_id, from_status_id, to_status_id, changed_by, note) VALUES ($1, $2, $3, $4, $5)`,
+      [taskId, from ? cur.status_id : null, toStatusId, actor.personId, options.note ?? blockedReason],
+    );
+  });
+}
+
+async function taskKey(tx: Tx, taskId: number): Promise<{ key: string; projectId: number }> {
+  const r = await one<{ key: string; project_id: number }>(
+    tx,
+    `SELECT p.key || '-' || t.number AS key, t.project_id FROM tracker.task t JOIN tracker.project p ON p.id = t.project_id WHERE t.id = $1`,
+    [taskId],
+    "Task",
+  );
+  return { key: r.key, projectId: Number(r.project_id) };
+}
+
+/**
+ * Makes `successorId` wait for `predecessorId` to finish, plus optional lag in calendar days.
+ * Refuses a link that would create a loop. Logged on the waiting task.
+ */
+export async function addDependency(
+  db: Database,
+  actor: Actor,
+  predecessorId: number,
+  successorId: number,
+  lagDays = 0,
+  reason?: string | null,
+): Promise<void> {
+  if (predecessorId === successorId) throw new TrackerError("invalid", "A task cannot depend on itself.");
+  if (!Number.isInteger(lagDays) || lagDays < 0)
+    throw new TrackerError("invalid", "Lag is a whole number of days, zero or more.");
+  await db.transaction(async (tx) => {
+    const successor = await taskKey(tx, successorId);
+    const predecessor = await taskKey(tx, predecessorId);
+    await requireProjectRole(tx, successor.projectId, actor, "contributor");
+
+    // A loop exists if the predecessor already waits, directly or through others, on the successor.
+    const loop = await tx.query(
+      `WITH RECURSIVE downstream(id) AS (
+           SELECT successor_task_id FROM tracker.task_dependency WHERE predecessor_task_id = $1
+         UNION
+           SELECT d.successor_task_id FROM tracker.task_dependency d JOIN downstream w ON d.predecessor_task_id = w.id
+       )
+       SELECT 1 FROM downstream WHERE id = $2 LIMIT 1`,
+      [successorId, predecessorId],
+    );
+    if (loop.rows.length) {
+      throw new TrackerError(
+        "invalid",
+        `${predecessor.key} already waits on ${successor.key}, so this would create a loop.`,
+      );
+    }
+    const inserted = await tx.query(
+      `INSERT INTO tracker.task_dependency (predecessor_task_id, successor_task_id, lag_days) VALUES ($1, $2, $3)
+       ON CONFLICT (predecessor_task_id, successor_task_id) DO NOTHING RETURNING 1`,
+      [predecessorId, successorId, lagDays],
+    );
+    if (!inserted.rows.length)
+      throw new TrackerError("conflict", `${successor.key} already waits on ${predecessor.key}.`);
+    await logTaskChange(
+      tx,
+      successorId,
+      "dependency",
+      null,
+      `waits on ${predecessor.key}${lagDays ? ` (+${lagDays} days)` : ""}`,
+      actor,
+      reason ?? null,
+    );
+  });
+}
+
+export async function removeDependency(
+  db: Database,
+  actor: Actor,
+  predecessorId: number,
+  successorId: number,
+  reason?: string | null,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const successor = await taskKey(tx, successorId);
+    const predecessor = await taskKey(tx, predecessorId);
+    await requireProjectRole(tx, successor.projectId, actor, "contributor");
+    const removed = await tx.query(
+      `DELETE FROM tracker.task_dependency WHERE predecessor_task_id = $1 AND successor_task_id = $2 RETURNING 1`,
+      [predecessorId, successorId],
+    );
+    if (!removed.rows.length)
+      throw new TrackerError("not_found", `${successor.key} does not wait on ${predecessor.key}.`);
+    await logTaskChange(tx, successorId, "dependency", `waits on ${predecessor.key}`, null, actor, reason ?? null);
+  });
+}
+
+/** Tasks are archived, never deleted, so their history stays intact. */
+export async function archiveTask(db: Database, actor: Actor, taskId: number): Promise<void> {
+  await db.transaction(async (tx) => {
+    const cur = await lockTask(tx, taskId);
+    await requireProjectRole(tx, cur.project_id, actor, "manager");
+    await tx.query(`UPDATE tracker.task SET archived_at = now() WHERE id = $1`, [taskId]);
+  });
+}
