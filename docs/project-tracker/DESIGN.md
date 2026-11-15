@@ -114,6 +114,21 @@ set of screens are built and tested as a module of SDC Reports (`apps/reports/sr
 - "Issue" is there so the open issues in the RAID log can move into the tracker as ordinary
   cards once it is in use. Risks and assumptions stay in the RAID log.
 
+### Dependencies between projects (decided 2026-11-15)
+
+- There is no "project B depends on project A" link. A project nearly always needs one
+  particular thing from another, and waiting for the whole of it would hold work up for no reason.
+- Instead **a card can wait on a card in another project**, usually on a Milestone there. All
+  projects are forecast in one run, so this needed no change to the engine, and the rule that a
+  blocking card is pulled forward to the priority of what waits on it already works across
+  projects.
+- A person can link only to a card in a project they have a role on. Someone who can see the
+  waiting card but not the other project is shown that it waits, and on which key, but not the
+  other card's title.
+- The timeline of all projects shows the result: an arrow from one project to another whenever
+  an open card in the second waits on an open card in the first. Nothing is maintained at
+  project level.
+
 ### Who is behind a card (decided 2026-11-15)
 
 - A card records two people besides its assignee, because they are two different facts.
@@ -168,7 +183,7 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 58 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its 59 tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
 | Piece                     | Where, under `apps/reports`                                                 |
@@ -276,6 +291,12 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
   with a paler tail to P80; a thin dark bar for a parent, spanning the cards under it; an arrow
   for each dependency; marks for today, the project target, due dates, milestones and finished
   cards. Read-only. Every date on it is the stored forecast, the same one the board shows.
+- **Timeline of all projects** (`/tracker/timeline`, a tab beside the project list): a row for each
+  open project in stack-rank order, a bar from the first forecast start of its work to its
+  forecast finish with a tail to P80, its target date, and an arrow where one project has a card
+  waiting on another's. A project's key opens that project's own timeline.
+- **Waiting on another project's card**: the "Make it wait on" menu lists this project's cards,
+  then the cards of every other open project the person has a role on.
 - **People and time** (`/tracker/people`): the length of a normal project day, a figure of their
   own for anyone whose day is shorter, time off, and company holidays. ELT sets the default,
   other people's hours and the holidays; anyone can enter their own time off.
@@ -300,7 +321,7 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
 - The P50/P80 simulation is not scheduled anywhere. It runs only when someone runs
   `npm run tracker:forecast`, so P80 is blank after any edit until it is run again.
 - Someone with `tracker:view` but not `tracker:edit` cannot enter their own time off.
-- Timeline: it is one project at a time, with no view across projects or by person. It cannot
+- Timeline: there is one for each project and one across all projects, but none by person. It cannot
   be zoomed or filtered, cards cannot be dragged on it, and a long project scrolls sideways. It
   was checked by eye in a local copy with a handful of cards, not with a large project.
 - Dependencies and parents: moving a card under a different parent is not checked against the

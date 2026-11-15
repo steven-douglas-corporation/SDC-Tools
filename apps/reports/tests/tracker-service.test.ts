@@ -1232,3 +1232,57 @@ test("who wants a card can change and is logged; who made it cannot", async () =
     /cannot be changed/,
   );
 });
+
+test("a card can wait on a card in another project the person can see, and the projects show as linked", async () => {
+  const { getTaskDetail } = await import("../src/modules/tracker/service/task-detail");
+  const { getPortfolioTimeline } = await import("../src/modules/tracker/service/timeline");
+  const xa = await createProject(db, ana, { key: "XA", name: "Supplies" });
+  const xb = await createProject(db, ana, { key: "XB", name: "Needs" });
+  await setProjectMember(db, ana, xb.id, ben.personId, "contributor"); // Ben is on XB only
+  const a1 = await createTask(db, ana, { projectId: xa.id, title: "Firmware released", kind: "milestone" });
+  const b1 = await createTask(db, ana, { projectId: xb.id, title: "Install firmware" });
+
+  // Ben may change XB's cards but cannot see XA, so to him XA's card does not exist.
+  await refuses(() => addDependency(db, ben, a1.id, b1.id), "not_found");
+  const benBefore = await getTaskDetail(db, ben, "XB", b1.number);
+  assert.ok(
+    benBefore.candidates.every((c) => c.projectKey !== "XA"),
+    "cards in a project he cannot see are not offered",
+  );
+
+  // Ana is on both: the other project's cards are offered, after this project's own.
+  const anaBefore = await getTaskDetail(db, ana, "XB", b1.number);
+  assert.ok(anaBefore.candidates.some((c) => c.key === "XA-1" && c.projectKey === "XA"));
+  await addDependency(db, ana, a1.id, b1.id);
+
+  const anaAfter = await getTaskDetail(db, ana, "XB", b1.number);
+  assert.deepEqual(
+    anaAfter.waitsOn.map((l) => [l.key, l.title, l.canOpen]),
+    [["XA-1", "Firmware released", true]],
+  );
+  // Ben sees that the card waits, since that moves its dates, but not what the other card says.
+  const benAfter = await getTaskDetail(db, ben, "XB", b1.number);
+  assert.deepEqual(
+    benAfter.waitsOn.map((l) => [l.key, l.title, l.canOpen]),
+    [["XA-1", "a card in a project you cannot open", false]],
+  );
+
+  // All projects on one timeline: a row each, and XB waits on XA.
+  const forAna = await getPortfolioTimeline(db, ana);
+  assert.ok(forAna.rows.some((r) => r.key === "XA") && forAna.rows.some((r) => r.key === "XB"));
+  assert.ok(forAna.links.some((l) => l.fromId === xa.id && l.toId === xb.id));
+  const row = forAna.rows.find((r) => r.key === "XB")!;
+  assert.deepEqual(
+    [row.depth, row.isParent, row.title, row.start, row.unscheduledReason],
+    [0, false, "Needs", null, "project has no stack rank"],
+  );
+  const forBen = await getPortfolioTimeline(db, ben);
+  assert.ok(!forBen.rows.some((r) => r.key === "XA"), "a project he is not on is not a row");
+  assert.ok(!forBen.links.some((l) => l.fromId === xa.id), "nor is a link to it shown");
+
+  // Once the waiting card is finished the projects are no longer linked.
+  await changeStatus(db, ana, b1.id, await statusId(xb.id, "Done"));
+  assert.ok(!(await getPortfolioTimeline(db, ana)).links.some((l) => l.fromId === xa.id && l.toId === xb.id));
+
+  await refuses(() => createProject(db, ana, { key: "timeline", name: "x" }), "invalid", /reserved/);
+});

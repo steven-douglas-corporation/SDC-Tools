@@ -1,6 +1,6 @@
 import type { Actor, Database } from "./database";
 import { projectRole } from "./access";
-import { getBoard, type BoardStatus, type ProjectListItem } from "./queries";
+import { getBoard, listProjects, type BoardStatus, type ProjectListItem } from "./queries";
 
 // What the timeline screen reads: one project's cards laid out as rows, each with the dates its
 // bar is drawn from, plus the dependency links between them. It is the board's data in another
@@ -185,4 +185,82 @@ export async function getTimeline(db: Database, actor: Actor, projectKey: string
     links,
     forecastAsOf: board.forecastAsOf,
   };
+}
+
+// ── All projects on one timeline ─────────────────────────────────────────────
+
+/** Why a project has no bar, in the forecast's own words; the screen turns it into a sentence. */
+function projectUnscheduledReason(p: ProjectListItem): string {
+  if (p.state === "on_hold") return "project on hold";
+  if (p.portfolioRank == null) return "project has no stack rank";
+  return "nothing in it has a forecast date yet";
+}
+
+/**
+ * Every open project the viewer can see as one row, in stack-rank order: a bar from the first
+ * forecast start of its work to its forecast finish, its target as the due date, and a link
+ * wherever an open card in one project waits on an open card in another. It reuses the card
+ * timeline's row shape, so one component draws both.
+ */
+export async function getPortfolioTimeline(
+  db: Database,
+  actor: Actor,
+): Promise<Pick<Timeline, "rows" | "links" | "forecastAsOf">> {
+  // listProjects applies the "only your projects, or all for an admin" rule.
+  const projects = (await listProjects(db, actor)).filter((p) => p.state !== "completed" && p.state !== "cancelled");
+  const visible = new Set(projects.map((p) => p.id));
+
+  return db.transaction(async (tx) => {
+    const starts = await tx.query<{ project_id: number; start: string }>(
+      `SELECT t.project_id, min(f.scheduled_start)::text AS start
+         FROM tracker.task_forecast f
+         JOIN tracker.task t ON t.id = f.task_id
+        WHERE f.run_id = (SELECT run_id FROM tracker.current_schedule_run) AND f.scheduled_start IS NOT NULL
+        GROUP BY t.project_id`,
+    );
+    const startOf = new Map(starts.rows.map((r) => [Number(r.project_id), r.start]));
+    // A project waits on another when an open card in it waits on an open card in the other.
+    const waits = await tx.query<{ from_project: number; to_project: number }>(
+      `SELECT DISTINCT a.project_id AS from_project, b.project_id AS to_project
+         FROM tracker.task_dependency d
+         JOIN tracker.task a ON a.id = d.predecessor_task_id
+         JOIN tracker.task b ON b.id = d.successor_task_id
+         JOIN tracker.workflow_status sa ON sa.id = a.status_id
+         JOIN tracker.workflow_status sb ON sb.id = b.status_id
+        WHERE a.project_id <> b.project_id
+          AND a.archived_at IS NULL AND b.archived_at IS NULL
+          AND sa.category NOT IN ('done', 'cancelled') AND sb.category NOT IN ('done', 'cancelled')`,
+    );
+    const run = await tx.query<{ as_of: string }>(`SELECT as_of_date::text AS as_of FROM tracker.current_schedule_run`);
+
+    return {
+      rows: projects.map((p): TimelineRow => {
+        const finish = p.forecastFinish;
+        const state = p.state.replace("_", " ");
+        return {
+          id: p.id,
+          key: p.key,
+          title: p.name,
+          kindLabel: "Task", // the default kind goes unmarked, which is what a project row wants
+          type: "task",
+          depth: 0,
+          isParent: false,
+          statusName: state.charAt(0).toUpperCase() + state.slice(1),
+          category: p.state === "active" ? "in_progress" : "todo",
+          assigneeName: `owner ${p.ownerName}`,
+          start: finish ? (startOf.get(p.id) ?? finish) : null,
+          finish,
+          p80Finish: finish && p.p80Finish && p.p80Finish > finish ? p.p80Finish : null,
+          dueDate: p.targetDate,
+          doneOn: null,
+          unscheduledReason: finish ? null : projectUnscheduledReason(p),
+          uncountedHours: null,
+        };
+      }),
+      links: waits.rows
+        .map((w) => ({ fromId: Number(w.from_project), toId: Number(w.to_project), lagDays: 0 }))
+        .filter((l) => visible.has(l.fromId) && visible.has(l.toId)),
+      forecastAsOf: run.rows[0]?.as_of ?? null,
+    };
+  });
 }

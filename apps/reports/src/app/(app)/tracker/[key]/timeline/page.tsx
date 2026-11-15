@@ -42,7 +42,7 @@ export default async function TrackerTimelinePage({ params }: { params: Promise<
       </p>
       <PageTitle className="mb-3">{p.name}</PageTitle>
       <ProjectViews projectKey={p.key} current="timeline" />
-      <Timeline timeline={timeline} />
+      <Timeline timeline={timeline} targetDate={p.targetDate} />
     </div>
   );
 }

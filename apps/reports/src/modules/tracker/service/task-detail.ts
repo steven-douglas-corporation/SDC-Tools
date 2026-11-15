@@ -21,6 +21,8 @@ export interface LinkedTask {
   lagDays: number;
   /** True when that task is finished or cancelled. */
   closed: boolean;
+  /** False for a card in a project the viewer has no role on: its title is withheld and it is not a link. */
+  canOpen: boolean;
 }
 
 export interface ChildCard {
@@ -121,8 +123,11 @@ export interface TaskDetail {
   >;
   waitsOn: LinkedTask[];
   blocks: LinkedTask[];
-  /** Open tasks in the same project that this one could be made to wait on. */
-  candidates: { id: number; key: string; title: string }[];
+  /**
+   * Open cards this one could be made to wait on: this project's first, then those in every
+   * other open project the viewer has a role on.
+   */
+  candidates: { id: number; key: string; title: string; projectKey: string }[];
   statuses: BoardStatus[];
   people: { id: number; name: string }[];
   buckets: { id: number; label: string; hours: number }[];
@@ -246,39 +251,55 @@ export async function getTaskDetail(
     if (!role) throw new TrackerError("not_found", "Task was not found.");
 
     const linked = `SELECT o.id AS task_id, op.key || '-' || o.number AS key, o.title, d.lag_days,
-                           (os.category IN ('done', 'cancelled')) AS closed
+                           (os.category IN ('done', 'cancelled')) AS closed,
+                           ($2::boolean OR EXISTS (SELECT 1 FROM tracker.project_member vm
+                                                    WHERE vm.project_id = o.project_id AND vm.person_id = $3)) AS can_open
                       FROM tracker.task_dependency d`;
     const tail = `JOIN tracker.project op ON op.id = o.project_id
                   JOIN tracker.workflow_status os ON os.id = o.status_id`;
-    type LinkRow = { task_id: number; key: string; title: string; lag_days: number; closed: boolean };
+    type LinkRow = {
+      task_id: number;
+      key: string;
+      title: string;
+      lag_days: number;
+      closed: boolean;
+      can_open: boolean;
+    };
+    const admin = actor.admin === true;
     const toLink = (r: LinkRow): LinkedTask => ({
       taskId: Number(r.task_id),
       key: r.key,
-      title: r.title,
+      // The link itself is shown, since it moves this card's dates; what the other card says is not.
+      title: r.can_open === true ? r.title : "a card in a project you cannot open",
       lagDays: Number(r.lag_days),
       closed: r.closed === true,
+      canOpen: r.can_open === true,
     });
     const waitsOn = await tx.query<LinkRow>(
       `${linked} JOIN tracker.task o ON o.id = d.predecessor_task_id ${tail}
         WHERE d.successor_task_id = $1 ORDER BY op.key, o.number`,
-      [taskId],
+      [taskId, admin, actor.personId],
     );
     const blocks = await tx.query<LinkRow>(
       `${linked} JOIN tracker.task o ON o.id = d.successor_task_id ${tail}
         WHERE d.predecessor_task_id = $1 ORDER BY op.key, o.number`,
-      [taskId],
+      [taskId, admin, actor.personId],
     );
-    const candidates = await tx.query<{ id: number; key: string; title: string }>(
-      `SELECT o.id, p.key || '-' || o.number AS key, o.title
+    const candidates = await tx.query<{ id: number; key: string; title: string; project_key: string }>(
+      `SELECT o.id, p.key || '-' || o.number AS key, o.title, p.key AS project_key
          FROM tracker.task o
          JOIN tracker.project p ON p.id = o.project_id
          JOIN tracker.workflow_status os ON os.id = o.status_id
-        WHERE o.project_id = $1 AND o.id <> $2 AND o.archived_at IS NULL
+        WHERE o.id <> $2 AND o.archived_at IS NULL
           AND os.category NOT IN ('done', 'cancelled')
+          AND (o.project_id = $1
+               OR (p.state NOT IN ('completed', 'cancelled')
+                   AND ($3::boolean OR EXISTS (SELECT 1 FROM tracker.project_member vm
+                                                WHERE vm.project_id = o.project_id AND vm.person_id = $4))))
           AND NOT EXISTS (SELECT 1 FROM tracker.task_dependency d
                            WHERE d.predecessor_task_id = o.id AND d.successor_task_id = $2)
-        ORDER BY o.number`,
-      [projectId, taskId],
+        ORDER BY (o.project_id <> $1), p.key, o.number`,
+      [projectId, taskId, admin, actor.personId],
     );
 
     // The level drops at every step up, so this walk always ends; depth is how far up a card is.
@@ -549,7 +570,12 @@ export async function getTaskDetail(
       },
       waitsOn: waitsOn.rows.map(toLink),
       blocks: blocks.rows.map(toLink),
-      candidates: candidates.rows.map((c) => ({ id: Number(c.id), key: c.key, title: c.title })),
+      candidates: candidates.rows.map((c) => ({
+        id: Number(c.id),
+        key: c.key,
+        title: c.title,
+        projectKey: c.project_key,
+      })),
       statuses: statuses.rows.map((s) => ({
         id: Number(s.id),
         name: s.name,

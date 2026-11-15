@@ -35,10 +35,25 @@ const taskHref = (key: string) => {
   return `/tracker/${key.slice(0, cut)}/${key.slice(cut + 1)}`;
 };
 
-export function Timeline({ timeline }: { timeline: TimelineData }) {
-  const { rows, links, project } = timeline;
+export function Timeline({
+  timeline,
+  hrefFor = (r) => taskHref(r.key),
+  emptyText = "This project has no cards yet.",
+  targetDate = null,
+  legend,
+}: {
+  timeline: Pick<TimelineData, "rows" | "links" | "forecastAsOf">;
+  /** Where a row's key leads. A card's own page unless told otherwise. */
+  hrefFor?: (row: TimelineRow) => string;
+  emptyText?: string;
+  /** One date to mark down the whole chart: a project's target, on that project's timeline. */
+  targetDate?: string | null;
+  /** Replaces the sentence under the chart that says how to read it. */
+  legend?: React.ReactNode;
+}) {
+  const { rows, links } = timeline;
   if (rows.length === 0) {
-    return <p className={`${CARD_BASE} p-4 text-sm text-sdc-gray-600`}>This project has no cards yet.</p>;
+    return <p className={`${CARD_BASE} p-4 text-sm text-sdc-gray-600`}>{emptyText}</p>;
   }
 
   // ---- the span of days to draw ----
@@ -53,7 +68,7 @@ export function Timeline({ timeline }: { timeline: TimelineData }) {
     // A card finished long ago would stretch the chart for nothing; recent ones are shown.
     if (r.doneOn && dayNumber(r.doneOn) >= todayN - 14) dated.push(dayNumber(r.doneOn));
   }
-  if (project.targetDate) dated.push(dayNumber(project.targetDate));
+  if (targetDate) dated.push(dayNumber(targetDate));
   const first = Math.min(...dated) - 2;
   const last = Math.max(...dated) + 4;
   const days = last - first + 1;
@@ -112,7 +127,7 @@ export function Timeline({ timeline }: { timeline: TimelineData }) {
               style={{ height: ROW, paddingLeft: 8 + r.depth * 16 }}
               className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap border-b border-sdc-border-soft pr-2 text-xs"
             >
-              <Link href={taskHref(r.key)} className="font-mono font-semibold text-sdc-blue hover:underline">
+              <Link href={hrefFor(r)} className="font-mono font-semibold text-sdc-blue hover:underline">
                 {r.key}
               </Link>
               <span
@@ -181,11 +196,11 @@ export function Timeline({ timeline }: { timeline: TimelineData }) {
                 Today
               </span>
             </div>
-            {project.targetDate && (
+            {targetDate && (
               <div
-                style={{ left: x(dayNumber(project.targetDate) + 1), top: HEAD - 14, bottom: 0 }}
+                style={{ left: x(dayNumber(targetDate) + 1), top: HEAD - 14, bottom: 0 }}
                 className="absolute w-0 border-l border-dashed border-sdc-red"
-                title={`Project target: ${shortDate(project.targetDate)}`}
+                title={`Project target: ${shortDate(targetDate)}`}
               >
                 <span className="absolute -top-0.5 right-1 whitespace-nowrap bg-white px-0.5 text-micro font-semibold text-sdc-red-text">
                   Target
@@ -311,16 +326,18 @@ export function Timeline({ timeline }: { timeline: TimelineData }) {
         </div>
       </div>
 
-      <p className="text-xs text-sdc-gray-600">
-        Bars are the forecast, from {shortDate(isoOf(first + 2))} on: a card&apos;s start to its finish, with a paler
-        tail out to its P80 when a simulation has run. A dark thin bar is a card with cards under it and spans them. An
-        arrow runs from a card to the card that waits on it. A green dot is a finished card, a small upright line is a
-        due date, and a diamond is a milestone.
-        {notDrawn > 0 &&
-          ` ${notDrawn} open card${notDrawn === 1 ? " has" : "s have"} no bar because the forecast could not place ${
-            notDrawn === 1 ? "it" : "them"
-          }; the row says why.`}
-      </p>
+      {legend ?? (
+        <p className="text-xs text-sdc-gray-600">
+          Bars are the forecast, from {shortDate(isoOf(first + 2))} on: a card&apos;s start to its finish, with a paler
+          tail out to its P80 when a simulation has run. A dark thin bar is a card with cards under it and spans them.
+          An arrow runs from a card to the card that waits on it. A green dot is a finished card, a small upright line
+          is a due date, and a diamond is a milestone.
+          {notDrawn > 0 &&
+            ` ${notDrawn} open card${notDrawn === 1 ? " has" : "s have"} no bar because the forecast could not place ${
+              notDrawn === 1 ? "it" : "them"
+            }; the row says why.`}
+        </p>
+      )}
     </div>
   );
 }

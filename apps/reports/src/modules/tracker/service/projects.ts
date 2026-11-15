@@ -4,7 +4,7 @@ import { requireGlobalRole, requireProjectRole } from "./access";
 export type ProjectState = "planned" | "active" | "on_hold" | "completed" | "cancelled";
 
 /** Keys that would collide with the tracker's own pages. */
-const RESERVED_KEYS = new Set(["PEOPLE", "API", "NEW", "SETTINGS"]);
+const RESERVED_KEYS = new Set(["PEOPLE", "API", "NEW", "SETTINGS", "TIMELINE"]);
 
 export interface NewProject {
   /** Short code used in task keys, e.g. BIN gives BIN-42. */

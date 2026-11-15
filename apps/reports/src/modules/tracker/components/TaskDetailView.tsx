@@ -70,9 +70,16 @@ function Links({
           {links.map((l) => (
             <li key={l.taskId} className="flex items-center justify-between gap-2">
               <span className={l.closed ? "text-sdc-gray-400 line-through" : ""}>
-                <Link href={taskHref(l.key)} className="font-mono text-xs font-semibold text-sdc-blue hover:underline">
-                  {l.key}
-                </Link>{" "}
+                {l.canOpen ? (
+                  <Link
+                    href={taskHref(l.key)}
+                    className="font-mono text-xs font-semibold text-sdc-blue hover:underline"
+                  >
+                    {l.key}
+                  </Link>
+                ) : (
+                  <span className="font-mono text-xs font-semibold text-sdc-navy">{l.key}</span>
+                )}{" "}
                 {l.title}
                 {l.lagDays > 0 && <span className="text-sdc-gray-600"> (+{l.lagDays} days)</span>}
               </span>
@@ -712,10 +719,20 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                   Make it wait on
                   <select required value={waitOn} onChange={(e) => setWaitOn(e.target.value)} className={INPUT}>
                     <option value="">Choose a card</option>
-                    {task.candidates.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.key} {c.title}
-                      </option>
+                    {/* This project's cards first, then each other project the viewer can see. */}
+                    {[...new Set(task.candidates.map((c) => c.projectKey))].map((projectKey) => (
+                      <optgroup
+                        key={projectKey}
+                        label={projectKey === task.projectKey ? "This project" : `Another project: ${projectKey}`}
+                      >
+                        {task.candidates
+                          .filter((c) => c.projectKey === projectKey)
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.key} {c.title}
+                            </option>
+                          ))}
+                      </optgroup>
                     ))}
                   </select>
                 </label>

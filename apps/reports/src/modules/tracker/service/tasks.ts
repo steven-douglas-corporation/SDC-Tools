@@ -1,5 +1,5 @@
 import { TrackerError, assertIsoDate, one, type Actor, type Database, type Tx } from "./database";
-import { requireProjectRole } from "./access";
+import { projectRole, requireProjectRole } from "./access";
 import { childrenByParent, inSameLine, wouldLoop } from "./dependencies";
 
 // Everything that changes a task goes through this file, so the status log, the change log and
@@ -835,6 +835,11 @@ export async function addDependency(
     const successor = await taskKey(tx, successorId);
     const predecessor = await taskKey(tx, predecessorId);
     await requireProjectRole(tx, successor.projectId, actor, "contributor");
+    // A card may wait on a card in another project, but only one the person is allowed to see.
+    // Otherwise the answer is the same as for a card that does not exist, so ids cannot be probed.
+    if (predecessor.projectId !== successor.projectId && !(await projectRole(tx, predecessor.projectId, actor))) {
+      throw new TrackerError("not_found", "Task was not found.");
+    }
 
     // A link stands for the work cards under each end, so both checks look through the hierarchy.
     const placed = await tx.query<{ id: number; parent_task_id: number }>(

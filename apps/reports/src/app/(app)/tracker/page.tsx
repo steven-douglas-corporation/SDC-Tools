@@ -8,6 +8,7 @@ import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
 import { trackerActor } from "@/modules/tracker/current-actor";
 import { listProjects } from "@/modules/tracker/service/queries";
 import { ProjectList } from "@/modules/tracker/components/ProjectList";
+import { PortfolioViews } from "@/modules/tracker/components/ProjectViews";
 
 // The Project Tracker's front page. This file is deliberately thin (docs/MODULES.md): it checks
 // the app permission, works out who is asking, and hands the module's own data to the module's
@@ -43,6 +44,7 @@ export default async function TrackerPage() {
         </Link>{" "}
         is where each person&apos;s hours, time off and the company holidays are set.
       </p>
+      <PortfolioViews current="list" />
       <ProjectList
         projects={projects}
         canEdit={hasPermission(session.user.role, "tracker:edit")}

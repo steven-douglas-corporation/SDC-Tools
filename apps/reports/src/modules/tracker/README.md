@@ -17,7 +17,7 @@ service/              the only code that touches the tracker's tables
   people.ts             project members, capacity, time off, holidays
   forecast.ts           load inputs from the tables, run the engine, store the result
   queries.ts            what the project list and the board read
-  timeline.ts           what the timeline reads: rows in order, parent spans, links
+  timeline.ts           what the timelines read: one project's cards, or all projects as rows
   dependencies.ts       what a dependency means when cards sit under cards (no SQL)
   task-detail.ts        what the task page reads, including history in words
 db.ts                 the PostgreSQL connections (service login and engine login)
