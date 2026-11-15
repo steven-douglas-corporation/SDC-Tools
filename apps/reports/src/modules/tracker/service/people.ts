@@ -184,7 +184,13 @@ export async function setPersonHours(
   });
 }
 
-/** Records time away. A person may add their own; an admin may add anyone's. */
+/**
+ * Records time away. A person may add their own; an admin may add anyone's.
+ *
+ * TODO (backlog M-15): time off is typed in by hand for now. Approved time off already lives in
+ * Paylocity, so the plan is a daily import from there, matched on person.paylocity_employee_id,
+ * with typed entries kept only for what Paylocity does not hold.
+ */
 export async function addTimeOff(
   db: Database,
   actor: Actor,

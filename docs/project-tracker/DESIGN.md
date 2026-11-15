@@ -234,6 +234,9 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
 - The P50/P80 simulation is not scheduled anywhere. It runs only when someone runs
   `npm run tracker:forecast`, so P80 is blank after any edit until it is run again.
 - Someone with `tracker:view` but not `tracker:edit` cannot enter their own time off.
+- Time off is typed in by hand. Approved time off is already in Paylocity, and the plan is to
+  import it from there daily (backlog M-15). Not started: how we reach Paylocity's time-off
+  data, through its API or a warehouse copy, is not confirmed.
 - Run against a real server once, by hand (2026-11-15): the migrations, the service and the
   forecast job passed against PostgreSQL 16 in the dev Docker container, through the production
   driver and under the restricted logins. That check is not automated; the tests that run on

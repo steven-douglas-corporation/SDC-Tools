@@ -32,6 +32,11 @@ export default async function TrackerPeoplePage() {
         The forecast books each task against its assignee&apos;s free hours, day by day. This page is where those hours
         come from: the length of a normal project day, anyone whose day is shorter, time off, and company holidays.
       </p>
+      {/* Backlog M-15: replace typing with a daily import from Paylocity. */}
+      <p className="mb-4 max-w-3xl text-sm text-sdc-gray-600">
+        Time off is typed in here for now. The plan is to bring approved time off in from Paylocity, so nobody enters it
+        twice.
+      </p>
       <Capacity
         // Remount after a change so each field shows the saved value, not what was typed.
         key={JSON.stringify([
