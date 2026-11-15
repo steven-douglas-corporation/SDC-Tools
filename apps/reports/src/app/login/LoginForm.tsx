@@ -22,14 +22,27 @@ function postLoginDestination(): string {
 
 type Mode = "signin" | "signup" | "change";
 
-export default function LoginForm() {
+// One message for every refused Microsoft sign-in (wrong organisation, not a
+// company address, deactivated account) — auth.ts deliberately does not say
+// which, so neither can this.
+const MICROSOFT_REFUSED = "That Microsoft account can't sign in here. Use your SDC account, or ask an administrator.";
+
+export default function LoginForm({
+  microsoftEnabled = false,
+  microsoftRefused = false,
+}: {
+  // True only when all three AUTH_MICROSOFT_ENTRA_ID_* settings exist on the
+  // server (lib/entra-sign-in.ts). False renders the form exactly as before.
+  microsoftEnabled?: boolean;
+  microsoftRefused?: boolean;
+}) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(microsoftRefused ? MICROSOFT_REFUSED : "");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -88,6 +101,15 @@ export default function LoginForm() {
     }
   }
 
+  // Leaves the page for Microsoft and comes back to /api/auth/callback/…, so
+  // there is nothing to await here and `busy` is never cleared on success.
+  function handleMicrosoft() {
+    setError("");
+    setNotice("");
+    setBusy(true);
+    void signIn("microsoft-entra-id", { redirectTo: postLoginDestination() });
+  }
+
   const title = mode === "signin" ? "Sign in" : mode === "signup" ? "Create your account" : "Change password";
   const subtitle =
     mode === "signin"
@@ -108,6 +130,24 @@ export default function LoginForm() {
           <h1 className="font-heading text-lg font-bold text-sdc-navy">{title}</h1>
           <p className="text-xs text-sdc-gray-400">{subtitle}</p>
         </div>
+
+        {microsoftEnabled && mode === "signin" && (
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={handleMicrosoft}
+              disabled={busy}
+              className="w-full rounded-lg border border-sdc-border bg-white py-2 text-sm font-medium text-sdc-navy shadow-sm hover:bg-background disabled:opacity-60"
+            >
+              Sign in with Microsoft
+            </button>
+            <div className="flex items-center gap-3 text-xs text-sdc-gray-400">
+              <span className="h-px flex-1 bg-sdc-border" />
+              or use a password
+              <span className="h-px flex-1 bg-sdc-border" />
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {mode === "signup" && (

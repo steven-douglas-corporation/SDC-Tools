@@ -1,33 +1,41 @@
-# Microsoft Entra (Azure AD) SSO Setup
+# Microsoft sign-in (Entra ID) setup
 
-The app is already wired for "Sign in with Microsoft" using @sdcautomation.com
-accounts. It activates automatically once the three environment variables below
-exist — until then, only the email/password form is shown.
+"Sign in with Microsoft" on the login page, for people who open this app directly in a
+browser. Opening it from the SDC Tools launcher already signs people in through the Scheduler
+hand-off and does not use this.
 
-## 1. Create the App Registration (needs an Entra admin, ~5 minutes)
+The code is in place and **switched off**. It turns on when the three settings in step 2 exist.
+Until then the login page and every sign-in route behave exactly as before.
 
-1. Go to https://portal.azure.com → **Microsoft Entra ID** → **App registrations** → **New registration**.
-2. Name: `SDC ETC Planner`.
-3. Supported account types: **Accounts in this organizational directory only** (single tenant — this is what restricts sign-in to the SDC tenant).
-4. Redirect URI: platform **Web**, value:
-   - `http://localhost:4006/api/auth/callback/microsoft-entra-id`
-   - After adding, open **Authentication** and add the server name too:
-     `http://server-app1:4006/api/auth/callback/microsoft-entra-id`
-   - (Add an `https://…` one later if the app gets a proper hostname/TLS.)
-5. **Certificates & secrets** → **New client secret** → copy the secret **Value**
-   immediately (it is shown only once). Pick a 12–24 month expiry and put a
-   calendar reminder to rotate it.
-6. From the **Overview** page copy:
-   - **Application (client) ID**
-   - **Directory (tenant) ID**
+## Before you start: the app needs an HTTPS address
 
-No API permissions beyond the defaults (`openid`, `profile`, `email` under
-Microsoft Graph delegated) are needed, and no admin consent prompt should
-appear for them.
+Entra only accepts return addresses that start with `https`. The single exception is
+`http://localhost`. This app is served today at `http://server-app1:4006`, which Entra will
+refuse to register, so **Microsoft sign-in cannot be turned on in production until the app is
+reachable over HTTPS** (a certificate and a reverse proxy in front of it).
+
+It can be set up and tried on a developer PC now, using the `localhost` address.
+
+## 1. Create the app registration (needs an Entra administrator)
+
+1. https://portal.azure.com → **Microsoft Entra ID** → **App registrations** → **New registration**.
+2. Name: `SDC Reports`.
+3. Supported account types: **Accounts in this organizational directory only**. This is what
+   limits sign-in to SDC accounts.
+4. Redirect URI: platform **Web**. Add the address for wherever the app runs:
+   - Developer PC: `http://localhost:4006/api/auth/callback/microsoft-entra-id`
+   - Production, once HTTPS exists: `https://<the app's HTTPS name>/api/auth/callback/microsoft-entra-id`
+5. **Certificates & secrets** → **New client secret**. Copy the secret **Value** at once; it is
+   shown only once. Note the expiry date and set a reminder to replace it before then: when it
+   expires, Microsoft sign-in stops working with no other warning.
+6. From **Overview**, copy the **Application (client) ID** and the **Directory (tenant) ID**.
+
+No API permissions beyond the defaults are needed. The app asks only for `openid`, `profile` and
+`email`, and does not read anything from Microsoft Graph.
 
 ## 2. Configure the app
 
-Add to `.env` (same file that holds `DATABASE_URL`):
+Add to `.env`:
 
 ```
 AUTH_MICROSOFT_ENTRA_ID_ID=<Application (client) ID>
@@ -35,27 +43,43 @@ AUTH_MICROSOFT_ENTRA_ID_SECRET=<client secret Value>
 AUTH_MICROSOFT_ENTRA_ID_TENANT_ID=<Directory (tenant) ID>
 ```
 
-Restart the app. The login page now shows **Sign in with Microsoft** above the
-password form.
+`AUTH_URL` must be the address people actually use, because the return address sent to
+Microsoft is built from it and must match step 1 exactly.
+
+Restart the app. The login page now shows **Sign in with Microsoft** above the password form.
+
+If only some of the three are set, or the tenant value is not a directory ID, sign-in stays off
+and the server log says why (`[auth] Microsoft sign-in is off: ...`).
 
 ## 3. How it behaves
 
-- Only accounts in the SDC tenant can authenticate (single-tenant issuer), and
-  the app additionally rejects any email that isn't `@sdcautomation.com`.
-- First sign-in auto-creates the app account (role MANAGER) matched by email.
-  Existing accounts (e.g. an ADMIN) keep their role — matching is by email, so
-  the Entra sign-in just attaches to the existing row.
-- SSO-provisioned accounts get an unusable random password hash — they can
-  never sign in through the password form.
-- Roles are still managed in the app's User table (`role` column:
-  MANAGER/ADMIN).
+- Only accounts in the SDC directory are accepted, and only `@sdcautomation.com` addresses.
+- The Microsoft account is matched to the existing Reports account **by email**. The person
+  keeps their role and everything attached to their account.
+- Someone with no Reports account gets one on first sign-in, at the lowest role (`ALL`), the
+  same as arriving through the Scheduler hand-off. An administrator raises it from
+  `/admin/users`.
+- An account created this way has a random, unusable password, so it can only sign in through
+  Microsoft or the launcher.
+- A deactivated account is refused, the same as on the password form.
+- Roles and permissions stay in this app. Nothing about access is read from Microsoft.
+- Every refusal shows the same message, so the page cannot be used to find out which addresses
+  have accounts.
+- Sign-ins are recorded in the audit log as "signed in (via Microsoft)".
 
-## 4. After it works
+The password form keeps working alongside it.
 
-- Reset or remove any leftover test/password accounts.
-- Optionally remove the password form entirely (delete the Credentials
-  provider in `src/lib/auth.ts`) once everyone has signed in via Microsoft at
-  least once.
-- The same App Registration can later be reused for sending submit-notification
-  email via Microsoft Graph (add the `Mail.Send` application permission when
-  that feature is wanted).
+## 4. Later
+
+Once everyone has signed in with Microsoft at least once, the password form and the
+password-hash copying between this app and the Scheduler can be retired. That is a separate
+change and needs agreeing with the Scheduler's owner.
+
+## Where the code is
+
+| File                          | What it does                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `src/lib/entra-sign-in.ts`    | Reads the settings; decides whether a Microsoft account is acceptable. No dependencies, unit-tested.                     |
+| `src/lib/auth.ts`             | Registers the provider when configured; matches or creates the account; puts this app's user id and role in the session. |
+| `src/app/login/`              | Shows the button when configured, and the message when a sign-in is refused.                                             |
+| `tests/entra-sign-in.test.ts` | The settings and acceptance rules.                                                                                       |
