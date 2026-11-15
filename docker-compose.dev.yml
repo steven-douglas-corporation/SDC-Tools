@@ -36,5 +36,30 @@ services:
       timeout: 5s
       retries: 20
 
+  # PostgreSQL for the modules that keep their own data there (the Project
+  # Tracker is the first; see apps/reports/docs/MODULES.md). Reports' own tables
+  # stay in the MySQL above. Same rules: throwaway password, loopback only.
+  # After the first start, create the schema with:
+  #   npm run db:tracker-migrate --prefix apps/reports -- --dev-logins
+  postgres:
+    image: postgres:16
+    container_name: sdc_dev_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: sdc_dev
+    ports:
+      # 5437 on the host: clear of a local PostgreSQL on 5432.
+      # Bound to loopback: this database must not be reachable from the LAN.
+      - "127.0.0.1:5437:5432"
+    volumes:
+      - sdc_dev_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "sdc_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   sdc_dev_mysql_data:
+  sdc_dev_postgres_data:

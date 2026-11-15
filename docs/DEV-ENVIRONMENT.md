@@ -34,6 +34,7 @@ npm install
 cp .env.dev.example .env                   # see the warning below if you already have a .env
 npx prisma migrate deploy                  # create the tables (all migrations)
 npm run db:seed-dev                        # baseline data + one login per role
+npm run db:tracker-migrate -- --dev-logins # Project Tracker schema (PostgreSQL) + its two dev logins
 npm run dev                                # http://localhost:4006
 ```
 
@@ -77,6 +78,7 @@ again. After editing `schema.prisma`, use `npx prisma migrate dev --name <what>`
 | Where it runs | `SERVER-APP1`, PM2, auto-deployed from `master` within ~5 min | Your machine, started by hand |
 | Port | 4006 | 4006 (same, so links and the shell behave) |
 | Database | MySQL on the server, real company data | MySQL 8 in Docker, `127.0.0.1:3317`, database `sdc_reports_dev`, **seeded fake data** |
+| Project Tracker database | Not deployed yet | PostgreSQL 16 in Docker, `127.0.0.1:5437`, database `sdc_dev`, schema `tracker`, **empty** until you add rows |
 | Sign-in | Entra ID SSO via the Scheduler broker, plus credentials | Credentials only (`*@dev.local`) |
 | Total ETO parts lines (parts cost, left-to-invoice, parts list) | Live SQL Server over the LAN | **Faked**: generated PO lines (`SDC_DEV_FAKE_ETO=1`, see [DEV-TEST-DATA.md](DEV-TEST-DATA.md#3-faux-eto-and-bom-data)) |
 | Total ETO BOM tree (Job Details > Procurement) | Live SQL Server | **Faked** from the same PO lines (`SDC_DEV_FAKE_ETO=1`, [`dev-fake-bom.ts`](../apps/reports/src/lib/dev-fake-bom.ts)) |
@@ -99,7 +101,9 @@ what the seed and [DEV-TEST-DATA.md](DEV-TEST-DATA.md) are for.
 
 | File | What it is |
 |---|---|
-| [`docker-compose.dev.yml`](../docker-compose.dev.yml) | One MySQL 8 container. Loopback-only, port 3317, `--lower-case-table-names=1` |
+| [`docker-compose.dev.yml`](../docker-compose.dev.yml) | A MySQL 8 container (loopback-only, port 3317, `--lower-case-table-names=1`) for Reports' own tables, and a PostgreSQL 16 container (loopback-only, port 5437) for modules that keep their data there |
+| [`apps/reports/scripts/tracker/migrate.ts`](../apps/reports/scripts/tracker/migrate.ts) | `npm run db:tracker-migrate`. Applies the Project Tracker's numbered SQL migrations once each, in order. `--dev-logins` also creates the `tracker_app` and `tracker_forecast` logins and refuses any database host but this machine |
+| [`apps/reports/scripts/tracker/run-forecast.ts`](../apps/reports/scripts/tracker/run-forecast.ts) | `npm run tracker:forecast`. Runs the tracker's forecast as its own process, as the nightly job will |
 | [`apps/reports/.env.dev.example`](../apps/reports/.env.dev.example) | The dev profile. Every real-system credential is left blank on purpose |
 | [`apps/reports/prisma/seed-dev.ts`](../apps/reports/prisma/seed-dev.ts) | Baseline dataset. Deterministic, idempotent, refuses non-local databases |
 | `SDC_DEV_DISABLE_SYNC` | The switch in `instrumentation.ts` and `refresh-service.ts` that stops the auto-refresh |
@@ -115,6 +119,27 @@ doesn't exist`, your volume was created without it: `down -v` and start again.
 
 **Why port 3317.** Clear of a MySQL already on 3306 and of the Scheduler's own
 dev containers (3306/3307, in `SDC_Scheduler/docker-compose.local.yml`).
+
+### The Project Tracker's database
+
+The tracker is a module of Reports that keeps its data in PostgreSQL, not in Reports' MySQL
+(see [apps/reports/docs/MODULES.md](../apps/reports/docs/MODULES.md)). The dev profile gives it
+three connection strings, and they are deliberately different logins:
+
+| Setting | Login | Can do |
+|---|---|---|
+| `TRACKER_ADMIN_DATABASE_URL` | `postgres` | Everything. Used only by `npm run db:tracker-migrate` |
+| `TRACKER_DATABASE_URL` | `tracker_app` | What the app does: read everything, write everything except forecasts |
+| `TRACKER_ENGINE_DATABASE_URL` | `tracker_forecast` | What the forecast job does: read everything, write only forecasts |
+
+After pulling changes that add a file to `apps/reports/db/tracker/migrations`, run
+`npm run db:tracker-migrate` again. A migration that has been applied is never re-run, so a
+schema change is always a new numbered file.
+
+The tracker has no screens yet and no seed data. Its automated tests do not use this database:
+they run PostgreSQL inside the test process and need neither Docker nor these settings.
+
+**Why port 5437.** Clear of a PostgreSQL already on 5432.
 
 ### What the baseline seed creates
 

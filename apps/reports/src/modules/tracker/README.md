@@ -37,7 +37,7 @@ tests use PGlite, which is Postgres compiled to WebAssembly and runs inside the 
 | `TRACKER_DATABASE_URL`        | the app, for everything people do | `tracker_service` |
 | `TRACKER_ENGINE_DATABASE_URL` | the forecast job only             | `tracker_engine`  |
 
-Neither is set anywhere yet. Until `TRACKER_DATABASE_URL` is set the module is off.
+Neither is set on the server yet. Until `TRACKER_DATABASE_URL` is set the module is off. For local development both are in `.env.dev.example`, along with `TRACKER_ADMIN_DATABASE_URL`, which only `npm run db:tracker-migrate` uses; see docs/DEV-ENVIRONMENT.md at the repo root.
 
 ## Rules worth knowing before changing anything
 
