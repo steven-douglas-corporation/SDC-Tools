@@ -8,7 +8,9 @@ import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
 import { syncPeopleFromUsers, trackerActor } from "@/modules/tracker/current-actor";
 import { TrackerError } from "@/modules/tracker/service/database";
 import { getBoard, type Board as BoardData } from "@/modules/tracker/service/queries";
+import { listMembers } from "@/modules/tracker/service/people";
 import { Board } from "@/modules/tracker/components/Board";
+import { Members } from "@/modules/tracker/components/Members";
 import { hours, shortDate } from "@/modules/tracker/components/format";
 
 // One project's board. Thin on purpose, like ../page.tsx: permission, who is asking, the
@@ -32,6 +34,8 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
     throw e;
   }
   const p = board.project;
+  const members = await listMembers(trackerDb, actor, p.id);
+  const canEdit = hasPermission(session.user.role, "tracker:edit");
 
   const state = p.state.replace("_", " ");
   const facts: [string, string][] = [
@@ -92,7 +96,17 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
         )
       )}
 
-      <Board board={board} canEdit={hasPermission(session.user.role, "tracker:edit")} />
+      <Board board={board} canEdit={canEdit} />
+
+      <div className="mt-4">
+        <Members
+          projectId={p.id}
+          projectKey={p.key}
+          members={members}
+          people={board.people}
+          canManage={canEdit && p.myRole === "manager"}
+        />
+      </div>
 
       {board.forecastAsOf && (
         <p className="mt-3 text-xs text-sdc-gray-600">Forecast made for {shortDate(board.forecastAsOf)}.</p>

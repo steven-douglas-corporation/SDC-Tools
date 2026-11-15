@@ -4,25 +4,36 @@ Projects, tasks, statuses and a completion forecast. Built as a module of this a
 [docs/MODULES.md](../../../docs/MODULES.md) for the conventions and
 [the design notes](../../../../../docs/project-tracker/DESIGN.md) for what was decided and why.
 
-There are no screens or API routes yet. What exists:
+Its screens are visible only to roles holding `tracker:view`, which ships off for everyone but
+ELT. What exists:
 
 ```
 forecast/engine.ts    the forecast itself: schedule(), simulate(), summarize(), verify(). No database.
 service/              the only code that touches the tracker's tables
   database.ts           the small database interface the service is written against
   access.ts             project roles and global roles
-  projects.ts           people, projects, members, stack ranks
-  tasks.ts              tasks, status changes, dependencies, archiving
+  projects.ts           people records, projects, members, stack ranks
+  tasks.ts              tasks, status changes, dependencies, comments, archiving
+  people.ts             project members, capacity, time off, holidays
   forecast.ts           load inputs from the tables, run the engine, store the result
+  queries.ts            what the project list and the board read
+  task-detail.ts        what the task page reads, including history in words
 db.ts                 the PostgreSQL connections (service login and engine login)
+current-actor.ts      turns the signed-in user into a tracker person; ELT is all-access
+actions.ts            "use server" entry points for the screens
+api.ts                shared by the read-only API routes
+components/           the screens' React components, and format.ts for dates and forecast reasons
 ```
 
 Elsewhere in the app:
 
 ```
+src/app/(app)/tracker/          the pages: project list, board, task, people and time
+src/app/api/tracker/            read-only JSON routes for the same data
 db/tracker/migrations/          0001_schema.sql, 0002_roles.sql (PostgreSQL 15+, schema "tracker")
+scripts/tracker/migrate.ts      applies the migrations (npm run db:tracker-migrate)
 scripts/tracker/run-forecast.ts the forecast as its own process, for the nightly job
-tests/tracker-*.test.ts         engine, schema and service tests
+tests/tracker-*.test.ts         engine, schema, service and wording tests
 ```
 
 ## Tests

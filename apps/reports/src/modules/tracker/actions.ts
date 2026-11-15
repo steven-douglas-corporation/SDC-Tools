@@ -5,8 +5,24 @@ import { assertActionPermission } from "@/lib/require-permission";
 import { trackerDb, trackerEngineDb } from "./db";
 import { trackerActor } from "./current-actor";
 import { TrackerError, type Actor } from "./service/database";
-import { createProject, setPortfolioRanks, updateProject, type ProjectState } from "./service/projects";
-import { changeStatus, confirmRemainingEffort, createTask, updateTask, type TaskChanges } from "./service/tasks";
+import {
+  createProject,
+  setPortfolioRanks,
+  setProjectMember,
+  updateProject,
+  type ProjectState,
+} from "./service/projects";
+import {
+  addComment,
+  addDependency,
+  changeStatus,
+  confirmRemainingEffort,
+  createTask,
+  removeDependency,
+  updateTask,
+  type TaskChanges,
+} from "./service/tasks";
+import { addHoliday, addTimeOff, removeHoliday, removeTimeOff, setGlobalHours, setPersonHours } from "./service/people";
 import { runForecast } from "./service/forecast";
 
 // The tracker screens' way in (docs/MODULES.md: "two doors, one room"). Each action checks the
@@ -149,6 +165,7 @@ export async function moveTaskAction(input: {
 export type TaskEdit = Pick<
   TaskChanges,
   | "title"
+  | "description"
   | "assigneePersonId"
   | "priority"
   | "effortBucketId"
@@ -170,6 +187,7 @@ export async function updateTaskAction(input: {
       const c = input.changes;
       const changes: TaskChanges = {};
       if (c.title !== undefined) changes.title = c.title;
+      if (c.description !== undefined) changes.description = c.description?.trim() || null;
       if (c.assigneePersonId !== undefined) changes.assigneePersonId = c.assigneePersonId;
       if (c.priority !== undefined) changes.priority = c.priority;
       if (c.effortBucketId !== undefined) changes.effortBucketId = c.effortBucketId;
@@ -180,6 +198,142 @@ export async function updateTaskAction(input: {
       return {};
     },
     { paths: ["/tracker", boardPath(input.projectKey)] },
+  );
+}
+
+const taskPath = (taskKey: string) => {
+  const cut = taskKey.lastIndexOf("-");
+  return `/tracker/${taskKey.slice(0, cut).toUpperCase()}/${taskKey.slice(cut + 1)}`;
+};
+
+/** Gives a person a role on a project, changes it, or (role null) removes them. Managers only. */
+export async function setMemberAction(input: {
+  projectId: number;
+  projectKey: string;
+  personId: number;
+  role: "viewer" | "contributor" | "manager" | null;
+}): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await setProjectMember(trackerDb, actor, input.projectId, input.personId, input.role);
+      return {};
+    },
+    { paths: ["/tracker", boardPath(input.projectKey)], forecast: false },
+  );
+}
+
+/** Makes one task wait for another to finish. */
+export async function addDependencyAction(input: {
+  taskKey: string;
+  projectKey: string;
+  predecessorId: number;
+  successorId: number;
+  lagDays?: number;
+}): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await addDependency(trackerDb, actor, input.predecessorId, input.successorId, input.lagDays ?? 0);
+      return {};
+    },
+    { paths: [boardPath(input.projectKey), taskPath(input.taskKey)] },
+  );
+}
+
+export async function removeDependencyAction(input: {
+  taskKey: string;
+  projectKey: string;
+  predecessorId: number;
+  successorId: number;
+}): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await removeDependency(trackerDb, actor, input.predecessorId, input.successorId);
+      return {};
+    },
+    { paths: [boardPath(input.projectKey), taskPath(input.taskKey)] },
+  );
+}
+
+export async function addCommentAction(input: {
+  taskId: number;
+  taskKey: string;
+  body: string;
+}): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await addComment(trackerDb, actor, input.taskId, input.body);
+      return {};
+    },
+    { paths: [taskPath(input.taskKey)], forecast: false },
+  );
+}
+
+// ── Capacity, time off and holidays ─────────────────────────────────────────
+// All of these change how much work fits in a day, so each one re-runs the forecast.
+
+export async function setGlobalHoursAction(hoursPerDay: number): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await setGlobalHours(trackerDb, actor, hoursPerDay);
+      return {};
+    },
+    { paths: ["/tracker", "/tracker/people"] },
+  );
+}
+
+export async function setPersonHoursAction(personId: number, hoursPerDay: number | null): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await setPersonHours(trackerDb, actor, personId, hoursPerDay);
+      return {};
+    },
+    { paths: ["/tracker", "/tracker/people"] },
+  );
+}
+
+export async function addTimeOffAction(input: {
+  personId: number;
+  start: string;
+  end: string;
+  dayPortion?: number;
+  note?: string | null;
+}): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await addTimeOff(trackerDb, actor, input);
+      return {};
+    },
+    { paths: ["/tracker", "/tracker/people"] },
+  );
+}
+
+export async function removeTimeOffAction(timeOffId: number): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await removeTimeOff(trackerDb, actor, timeOffId);
+      return {};
+    },
+    { paths: ["/tracker", "/tracker/people"] },
+  );
+}
+
+export async function addHolidayAction(input: { date: string; name: string }): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await addHoliday(trackerDb, actor, input);
+      return {};
+    },
+    { paths: ["/tracker", "/tracker/people"] },
+  );
+}
+
+export async function removeHolidayAction(date: string): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await removeHoliday(trackerDb, actor, date);
+      return {};
+    },
+    { paths: ["/tracker", "/tracker/people"] },
   );
 }
 

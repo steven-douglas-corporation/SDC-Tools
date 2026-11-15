@@ -553,6 +553,174 @@ test("the app's all-access flag stands in for the tracker's admin role", async (
   assert.equal(t.key, "ADMIN-1");
 });
 
+test("members: a manager adds people, any member can see the list, outsiders cannot", async () => {
+  const { listMembers } = await import("../src/modules/tracker/service/people");
+  const p = await createProject(db, ana, { key: "PPL", name: "People" });
+  await setProjectMember(db, ana, p.id, cal.personId, "viewer");
+  await setProjectMember(db, ana, p.id, ben.personId, "contributor");
+
+  const members = await listMembers(db, cal, p.id);
+  assert.deepEqual(
+    members.map((m) => [m.personId, m.role]),
+    [
+      [ana.personId, "manager"],
+      [ben.personId, "contributor"],
+      [cal.personId, "viewer"],
+    ],
+  );
+  await refuses(() => listMembers(db, boss, p.id), "forbidden");
+
+  await setProjectMember(db, ana, p.id, cal.personId, null);
+  assert.equal((await listMembers(db, ana, p.id)).length, 2);
+  await setProjectMember(db, ana, p.id, cal.personId, "viewer");
+
+  await refuses(
+    () => createProject(db, ana, { key: "people", name: "would shadow the capacity page" }),
+    "invalid",
+    /reserved/,
+  );
+});
+
+test("task page: fields, links both ways, comments, and history in words, newest first", async () => {
+  const { getTaskDetail } = await import("../src/modules/tracker/service/task-detail");
+  const { addComment } = await import("../src/modules/tracker/service/tasks");
+  const [p] = await rows<{ id: number }>(`SELECT id FROM tracker.project WHERE key = 'PPL'`);
+  const projectId = Number(p!.id);
+
+  const x = await createTask(db, ana, { projectId, title: "X", remainingEffortHours: 6 });
+  const y = await createTask(db, ana, {
+    projectId,
+    title: "Y",
+    description: "Do the thing",
+    estimatedCompletionDate: "2026-12-01",
+  });
+  const z = await createTask(db, ana, { projectId, title: "Z" });
+  await addDependency(db, ana, x.id, y.id, 1);
+  await addDependency(db, ana, y.id, z.id);
+  await updateTask(db, ana, y.id, { assigneePersonId: ben.personId, remainingEffortHours: 12 }, "handing over");
+  await changeStatus(db, ana, y.id, await statusId(projectId, "In Progress"), { note: "started" });
+  await addComment(db, ben, y.id, "  On it.  ");
+  await refuses(() => addComment(db, cal, y.id, "viewers cannot comment"), "forbidden");
+  await refuses(() => addComment(db, ben, y.id, "   "), "invalid");
+
+  const d = await getTaskDetail(db, cal, "ppl", y.number);
+  assert.deepEqual(
+    [d.key, d.title, d.description, d.statusName, d.statusCategory, d.myRole],
+    ["PPL-2", "Y", "Do the thing", "In Progress", "in_progress", "viewer"],
+  );
+  assert.deepEqual([d.assigneePersonId, d.remainingHours, d.baselineCompletionDate], [ben.personId, 12, "2026-12-01"]);
+  assert.ok(d.remainingUpdatedAt && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(d.remainingUpdatedAt));
+  assert.deepEqual(
+    d.waitsOn.map((l) => [l.key, l.lagDays, l.closed]),
+    [["PPL-1", 1, false]],
+  );
+  assert.deepEqual(
+    d.blocks.map((l) => l.key),
+    ["PPL-3"],
+  );
+  assert.deepEqual(
+    d.candidates.map((c) => c.key),
+    ["PPL-3"],
+    "not itself, and not what it already waits on",
+  );
+  assert.deepEqual(
+    d.comments.map((c) => c.body),
+    ["On it."],
+  );
+  assert.ok(d.comments[0]!.author.startsWith("Ben"));
+
+  const words = d.history.map((h) => h.what);
+  assert.equal(words[0], "Moved from Backlog to In Progress");
+  assert.equal(d.history[0]!.why, "started");
+  assert.equal(words.at(-1), "Created in Backlog");
+  assert.ok(words.includes("Now waits on PPL-1 (+1 days)"));
+  assert.ok(words.includes("Hours left changed from nothing to 12 h"));
+  assert.ok(
+    words.some((w) => /^Assignee changed from nothing to Ben/.test(w)),
+    "an assignee is shown by name, not id",
+  );
+  assert.ok(d.history.filter((h) => h.why === "handing over").length === 2);
+
+  await refuses(() => getTaskDetail(db, boss, "PPL", y.number), "not_found");
+  await refuses(() => getTaskDetail(db, ana, "PPL", 999), "not_found");
+});
+
+test("capacity: the default, a person's own figure, time off and holidays all move the forecast", async () => {
+  const P = await import("../src/modules/tracker/service/people");
+  const admin = { ...ana, admin: true };
+  const [p] = await rows<{ id: number }>(`SELECT id FROM tracker.project WHERE key = 'PPL'`);
+  const projectId = Number(p!.id);
+
+  const before = await P.getCapacityOverview(db, ana);
+  assert.equal(before.globalHoursPerDay, 6);
+  assert.equal(before.canManage, false);
+  assert.equal(before.people.find((x) => x.id === cal.personId)!.hoursPerDay, 6);
+  assert.equal((await P.getCapacityOverview(db, admin)).canManage, true);
+
+  await refuses(() => P.setGlobalHours(db, ana, 5), "forbidden");
+  await refuses(() => P.setPersonHours(db, ana, cal.personId, 2), "forbidden");
+  await refuses(() => P.setGlobalHours(db, admin, 0), "invalid");
+  await refuses(() => P.setPersonHours(db, admin, cal.personId, 30), "invalid");
+
+  // Cal mostly works on things outside the tracker: 2 project hours a day.
+  await P.setPersonHours(db, admin, cal.personId, 2);
+  // Anyone may record their own time off; only an admin may record someone else's.
+  const off = await P.addTimeOff(db, cal, {
+    personId: cal.personId,
+    start: "2026-11-17",
+    end: "2026-11-17",
+    note: "dentist",
+  });
+  await refuses(
+    () => P.addTimeOff(db, ben, { personId: cal.personId, start: "2026-11-20", end: "2026-11-20" }),
+    "forbidden",
+  );
+  await refuses(
+    () => P.addTimeOff(db, cal, { personId: cal.personId, start: "2026-11-20", end: "2026-11-19" }),
+    "invalid",
+  );
+  await refuses(() => P.addHoliday(db, ana, { date: "2026-11-18", name: "x" }), "forbidden");
+  await P.addHoliday(db, admin, { date: "2026-11-18", name: "Shutdown day" });
+
+  const now = await P.getCapacityOverview(db, cal);
+  const mine = now.people.find((x) => x.id === cal.personId)!;
+  assert.deepEqual([mine.ownHoursPerDay, mine.hoursPerDay], [2, 2]);
+  assert.deepEqual(now.holidays.map((h) => h.date).includes("2026-11-18"), true);
+
+  // A 6-hour task for Cal from Monday Nov 16: 2 h Mon, off Tue, holiday Wed, 2 h Thu, 2 h Fri.
+  await setPortfolioRanks(db, admin, [{ projectId, rank: 90 }]);
+  await updateProject(db, ana, projectId, { state: "active" });
+  const t = await createTask(db, ana, {
+    projectId,
+    title: "Cal's task",
+    remainingEffortHours: 6,
+    assigneePersonId: cal.personId,
+  });
+  await runForecast(db, { asOf: "2026-11-16", triggeredBy: "manual" });
+  const finish = async () =>
+    (
+      await rows<{ e: string | null }>(
+        `SELECT scheduled_finish::text AS e FROM tracker.task_forecast WHERE task_id = $1`,
+        [t.id],
+      )
+    )[0]!.e;
+  assert.equal(await finish(), "2026-11-20");
+
+  // Take all three away and it is one ordinary day's work again.
+  await refuses(() => P.removeTimeOff(db, ben, off), "forbidden");
+  await P.removeTimeOff(db, cal, off);
+  await P.removeHoliday(db, admin, "2026-11-18");
+  await P.setPersonHours(db, admin, cal.personId, null);
+  await runForecast(db, { asOf: "2026-11-16", triggeredBy: "manual" });
+  assert.equal(await finish(), "2026-11-16");
+  const after = (await P.getCapacityOverview(db, cal)).people.find((x) => x.id === cal.personId)!;
+  assert.deepEqual([after.ownHoursPerDay, after.hoursPerDay, after.timeOff.length], [null, 6, 0]);
+
+  await P.setGlobalHours(db, admin, 5);
+  assert.equal((await P.getCapacityOverview(db, cal)).globalHoursPerDay, 5);
+  await P.setGlobalHours(db, admin, 6);
+});
+
 test("forecast run: a missing global capacity default is an error, not a silent zero", async () => {
   // Last on purpose: it removes the row every other forecast test relies on.
   await pg.exec(`DELETE FROM tracker.capacity_setting WHERE scope = 'global'`);

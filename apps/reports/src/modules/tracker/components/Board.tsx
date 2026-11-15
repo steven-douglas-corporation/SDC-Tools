@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { BUTTON_COMPACT, BUTTON_PRIMARY, CARD_BASE, INPUT, LABEL } from "@/components/ui/classnames";
 import { confirmRemainingAction, createTaskAction, moveTaskAction, updateTaskAction, type TaskEdit } from "../actions";
@@ -10,8 +11,8 @@ import { forecastReason, hours, shortDate } from "./format";
 // (who, how much is left, due date) next to what the forecast says and why.
 //
 // Moving a card is a status change through the service, so the status log and completion date
-// are written with it. A card is moved with its status menu, not by dragging: that keeps the
-// first version small and usable from a keyboard. Dragging can be added on top later.
+// are written with it. A card can be dragged to another column, or moved with the status menu
+// on it. The menu stays because dragging cannot be done from a keyboard or easily on a phone.
 
 const SMALL_INPUT =
   "rounded-md border border-sdc-border bg-white px-2 py-1.5 text-sm text-sdc-navy focus:border-sdc-blue focus:outline-none";
@@ -227,10 +228,24 @@ function Editor({ task, board, onDone }: { task: BoardTask; board: BoardData; on
   );
 }
 
-function Card({ task, board, canEdit }: { task: BoardTask; board: BoardData; canEdit: boolean }) {
+/** What a dragged card carries. A custom type, so a dragged link or file is never mistaken for a card. */
+const DRAG_TYPE = "application/x-sdc-tracker-task";
+
+function Card({
+  task,
+  board,
+  canEdit,
+  blockTo,
+  setBlockTo,
+}: {
+  task: BoardTask;
+  board: BoardData;
+  canEdit: boolean;
+  /** Set while the person is being asked why this task is blocked, before the move is sent. */
+  blockTo: BoardStatus | null;
+  setBlockTo: (status: BoardStatus | null) => void;
+}) {
   const [editing, setEditing] = useState(false);
-  // Set while the person is being asked why a task is blocked, before the move is sent.
-  const [blockTo, setBlockTo] = useState<BoardStatus | null>(null);
   const [blockedReason, setBlockedReason] = useState("");
   const [unblockDate, setUnblockDate] = useState("");
   const [error, setError] = useState("");
@@ -258,7 +273,15 @@ function Card({ task, board, canEdit }: { task: BoardTask; board: BoardData; can
   const late = !closed && task.dueDate && task.forecastFinish && (task.p80Finish ?? task.forecastFinish) > task.dueDate;
 
   return (
-    <li className={`${CARD_BASE} p-3 text-sm ${pending ? "opacity-60" : ""}`}>
+    <li
+      className={`${CARD_BASE} p-3 text-sm ${pending ? "opacity-60" : ""} ${canEdit && !editing && !blockTo ? "cursor-grab active:cursor-grabbing" : ""}`}
+      // Not draggable while a form on the card is open: dragging would fight with selecting text in it.
+      draggable={canEdit && !editing && !blockTo}
+      onDragStart={(e) => {
+        e.dataTransfer.setData(DRAG_TYPE, String(task.id));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+    >
       <div className="flex items-start justify-between gap-2">
         <span className="font-mono text-xs font-semibold text-sdc-gray-600">{task.key}</span>
         <span className="flex items-center gap-1">
@@ -274,7 +297,15 @@ function Card({ task, board, canEdit }: { task: BoardTask; board: BoardData; can
           )}
         </span>
       </div>
-      <p className="mt-1 font-semibold text-sdc-navy">{task.title}</p>
+      <p className="mt-1 font-semibold">
+        <Link
+          href={`/tracker/${board.project.key}/${task.key.slice(task.key.lastIndexOf("-") + 1)}`}
+          draggable={false}
+          className="text-sdc-navy hover:text-sdc-blue hover:underline"
+        >
+          {task.title}
+        </Link>
+      </p>
 
       <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs text-sdc-gray-600">
         {task.type === "task" && (
@@ -416,10 +447,32 @@ export function Board({ board, canEdit }: { board: BoardData; canEdit: boolean }
     (s) => s.category !== "cancelled" || board.tasks.some((t) => t.statusId === s.id),
   );
 
+  // Which card is being asked for a blocked reason. Held here, not on the card, because the
+  // question can be raised two ways: from the card's own menu, or by dropping it on a blocked column.
+  const [blockPrompt, setBlockPrompt] = useState<{ taskId: number; status: BoardStatus } | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+  const [dropError, setDropError] = useState("");
+  const [dropping, startDrop] = useTransition();
+
+  function drop(status: BoardStatus, e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(null);
+    const task = board.tasks.find((t) => t.id === Number(e.dataTransfer.getData(DRAG_TYPE)));
+    if (!task || task.statusId === status.id) return;
+    setDropError("");
+    // A blocked status needs a reason, so the drop opens the same question the menu does.
+    if (status.category === "blocked") return setBlockPrompt({ taskId: task.id, status });
+    startDrop(async () => {
+      const res = await moveTaskAction({ taskId: task.id, projectKey: board.project.key, toStatusId: status.id });
+      if (!res.ok) setDropError(`${task.key}: ${res.error}`);
+    });
+  }
+
   return (
     <div className="space-y-4">
       {mayChange && <NewTask board={board} />}
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      {dropError && <p className="text-sm text-sdc-red-text">{dropError}</p>}
+      <div className={`flex gap-3 overflow-x-auto pb-2 ${dropping ? "opacity-70" : ""}`}>
         {columns.map((s) => {
           const tasks = board.tasks.filter((t) => t.statusId === s.id);
           const over = s.wipLimit != null && tasks.length > s.wipLimit;
@@ -427,7 +480,20 @@ export function Board({ board, canEdit }: { board: BoardData; canEdit: boolean }
             <section
               key={s.id}
               aria-label={s.name}
-              className={`flex w-72 shrink-0 flex-col rounded-xl border border-t-4 border-sdc-border bg-background p-2 ${COLUMN_TONE[s.category]}`}
+              onDragOver={(e) => {
+                if (!mayChange || !e.dataTransfer.types.includes(DRAG_TYPE)) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (dragOver !== s.id) setDragOver(s.id);
+              }}
+              onDragLeave={(e) => {
+                // Leaving for a child of the column is not leaving the column.
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(null);
+              }}
+              onDrop={(e) => mayChange && drop(s, e)}
+              className={`flex w-72 shrink-0 flex-col rounded-xl border border-t-4 border-sdc-border p-2 ${COLUMN_TONE[s.category]} ${
+                dragOver === s.id ? "bg-sdc-blue-light ring-2 ring-sdc-blue/40" : "bg-background"
+              }`}
             >
               <h2 className="flex items-center justify-between px-1 pb-2 text-sm font-semibold text-sdc-navy">
                 {s.name}
@@ -438,9 +504,17 @@ export function Board({ board, canEdit }: { board: BoardData; canEdit: boolean }
                   {s.wipLimit != null ? ` / ${s.wipLimit}` : ""}
                 </span>
               </h2>
-              <ul className="flex flex-col gap-2">
+              {/* min-h so an empty column is still something to drop on */}
+              <ul className="flex min-h-16 flex-1 flex-col gap-2">
                 {tasks.map((t) => (
-                  <Card key={t.id} task={t} board={board} canEdit={mayChange} />
+                  <Card
+                    key={t.id}
+                    task={t}
+                    board={board}
+                    canEdit={mayChange}
+                    blockTo={blockPrompt?.taskId === t.id ? blockPrompt.status : null}
+                    setBlockTo={(status) => setBlockPrompt(status ? { taskId: t.id, status } : null)}
+                  />
                 ))}
               </ul>
             </section>

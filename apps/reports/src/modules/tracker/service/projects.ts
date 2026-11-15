@@ -3,6 +3,9 @@ import { requireGlobalRole, requireProjectRole } from "./access";
 
 export type ProjectState = "planned" | "active" | "on_hold" | "completed" | "cancelled";
 
+/** Keys that would collide with the tracker's own pages. */
+const RESERVED_KEYS = new Set(["PEOPLE", "API", "NEW", "SETTINGS"]);
+
 export interface NewProject {
   /** Short code used in task keys, e.g. BIN gives BIN-42. */
   key: string;
@@ -81,6 +84,8 @@ export async function createProject(
   if (!/^[A-Z][A-Z0-9]{1,7}$/.test(key)) {
     throw new TrackerError("invalid", "A project key is 2 to 8 letters or digits, starting with a letter.");
   }
+  // A project's board lives at /tracker/KEY, so a key cannot be the name of another tracker page.
+  if (RESERVED_KEYS.has(key)) throw new TrackerError("invalid", `${key} is reserved. Choose a different key.`);
   if (!input.name.trim()) throw new TrackerError("invalid", "A project needs a name.");
   assertIsoDate(input.targetDate, "Target date");
 

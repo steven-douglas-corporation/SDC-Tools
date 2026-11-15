@@ -530,6 +530,24 @@ export async function removeDependency(
   });
 }
 
+/** Adds a comment to a task. Anyone who can change the project's tasks can comment. */
+export async function addComment(db: Database, actor: Actor, taskId: number, body: string): Promise<number> {
+  const text = body.trim();
+  if (!text) throw new TrackerError("invalid", "A comment cannot be empty.");
+  if (text.length > 10_000) throw new TrackerError("invalid", "That comment is too long (10,000 characters at most).");
+  return db.transaction(async (tx) => {
+    const cur = await lockTask(tx, taskId);
+    await requireProjectRole(tx, cur.project_id, actor, "contributor");
+    const row = await one<{ id: number }>(
+      tx,
+      `INSERT INTO tracker.task_comment (task_id, author_person_id, body) VALUES ($1, $2, $3) RETURNING id`,
+      [taskId, actor.personId, text],
+      "Comment",
+    );
+    return Number(row.id);
+  });
+}
+
 /** Tasks are archived, never deleted, so their history stays intact. */
 export async function archiveTask(db: Database, actor: Actor, taskId: number): Promise<void> {
   await db.transaction(async (tx) => {

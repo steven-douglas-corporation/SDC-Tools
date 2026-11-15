@@ -114,7 +114,7 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 45 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its 48 tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
 | Piece                     | Where, under `apps/reports`                                                 |
@@ -125,6 +125,7 @@ the schema into a real Postgres engine that runs inside the test.
 | Database connection       | `src/modules/tracker/db.ts`                                                 |
 | Forecast job              | `scripts/tracker/run-forecast.ts`                                           |
 | Screen actions            | `src/modules/tracker/actions.ts`                                            |
+| API routes (read-only)    | `src/app/api/tracker/` and `src/modules/tracker/api.ts`                     |
 | Screens                   | `src/app/(app)/tracker/` (thin pages) and `src/modules/tracker/components/` |
 | Tests                     | `tests/tracker-*.test.ts`                                                   |
 
@@ -201,8 +202,17 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
   ELT sets the stack rank and a manager makes a ranked project active.
 - **Board** (`/tracker/KEY`): one column per status. A card shows who has it, the hours left, the
   due date, the forecast dates and one sentence on why it starts when it does, or why it is not
-  forecast. Tasks are added at the top, moved with a status menu on the card, and edited in place.
-  Moving a card to a blocked status asks what is blocking it and when it is expected to clear.
+  forecast. Tasks are added at the top, moved by dragging or with a status menu on the card, and
+  edited in place. Moving a card to a blocked status, either way, asks what is blocking it and
+  when it is expected to clear. A panel under the board lists the people on the project; a
+  manager adds people, changes their role or removes them there.
+- **Task page** (`/tracker/KEY/42`): every field, with an optional reason for a change; the
+  forecast and its reason; what the task waits on (add and remove, with lag) and what waits on
+  it; comments; and the history, which is the status log and the change log read back together
+  in plain words, newest first.
+- **People and time** (`/tracker/people`): the length of a normal project day, a figure of their
+  own for anyone whose day is shorter, time off, and company holidays. ELT sets the default,
+  other people's hours and the holidays; anyone can enter their own time off.
 - After every change the quick forecast is re-run, so the dates on screen are never older than
   the last edit. The simulation is never run from a screen.
 - A quick run drops the last simulation's P50 and P80 when they can no longer be true (made for
@@ -213,9 +223,17 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
 
 ### Not built, and known limits
 
-- No API routes yet, so AI tools and other systems cannot reach it. Cards are moved with a menu,
-  not by dragging. There is no screen yet for dependencies, members, time off, capacity, sprints,
-  role pools, a task's history or comments; the service supports the first two.
+- The API is read-only and uses the browser session: `GET /api/tracker/projects`, one project,
+  and one task. There is no service token yet, so an AI tool running on a server cannot call it,
+  and nothing can be changed through it.
+- Dragging was checked by sending the browser's drag events to the page, not with a real mouse
+  drag; the testing tool could not perform one. It needs a try by hand.
+- No screens yet for sprints, role pools, teams and team capacity, date-ranged capacity, a
+  not-before date, archiving a task, or dependencies on a task in another project. The schema
+  supports all of them.
+- The P50/P80 simulation is not scheduled anywhere. It runs only when someone runs
+  `npm run tracker:forecast`, so P80 is blank after any edit until it is run again.
+- Someone with `tracker:view` but not `tracker:edit` cannot enter their own time off.
 - Run against a real server once, by hand (2026-11-15): the migrations, the service and the
   forecast job passed against PostgreSQL 16 in the dev Docker container, through the production
   driver and under the restricted logins. That check is not automated; the tests that run on
