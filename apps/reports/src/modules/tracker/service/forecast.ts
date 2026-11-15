@@ -1,4 +1,4 @@
-import type { Database, Tx } from "./database";
+import { TrackerError, type Database, type Tx } from "./database";
 import {
   schedule,
   simulate,
@@ -141,6 +141,18 @@ export async function loadForecastInputs(tx: Tx, asOf: string): Promise<LoadedIn
       ORDER BY id`,
     [asOf],
   );
+  // Without the global default every person has zero hours a day, and the forecast would
+  // report all work as "no capacity within horizon" — true, but it hides the real cause.
+  // Found by running against a real server whose capacity table had been emptied.
+  const hasGlobalDefault = capacity.rows.some(
+    (c) => c.scope === "global" && c.hours != null && c.effective_from == null && c.effective_to == null,
+  );
+  if (!hasGlobalDefault) {
+    throw new TrackerError(
+      "invalid",
+      "The global capacity default is missing. Add an undated row to tracker.capacity_setting with scope 'global' and the project hours per day.",
+    );
+  }
   const timeOff = await tx.query<{ person_id: number; start_date: string; end_date: string; day_portion: number }>(
     `SELECT person_id, start_date::text, end_date::text, day_portion::float8 FROM tracker.time_off WHERE end_date >= $1::date`,
     [asOf],

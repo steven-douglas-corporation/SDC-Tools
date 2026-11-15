@@ -458,3 +458,15 @@ test("forecast run: the spec's worked example, built through the service and rea
   assert.deepEqual([Number(b1After.run_id), Number(b1After.sim)], [quick.runId, run.runId]);
   assert.ok(b1After.p80, "P80 from the earlier simulation is still there");
 });
+
+test("forecast run: a missing global capacity default is an error, not a silent zero", async () => {
+  // Last on purpose: it removes the row every other forecast test relies on.
+  await pg.exec(`DELETE FROM tracker.capacity_setting WHERE scope = 'global'`);
+  await refuses(
+    () => runForecast(db, { asOf: "2026-11-11", triggeredBy: "manual" }),
+    "invalid",
+    /global capacity default/,
+  );
+  const runs = await rows(`SELECT 1 FROM tracker.schedule_run WHERE status = 'running'`);
+  assert.equal(runs.length, 0, "the refused run leaves nothing behind");
+});

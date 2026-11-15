@@ -114,7 +114,7 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 36 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its 37 tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
 | Piece                     | Where, under `apps/reports`              |
@@ -193,9 +193,13 @@ one transaction.
 
 - No screens and no API routes, so nobody can use it yet. No permission keys have been added to
   Reports for it either.
-- The service has only been run against the in-process test database. It has not been run
-  against a PostgreSQL server through the production driver, and there is no script that applies
-  the migrations to a server.
+- Run against a real server once, by hand (2026-11-15): the migrations, the service and the
+  forecast job passed against PostgreSQL 16 in the dev Docker container, through the production
+  driver and under the restricted logins. That check is not automated; the tests that run on
+  every change use the in-process database.
+- The forecast refuses to run if the global capacity default is missing. That run against a real
+  server is what showed the need: without the row every person had zero hours and all work was
+  reported as "no capacity".
 - A signed-in Reports user is not yet linked to a tracker person; `ensurePerson` exists for that.
 - A dependency on a parent task is ignored by the forecast. Only tasks that carry effort
   themselves are scheduled.
