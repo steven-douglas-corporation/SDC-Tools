@@ -33,7 +33,7 @@
     "deploy": "npm run build:apps && pm2 startOrRestart ecosystem.config.js",
     "lint:configs": "node scripts/check-lint-configs.mjs",
     "lint": "npm run lint:configs && npm run lint --prefix apps/assemblies && npm run lint --prefix apps/build-readiness && npm run lint --prefix apps/calendar && npm run lint --prefix apps/shell && npm run lint --prefix apps/state-logic && npm run lint --prefix apps/reports",
-    "test": "npm test --prefix apps/assemblies && npm test --prefix apps/build-readiness && npm test --prefix apps/calendar && npm test --prefix apps/shell && npm test --prefix apps/state-logic && npm test --prefix apps/reports",
+    "test": "npm test --prefix apps/assemblies && npm test --prefix apps/build-readiness && npm test --prefix apps/calendar && npm test --prefix apps/shell && npm test --prefix apps/state-logic && npm test --prefix apps/reports && npm test --prefix apps/tracker",
     "format:check": "prettier --check ."
   },
   "engines": {
