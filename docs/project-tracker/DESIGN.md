@@ -113,7 +113,7 @@ set of screens are built and tested as a module of SDC Reports (`apps/reports/sr
   There is no close or back button.
 - **Bug and Issue are both kept** (reviewed 2026-11-15). They behave identically; only the label
   and the count differ. A Bug is something that was built and does not work, and is fixed by
-  changing the thing. An Issue is a problem that is not a defect: a late supplier, a decision
+  changing the thing. An Issue is a problem that is not a bug: a late supplier, a decision
   that is needed, missing access. "Issue" is what the open issues in the RAID log become once
   the tracker is in use; risks and assumptions stay in the RAID log. If people do not keep the
   two apart in practice, dropping Issue is one small migration.
