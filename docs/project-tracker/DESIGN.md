@@ -99,7 +99,7 @@ set of screens are built and tested as a module of SDC Reports (`apps/reports/sr
 | AI estimate                         | The AI suggests a bucket and its reasoning in a separate field; a person accepts or overrides. Later, grounded in similar finished tasks.                                                                                                          |            |
 | At-risk flag                        | Based on P50 or P80, not the single-date forecast.                                                                                                                                                                                                 | R-06       |
 | Remaining effort on job-linked work | Defaults to budget minus Paylocity actuals, refreshed daily, with manual override.                                                                                                                                                                 | D-09, I-05 |
-| Time off and holidays               | Roster and holidays from the warehouse; time off typed into the tracker at first.                                                                                                                                                                  | DEP-05     |
+| Time off and holidays               | Roster from the Paylocity tables the warehouse loads, copied into the tracker daily, never read live and never from reporting tables. Holidays and time off typed into the tracker at first; time off from Paylocity later (M-15).                 | DEP-05     |
 
 ## Open items
 
@@ -235,8 +235,15 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
   `npm run tracker:forecast`, so P80 is blank after any edit until it is run again.
 - Someone with `tracker:view` but not `tracker:edit` cannot enter their own time off.
 - Time off is typed in by hand. Approved time off is already in Paylocity, and the plan is to
-  import it from there daily (backlog M-15). Not started: how we reach Paylocity's time-off
-  data, through its API or a warehouse copy, is not confirmed.
+  import it from there daily (backlog M-15). Not started, and nothing at SDC receives time off
+  from Paylocity today: Reports gets worked hours, the roster and position families as report
+  files the warehouse loader loads, and there is no Paylocity API connection. A time-off report
+  has to be added to that load first.
+- Keeping operational and reporting data apart: the tracker copies what it needs from a source
+  system into its own tables on a schedule, and the forecast reads only those. It never queries
+  the warehouse while serving a page, and never reads the warehouse's reporting tables. The
+  warehouse's loaded Paylocity tables are the one allowed source there, because they are the
+  only place Paylocity's files land.
 - Run against a real server once, by hand (2026-11-15): the migrations, the service and the
   forecast job passed against PostgreSQL 16 in the dev Docker container, through the production
   driver and under the restricted logins. That check is not automated; the tests that run on

@@ -188,8 +188,9 @@ export async function setPersonHours(
  * Records time away. A person may add their own; an admin may add anyone's.
  *
  * TODO (backlog M-15): time off is typed in by hand for now. Approved time off already lives in
- * Paylocity, so the plan is a daily import from there, matched on person.paylocity_employee_id,
- * with typed entries kept only for what Paylocity does not hold.
+ * Paylocity, so the plan is a daily import, matched on person.paylocity_employee_id, with typed
+ * entries kept only for what Paylocity does not hold. The import copies rows into
+ * tracker.time_off; the forecast keeps reading only the tracker's own tables.
  */
 export async function addTimeOff(
   db: Database,
