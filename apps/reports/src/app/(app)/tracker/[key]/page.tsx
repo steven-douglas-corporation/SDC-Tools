@@ -51,7 +51,11 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
     // Cards that carry work: a card with cards under it is not counted on top of them.
     ["Done", `${p.doneCount} of ${p.taskCount}`],
     // One figure per kind the project uses, so an Epic or a Feature is counted as what it is.
-    ...board.kindCounts.map((k): [string, string] => [plural(k.label), `${k.done} of ${k.total}`]),
+    // Left out when the project uses a single kind: it would only repeat the figure above.
+    ...(board.kindCounts.length > 1 ? board.kindCounts : []).map((k): [string, string] => [
+      plural(k.label),
+      `${k.done} of ${k.total}`,
+    ]),
   ];
 
   return (

@@ -135,8 +135,8 @@ export async function createTaskAction(input: {
         projectId: input.projectId,
         title: input.title,
         type: input.type,
-        kind: input.type === "milestone" ? null : input.kind || null,
-        effortBucketId: input.type === "milestone" ? null : input.effortBucketId,
+        kind: input.kind || (input.type === "milestone" ? "milestone" : "task"),
+        effortBucketId: input.type === "milestone" || input.kind === "milestone" ? null : input.effortBucketId,
         assigneePersonId: input.assigneePersonId,
         dueDate: input.dueDate || null,
       });
@@ -204,7 +204,7 @@ export async function updateTaskAction(input: {
       if (c.remainingEffortHours !== undefined) changes.remainingEffortHours = c.remainingEffortHours;
       if (c.dueDate !== undefined) changes.dueDate = c.dueDate || null;
       if (c.estimatedCompletionDate !== undefined) changes.estimatedCompletionDate = c.estimatedCompletionDate || null;
-      if (c.kind !== undefined) changes.kind = c.kind || null;
+      if (c.kind !== undefined) changes.kind = c.kind || "task";
       if (c.parentTaskId !== undefined) changes.parentTaskId = c.parentTaskId;
       await updateTask(trackerDb, actor, input.taskId, changes, input.reason);
       return {};

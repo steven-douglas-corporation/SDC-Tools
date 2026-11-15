@@ -26,7 +26,7 @@ export interface LinkedTask {
 export interface ChildCard {
   key: string;
   title: string;
-  kindLabel: string | null;
+  kindLabel: string;
   statusName: string;
   /** True when that card is finished or cancelled. */
   closed: boolean;
@@ -60,9 +60,9 @@ export interface TaskDetail {
   title: string;
   description: string | null;
   type: "task" | "milestone";
-  /** The card's kind (epic, feature, story, task, bug, issue), or null if it has none. */
-  kind: string | null;
-  kindLabel: string | null;
+  /** The card's kind: epic, feature, story, task, bug, issue or milestone. */
+  kind: string;
+  kindLabel: string;
   /** The card this one sits under, or null. */
   parentTaskId: number | null;
   /** The cards above this one, top of the hierarchy first. Empty when it sits under nothing. */
@@ -152,8 +152,8 @@ interface DetailRow {
   title: string;
   description: string | null;
   type: "task" | "milestone";
-  kind: string | null;
-  kind_label: string | null;
+  kind: string;
+  kind_label: string;
   parent_task_id: number | null;
   status_id: number;
   status_name: string;
@@ -217,7 +217,7 @@ export async function getTaskDetail(
          JOIN tracker.person rp ON rp.id = t.reporter_person_id
     LEFT JOIN tracker.person a ON a.id = t.assignee_person_id
     LEFT JOIN tracker.effort_bucket b ON b.id = t.effort_bucket_id
-    LEFT JOIN tracker.work_kind k ON k.key = t.kind
+         JOIN tracker.work_kind k ON k.key = t.kind
     LEFT JOIN tracker.task_forecast f
            ON f.task_id = t.id AND f.run_id = (SELECT run_id FROM tracker.current_schedule_run)
     LEFT JOIN tracker.task dt ON dt.id = f.driver_task_id
@@ -284,7 +284,7 @@ export async function getTaskDetail(
       id: number;
       key: string;
       title: string;
-      kind_label: string | null;
+      kind_label: string;
       status_name: string;
       closed: boolean;
       forecast_finish: string | null;
@@ -293,7 +293,7 @@ export async function getTaskDetail(
               (cs.category IN ('done', 'cancelled')) AS closed, cf.scheduled_finish::text AS forecast_finish
          FROM tracker.task c
          JOIN tracker.workflow_status cs ON cs.id = c.status_id
-    LEFT JOIN tracker.work_kind ck ON ck.key = c.kind
+         JOIN tracker.work_kind ck ON ck.key = c.kind
     LEFT JOIN tracker.task_forecast cf
            ON cf.task_id = c.id AND cf.run_id = (SELECT run_id FROM tracker.current_schedule_run)
         WHERE c.parent_task_id = $1 AND c.archived_at IS NULL

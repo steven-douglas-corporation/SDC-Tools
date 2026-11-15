@@ -76,13 +76,20 @@ set of screens are built and tested as a module of SDC Reports (`apps/reports/sr
 
 ### Kinds of card (decided 2026-11-15)
 
-- A card can optionally be given a **kind**: Epic, Feature, Story, Task, Bug or Issue. The kind
-  is chosen on the card itself. There are no project types: a team that wants a plain list of
-  cards never picks a kind and never sees the hierarchy.
+- Every card has a **kind**: Epic, Feature, Story, Task, Bug, Issue or Milestone. It is chosen on
+  the card itself and is **Task unless something else is picked**, so a team that wants a plain
+  list never opens the menu and has a board of Tasks. There are no project types.
+- A card with no kind was allowed at first and treated exactly like a Task. That gave one thing
+  two names, so it was removed the same day (`0005_kind_required.sql`): existing cards with no
+  kind became Tasks. "Card" remains the general word for any item, whatever its kind.
+- **Milestone is a kind**, at the bottom level: a date that matters, with no hours. It used to be
+  a separate setting. The old `type` column stays for the forecast and is kept in step by the
+  database.
+- A "?" beside each Kind field opens a small picture of the kinds as a ladder, with one line on
+  what each is for.
 - A card can sit under another card only if that card is of a **higher kind**: Epic, then
-  Feature, then Story, then Task, Bug and Issue together at the bottom. Levels can be skipped,
-  so a Story can sit straight under an Epic. A card with no kind counts as the bottom level: it
-  can sit under anything with a kind, and nothing can sit under it.
+  Feature, then Story, then Task, Bug, Issue and Milestone together at the bottom. Levels can be
+  skipped, so a Story can sit straight under an Epic. Nothing can sit under the bottom level.
 - A card with cards under it carries no hours of its own in the forecast. It shows what the
   cards under it add up to, and it finishes when the last of them does.
 - **Hours on a parent are flagged, not moved.** A sized card that becomes a parent keeps its
@@ -147,7 +154,7 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 56 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its 57 tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
 | Piece                     | Where, under `apps/reports`                                                 |
@@ -244,7 +251,7 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
   forecast and its reason; what the task waits on (add and remove, with lag) and what waits on
   it; comments; and the history, which is the status log and the change log read back together
   in plain words, newest first.
-- **Kinds and hierarchy**: the new-card form and the task page have an optional kind. The task
+- **Kinds and hierarchy**: the new-card form and the task page have a kind, Task by default, with a "?" that explains the kinds. The task
   page has a "Sits under" menu that lists only cards of a higher kind, and the service refuses
   anything else in a sentence that names the cards involved. A card shows its kind and the card
   it sits under; a card with cards under it shows how many, how many are done, the hours left

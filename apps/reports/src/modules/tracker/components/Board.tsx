@@ -7,6 +7,7 @@ import { confirmRemainingAction, createTaskAction, moveTaskAction, updateTaskAct
 import type { Board as BoardData, BoardStatus, BoardTask } from "../service/queries";
 import type { OpenCard } from "../service/tasks";
 import { CloseUnderPrompt } from "./CloseUnderPrompt";
+import { KindHelp } from "./KindHelp";
 import { forecastReason, hours, shortDate, uncountedComparison } from "./format";
 
 /** A move that is waiting for an answer about the open cards under the card being closed. */
@@ -35,8 +36,8 @@ const COLUMN_TONE: Record<BoardStatus["category"], string> = {
 
 function NewTask({ board }: { board: BoardData }) {
   const [title, setTitle] = useState("");
-  // One menu for two things: an optional kind from the taxonomy, or a milestone (a date with no work).
-  const [what, setWhat] = useState("");
+  // The card's kind. Task unless something else is chosen; a milestone is a date with no work.
+  const [what, setWhat] = useState("task");
   const type: "task" | "milestone" = what === "milestone" ? "milestone" : "task";
   const [bucketId, setBucketId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
@@ -56,7 +57,7 @@ function NewTask({ board }: { board: BoardData }) {
             projectKey: board.project.key,
             title,
             type,
-            kind: type === "milestone" ? null : what || null,
+            kind: what,
             effortBucketId: bucketId ? Number(bucketId) : null,
             assigneePersonId: assigneeId ? Number(assigneeId) : null,
             dueDate: dueDate || null,
@@ -79,20 +80,20 @@ function NewTask({ board }: { board: BoardData }) {
         />
       </label>
       <label className="flex flex-col gap-1">
-        <span className={LABEL}>Kind</span>
+        <span className={`${LABEL} flex items-center gap-1.5`}>
+          Kind <KindHelp kinds={board.kinds} />
+        </span>
         <select
           value={what}
           onChange={(e) => setWhat(e.target.value)}
           className={INPUT}
-          title="Optional. A card can sit only under a card of a higher kind: Epic, then Feature, then Story, then Task, Bug or Issue."
+          title="A card can sit only under a card of a higher kind: Epic, then Feature, then Story, then Task, Bug, Issue or Milestone."
         >
-          <option value="">No kind</option>
           {board.kinds.map((k) => (
             <option key={k.key} value={k.key}>
               {k.label}
             </option>
           ))}
-          <option value="milestone">Milestone</option>
         </select>
       </label>
       {type === "task" && (
@@ -323,7 +324,8 @@ function Card({
           {task.key}
         </Link>
         <span className="flex items-center gap-1">
-          {task.kindLabel && (
+          {/* Task is the default and goes unmarked, so a plain board is not a wall of labels. */}
+          {task.kindLabel !== "Task" && (
             <span className="rounded-full bg-sdc-gray-100 px-2 py-0.5 text-micro font-bold uppercase text-sdc-gray-600">
               {task.kindLabel}
             </span>

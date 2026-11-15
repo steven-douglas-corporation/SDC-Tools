@@ -54,11 +54,9 @@ export default async function TrackerTaskPage({ params }: { params: Promise<{ ke
       </p>
       <PageTitle className="mb-4">
         <span className="font-mono text-sdc-gray-600">{task.key}</span> {task.title}
-        {task.kindLabel && (
-          <span className="ml-2 rounded-full bg-sdc-gray-100 px-2 py-0.5 align-middle text-xs font-bold uppercase text-sdc-gray-600">
-            {task.kindLabel}
-          </span>
-        )}
+        <span className="ml-2 rounded-full bg-sdc-gray-100 px-2 py-0.5 align-middle text-xs font-bold uppercase text-sdc-gray-600">
+          {task.kindLabel}
+        </span>
         {task.archived && <span className="ml-2 text-sm font-normal text-sdc-gray-600">(archived)</span>}
       </PageTitle>
       {/* Keyed on the forecast and history so the form picks up fresh values after each save. */}

@@ -227,8 +227,8 @@ export interface BoardTask {
   key: string;
   title: string;
   type: "task" | "milestone";
-  /** Epic, Feature, Story, Task, Bug or Issue, as shown; null when the card has no kind. */
-  kindLabel: string | null;
+  /** Epic, Feature, Story, Task, Bug, Issue or Milestone, as shown. */
+  kindLabel: string;
   /** The card this one sits under, if any. */
   parentKey: string | null;
   /**
@@ -291,7 +291,7 @@ interface TaskRow {
   key: string;
   title: string;
   type: "task" | "milestone";
-  kind_label: string | null;
+  kind_label: string;
   parent_task_id: number | null;
   parent_key: string | null;
   category: BoardStatus["category"];
@@ -365,7 +365,7 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
          JOIN tracker.workflow_status s ON s.id = t.status_id
     LEFT JOIN tracker.person a ON a.id = t.assignee_person_id
     LEFT JOIN tracker.effort_bucket b ON b.id = t.effort_bucket_id
-    LEFT JOIN tracker.work_kind k ON k.key = t.kind
+         JOIN tracker.work_kind k ON k.key = t.kind
     LEFT JOIN tracker.task_forecast f
            ON f.task_id = t.id AND f.run_id = (SELECT run_id FROM tracker.current_schedule_run)
     LEFT JOIN tracker.task dt ON dt.id = f.driver_task_id

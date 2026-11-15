@@ -131,7 +131,7 @@ export function Timeline({ timeline }: { timeline: TimelineData }) {
                   {hours(r.uncountedHours)} not counted
                 </span>
               )}
-              {r.kindLabel && (
+              {r.kindLabel !== "Task" && (
                 <span className="rounded-full bg-sdc-gray-100 px-1.5 text-micro font-bold uppercase text-sdc-gray-600">
                   {r.kindLabel}
                 </span>

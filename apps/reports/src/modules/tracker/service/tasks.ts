@@ -23,7 +23,7 @@ export interface NewTask {
   dueDate?: string | null;
   notBeforeDate?: string | null;
   notBeforeReason?: string | null;
-  /** Optional: epic, feature, story, task, bug or issue. */
+  /** epic, feature, story, task, bug, issue or milestone. Task when left out. */
   kind?: string | null;
   /** The card this one sits under. It must be of a higher kind. */
   parentTaskId?: number | null;
@@ -50,7 +50,7 @@ export interface TaskChanges {
   notBeforeReason?: string | null;
   expectedUnblockDate?: string | null;
   sprintId?: number | null;
-  /** Optional: epic, feature, story, task, bug or issue. Null clears it. */
+  /** epic, feature, story, task, bug, issue or milestone. Null puts it back to task. */
   kind?: string | null;
   /** The card this one sits under, which must be of a higher kind. Null lifts it out. */
   parentTaskId?: number | null;
@@ -59,7 +59,7 @@ export interface TaskChanges {
 interface TaskRow {
   id: number;
   project_id: number;
-  kind: string | null;
+  kind: string;
   parent_task_id: number | null;
   status_id: number;
   type: "task" | "milestone";
@@ -226,7 +226,10 @@ export async function createTask(
   if (input.notBeforeDate && !input.notBeforeReason?.trim()) {
     throw new TrackerError("invalid", "A not-before date needs a reason.");
   }
-  const type = input.type ?? "task";
+  // Every card has a kind; Task unless something else is asked for. A milestone is a kind, and
+  // the card's type follows it (the database keeps the two in step as well).
+  const kind = input.kind || (input.type === "milestone" ? "milestone" : "task");
+  const type = kind === "milestone" ? "milestone" : "task";
 
   return db.transaction(async (tx) => {
     await requireProjectRole(tx, input.projectId, actor, "contributor");
@@ -253,7 +256,6 @@ export async function createTask(
       statusId = Number(s.id);
     }
 
-    const kind = input.kind || null;
     const own = await placeOf(tx, kind);
     if (input.parentTaskId != null) await checkParent(tx, input.projectId, null, own, input.parentTaskId);
 
@@ -360,7 +362,22 @@ export async function updateTask(
     if (changes.description !== undefined) assign("description", changes.description);
 
     // Kind and parent are checked together, against each other and against the cards underneath.
-    const nextKind = changes.kind === undefined ? cur.kind : changes.kind || null;
+    const nextKind = changes.kind === undefined ? cur.kind : changes.kind || "task";
+    // Whether this card is a milestone once this change is made, which is what the hours rules need.
+    const milestone = nextKind === "milestone";
+    if (milestone && cur.kind !== "milestone") {
+      const estimate =
+        changes.effortEstimateHours !== undefined ? changes.effortEstimateHours : cur.effort_estimate_hours;
+      const left =
+        changes.remainingEffortHours !== undefined ? changes.remainingEffortHours : cur.remaining_effort_hours;
+      if (Number(estimate ?? 0) > 0 || Number(left ?? 0) > 0 || changes.effortBucketId) {
+        throw new TrackerError(
+          "invalid",
+          "A milestone is a date with no work, so it carries no hours. Clear this card's size and hours left first.",
+        );
+      }
+      if (changes.effortBucketId === undefined && cur.effort_bucket_id != null) assign("effort_bucket_id", null);
+    }
     const nextParent = changes.parentTaskId === undefined ? cur.parent_task_id : changes.parentTaskId;
     if (nextKind !== cur.kind || nextParent !== cur.parent_task_id) {
       const own = await placeOf(tx, nextKind);
@@ -423,8 +440,7 @@ export async function updateTask(
       assign("effort_bucket_id", null);
     }
     if (newEstimate !== undefined && !sameHours(cur.effort_estimate_hours, newEstimate)) {
-      if (cur.type === "milestone" && (newEstimate ?? 0) > 0)
-        throw new TrackerError("invalid", "A milestone carries no effort.");
+      if (milestone && (newEstimate ?? 0) > 0) throw new TrackerError("invalid", "A milestone carries no effort.");
       assign("effort_estimate_hours", newEstimate);
       await logTaskChange(tx, taskId, "effort_estimate_hours", cur.effort_estimate_hours, newEstimate, actor, why);
     }
@@ -433,7 +449,7 @@ export async function updateTask(
       changes.remainingEffortHours !== undefined &&
       !sameHours(cur.remaining_effort_hours, changes.remainingEffortHours)
     ) {
-      if (cur.type === "milestone" && (changes.remainingEffortHours ?? 0) > 0) {
+      if (milestone && (changes.remainingEffortHours ?? 0) > 0) {
         throw new TrackerError("invalid", "A milestone carries no effort.");
       }
       assign("remaining_effort_hours", changes.remainingEffortHours);
@@ -632,7 +648,7 @@ export interface OpenCard {
   id: number;
   key: string;
   title: string;
-  kindLabel: string | null;
+  kindLabel: string;
   statusName: string;
 }
 
@@ -657,7 +673,7 @@ async function openCardsUnder(tx: Tx, taskId: number): Promise<(OpenCard & { sta
     id: number;
     key: string;
     title: string;
-    kind_label: string | null;
+    kind_label: string;
     status_name: string;
     status_id: number;
   }>(
@@ -671,7 +687,7 @@ async function openCardsUnder(tx: Tx, taskId: number): Promise<(OpenCard & { sta
        JOIN tracker.task t ON t.id = under.id
        JOIN tracker.project p ON p.id = t.project_id
        JOIN tracker.workflow_status s ON s.id = t.status_id
-  LEFT JOIN tracker.work_kind k ON k.key = t.kind
+       JOIN tracker.work_kind k ON k.key = t.kind
       WHERE s.category NOT IN ('done', 'cancelled')
       ORDER BY t.number`,
     [taskId],

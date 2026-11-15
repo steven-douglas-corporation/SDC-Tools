@@ -17,6 +17,7 @@ import {
 import type { LinkedTask, TaskDetail } from "../service/task-detail";
 import type { OpenCard } from "../service/tasks";
 import { CloseUnderPrompt } from "./CloseUnderPrompt";
+import { KindHelp } from "./KindHelp";
 import { forecastReason, hours, shortDate, uncountedComparison } from "./format";
 
 // One task, in full: what people typed, what the forecast says and why, what it waits on and
@@ -100,7 +101,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   const [priority, setPriority] = useState(task.priority.toString());
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
   const [estimated, setEstimated] = useState(task.estimatedCompletionDate ?? "");
-  const [kind, setKind] = useState(task.kind ?? "");
+  const [kind, setKind] = useState(task.kind);
   const [parentId, setParentId] = useState(task.parentTaskId?.toString() ?? "");
   const [reason, setReason] = useState("");
   const [statusId, setStatusId] = useState(task.statusId.toString());
@@ -138,7 +139,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
       if (nextRemaining !== null && !Number.isFinite(nextRemaining)) return setError("Hours left must be a number.");
       changes.remainingEffortHours = nextRemaining;
     }
-    if ((kind || null) !== task.kind) changes.kind = kind || null;
+    if (kind !== task.kind) changes.kind = kind;
     const nextParent = parentId ? Number(parentId) : null;
     if (nextParent !== task.parentTaskId) changes.parentTaskId = nextParent;
     if (Number(priority) !== task.priority) changes.priority = Number(priority);
@@ -189,7 +190,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <div className="space-y-4">
-        <Section title={task.type === "milestone" ? "Milestone" : (task.kindLabel ?? "Card")}>
+        <Section title={task.kindLabel}>
           <div className="space-y-3">
             <label className="flex flex-col gap-1">
               <span className={LABEL}>Title</span>
@@ -205,48 +206,41 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                 className={`${INPUT} resize-y`}
               />
             </label>
-            {isTask && (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <label className="flex flex-col gap-1">
-                  <span className={LABEL}>Kind</span>
-                  <select
-                    value={kind}
-                    disabled={!mayChange}
-                    onChange={(e) => setKind(e.target.value)}
-                    className={INPUT}
-                  >
-                    <option value="">No kind</option>
-                    {task.kinds.map((k) => (
-                      <option key={k.key} value={k.key}>
-                        {k.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-xs text-sdc-gray-600">Optional.</span>
-                </label>
-                <label className="flex flex-col gap-1 sm:col-span-1 lg:col-span-2">
-                  <span className={LABEL}>Sits under</span>
-                  <select
-                    value={parentId}
-                    disabled={!mayChange}
-                    onChange={(e) => setParentId(e.target.value)}
-                    className={INPUT}
-                  >
-                    <option value="">Nothing</option>
-                    {parents.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.key} {c.title} ({c.kindLabel})
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-xs text-sdc-gray-600">
-                    {parents.length === 0
-                      ? "Nothing in this project is of a higher kind than this card yet."
-                      : "Only cards of a higher kind are listed: Epic, then Feature, then Story, then Task, Bug or Issue."}
-                  </span>
-                </label>
-              </div>
-            )}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="flex flex-col gap-1">
+                <span className={`${LABEL} flex items-center gap-1.5`}>
+                  Kind <KindHelp kinds={task.kinds} />
+                </span>
+                <select value={kind} disabled={!mayChange} onChange={(e) => setKind(e.target.value)} className={INPUT}>
+                  {task.kinds.map((k) => (
+                    <option key={k.key} value={k.key}>
+                      {k.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 sm:col-span-1 lg:col-span-2">
+                <span className={LABEL}>Sits under</span>
+                <select
+                  value={parentId}
+                  disabled={!mayChange}
+                  onChange={(e) => setParentId(e.target.value)}
+                  className={INPUT}
+                >
+                  <option value="">Nothing</option>
+                  {parents.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.key} {c.title} ({c.kindLabel})
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-sdc-gray-600">
+                  {parents.length === 0
+                    ? "Nothing in this project is of a higher kind than this card yet."
+                    : "Only cards of a higher kind are listed."}
+                </span>
+              </label>
+            </div>
             {hasChildren && isTask && task.uncountedHours == null && (
               <p className="text-xs text-sdc-gray-600">
                 Cards sit under this one, so the forecast uses their hours and not the size or hours left entered here.
@@ -431,7 +425,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                       {c.key}
                     </Link>{" "}
                     {c.title}
-                    {c.kindLabel && <span className="text-sdc-gray-600"> ({c.kindLabel})</span>}
+                    <span className="text-sdc-gray-600"> ({c.kindLabel})</span>
                   </span>
                   <span className="text-xs text-sdc-gray-600">
                     {c.statusName}
@@ -725,7 +719,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
             <dt className="text-sdc-gray-600">Project</dt>
             <dd className="text-sdc-navy">{task.projectName}</dd>
             <dt className="text-sdc-gray-600">Kind</dt>
-            <dd className="text-sdc-navy">{task.type === "milestone" ? "Milestone" : (task.kindLabel ?? "None")}</dd>
+            <dd className="text-sdc-navy">{task.kindLabel}</dd>
             <dt className="text-sdc-gray-600">Reported by</dt>
             <dd className="text-sdc-navy">{task.reporterName}</dd>
             {task.notBeforeDate && (

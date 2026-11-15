@@ -10,7 +10,7 @@ export interface TimelineRow {
   id: number;
   key: string;
   title: string;
-  kindLabel: string | null;
+  kindLabel: string;
   type: "task" | "milestone";
   /** 0 for a card that sits under nothing, 1 for a card under it, and so on. */
   depth: number;

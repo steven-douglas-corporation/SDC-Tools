@@ -47,6 +47,7 @@ before(async () => {
   await db.exec(migration("0002_roles.sql"));
   await db.exec(migration("0003_work_kinds.sql"));
   await db.exec(migration("0004_count_work_cards.sql"));
+  await db.exec(migration("0005_kind_required.sql"));
   await db.exec("SET search_path = tracker, public");
 
   ana = Number(

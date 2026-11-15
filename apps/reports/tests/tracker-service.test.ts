@@ -59,6 +59,7 @@ before(async () => {
   await pg.exec(migration("0002_roles.sql"));
   await pg.exec(migration("0003_work_kinds.sql"));
   await pg.exec(migration("0004_count_work_cards.sql"));
+  await pg.exec(migration("0005_kind_required.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
 
@@ -757,7 +758,7 @@ test("kinds: a card sits only under a higher kind, changes are logged, and a par
     "invalid",
     /TAX-4 is a Task, and a Story can sit only/,
   );
-  await refuses(() => make("x", { parentTaskId: plain.id }), "invalid", /card with no kind/);
+  await refuses(() => make("x", { parentTaskId: plain.id }), "invalid", /TAX-6 is a Task, and a Task can sit only/);
   await refuses(() => make("x", { kind: "nonsense" }), "invalid", /does not exist/);
   await refuses(() => updateTask(db, ana, loose.id, { parentTaskId: story.id }), "invalid", /higher kind/);
   await refuses(() => updateTask(db, ana, loose.id, { parentTaskId: loose.id }), "invalid", /under itself/);
@@ -790,11 +791,14 @@ test("kinds: a card sits only under a higher kind, changes are logged, and a par
       "Kind changed from Story to Task",
       "Moved under TAX-3",
       "Moved under TAX-2 (was under TAX-3)",
-      "Kind changed from Task to nothing",
       "No longer under TAX-2",
     ],
   );
-  assert.deepEqual([l.kind, l.parentTaskId, l.ancestors.length], [null, null, 0]);
+  assert.deepEqual(
+    [l.kind, l.parentTaskId, l.ancestors.length],
+    ["task", null, 0],
+    "clearing the kind puts it back to Task",
+  );
 
   // The task page: the path above, the cards below, and what it could sit under.
   const t = await getTaskDetail(db, ana, "TAX", task.number);
@@ -818,7 +822,7 @@ test("kinds: a card sits only under a higher kind, changes are logged, and a par
     s.children.map((c) => [c.key, c.kindLabel]),
     [
       ["TAX-4", "Task"],
-      ["TAX-6", null],
+      ["TAX-6", "Task"],
     ],
   );
 
@@ -830,7 +834,7 @@ test("kinds: a card sits only under a higher kind, changes are logged, and a par
   const board = await getBoard(db, ana, "TAX");
   assert.deepEqual(
     board.kinds.map((k) => k.label),
-    ["Epic", "Feature", "Story", "Task", "Bug", "Issue"],
+    ["Epic", "Feature", "Story", "Task", "Bug", "Issue", "Milestone"],
   );
   const card = (key: string) => board.tasks.find((c) => c.key === key)!;
   assert.deepEqual([card("TAX-4").kindLabel, card("TAX-4").parentKey, card("TAX-4").rollup], ["Task", "TAX-3", null]);
@@ -941,7 +945,7 @@ test("parents follow the cards under them, and are never closed over open work w
     asked.openUnder.map((o) => [o.key, o.kindLabel, o.statusName]),
     [
       ["AUTO-2", "Story", "In Progress"],
-      ["AUTO-6", null, "Backlog"],
+      ["AUTO-6", "Task", "Backlog"],
     ],
   );
   assert.equal((await where(epic.id)).name, "In Progress");
@@ -979,6 +983,7 @@ test("parents follow the cards under them, and are never closed over open work w
   assert.deepEqual(board.kindCounts, [
     { label: "Epic", total: 2, done: 1 },
     { label: "Story", total: 1, done: 1 },
+    { label: "Task", total: 4, done: 3 },
   ]);
 });
 
@@ -1139,4 +1144,46 @@ test("a parent knows how many open work cards under it have no estimate", async 
   assert.deepEqual([card.uncountedHours, card.rollup?.remainingHours, card.unsizedUnder], [30, 6, 1]);
   const page = await getTaskDetail(db, ana, "SIZE", top.number);
   assert.deepEqual([page.uncountedHours, page.rollup?.remainingHours, page.unsizedUnder], [30, 6, 1]);
+});
+
+test("every card has a kind: Task unless chosen, and a milestone is a kind with no hours", async () => {
+  const { getTaskDetail } = await import("../src/modules/tracker/service/task-detail");
+  const p = await createProject(db, ana, { key: "KIND", name: "Kinds" });
+  const kindOf = async (id: number) =>
+    (await rows<{ kind: string; type: string }>(`SELECT kind, type::text FROM tracker.task WHERE id = $1`, [id]))[0]!;
+
+  const plain = await createTask(db, ana, { projectId: p.id, title: "Plain" });
+  assert.deepEqual(await kindOf(plain.id), { kind: "task", type: "task" });
+  assert.equal((await getTaskDetail(db, ana, "KIND", plain.number)).kindLabel, "Task");
+
+  // Asked for either way, a milestone is both the kind and the type.
+  const byType = await createTask(db, ana, { projectId: p.id, title: "By type", type: "milestone" });
+  const byKind = await createTask(db, ana, { projectId: p.id, title: "By kind", kind: "milestone" });
+  assert.deepEqual(await kindOf(byType.id), { kind: "milestone", type: "milestone" });
+  assert.deepEqual(await kindOf(byKind.id), { kind: "milestone", type: "milestone" });
+  await refuses(
+    () => createTask(db, ana, { projectId: p.id, title: "x", kind: "milestone", effortEstimateHours: 6 }),
+    "invalid",
+    /milestone carries no effort/,
+  );
+
+  // A card with hours cannot become a milestone until they are cleared; then its type follows.
+  const sized = await createTask(db, ana, { projectId: p.id, title: "Sized", effortEstimateHours: 6 });
+  await refuses(() => updateTask(db, ana, sized.id, { kind: "milestone" }), "invalid", /carries no hours/);
+  await updateTask(db, ana, sized.id, { kind: "milestone", effortEstimateHours: null });
+  assert.deepEqual(await kindOf(sized.id), { kind: "milestone", type: "milestone" });
+  await refuses(
+    () => updateTask(db, ana, sized.id, { remainingEffortHours: 3 }),
+    "invalid",
+    /milestone carries no effort/,
+  );
+
+  // And back: once it is a Task again it can carry hours, in the same change.
+  await updateTask(db, ana, sized.id, { kind: "task", effortEstimateHours: 12 });
+  assert.deepEqual(await kindOf(sized.id), { kind: "task", type: "task" });
+
+  // The database refuses a card with no kind, and keeps kind and type in step by itself.
+  await assert.rejects(() => pg.query(`UPDATE tracker.task SET kind = NULL WHERE id = $1`, [plain.id]), /null value/);
+  await pg.query(`UPDATE tracker.task SET type = 'milestone' WHERE id = $1`, [plain.id]);
+  assert.deepEqual(await kindOf(plain.id), { kind: "milestone", type: "milestone" });
 });
