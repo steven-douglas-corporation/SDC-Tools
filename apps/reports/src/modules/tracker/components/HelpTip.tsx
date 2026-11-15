@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-// A small "?" that opens a short explanation next to the thing it explains. It closes when the
+// A small "?" that shows a short explanation next to the thing it explains: while the pointer
+// is on it, or pinned open by a click. A pinned one closes when the
 // "?" is clicked again, when anything outside it is clicked, and on Escape.
 //
 // Everything inside is a <span>, so it can sit inside a <label> or a table heading. Pass the
@@ -31,19 +32,30 @@ export function HelpTip({ label, children }: { label: string; children: React.Re
     });
   const box = useRef<HTMLSpanElement>(null);
   const panel = useRef<HTMLSpanElement>(null);
+  // Hovering shows the explanation for as long as the pointer is on the "?". A click pins it
+  // open, for touch screens and for reading at leisure, until it is closed again.
+  const [pinned, setPinned] = useState(false);
+  const close = () => {
+    setPinned(false);
+    setOpen(false);
+  };
 
   useEffect(() => {
     if (!open) return;
     // It does not follow the page, so it closes when the page moves under it.
-    const moved = () => setAt(null);
+    const shut = () => {
+      setPinned(false);
+      setAt(null);
+    };
+    const moved = shut;
     window.addEventListener("scroll", moved, true);
     window.addEventListener("resize", moved);
     const away = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (!box.current?.contains(target) && !panel.current?.contains(target)) setOpen(false);
+      if (!box.current?.contains(target) && !panel.current?.contains(target)) shut();
     };
     const escape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") shut();
     };
     document.addEventListener("mousedown", away);
     document.addEventListener("keydown", escape);
@@ -61,11 +73,23 @@ export function HelpTip({ label, children }: { label: string; children: React.Re
         type="button"
         aria-label={label}
         aria-expanded={open}
-        title={label}
+        // No title: the browser would show the button's name on hover, over the explanation.
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => {
+          if (!pinned) setOpen(false);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => {
+          if (!pinned) setOpen(false);
+        }}
         // Inside a <label>: without this the click would also land on the field the label is for.
         onClick={(e) => {
           e.preventDefault();
-          setOpen((was) => !was);
+          if (pinned) close();
+          else {
+            setPinned(true);
+            setOpen(true);
+          }
         }}
         className={`flex h-4 w-4 items-center justify-center rounded-full border text-micro font-bold ${
           open
