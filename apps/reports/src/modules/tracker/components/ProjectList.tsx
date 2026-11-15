@@ -141,7 +141,7 @@ function NewProject() {
           onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
           className={`${INPUT} w-28 uppercase`}
         />
-        <span className="text-xs text-sdc-gray-600">Prefix for task numbers, e.g. BIN-42</span>
+        <span className="text-xs text-sdc-gray-600">Prefix for card numbers, e.g. BIN-42</span>
       </label>
       <label className="flex min-w-[16rem] flex-1 flex-col gap-1">
         <span className={LABEL}>Name</span>
@@ -202,7 +202,7 @@ export function ProjectList({
                 <th className="px-3 py-2.5">Rank</th>
                 <th className="px-3 py-2.5 text-left">Project</th>
                 <th className="px-3 py-2.5">State</th>
-                <th className="px-3 py-2.5">Tasks done</th>
+                <th className="px-3 py-2.5">Cards done</th>
                 <th className="px-3 py-2.5">Remaining</th>
                 <th className="px-3 py-2.5">Target</th>
                 <th className="px-3 py-2.5">Forecast</th>

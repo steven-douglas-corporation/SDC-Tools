@@ -92,10 +92,10 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
       ) : (
         (p.unscheduledTasks > 0 || p.staleTasks > 0) && (
           <p className="mb-4 rounded-lg border border-sdc-border bg-sdc-yellow-bg px-3 py-2 text-sm text-sdc-yellow-text">
-            The forecast above leaves out {p.unscheduledTasks} task{p.unscheduledTasks === 1 ? "" : "s"}
+            The forecast above leaves out {p.unscheduledTasks} card{p.unscheduledTasks === 1 ? "" : "s"}
             {p.unestimatedTasks > 0 ? ` (${p.unestimatedTasks} with no estimate)` : ""}
             {p.staleTasks > 0
-              ? `, and ${p.staleTasks} task${p.staleTasks === 1 ? " has" : "s have"} hours left that nobody has confirmed lately`
+              ? `, and ${p.staleTasks} card${p.staleTasks === 1 ? " has" : "s have"} hours left that nobody has confirmed lately`
               : ""}
             . Each card says why.
           </p>

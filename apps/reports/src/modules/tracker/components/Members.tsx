@@ -13,8 +13,8 @@ const SMALL_INPUT =
 
 const ROLE_HELP: Record<Member["role"], string> = {
   viewer: "Viewer: can see the board",
-  contributor: "Contributor: can add, edit and move tasks",
-  manager: "Manager: can also add people, archive tasks and change the project",
+  contributor: "Contributor: can add, edit and move cards",
+  manager: "Manager: can also add people, archive cards and change the project",
 };
 
 export function Members({

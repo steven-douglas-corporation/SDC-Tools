@@ -188,7 +188,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <div className="space-y-4">
-        <Section title="Task">
+        <Section title={task.type === "milestone" ? "Milestone" : (task.kindLabel ?? "Card")}>
           <div className="space-y-3">
             <label className="flex flex-col gap-1">
               <span className={LABEL}>Title</span>
@@ -668,7 +668,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                 <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-sdc-gray-600">
                   Make it wait on
                   <select required value={waitOn} onChange={(e) => setWaitOn(e.target.value)} className={INPUT}>
-                    <option value="">Choose a task</option>
+                    <option value="">Choose a card</option>
                     {task.candidates.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.key} {c.title}

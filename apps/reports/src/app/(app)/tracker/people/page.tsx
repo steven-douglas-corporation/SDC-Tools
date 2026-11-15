@@ -29,7 +29,7 @@ export default async function TrackerPeoplePage() {
       </p>
       <PageTitle className="mb-1">People and time</PageTitle>
       <p className="mb-4 max-w-3xl text-sm text-sdc-gray-600">
-        The forecast books each task against its assignee&apos;s free hours, day by day. This page is where those hours
+        The forecast books each card against its assignee&apos;s free hours, day by day. This page is where those hours
         come from: the length of a normal project day, anyone whose day is shorter, time off, and company holidays.
       </p>
       {/* Backlog M-15: replace typing with a daily import from Paylocity. */}

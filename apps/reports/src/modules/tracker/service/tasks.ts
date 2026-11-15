@@ -92,7 +92,7 @@ async function lockTask(tx: Tx, taskId: number): Promise<TaskRow> {
     [taskId],
     "Task",
   );
-  if (row.archived_at) throw new TrackerError("invalid", "This task is archived.");
+  if (row.archived_at) throw new TrackerError("invalid", "This card is archived.");
   return {
     ...row,
     id: Number(row.id),
@@ -215,7 +215,7 @@ export async function createTask(
   actor: Actor,
   input: NewTask,
 ): Promise<{ id: number; number: number; key: string }> {
-  if (!input.title.trim()) throw new TrackerError("invalid", "A task needs a title.");
+  if (!input.title.trim()) throw new TrackerError("invalid", "A card needs a title.");
   assertPriority(input.priority);
   assertHours(input.effortEstimateHours, "The estimate");
   assertHours(input.remainingEffortHours, "Remaining effort");
@@ -343,7 +343,7 @@ export async function updateTask(
   assertIsoDate(changes.dueDate, "Due date");
   assertIsoDate(changes.notBeforeDate, "Not-before date");
   assertIsoDate(changes.expectedUnblockDate, "Expected unblock date");
-  if (changes.title !== undefined && !changes.title.trim()) throw new TrackerError("invalid", "A task needs a title.");
+  if (changes.title !== undefined && !changes.title.trim()) throw new TrackerError("invalid", "A card needs a title.");
 
   await db.transaction(async (tx) => {
     const cur = await lockTask(tx, taskId);
@@ -557,7 +557,7 @@ export async function changeStatus(
     }
     const blockedReason = options.blockedReason?.trim() || null;
     if (to.category === "blocked" && !blockedReason) {
-      throw new TrackerError("invalid", "Say what is blocking this task.");
+      throw new TrackerError("invalid", "Say what is blocking this card.");
     }
 
     // Closing a card that still has open cards under it is never done silently. Without an
@@ -765,7 +765,7 @@ export async function addDependency(
   lagDays = 0,
   reason?: string | null,
 ): Promise<void> {
-  if (predecessorId === successorId) throw new TrackerError("invalid", "A task cannot depend on itself.");
+  if (predecessorId === successorId) throw new TrackerError("invalid", "A card cannot wait on itself.");
   if (!Number.isInteger(lagDays) || lagDays < 0)
     throw new TrackerError("invalid", "Lag is a whole number of days, zero or more.");
   await db.transaction(async (tx) => {
