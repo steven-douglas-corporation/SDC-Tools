@@ -182,6 +182,18 @@ export function rollUp(tasks: RollupInput[]): Map<number, WorkRollup> {
   return result;
 }
 
+/** The hours on a parent card that the forecast leaves out, or null when there are none to flag. */
+export function uncountedHours(
+  isParent: boolean,
+  category: BoardStatus["category"],
+  remainingHours: number | null,
+  estimateHours: number | null,
+): number | null {
+  if (!isParent || category === "done" || category === "cancelled") return null;
+  const own = remainingHours ?? estimateHours ?? 0;
+  return own > 0 ? own : null;
+}
+
 export interface BoardTask {
   id: number;
   key: string;
@@ -196,6 +208,12 @@ export interface BoardTask {
    * in the forecast, so what it shows is added up from the cards beneath it, however deep.
    */
   rollup: WorkRollup | null;
+  /**
+   * Hours entered on an open card that has cards under it. The forecast does not count them,
+   * so the screens say so: otherwise turning a sized card into a parent quietly shrinks the plan.
+   * Null when there is nothing to flag.
+   */
+  uncountedHours: number | null;
   statusId: number;
   priority: number;
   assigneePersonId: number | null;
@@ -363,6 +381,12 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
         kindLabel: t.kind_label,
         parentKey: t.parent_key,
         rollup: rollups.get(Number(t.id)) ?? null,
+        uncountedHours: uncountedHours(
+          rollups.has(Number(t.id)),
+          t.category,
+          t.remaining_hours == null ? null : Number(t.remaining_hours),
+          t.estimate_hours == null ? null : Number(t.estimate_hours),
+        ),
         statusId: Number(t.status_id),
         priority: Number(t.priority),
         assigneePersonId: t.assignee_person_id == null ? null : Number(t.assignee_person_id),

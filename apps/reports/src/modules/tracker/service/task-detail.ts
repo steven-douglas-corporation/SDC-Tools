@@ -1,6 +1,6 @@
 import { TrackerError, one, type Actor, type Database } from "./database";
 import { projectRole, type ProjectRole } from "./access";
-import { rollUp, type BoardStatus, type BoardTask, type WorkKind, type WorkRollup } from "./queries";
+import { rollUp, uncountedHours, type BoardStatus, type BoardTask, type WorkKind, type WorkRollup } from "./queries";
 
 // Everything the task page shows about one task: its fields, its forecast, what it waits on and
 // what waits on it, its comments, and its history. History is the status log and the change log
@@ -63,6 +63,8 @@ export interface TaskDetail {
   children: ChildCard[];
   /** What everything under this card adds up to, however deep. Null when nothing sits under it. */
   rollup: WorkRollup | null;
+  /** Hours entered on this card that the forecast does not count, because cards sit under it. */
+  uncountedHours: number | null;
   /** Every kind a card can be given, top of the hierarchy first. */
   kinds: WorkKind[];
   /** Cards in the same project this one could sit under, with the level each counts as. */
@@ -463,6 +465,12 @@ export async function getTaskDetail(
         forecastFinish: rollups.get(Number(c.id))?.forecastFinish ?? c.forecast_finish,
       })),
       rollup: rollups.get(taskId) ?? null,
+      uncountedHours: uncountedHours(
+        rollups.has(taskId),
+        t.status_category,
+        t.remaining_hours == null ? null : Number(t.remaining_hours),
+        t.estimate_hours == null ? null : Number(t.estimate_hours),
+      ),
       kinds: kinds.rows.map((k) => ({ key: k.key, label: k.label, level: Number(k.level) })),
       parentCandidates: parentCandidates.rows.map((c) => ({
         id: Number(c.id),

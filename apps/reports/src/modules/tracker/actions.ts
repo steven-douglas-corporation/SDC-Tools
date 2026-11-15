@@ -16,6 +16,7 @@ import {
   addComment,
   addDependency,
   changeStatus,
+  clearOwnHours,
   confirmRemainingEffort,
   createTask,
   removeDependency,
@@ -345,6 +346,17 @@ export async function removeHolidayAction(date: string): Promise<ActionResult> {
       return {};
     },
     { paths: ["/tracker", "/tracker/people"] },
+  );
+}
+
+/** Clears the size and hours left on a card that has cards under it, where the forecast ignores them. */
+export async function clearOwnHoursAction(taskId: number, projectKey: string): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await clearOwnHours(trackerDb, actor, taskId);
+      return {};
+    },
+    { paths: ["/tracker", boardPath(projectKey)] },
   );
 }
 

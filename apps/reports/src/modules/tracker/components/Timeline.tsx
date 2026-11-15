@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CARD_BASE } from "@/components/ui/classnames";
 import type { Timeline as TimelineData, TimelineRow } from "../service/timeline";
-import { forecastReason, shortDate } from "./format";
+import { forecastReason, hours, shortDate } from "./format";
 
 // One project as a timeline: a row per card, grouped under the card it sits under, a bar from
 // the forecast's start to its finish, and an arrow for each dependency. Nothing here is typed
@@ -123,6 +123,14 @@ export function Timeline({ timeline }: { timeline: TimelineData }) {
               >
                 {r.title}
               </span>
+              {r.uncountedHours != null && (
+                <span
+                  title={`${hours(r.uncountedHours)} entered on ${r.key} are not counted, because cards sit under it. Open it to clear them.`}
+                  className="shrink-0 rounded-full bg-sdc-yellow-bg px-1.5 text-micro font-bold text-sdc-yellow-text"
+                >
+                  {hours(r.uncountedHours)} not counted
+                </span>
+              )}
               {r.kindLabel && (
                 <span className="rounded-full bg-sdc-gray-100 px-1.5 text-micro font-bold uppercase text-sdc-gray-600">
                   {r.kindLabel}

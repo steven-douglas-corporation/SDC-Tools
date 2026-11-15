@@ -85,6 +85,11 @@ set of screens are built and tested as a module of SDC Reports (`apps/reports/sr
   can sit under anything with a kind, and nothing can sit under it.
 - A card with cards under it carries no hours of its own in the forecast. It shows what the
   cards under it add up to, and it finishes when the last of them does.
+- **Hours on a parent are flagged, not moved.** A sized card that becomes a parent keeps its
+  own estimate and hours left, but the forecast stops counting them once a card sits under it.
+  While they are there, the board, the timeline and the card's page say how many hours are not
+  counted, and the page has a button to clear them. Nothing is cleared or moved automatically:
+  only the person knows whether the cards under it already cover the work.
 - **A parent follows the cards under it.** It moves to done when the last open card under it
   closes, and reopens when a card under it is open again or a new open card is put under it.
   A parent whose cards were all cancelled is left alone: nothing was finished.
@@ -142,7 +147,7 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 53 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its 54 tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
 | Piece                     | Where, under `apps/reports`                                                 |

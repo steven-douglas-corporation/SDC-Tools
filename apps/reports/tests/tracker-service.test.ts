@@ -1076,3 +1076,43 @@ test("timeline: cards run by start date under their parent, and a parent spans t
     ],
   );
 });
+
+test("a parent's own hours are flagged as not counted, and can be cleared", async () => {
+  const { getTaskDetail } = await import("../src/modules/tracker/service/task-detail");
+  const { getBoard, uncountedHours } = await import("../src/modules/tracker/service/queries");
+  const { clearOwnHours } = await import("../src/modules/tracker/service/tasks");
+  const p = await createProject(db, ana, { key: "OWN", name: "Own hours" });
+
+  // A sized card becomes an Epic. Nothing sits under it yet, so its hours are still the work.
+  const big = await createTask(db, ana, { projectId: p.id, title: "Big", kind: "task", effortEstimateHours: 60 });
+  await updateTask(db, ana, big.id, { kind: "epic", remainingEffortHours: 48 });
+  const card = async (key: string) => (await getBoard(db, ana, "OWN")).tasks.find((c) => c.key === key)!;
+  assert.equal((await card("OWN-1")).uncountedHours, null);
+  await refuses(() => clearOwnHours(db, ana, big.id), "invalid", /its hours are the work/);
+
+  // A card goes under it: from now on the forecast uses that card's hours, and the screens say so.
+  const part = await createTask(db, ana, {
+    projectId: p.id,
+    title: "Part",
+    parentTaskId: big.id,
+    effortEstimateHours: 6,
+  });
+  assert.equal((await card("OWN-1")).uncountedHours, 48, "hours left, when entered, over the estimate");
+  assert.equal((await card("OWN-2")).uncountedHours, null);
+  assert.equal((await getTaskDetail(db, ana, "OWN", big.number)).uncountedHours, 48);
+
+  await refuses(() => clearOwnHours(db, cal, big.id), "forbidden");
+  await clearOwnHours(db, ana, big.id);
+  const after = await getTaskDetail(db, ana, "OWN", big.number);
+  assert.deepEqual([after.uncountedHours, after.estimateHours, after.remainingHours], [null, null, null]);
+  assert.ok(
+    after.history.some((h) => h.what === "Estimate changed from 60 h to nothing" && /cards under it/.test(h.why ?? "")),
+  );
+  assert.equal((await getTaskDetail(db, ana, "OWN", part.number)).estimateHours, 6, "the card under it is untouched");
+
+  // Only an open parent with hours is flagged.
+  assert.equal(uncountedHours(true, "in_progress", null, 18), 18);
+  assert.equal(uncountedHours(true, "done", 18, 18), null);
+  assert.equal(uncountedHours(false, "todo", 18, 18), null);
+  assert.equal(uncountedHours(true, "todo", 0, 18), null, "hours left of zero means nothing is left to count");
+});

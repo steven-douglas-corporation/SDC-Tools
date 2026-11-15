@@ -6,6 +6,7 @@ import { BUTTON_COMPACT, BUTTON_PRIMARY, CARD_BASE, INPUT, LABEL } from "@/compo
 import {
   addCommentAction,
   addDependencyAction,
+  clearOwnHoursAction,
   confirmRemainingAction,
   moveTaskAction,
   removeDependencyAction,
@@ -246,10 +247,34 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                 </label>
               </div>
             )}
-            {hasChildren && isTask && (
+            {hasChildren && isTask && task.uncountedHours == null && (
               <p className="text-xs text-sdc-gray-600">
                 Cards sit under this one, so the forecast uses their hours and not the size or hours left entered here.
               </p>
+            )}
+            {task.uncountedHours != null && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-sdc-border bg-sdc-yellow-bg px-3 py-2 text-sm text-sdc-yellow-text">
+                <p className="min-w-[14rem] flex-1">
+                  {hours(task.uncountedHours)} entered on this card {task.uncountedHours === 1 ? "is" : "are"} not
+                  counted. Cards sit under it, so the forecast uses their hours. If those cards cover the work, clear
+                  the hours here. If they do not yet, add the rest as cards under it.
+                </p>
+                {mayChange && (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    className={BUTTON_COMPACT}
+                    onClick={() =>
+                      run(
+                        () => clearOwnHoursAction(task.id, task.projectKey),
+                        () => setSaved("Cleared."),
+                      )
+                    }
+                  >
+                    Clear this card&apos;s own hours
+                  </button>
+                )}
+              </div>
             )}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {isTask && (

@@ -29,6 +29,8 @@ export interface TimelineRow {
   doneOn: string | null;
   /** Why an open card has no bar, in the engine's words; the screen turns it into a sentence. */
   unscheduledReason: string | null;
+  /** Hours entered on a parent card that the forecast does not count. Null when there are none. */
+  uncountedHours: number | null;
 }
 
 export interface TimelineLink {
@@ -177,6 +179,7 @@ export async function getTimeline(db: Database, actor: Actor, projectKey: string
         dueDate: t.dueDate,
         doneOn: done ? t.actualCompletionDate : null,
         unscheduledReason: done || l.isParent ? null : t.unscheduledReason,
+        uncountedHours: l.isParent ? t.uncountedHours : null,
       };
     }),
     links,

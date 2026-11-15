@@ -447,6 +447,12 @@ function Card({
             : forecastReason(task)}
         </p>
       )}
+      {task.uncountedHours != null && (
+        <p className="mt-1 text-xs text-sdc-yellow-text">
+          {hours(task.uncountedHours)} entered on this card {task.uncountedHours === 1 ? "is" : "are"} not counted,
+          because cards sit under it. Open it to clear them.
+        </p>
+      )}
       {task.blockedReason && <p className="mt-1 text-xs text-sdc-red-text">Blocked: {task.blockedReason}</p>}
 
       {canEdit && (

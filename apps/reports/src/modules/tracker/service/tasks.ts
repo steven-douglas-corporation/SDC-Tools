@@ -506,6 +506,27 @@ export async function updateTask(
   });
 }
 
+/**
+ * Clears the size and hours left on a card that has cards under it. The forecast ignores those
+ * hours, so leaving them there only misleads. Refused for a card with nothing under it, where
+ * the hours are the work. Logged like any other change to them.
+ */
+export async function clearOwnHours(db: Database, actor: Actor, taskId: number): Promise<void> {
+  const under = await db.transaction((tx) =>
+    tx.query(`SELECT 1 FROM tracker.task WHERE parent_task_id = $1 AND archived_at IS NULL LIMIT 1`, [taskId]),
+  );
+  if (!under.rows.length) {
+    throw new TrackerError("invalid", "Nothing sits under this card, so its hours are the work and are counted.");
+  }
+  await updateTask(
+    db,
+    actor,
+    taskId,
+    { effortEstimateHours: null, remainingEffortHours: null },
+    "Cleared: the cards under it carry the hours",
+  );
+}
+
 /** "I checked, the remaining effort is still right": refreshes its date without changing it. */
 export async function confirmRemainingEffort(db: Database, actor: Actor, taskId: number): Promise<void> {
   await db.transaction(async (tx) => {
