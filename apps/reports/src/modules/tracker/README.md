@@ -17,6 +17,8 @@ service/              the only code that touches the tracker's tables
   people.ts             project members, capacity, time off, holidays
   forecast.ts           load inputs from the tables, run the engine, store the result
   queries.ts            what the project list and the board read
+  timeline.ts           what the timeline reads: rows in order, parent spans, links
+  dependencies.ts       what a dependency means when cards sit under cards (no SQL)
   task-detail.ts        what the task page reads, including history in words
 db.ts                 the PostgreSQL connections (service login and engine login)
 current-actor.ts      turns the signed-in user into a tracker person; ELT is all-access
@@ -28,9 +30,9 @@ components/           the screens' React components, and format.ts for dates and
 Elsewhere in the app:
 
 ```
-src/app/(app)/tracker/          the pages: project list, board, task, people and time
+src/app/(app)/tracker/          the pages: project list, board, timeline, task, people and time
 src/app/api/tracker/            read-only JSON routes for the same data
-db/tracker/migrations/          0001_schema.sql, 0002_roles.sql, 0003_work_kinds.sql (PostgreSQL 15+, schema "tracker")
+db/tracker/migrations/          0001 schema, 0002 roles, 0003 work kinds, 0004 done count (PostgreSQL 15+, schema "tracker")
 scripts/tracker/migrate.ts      applies the migrations (npm run db:tracker-migrate)
 scripts/tracker/run-forecast.ts the forecast as its own process, for the nightly job
 tests/tracker-*.test.ts         engine, schema, service and wording tests

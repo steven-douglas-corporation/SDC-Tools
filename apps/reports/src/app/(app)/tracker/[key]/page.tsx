@@ -11,6 +11,7 @@ import { getBoard, type Board as BoardData } from "@/modules/tracker/service/que
 import { listMembers } from "@/modules/tracker/service/people";
 import { Board } from "@/modules/tracker/components/Board";
 import { Members } from "@/modules/tracker/components/Members";
+import { ProjectViews } from "@/modules/tracker/components/ProjectViews";
 import { hours, shortDate } from "@/modules/tracker/components/format";
 
 const plural = (label: string) => (label.endsWith("y") ? `${label.slice(0, -1)}ies` : `${label}s`);
@@ -101,6 +102,7 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
         )
       )}
 
+      <ProjectViews projectKey={p.key} current="board" />
       <Board board={board} canEdit={canEdit} />
 
       <div className="mt-4">

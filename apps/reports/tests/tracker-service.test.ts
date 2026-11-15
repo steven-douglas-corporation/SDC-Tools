@@ -1041,3 +1041,38 @@ test("dependencies on a parent stand for the work cards under it", async () => {
   await refuses(() => addDependency(db, ana, b1.id, a1.id), "invalid", /through the cards under them/);
   await addDependency(db, ana, a1.id, b1.id); // the same direction as the features: allowed
 });
+
+test("timeline: cards run by start date under their parent, and a parent spans the open cards under it", async () => {
+  const { layoutTimeline } = await import("../src/modules/tracker/service/timeline");
+  const card = (id: number, parentId: number | null, start: string | null, finish: string | null, closed = false) => ({
+    id,
+    parentId,
+    number: id,
+    start,
+    finish,
+    closed,
+  });
+  const rows = layoutTimeline([
+    card(1, null, null, null), // an epic
+    card(2, 1, null, null), // a story under it
+    card(3, 2, "2026-12-01", "2026-12-04"),
+    card(4, 2, "2026-11-18", "2026-11-20"),
+    card(5, 1, "2026-11-10", "2026-11-12", true), // finished: no bar, and not part of the span
+    card(6, null, "2026-11-16", "2026-11-17"),
+    card(7, null, null, null), // not forecast: last
+    card(8, 99, "2026-11-25", "2026-11-26"), // its parent is not in the list
+  ]);
+  assert.deepEqual(
+    rows.map((r) => [r.id, r.depth, r.isParent, r.start, r.finish]),
+    [
+      [6, 0, false, "2026-11-16", "2026-11-17"],
+      [1, 0, true, "2026-11-18", "2026-12-04"],
+      [2, 1, true, "2026-11-18", "2026-12-04"],
+      [4, 2, false, "2026-11-18", "2026-11-20"],
+      [3, 2, false, "2026-12-01", "2026-12-04"],
+      [5, 1, false, null, null],
+      [8, 0, false, "2026-11-25", "2026-11-26"],
+      [7, 0, false, null, null],
+    ],
+  );
+});

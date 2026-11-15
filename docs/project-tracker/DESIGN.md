@@ -85,6 +85,18 @@ set of screens are built and tested as a module of SDC Reports (`apps/reports/sr
   can sit under anything with a kind, and nothing can sit under it.
 - A card with cards under it carries no hours of its own in the forecast. It shows what the
   cards under it add up to, and it finishes when the last of them does.
+- **A parent follows the cards under it.** It moves to done when the last open card under it
+  closes, and reopens when a card under it is open again or a new open card is put under it.
+  A parent whose cards were all cancelled is left alone: nothing was finished.
+- **Closing a parent by hand over open work asks first.** The screen lists the open cards under
+  it and the person chooses: mark them done, cancel them, or leave everything as it is. The
+  choice exists because leftover cards are either work that was done and never updated, or work
+  no longer needed, and only the second should be cancelled.
+- **A project's done count is over cards that carry work.** A parent is not counted beside the
+  cards under it. Each kind the project uses gets its own count next to it.
+- **A dependency on a parent means everything under it.** "Feature B waits on Feature A" is
+  stored once, on the two Features, and applied by the forecast as: every work card under B
+  waits on every work card under A. A card cannot wait on a card it sits under or over.
 - Breadcrumbs are the only navigation on a card's page, and they show the cards it sits under.
   There is no close or back button.
 - "Issue" is there so the open issues in the RAID log can move into the tracker as ordinary
@@ -130,7 +142,7 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 50 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its 53 tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
 | Piece                     | Where, under `apps/reports`                                                 |
@@ -233,6 +245,11 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
   it sits under; a card with cards under it shows how many, how many are done, the hours left
   and the latest forecast finish among them, on the board and on its own page. The breadcrumb
   on a task page shows the cards above it. Changes to kind and parent are in the history.
+- **Timeline** (`/tracker/KEY/timeline`, a tab beside Board): a row per card, grouped under the
+  card it sits under and ordered by start date; a bar from the forecast's start to its finish,
+  with a paler tail to P80; a thin dark bar for a parent, spanning the cards under it; an arrow
+  for each dependency; marks for today, the project target, due dates, milestones and finished
+  cards. Read-only. Every date on it is the stored forecast, the same one the board shows.
 - **People and time** (`/tracker/people`): the length of a normal project day, a figure of their
   own for anyone whose day is shorter, time off, and company holidays. ELT sets the default,
   other people's hours and the holidays; anyone can enter their own time off.
@@ -257,8 +274,13 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
 - The P50/P80 simulation is not scheduled anywhere. It runs only when someone runs
   `npm run tracker:forecast`, so P80 is blank after any edit until it is run again.
 - Someone with `tracker:view` but not `tracker:edit` cannot enter their own time off.
-- Kinds: the "done" count in a project's header counts a parent card as a card, so "1 of 5" can
-  include an Epic. The board has no view grouped by Epic or Feature and no filter by kind. A
+- Timeline: it is one project at a time, with no view across projects or by person. It cannot
+  be zoomed or filtered, cards cannot be dragged on it, and a long project scrolls sideways. It
+  was checked by eye in a local copy with a handful of cards, not with a large project.
+- Dependencies and parents: moving a card under a different parent is not checked against the
+  dependencies already there. If that makes a loop, the forecast reports the cards as "its
+  dependencies form a loop" instead of the move being refused.
+- Kinds: the board has no view grouped by Epic or Feature and no filter by kind. A
   parent's P80 is not shown, only the latest plain forecast finish under it. The list of kinds
   is fixed in a migration; there is no screen to change it. A parent card can only be chosen on
   the task page, not when a card is first added.
