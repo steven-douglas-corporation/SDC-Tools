@@ -13,7 +13,7 @@ import {
   TABLE_ROW_HOVER,
 } from "@/components/ui/classnames";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { createProjectAction, setProjectRankAction, setProjectStateAction } from "../actions";
+import { createProjectAction, moveProjectRankAction, setProjectRankAction, setProjectStateAction } from "../actions";
 import type { ProjectListItem } from "../service/queries";
 import { hours, leftOutOfForecast, shortDate } from "./format";
 import { P80Help } from "./HelpTip";
@@ -38,7 +38,18 @@ function Risk({ p }: { p: ProjectListItem }) {
   );
 }
 
-function RankCell({ p, canRank }: { p: ProjectListItem; canRank: boolean }) {
+function RankCell({
+  p,
+  canRank,
+  first,
+  last,
+}: {
+  p: ProjectListItem;
+  canRank: boolean;
+  /** True when this is the top, or the bottom, of the ranked projects: that arrow does nothing. */
+  first: boolean;
+  last: boolean;
+}) {
   const [value, setValue] = useState(p.portfolioRank?.toString() ?? "");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
@@ -59,16 +70,41 @@ function RankCell({ p, canRank }: { p: ProjectListItem; canRank: boolean }) {
 
   return (
     <span className="inline-flex flex-col items-center">
-      <input
-        aria-label={`Stack rank for ${p.key}`}
-        inputMode="numeric"
-        value={value}
-        disabled={pending}
-        onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ""))}
-        onBlur={save}
-        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-        className="w-14 rounded-md border border-sdc-border px-2 py-1 text-center text-sm focus:border-sdc-blue focus:outline-none"
-      />
+      <span className="inline-flex items-center gap-1">
+        <input
+          aria-label={`Stack rank for ${p.key}`}
+          inputMode="numeric"
+          value={value}
+          disabled={pending}
+          onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ""))}
+          onBlur={save}
+          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          className="w-12 rounded-md border border-sdc-border px-2 py-1 text-center text-sm focus:border-sdc-blue focus:outline-none"
+        />
+        {p.portfolioRank != null && (
+          <span className="inline-flex flex-col">
+            {(["up", "down"] as const).map((direction) => (
+              <button
+                key={direction}
+                type="button"
+                aria-label={`Move ${p.key} ${direction} one place`}
+                title={`Move ${direction} one place`}
+                disabled={pending || (direction === "up" ? first : last)}
+                onClick={() => {
+                  setError("");
+                  start(async () => {
+                    const res = await moveProjectRankAction(p.id, direction);
+                    if (!res.ok) setError(res.error);
+                  });
+                }}
+                className="h-4 w-5 rounded text-micro leading-none text-sdc-gray-600 hover:bg-sdc-gray-100 hover:text-sdc-blue disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                {direction === "up" ? "▲" : "▼"}
+              </button>
+            ))}
+          </span>
+        )}
+      </span>
       {error && <span className="mt-1 max-w-[12rem] text-xs text-sdc-red-text">{error}</span>}
     </span>
   );
@@ -178,6 +214,11 @@ export function ProjectList({
   /** May set the company-wide stack rank (in this app: ELT). */
   canRank: boolean;
 }) {
+  // The open projects that hold a rank, top first: the ends are where an arrow has nowhere to go.
+  const ranked = projects
+    .filter((p) => p.portfolioRank != null && p.state !== "completed" && p.state !== "cancelled")
+    .sort((a, b) => (a.portfolioRank as number) - (b.portfolioRank as number))
+    .map((p) => p.id);
   return (
     <div className="space-y-4">
       {canEdit && (
@@ -222,7 +263,14 @@ export function ProjectList({
                 return (
                   <tr key={p.id} className={`border-b border-sdc-border-soft text-center ${TABLE_ROW_HOVER}`}>
                     <td className="px-3 py-2.5 tabular-nums">
-                      <RankCell p={p} canRank={canRank && canEdit} />
+                      <RankCell
+                        // Remount when the rank changes: moving one project renumbers the others.
+                        key={`${p.id}:${p.portfolioRank}`}
+                        p={p}
+                        canRank={canRank && canEdit}
+                        first={p.id === ranked[0]}
+                        last={p.id === ranked[ranked.length - 1]}
+                      />
                     </td>
                     <td className="px-3 py-2.5 text-left">
                       <Link href={`/tracker/${p.key}`} className="font-semibold text-sdc-blue hover:underline">

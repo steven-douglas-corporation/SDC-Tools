@@ -31,14 +31,7 @@ export default async function TrackerPortfolioTimelinePage() {
         timeline={timeline}
         hrefFor={(row) => `/tracker/${row.key}/timeline`}
         emptyText="There are no open projects to show."
-        legend={
-          <p className="text-xs text-sdc-gray-600">
-            One row for each open project, in stack-rank order. A bar runs from the first forecast start of its work to
-            its forecast finish, with a paler tail out to its P80 when a simulation has run. The small upright line is
-            the project&apos;s target date, red when the forecast is later. An arrow runs from a project to a project
-            that has a card waiting on one of its cards. Click a project&apos;s key for its own timeline.
-          </p>
-        }
+        of="projects"
       />
     </div>
   );

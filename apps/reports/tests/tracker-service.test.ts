@@ -1286,3 +1286,69 @@ test("a card can wait on a card in another project the person can see, and the p
 
   await refuses(() => createProject(db, ana, { key: "timeline", name: "x" }), "invalid", /reserved/);
 });
+
+test("stack rank: a project moves up, down or to a rank, and the others close up around it", async () => {
+  const { moveProjectRank } = await import("../src/modules/tracker/service/projects");
+  // Start from a known ranking of three fresh projects, whatever earlier tests left behind.
+  await pg.query(`UPDATE tracker.project SET portfolio_rank = NULL WHERE state <> 'active'`);
+  await pg.query(`UPDATE tracker.project SET state = 'planned', portfolio_rank = NULL`);
+  const ids: number[] = [];
+  for (const key of ["RK1", "RK2", "RK3"]) ids.push((await createProject(db, ana, { key, name: key })).id);
+  const [one, two, three] = ids as [number, number, number];
+  const order = async () =>
+    (
+      await rows<{ key: string }>(
+        `SELECT key FROM tracker.project WHERE portfolio_rank IS NOT NULL ORDER BY portfolio_rank`,
+      )
+    ).map((r) => r.key);
+  const ranksOf = async () =>
+    (
+      await rows<{ portfolio_rank: number }>(
+        `SELECT portfolio_rank FROM tracker.project WHERE portfolio_rank IS NOT NULL ORDER BY portfolio_rank`,
+      )
+    ).map((r) => Number(r.portfolio_rank));
+
+  // Typing a rank: the first becomes 1, a later one typed as 1 pushes it down.
+  await moveProjectRank(db, boss, one, 1);
+  await moveProjectRank(db, boss, two, 1);
+  await moveProjectRank(db, boss, three, 99); // past the end: it goes last
+  assert.deepEqual(await order(), ["RK2", "RK1", "RK3"]);
+  assert.deepEqual(await ranksOf(), [1, 2, 3], "no gaps, no clashes");
+
+  await moveProjectRank(db, boss, three, "up");
+  assert.deepEqual(await order(), ["RK2", "RK3", "RK1"]);
+  await moveProjectRank(db, boss, two, "down");
+  assert.deepEqual(await order(), ["RK3", "RK2", "RK1"]);
+  await moveProjectRank(db, boss, three, "up"); // already first: nothing happens
+  await moveProjectRank(db, boss, one, "down"); // already last
+  assert.deepEqual(await order(), ["RK3", "RK2", "RK1"]);
+
+  // Taking one out closes the gap.
+  await moveProjectRank(db, boss, two, null);
+  assert.deepEqual(
+    [await order(), await ranksOf()],
+    [
+      ["RK3", "RK1"],
+      [1, 2],
+    ],
+  );
+  await refuses(() => moveProjectRank(db, boss, two, "up"), "invalid", /no stack rank yet/);
+
+  // Each project whose rank changed has it in its change log.
+  const log = await rows<{ old_value: string | null; new_value: string | null }>(
+    `SELECT old_value, new_value FROM tracker.project_change_log WHERE project_id = $1 AND field = 'portfolio_rank' ORDER BY id`,
+    [one],
+  );
+  assert.deepEqual(
+    log.map((l) => [l.old_value, l.new_value]),
+    [
+      [null, "1"],
+      ["1", "2"],
+      ["2", "3"],
+      ["3", "2"],
+    ],
+  );
+
+  await refuses(() => moveProjectRank(db, ana, one, 1), "forbidden");
+  await refuses(() => moveProjectRank(db, boss, one, 0), "invalid");
+});

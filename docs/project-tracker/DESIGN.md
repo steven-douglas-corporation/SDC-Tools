@@ -111,8 +111,16 @@ set of screens are built and tested as a module of SDC Reports (`apps/reports/sr
   waits on every work card under A. A card cannot wait on a card it sits under or over.
 - Breadcrumbs are the only navigation on a card's page, and they show the cards it sits under.
   There is no close or back button.
-- "Issue" is there so the open issues in the RAID log can move into the tracker as ordinary
-  cards once it is in use. Risks and assumptions stay in the RAID log.
+- **Bug and Issue are both kept** (reviewed 2026-11-15). They behave identically; only the label
+  and the count differ. A Bug is something that was built and does not work, and is fixed by
+  changing the thing. An Issue is a problem that is not a defect: a late supplier, a decision
+  that is needed, missing access. "Issue" is what the open issues in the RAID log become once
+  the tracker is in use; risks and assumptions stay in the RAID log. If people do not keep the
+  two apart in practice, dropping Issue is one small migration.
+- **Stack rank is changed with up and down arrows or by typing a rank.** Either way the other
+  open projects are renumbered so ranks run 1, 2, 3 with no gaps and no clashes. Dragging was
+  left out on purpose: the rank drives every forecast, and a drag is the easiest change to make
+  by accident.
 
 ### Dependencies between projects (decided 2026-11-15)
 
@@ -183,7 +191,7 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 59 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its 60 tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
 | Piece                     | Where, under `apps/reports`                                                 |

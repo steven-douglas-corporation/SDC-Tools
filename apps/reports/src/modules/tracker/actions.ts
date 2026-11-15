@@ -5,13 +5,7 @@ import { assertActionPermission } from "@/lib/require-permission";
 import { trackerDb, trackerEngineDb } from "./db";
 import { trackerActor } from "./current-actor";
 import { TrackerError, type Actor } from "./service/database";
-import {
-  createProject,
-  setPortfolioRanks,
-  setProjectMember,
-  updateProject,
-  type ProjectState,
-} from "./service/projects";
+import { createProject, moveProjectRank, setProjectMember, updateProject, type ProjectState } from "./service/projects";
 import {
   addComment,
   addDependency,
@@ -98,10 +92,22 @@ export async function createProjectAction(input: {
 export async function setProjectRankAction(projectId: number, rank: number | null): Promise<ActionResult> {
   return act(
     async (actor) => {
-      await setPortfolioRanks(trackerDb, actor, [{ projectId, rank }]);
+      // Typing a rank puts the project there and moves the others down, so ranks never clash.
+      await moveProjectRank(trackerDb, actor, projectId, rank);
       return {};
     },
     { paths: ["/tracker"] },
+  );
+}
+
+/** Moves a project one place up or down the stack rank, swapping it with its neighbour. */
+export async function moveProjectRankAction(projectId: number, direction: "up" | "down"): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await moveProjectRank(trackerDb, actor, projectId, direction === "up" ? "up" : "down");
+      return {};
+    },
+    { paths: ["/tracker", "/tracker/timeline"] },
   );
 }
 

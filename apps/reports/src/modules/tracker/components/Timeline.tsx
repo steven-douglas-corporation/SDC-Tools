@@ -20,7 +20,6 @@ function dayNumber(iso: string): number {
   const [y, m, d] = iso.split("-").map(Number);
   return Math.round(Date.UTC(y!, m! - 1, d!) / DAY_MS);
 }
-const isoOf = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10);
 
 const BAR_TONE: Record<TimelineRow["category"], string> = {
   todo: "bg-sdc-blue/60",
@@ -35,12 +34,81 @@ const taskHref = (key: string) => {
   return `/tracker/${key.slice(0, cut)}/${key.slice(cut + 1)}`;
 };
 
+/** One entry in the key under the chart: the mark exactly as it is drawn, and what it means. */
+function Mark({ children, label }: { children: React.ReactNode; label: string }) {
+  return (
+    <li className="flex items-center gap-1.5">
+      <span className="relative flex h-4 w-7 shrink-0 items-center justify-center">{children}</span>
+      {label}
+    </li>
+  );
+}
+
+function Legend({ of }: { of: "cards" | "projects" }) {
+  const cards = of === "cards";
+  return (
+    <ul aria-label="What the marks mean" className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-sdc-gray-600">
+      <Mark label={cards ? "Forecast: start to finish (in progress)" : "Forecast: first start to finish (active)"}>
+        <span className="h-3.5 w-full rounded bg-sdc-blue" />
+      </Mark>
+      <Mark label={cards ? "Not started yet" : "Not active yet"}>
+        <span className="h-3.5 w-full rounded bg-sdc-blue/60" />
+      </Mark>
+      {cards && (
+        <Mark label="Blocked">
+          <span className="h-3.5 w-full rounded bg-sdc-red" />
+        </Mark>
+      )}
+      <Mark label="Out to P80">
+        <span className="h-3.5 w-full rounded-r bg-sdc-blue/20" />
+      </Mark>
+      {cards && (
+        <Mark label="Has cards under it; spans them">
+          <span className="h-2 w-full rounded-sm bg-sdc-navy" />
+        </Mark>
+      )}
+      {cards && (
+        <Mark label="Milestone">
+          <span className="h-3 w-3 rotate-45 bg-sdc-navy" />
+        </Mark>
+      )}
+      {cards && (
+        <Mark label="Finished">
+          <span className="h-2.5 w-2.5 rounded-full bg-sdc-green" />
+        </Mark>
+      )}
+      <Mark label={cards ? "Due date" : "Target date"}>
+        <span className="h-4 w-0.5 bg-sdc-gray-600" />
+      </Mark>
+      <Mark label={cards ? "Due date the forecast misses" : "Target the forecast misses"}>
+        <span className="h-4 w-0.5 bg-sdc-red" />
+      </Mark>
+      <Mark
+        label={cards ? "Waits on (arrow points at the card that waits)" : "Has a card waiting on the other project"}
+      >
+        <svg width="28" height="16" aria-hidden="true">
+          <path d="M2 4 H12 V12 H24" fill="none" strokeWidth="1.25" className="stroke-sdc-gray-600" />
+          <path d="M20 9 L26 12 L20 15 Z" className="fill-sdc-gray-600" />
+        </svg>
+      </Mark>
+      <Mark label="Today">
+        <span className="h-4 w-px bg-sdc-navy" />
+      </Mark>
+      {cards && (
+        <Mark label="Project target">
+          <span className="h-4 w-0 border-l border-dashed border-sdc-red" />
+        </Mark>
+      )}
+    </ul>
+  );
+}
+
 export function Timeline({
   timeline,
   hrefFor = (r) => taskHref(r.key),
   emptyText = "This project has no cards yet.",
   targetDate = null,
-  legend,
+  of = "cards",
 }: {
   timeline: Pick<TimelineData, "rows" | "links" | "forecastAsOf">;
   /** Where a row's key leads. A card's own page unless told otherwise. */
@@ -48,8 +116,8 @@ export function Timeline({
   emptyText?: string;
   /** One date to mark down the whole chart: a project's target, on that project's timeline. */
   targetDate?: string | null;
-  /** Replaces the sentence under the chart that says how to read it. */
-  legend?: React.ReactNode;
+  /** What a row is, which decides the words in the key under the chart. */
+  of?: "cards" | "projects";
 }) {
   const { rows, links } = timeline;
   if (rows.length === 0) {
@@ -326,16 +394,12 @@ export function Timeline({
         </div>
       </div>
 
-      {legend ?? (
+      <Legend of={of} />
+      {notDrawn > 0 && (
         <p className="text-xs text-sdc-gray-600">
-          Bars are the forecast, from {shortDate(isoOf(first + 2))} on: a card&apos;s start to its finish, with a paler
-          tail out to its P80 when a simulation has run. A dark thin bar is a card with cards under it and spans them.
-          An arrow runs from a card to the card that waits on it. A green dot is a finished card, a small upright line
-          is a due date, and a diamond is a milestone.
-          {notDrawn > 0 &&
-            ` ${notDrawn} open card${notDrawn === 1 ? " has" : "s have"} no bar because the forecast could not place ${
-              notDrawn === 1 ? "it" : "them"
-            }; the row says why.`}
+          {notDrawn} open {of === "projects" ? "project" : "card"}
+          {notDrawn === 1 ? " has" : "s have"} no bar because the forecast could not place{" "}
+          {notDrawn === 1 ? "it" : "them"}. The row says why.
         </p>
       )}
     </div>

@@ -274,3 +274,58 @@ export async function setPortfolioRanks(
     throw e;
   }
 }
+
+/**
+ * Moves one project in the stack rank and renumbers the rest so the ranks of open projects
+ * always run 1, 2, 3 with no gaps and no clashes:
+ *
+ *   "up" / "down"   swaps it with its neighbour
+ *   a number        puts it at that rank; the projects from there down each move one place
+ *   null            takes it out of the ranking
+ *
+ * A finished or cancelled project is outside the ranking and is left as it is.
+ */
+export async function moveProjectRank(
+  db: Database,
+  actor: Actor,
+  projectId: number,
+  to: number | "up" | "down" | null,
+  reason?: string | null,
+): Promise<void> {
+  if (typeof to === "number" && (!Number.isInteger(to) || to < 1)) {
+    throw new TrackerError("invalid", "A stack rank is a whole number, 1 or higher.");
+  }
+  const order = await db.transaction(async (tx) => {
+    await requireGlobalRole(tx, actor, "portfolio_owner");
+    const me = await one<{ state: string }>(
+      tx,
+      `SELECT state FROM tracker.project WHERE id = $1`,
+      [projectId],
+      "Project",
+    );
+    if (me.state === "completed" || me.state === "cancelled") {
+      throw new TrackerError("invalid", "A finished or cancelled project is not ranked.");
+    }
+    const { rows } = await tx.query<{ id: number }>(
+      `SELECT id FROM tracker.project
+        WHERE portfolio_rank IS NOT NULL AND state NOT IN ('completed', 'cancelled')
+        ORDER BY portfolio_rank, id`,
+    );
+    return rows.map((r) => Number(r.id));
+  });
+
+  const at = order.indexOf(projectId);
+  if (to === "up" || to === "down") {
+    if (at < 0) throw new TrackerError("invalid", "This project has no stack rank yet. Give it one first.");
+    const other = to === "up" ? at - 1 : at + 1;
+    if (other < 0 || other >= order.length) return; // already at that end
+    [order[at], order[other]] = [order[other]!, order[at]!];
+  } else {
+    if (at >= 0) order.splice(at, 1);
+    if (to !== null) order.splice(Math.min(to - 1, order.length), 0, projectId);
+  }
+
+  const ranks: { projectId: number; rank: number | null }[] = order.map((id, i) => ({ projectId: id, rank: i + 1 }));
+  if (to === null) ranks.push({ projectId, rank: null });
+  await setPortfolioRanks(db, actor, ranks, reason);
+}

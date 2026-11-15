@@ -10,8 +10,8 @@ const WHAT_FOR: Record<string, string> = {
   feature: "One thing the result can do, or one piece of an Epic.",
   story: "A slice of a Feature that is useful by itself.",
   task: "A piece of work one person does. The default.",
-  bug: "Something that is built and does not work as it should.",
-  issue: "A problem or open question that needs someone to act.",
+  bug: "Something that was built and does not work as it should. Fixed by changing the thing itself.",
+  issue: "A problem that is not a defect: a late supplier, a decision that is needed, missing access.",
   milestone: "A date that matters, with no work of its own.",
 };
 
