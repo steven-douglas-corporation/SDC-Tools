@@ -191,13 +191,20 @@ Remember the naming rule: PascalCase names need double quotes, e.g. `SELECT * FR
 How Windows sign-in is wired (server config files in `D:\DataWarehouse\pgdata`, not in git):
 - `pg_hba.conf`: `host all +windows_users 10.0.0.0/24 sspi map=windows`, ahead of the
   password rule, so members of `windows_users` use Windows sign-in from the network.
+- VPN clients (SonicWall NetExtender) get addresses outside the office range, for example
+  `10.0.1.2`. On 2026-11-15 the same three rules (refuse `postgres`, Windows sign-in, password)
+  were added to `pg_hba.conf` for `10.0.1.0/24`, with a backup beside it as
+  `pg_hba.conf.bak-2026-11-15`. Before that the database dropped VPN connections without a
+  message. The `/24` is an assumption from one client's address: the VPN's real address pool is
+  still to be confirmed with whoever runs the SonicWall, and the rule narrowed to match.
 - `pg_ident.conf`: `windows /^(.*)@STEVENDOUGLAS$ \1` turns `jdoe@STEVENDOUGLAS` into login `jdoe`.
 - Clients: pgAdmin and `psql` use it automatically. DBeaver needs the connection's driver
   property `gsslib` set to `sspi`. If sign-in fails from a PC (it works from the server), the
   likely fix is a one-time Kerberos registration by a domain admin:
   `setspn -S POSTGRES/SERVER-APP1.stevendouglas.local SERVER-APP1` (once Postgres runs as a service).
 
-**Network access in general:** password logins work from `10.0.0.0/24` too. The built-in
+**Network access in general:** password logins work from `10.0.0.0/24` too, and from the VPN
+range above. The built-in
 `postgres` admin is refused from the network and only works on the server itself.
 To make sure Windows Firewall lets the connections in, run in an admin PowerShell:
 
