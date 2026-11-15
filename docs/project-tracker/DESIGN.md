@@ -114,6 +114,20 @@ set of screens are built and tested as a module of SDC Reports (`apps/reports/sr
 - "Issue" is there so the open issues in the RAID log can move into the tracker as ordinary
   cards once it is in use. Risks and assumptions stay in the RAID log.
 
+### Who is behind a card (decided 2026-11-15)
+
+- A card records two people besides its assignee, because they are two different facts.
+- **Requested by**: who wants the work. It starts as whoever creates the card, can be changed on
+  the card's page, and a change is logged in the history. This is what covers a card made on a
+  colleague's behalf.
+- **Created by**: who, or what, made the record, and when. It is set once and the database
+  refuses to change it, so a card's history can be trusted.
+- A card made by automation will name the user it acted for as the requester and itself as the
+  creator, and the write API will refuse a card with no requester. Not built: the API is still
+  read-only and automation has no identity of its own yet (backlog M-12).
+- "Reported by", the first label, was dropped: it is bug-tracker wording and did not fit an Epic
+  or a Task.
+
 ### Links to the rest of the business
 
 - Projects and tasks can optionally link to a job number, section and function codes, a team,
@@ -154,7 +168,7 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 57 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its 58 tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
 | Piece                     | Where, under `apps/reports`                                                 |

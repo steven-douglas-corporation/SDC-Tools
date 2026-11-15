@@ -60,6 +60,7 @@ before(async () => {
   await pg.exec(migration("0003_work_kinds.sql"));
   await pg.exec(migration("0004_count_work_cards.sql"));
   await pg.exec(migration("0005_kind_required.sql"));
+  await pg.exec(migration("0006_requested_by.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
 
@@ -1186,4 +1187,48 @@ test("every card has a kind: Task unless chosen, and a milestone is a kind with 
   await assert.rejects(() => pg.query(`UPDATE tracker.task SET kind = NULL WHERE id = $1`, [plain.id]), /null value/);
   await pg.query(`UPDATE tracker.task SET type = 'milestone' WHERE id = $1`, [plain.id]);
   assert.deepEqual(await kindOf(plain.id), { kind: "milestone", type: "milestone" });
+});
+
+test("who wants a card can change and is logged; who made it cannot", async () => {
+  const { getTaskDetail } = await import("../src/modules/tracker/service/task-detail");
+  const p = await createProject(db, ana, { key: "WHO", name: "Who" });
+  await setProjectMember(db, ana, p.id, ben.personId, "contributor");
+
+  // Made for oneself: both are the same person.
+  const own = await createTask(db, ana, { projectId: p.id, title: "Own" });
+  let d = await getTaskDetail(db, ana, "WHO", own.number);
+  assert.ok(d.requestedByName.startsWith("Ana") && d.createdByName.startsWith("Ana"));
+  assert.equal(d.requestedByPersonId, ana.personId);
+  assert.match(d.createdAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+
+  // Made on someone's behalf: the requester is them, the creator is still whoever made it.
+  const forCal = await createTask(db, ben, { projectId: p.id, title: "For Cal", requestedByPersonId: cal.personId });
+  d = await getTaskDetail(db, ana, "WHO", forCal.number);
+  assert.ok(d.requestedByName.startsWith("Cal") && d.createdByName.startsWith("Ben"));
+
+  // Changed afterwards: logged by name, and the creator does not move.
+  await updateTask(db, ana, own.id, { requestedByPersonId: boss.personId }, "it was Boss who asked");
+  d = await getTaskDetail(db, ana, "WHO", own.number);
+  assert.ok(d.requestedByName.startsWith("Boss") && d.createdByName.startsWith("Ana"));
+  const entry = d.history.find((h) => h.what.startsWith("Requested by changed"))!;
+  assert.match(entry.what, /^Requested by changed from Ana.* to Boss/);
+  assert.equal(entry.why, "it was Boss who asked");
+  await updateTask(db, ana, own.id, { requestedByPersonId: boss.personId });
+  assert.equal(
+    (await getTaskDetail(db, ana, "WHO", own.number)).history.filter((h) => h.what.startsWith("Requested by")).length,
+    1,
+    "setting the same person again is not a change",
+  );
+
+  await refuses(() => updateTask(db, ana, own.id, { requestedByPersonId: 999_999 }), "invalid", /not in the tracker/);
+  await refuses(
+    () => createTask(db, ana, { projectId: p.id, title: "x", requestedByPersonId: 999_999 }),
+    "invalid",
+    /not in the tracker/,
+  );
+  // The database itself refuses to rewrite who made a card.
+  await assert.rejects(
+    () => pg.query(`UPDATE tracker.task SET created_by_person_id = $1 WHERE id = $2`, [ben.personId, own.id]),
+    /cannot be changed/,
+  );
 });

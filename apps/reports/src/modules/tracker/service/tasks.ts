@@ -11,6 +11,8 @@ export interface NewTask {
   description?: string | null;
   type?: "task" | "milestone";
   assigneePersonId?: number | null;
+  /** Who wants the work done. The person creating the card, unless it is made on someone's behalf. */
+  requestedByPersonId?: number;
   rolePoolId?: number | null;
   priority?: number;
   /** One of the company-standard sizes. Its hours become the estimate. */
@@ -38,6 +40,8 @@ export interface TaskChanges {
   title?: string;
   description?: string | null;
   assigneePersonId?: number | null;
+  /** Who wants the work done. Never empty. Who created the card is a separate fact and cannot be changed. */
+  requestedByPersonId?: number;
   rolePoolId?: number | null;
   priority?: number;
   effortBucketId?: number | null;
@@ -64,6 +68,7 @@ interface TaskRow {
   status_id: number;
   type: "task" | "milestone";
   assignee_person_id: number | null;
+  requested_by_person_id: number;
   role_pool_id: number | null;
   priority: number;
   effort_bucket_id: number | null;
@@ -80,7 +85,8 @@ interface TaskRow {
   archived_at: unknown;
 }
 
-const TASK_COLUMNS = `id, project_id, kind, parent_task_id, status_id, type, assignee_person_id, role_pool_id, priority, effort_bucket_id,
+const TASK_COLUMNS = `id, project_id, kind, parent_task_id, status_id, type, assignee_person_id, requested_by_person_id,
+  role_pool_id, priority, effort_bucket_id,
   effort_estimate_hours::text, remaining_effort_hours::text, planned_start_date::text,
   estimated_completion_date::text, baseline_completion_date::text, due_date::text, not_before_date::text,
   expected_unblock_date::text, actual_completion_date::text, sprint_id, archived_at`;
@@ -175,6 +181,13 @@ async function logTaskChange(
       reason,
     ],
   );
+}
+
+/** A card is always requested by someone the tracker knows. */
+async function requirePerson(tx: Tx, personId: number): Promise<void> {
+  if (!Number.isInteger(personId)) throw new TrackerError("invalid", "A card has to be requested by someone.");
+  const { rows } = await tx.query(`SELECT 1 FROM tracker.person WHERE id = $1`, [personId]);
+  if (!rows.length) throw new TrackerError("invalid", "That person is not in the tracker.");
 }
 
 function assertHours(value: number | null | undefined, label: string): void {
@@ -276,15 +289,20 @@ export async function createTask(
       "Board position",
     );
 
+    // Who wants the work. The creator, unless the card is being made on someone else's behalf.
+    const requestedBy = input.requestedByPersonId ?? actor.personId;
+    if (requestedBy !== actor.personId) await requirePerson(tx, requestedBy);
+
     const row = await one<{ id: number }>(
       tx,
       `INSERT INTO tracker.task
          (project_id, number, parent_task_id, type, title, description, assignee_person_id, role_pool_id,
-          reporter_person_id, status_id, priority, effort_bucket_id, effort_estimate_hours, remaining_effort_hours,
+          requested_by_person_id, status_id, priority, effort_bucket_id, effort_estimate_hours, remaining_effort_hours,
           not_before_date, not_before_reason, planned_start_date, estimated_completion_date,
-          baseline_completion_date, due_date, sprint_id, job_number, section_code, function_code, board_rank, kind)
+          baseline_completion_date, due_date, sprint_id, job_number, section_code, function_code, board_rank, kind,
+          created_by_person_id)
        VALUES ($1, $2, $3, $4::tracker.task_type, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-               $15, $16, $17, $18, $18, $19, $20, $21, $22, $23, $24, $25)
+               $15, $16, $17, $18, $18, $19, $20, $21, $22, $23, $24, $25, $26)
        RETURNING id`,
       [
         input.projectId,
@@ -295,7 +313,7 @@ export async function createTask(
         input.description ?? null,
         input.assigneePersonId ?? null,
         input.rolePoolId ?? null,
-        actor.personId,
+        requestedBy,
         statusId,
         input.priority ?? 3,
         type === "milestone" ? null : (input.effortBucketId ?? null),
@@ -312,6 +330,7 @@ export async function createTask(
         input.functionCode ?? null,
         rank.next,
         kind,
+        actor.personId, // who made the record: fixed from here on
       ],
       "Task",
     );
@@ -358,6 +377,12 @@ export async function updateTask(
       set.push(`${column} = $${params.length}${cast}`);
     };
 
+    if (
+      changes.requestedByPersonId !== undefined &&
+      changes.requestedByPersonId !== Number(cur.requested_by_person_id)
+    ) {
+      await requirePerson(tx, changes.requestedByPersonId);
+    }
     if (changes.title !== undefined) assign("title", changes.title.trim());
     if (changes.description !== undefined) assign("description", changes.description);
 
@@ -466,6 +491,7 @@ export async function updateTask(
 
     const tracked: [keyof TaskChanges, keyof TaskRow, string, string, string][] = [
       ["assigneePersonId", "assignee_person_id", "assignee_person_id", "assignee", ""],
+      ["requestedByPersonId", "requested_by_person_id", "requested_by_person_id", "requested_by", ""],
       ["rolePoolId", "role_pool_id", "role_pool_id", "role_pool", ""],
       ["priority", "priority", "priority", "priority", ""],
       ["sprintId", "sprint_id", "sprint_id", "sprint", ""],

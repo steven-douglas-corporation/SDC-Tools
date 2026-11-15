@@ -175,6 +175,7 @@ export type TaskEdit = Pick<
   | "title"
   | "description"
   | "assigneePersonId"
+  | "requestedByPersonId"
   | "priority"
   | "effortBucketId"
   | "remainingEffortHours"
@@ -199,6 +200,7 @@ export async function updateTaskAction(input: {
       if (c.title !== undefined) changes.title = c.title;
       if (c.description !== undefined) changes.description = c.description?.trim() || null;
       if (c.assigneePersonId !== undefined) changes.assigneePersonId = c.assigneePersonId;
+      if (c.requestedByPersonId !== undefined) changes.requestedByPersonId = Number(c.requestedByPersonId);
       if (c.priority !== undefined) changes.priority = c.priority;
       if (c.effortBucketId !== undefined) changes.effortBucketId = c.effortBucketId;
       if (c.remainingEffortHours !== undefined) changes.remainingEffortHours = c.remainingEffortHours;

@@ -96,6 +96,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
   const [assigneeId, setAssigneeId] = useState(task.assigneePersonId?.toString() ?? "");
+  const [requestedById, setRequestedById] = useState(task.requestedByPersonId.toString());
   const [bucketId, setBucketId] = useState(task.bucketId?.toString() ?? "");
   const [remaining, setRemaining] = useState(task.remainingHours?.toString() ?? "");
   const [priority, setPriority] = useState(task.priority.toString());
@@ -132,6 +133,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
     if ((description.trim() || null) !== (task.description ?? null)) changes.description = description;
     const nextAssignee = assigneeId ? Number(assigneeId) : null;
     if (nextAssignee !== task.assigneePersonId) changes.assigneePersonId = nextAssignee;
+    if (Number(requestedById) !== task.requestedByPersonId) changes.requestedByPersonId = Number(requestedById);
     const nextBucket = bucketId ? Number(bucketId) : null;
     if (isTask && nextBucket !== task.bucketId && nextBucket !== null) changes.effortBucketId = nextBucket;
     const nextRemaining = remaining.trim() === "" ? null : Number(remaining);
@@ -332,6 +334,24 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                   </span>
                 </label>
               )}
+              <label className="flex flex-col gap-1">
+                <span className={LABEL}>Requested by</span>
+                <select
+                  value={requestedById}
+                  disabled={!mayChange}
+                  onChange={(e) => setRequestedById(e.target.value)}
+                  className={INPUT}
+                >
+                  {task.people.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-sdc-gray-600">
+                  Who wants this done. Change it if you made the card for someone else.
+                </span>
+              </label>
               <label className="flex flex-col gap-1">
                 <span className={LABEL}>Priority</span>
                 <select
@@ -720,8 +740,12 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
             <dd className="text-sdc-navy">{task.projectName}</dd>
             <dt className="text-sdc-gray-600">Kind</dt>
             <dd className="text-sdc-navy">{task.kindLabel}</dd>
-            <dt className="text-sdc-gray-600">Reported by</dt>
-            <dd className="text-sdc-navy">{task.reporterName}</dd>
+            <dt className="text-sdc-gray-600">Requested by</dt>
+            <dd className="text-sdc-navy">{task.requestedByName}</dd>
+            <dt className="text-sdc-gray-600">Created by</dt>
+            <dd className="text-sdc-navy">
+              {task.createdByName} · <When iso={task.createdAt} />
+            </dd>
             {task.notBeforeDate && (
               <>
                 <dt className="text-sdc-gray-600">Not before</dt>

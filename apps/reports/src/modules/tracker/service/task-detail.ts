@@ -85,7 +85,13 @@ export interface TaskDetail {
   priority: number;
   assigneePersonId: number | null;
   assigneeName: string | null;
-  reporterName: string;
+  /** Who wants the work done. Starts as the creator and can be changed. */
+  requestedByPersonId: number;
+  requestedByName: string;
+  /** Who made the card. Fixed. */
+  createdByName: string;
+  /** When it was made. UTC, ISO 8601. */
+  createdAt: string;
   bucketId: number | null;
   bucketLabel: string | null;
   estimateHours: number | null;
@@ -135,6 +141,7 @@ const FIELD_LABEL: Record<string, string> = {
   effort_estimate_hours: "Estimate",
   remaining_effort_hours: "Hours left",
   assignee: "Assignee",
+  requested_by: "Requested by",
   role_pool: "Role pool",
   sprint: "Sprint",
   priority: "Priority",
@@ -161,7 +168,10 @@ interface DetailRow {
   priority: number;
   assignee_person_id: number | null;
   assignee_name: string | null;
-  reporter_name: string;
+  requested_by_person_id: number;
+  requested_by_name: string;
+  created_by_name: string;
+  created_at: string;
   effort_bucket_id: number | null;
   bucket_label: string | null;
   estimate_hours: number | null;
@@ -201,7 +211,8 @@ export async function getTaskDetail(
               t.id, t.number, t.title, t.description, t.type, t.status_id, s.name AS status_name,
               t.kind, k.label AS kind_label, t.parent_task_id,
               s.category AS status_category, t.priority,
-              t.assignee_person_id, a.display_name AS assignee_name, rp.display_name AS reporter_name,
+              t.assignee_person_id, a.display_name AS assignee_name, t.requested_by_person_id, rp.display_name AS requested_by_name,
+              cb.display_name AS created_by_name, ${utc("t.created_at")} AS created_at,
               t.effort_bucket_id, b.label AS bucket_label,
               t.effort_estimate_hours::float8 AS estimate_hours, t.remaining_effort_hours::float8 AS remaining_hours,
               ${utc("t.remaining_effort_updated_at")} AS remaining_updated_at,
@@ -214,7 +225,8 @@ export async function getTaskDetail(
          FROM tracker.task t
          JOIN tracker.project p ON p.id = t.project_id
          JOIN tracker.workflow_status s ON s.id = t.status_id
-         JOIN tracker.person rp ON rp.id = t.reporter_person_id
+         JOIN tracker.person rp ON rp.id = t.requested_by_person_id
+         JOIN tracker.person cb ON cb.id = t.created_by_person_id
     LEFT JOIN tracker.person a ON a.id = t.assignee_person_id
     LEFT JOIN tracker.effort_bucket b ON b.id = t.effort_bucket_id
          JOIN tracker.work_kind k ON k.key = t.kind
@@ -371,8 +383,8 @@ export async function getTaskDetail(
       [projectId],
     );
     const people = await tx.query<{ id: number; name: string }>(
-      `SELECT id, display_name AS name FROM tracker.person WHERE active OR id = $1 ORDER BY display_name`,
-      [t.assignee_person_id],
+      `SELECT id, display_name AS name FROM tracker.person WHERE active OR id = $1 OR id = $2 ORDER BY display_name`,
+      [t.assignee_person_id, t.requested_by_person_id],
     );
     const buckets = await tx.query<{ id: number; label: string; hours: number }>(
       `SELECT id, label, hours::float8 AS hours FROM tracker.effort_bucket WHERE active OR id = $1 ORDER BY sort_order`,
@@ -422,7 +434,7 @@ export async function getTaskDetail(
     const nameOf = new Map(names.rows.map((n) => [String(n.id), n.name]));
     const shown = (field: string, value: string | null): string => {
       if (value == null) return "nothing";
-      if (field === "assignee") return nameOf.get(value) ?? `person ${value}`;
+      if (field === "assignee" || field === "requested_by") return nameOf.get(value) ?? `person ${value}`;
       if (field === "effort_estimate_hours" || field === "remaining_effort_hours") return `${Number(value)} h`;
       return value;
     };
@@ -507,7 +519,10 @@ export async function getTaskDetail(
       priority: Number(t.priority),
       assigneePersonId: t.assignee_person_id == null ? null : Number(t.assignee_person_id),
       assigneeName: t.assignee_name,
-      reporterName: t.reporter_name,
+      requestedByPersonId: Number(t.requested_by_person_id),
+      requestedByName: t.requested_by_name,
+      createdByName: t.created_by_name,
+      createdAt: t.created_at,
       bucketId: t.effort_bucket_id == null ? null : Number(t.effort_bucket_id),
       bucketLabel: t.bucket_label,
       estimateHours: t.estimate_hours == null ? null : Number(t.estimate_hours),

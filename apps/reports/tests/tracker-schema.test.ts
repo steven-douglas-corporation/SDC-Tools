@@ -29,7 +29,7 @@ async function newTask(projectId: number, number: number, extra: Record<string, 
     project_id: projectId,
     number,
     title: `task ${number}`,
-    reporter_person_id: ana,
+    requested_by_person_id: ana,
     status_id: status[key]!["To Do"],
     ...extra,
   };
@@ -48,6 +48,7 @@ before(async () => {
   await db.exec(migration("0003_work_kinds.sql"));
   await db.exec(migration("0004_count_work_cards.sql"));
   await db.exec(migration("0005_kind_required.sql"));
+  await db.exec(migration("0006_requested_by.sql"));
   await db.exec("SET search_path = tracker, public");
 
   ana = Number(
@@ -141,14 +142,14 @@ test("stack rank: duplicates rejected, swaps allowed, active needs a rank", asyn
 
 test("a task cannot use another project's status, sprint or parent", async () => {
   await rejects(
-    `INSERT INTO task (project_id, number, title, reporter_person_id, status_id) VALUES ($1, 900, 'x', $2, $3)`,
+    `INSERT INTO task (project_id, number, title, requested_by_person_id, status_id) VALUES ($1, 900, 'x', $2, $3)`,
     /foreign key/,
     [alpha, ana, status.brain!["To Do"]],
   );
 
   const parentInBrain = await newTask(brain, 901);
   await rejects(
-    `INSERT INTO task (project_id, number, title, reporter_person_id, status_id, parent_task_id)
+    `INSERT INTO task (project_id, number, title, requested_by_person_id, status_id, parent_task_id)
      VALUES ($1, 902, 'x', $2, $3, $4)`,
     /foreign key/,
     [alpha, ana, status.alpha!["To Do"], parentInBrain],
@@ -176,13 +177,13 @@ test("a card sits only under a card of a higher kind", async () => {
 
 test("milestones carry no effort; a not-before date needs a reason", async () => {
   await rejects(
-    `INSERT INTO task (project_id, number, title, reporter_person_id, status_id, type, effort_estimate_hours)
+    `INSERT INTO task (project_id, number, title, requested_by_person_id, status_id, type, effort_estimate_hours)
      VALUES ($1, 920, 'm', $2, $3, 'milestone', 6)`,
     /check/,
     [alpha, ana, status.alpha!["To Do"]],
   );
   await rejects(
-    `INSERT INTO task (project_id, number, title, reporter_person_id, status_id, not_before_date)
+    `INSERT INTO task (project_id, number, title, requested_by_person_id, status_id, not_before_date)
      VALUES ($1, 921, 'x', $2, $3, '2026-12-01')`,
     /check/,
     [alpha, ana, status.alpha!["To Do"]],
@@ -250,7 +251,7 @@ test("roll-up counts unscheduled, unestimated and stale work and ignores old run
     Number(
       (
         await one<{ id: number }>(
-          `INSERT INTO task (project_id, number, title, reporter_person_id, status_id${cols})
+          `INSERT INTO task (project_id, number, title, requested_by_person_id, status_id${cols})
        VALUES ($1, $2, 't', $3, $4${vals}) RETURNING id`,
           [pid, number, ana, st.id],
         )
@@ -262,7 +263,7 @@ test("roll-up counts unscheduled, unestimated and stale work and ignores old run
   await add(3, "", ""); // no estimate at all
   const parent = await add(4, ", effort_estimate_hours, kind", ", 60, 'story'");
   await db.query(
-    `INSERT INTO task (project_id, number, title, reporter_person_id, status_id, parent_task_id, effort_estimate_hours, remaining_effort_hours)
+    `INSERT INTO task (project_id, number, title, requested_by_person_id, status_id, parent_task_id, effort_estimate_hours, remaining_effort_hours)
      VALUES ($1, 5, 'child', $2, $3, $4, 6, 6)`,
     [pid, ana, st.id, parent],
   );

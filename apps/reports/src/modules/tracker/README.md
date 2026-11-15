@@ -32,7 +32,7 @@ Elsewhere in the app:
 ```
 src/app/(app)/tracker/          the pages: project list, board, timeline, task, people and time
 src/app/api/tracker/            read-only JSON routes for the same data
-db/tracker/migrations/          0001 schema, 0002 roles, 0003 work kinds, 0004 done count, 0005 kind required (PostgreSQL 15+)
+db/tracker/migrations/          0001 schema, 0002 roles, 0003 work kinds, 0004 done count, 0005 kind required, 0006 requested by (PostgreSQL 15+)
 scripts/tracker/migrate.ts      applies the migrations (npm run db:tracker-migrate)
 scripts/tracker/run-forecast.ts the forecast as its own process, for the nightly job
 tests/tracker-*.test.ts         engine, schema, service and wording tests
