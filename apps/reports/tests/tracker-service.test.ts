@@ -981,3 +981,63 @@ test("parents follow the cards under them, and are never closed over open work w
     { label: "Story", total: 1, done: 1 },
   ]);
 });
+
+test("dependencies on a parent stand for the work cards under it", async () => {
+  const D = await import("../src/modules/tracker/service/dependencies");
+  // 1 (feature) holds 11 and 12; 2 (feature) holds 21 and a story 22, which holds 221; 3 is alone.
+  const children = D.childrenByParent([
+    { id: 11, parentId: 1 },
+    { id: 12, parentId: 1 },
+    { id: 21, parentId: 2 },
+    { id: 22, parentId: 2 },
+    { id: 221, parentId: 22 },
+    { id: 3, parentId: null },
+  ]);
+  assert.deepEqual(D.workCardsUnder(2, children).sort(), [21, 221]);
+  assert.deepEqual(D.workCardsUnder(3, children), [3]);
+
+  const pairs = (links: { predecessorId: number; successorId: number; lagDays: number }[]) =>
+    links.map((l) => `${l.successorId} waits on ${l.predecessorId}${l.lagDays ? ` +${l.lagDays}` : ""}`).sort();
+  assert.deepEqual(pairs(D.expandDependencies([{ predecessorId: 1, successorId: 2, lagDays: 0 }], children)), [
+    "21 waits on 11",
+    "21 waits on 12",
+    "221 waits on 11",
+    "221 waits on 12",
+  ]);
+  // A parent on one side only, and the longer lag wins when two links give the same pair.
+  assert.deepEqual(
+    pairs(
+      D.expandDependencies(
+        [
+          { predecessorId: 1, successorId: 3, lagDays: 0 },
+          { predecessorId: 11, successorId: 3, lagDays: 2 },
+        ],
+        children,
+      ),
+    ),
+    ["3 waits on 11 +2", "3 waits on 12"],
+  );
+
+  assert.equal(D.inSameLine(2, 221, children), true);
+  assert.equal(D.inSameLine(221, 2, children), true);
+  assert.equal(D.inSameLine(21, 221, children), false);
+
+  // A loop hidden in the hierarchy: 2 waits on 1, then a card under 1 is asked to wait on a card under 2.
+  const stored = [{ predecessorId: 1, successorId: 2, lagDays: 0 }];
+  assert.equal(D.wouldLoop(stored, { predecessorId: 221, successorId: 11, lagDays: 0 }, children), true);
+  assert.equal(D.wouldLoop(stored, { predecessorId: 3, successorId: 11, lagDays: 0 }, children), false);
+  assert.equal(D.wouldLoop(stored, { predecessorId: 2, successorId: 1, lagDays: 0 }, children), true);
+
+  // The same two refusals through the service, in words.
+  const p = await createProject(db, ana, { key: "UNDER", name: "Dependencies and parents" });
+  const make = (title: string, extra: Partial<Parameters<typeof createTask>[2]> = {}) =>
+    createTask(db, ana, { projectId: p.id, title, ...extra });
+  const fa = await make("Feature A", { kind: "feature" });
+  const fb = await make("Feature B", { kind: "feature" });
+  const a1 = await make("a1", { parentTaskId: fa.id });
+  const b1 = await make("b1", { parentTaskId: fb.id });
+  await refuses(() => addDependency(db, ana, fa.id, a1.id), "invalid", /sit one under the other/);
+  await addDependency(db, ana, fa.id, fb.id);
+  await refuses(() => addDependency(db, ana, b1.id, a1.id), "invalid", /through the cards under them/);
+  await addDependency(db, ana, a1.id, b1.id); // the same direction as the features: allowed
+});

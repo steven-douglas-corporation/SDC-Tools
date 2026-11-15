@@ -1,4 +1,5 @@
 import { TrackerError, type Database, type Tx } from "./database";
+import { childrenByParent, expandDependencies } from "./dependencies";
 import {
   schedule,
   simulate,
@@ -18,8 +19,8 @@ import {
 // tracker_engine login, which can write nothing else.
 //
 // Known limits, on purpose for a first version:
-//  - A dependency on a parent task is ignored. Only tasks that carry effort themselves are
-//    scheduled, so a parent with open subtasks is not in the list and counts as finished.
+//  - Only cards that carry effort themselves are scheduled. A dependency on or from a card with
+//    cards under it is applied to the work cards beneath it (see ./dependencies.ts).
 //  - Capacity: the most specific undated setting is a person's normal day; dated settings at any
 //    level override it for their dates, person over team over global.
 
@@ -88,11 +89,24 @@ export async function loadForecastInputs(tx: Tx, asOf: string): Promise<LoadedIn
   const depRows = await tx.query<{ predecessor_task_id: number; successor_task_id: number; lag_days: number }>(
     `SELECT predecessor_task_id, successor_task_id, lag_days FROM tracker.task_dependency`,
   );
+  // A link to or from a card with cards under it stands for the work cards beneath it.
+  const placed = await tx.query<{ id: number; parent_task_id: number }>(
+    `SELECT id, parent_task_id FROM tracker.task WHERE archived_at IS NULL AND parent_task_id IS NOT NULL`,
+  );
+  const children = childrenByParent(placed.rows.map((r) => ({ id: Number(r.id), parentId: Number(r.parent_task_id) })));
   const predsOf = new Map<string, { id: string; lagDays: number }[]>();
-  for (const d of depRows.rows) {
-    const key = String(d.successor_task_id);
+  const links = expandDependencies(
+    depRows.rows.map((d) => ({
+      predecessorId: Number(d.predecessor_task_id),
+      successorId: Number(d.successor_task_id),
+      lagDays: Number(d.lag_days),
+    })),
+    children,
+  );
+  for (const d of links) {
+    const key = String(d.successorId);
     const list = predsOf.get(key) ?? [];
-    list.push({ id: String(d.predecessor_task_id), lagDays: Number(d.lag_days) });
+    list.push({ id: String(d.predecessorId), lagDays: d.lagDays });
     predsOf.set(key, list);
   }
 

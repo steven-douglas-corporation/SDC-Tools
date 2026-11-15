@@ -1,5 +1,6 @@
 import { TrackerError, assertIsoDate, one, type Actor, type Database, type Tx } from "./database";
 import { requireProjectRole } from "./access";
+import { childrenByParent, inSameLine, wouldLoop } from "./dependencies";
 
 // Everything that changes a task goes through this file, so the status log, the change log and
 // the completion dates are always written in the same transaction as the change itself.
@@ -772,20 +773,35 @@ export async function addDependency(
     const predecessor = await taskKey(tx, predecessorId);
     await requireProjectRole(tx, successor.projectId, actor, "contributor");
 
-    // A loop exists if the predecessor already waits, directly or through others, on the successor.
-    const loop = await tx.query(
-      `WITH RECURSIVE downstream(id) AS (
-           SELECT successor_task_id FROM tracker.task_dependency WHERE predecessor_task_id = $1
-         UNION
-           SELECT d.successor_task_id FROM tracker.task_dependency d JOIN downstream w ON d.predecessor_task_id = w.id
-       )
-       SELECT 1 FROM downstream WHERE id = $2 LIMIT 1`,
-      [successorId, predecessorId],
+    // A link stands for the work cards under each end, so both checks look through the hierarchy.
+    const placed = await tx.query<{ id: number; parent_task_id: number }>(
+      `SELECT id, parent_task_id FROM tracker.task WHERE archived_at IS NULL AND parent_task_id IS NOT NULL`,
     );
-    if (loop.rows.length) {
+    const children = childrenByParent(
+      placed.rows.map((r) => ({ id: Number(r.id), parentId: Number(r.parent_task_id) })),
+    );
+    if (inSameLine(predecessorId, successorId, children)) {
       throw new TrackerError(
         "invalid",
-        `${predecessor.key} already waits on ${successor.key}, so this would create a loop.`,
+        `${successor.key} and ${predecessor.key} sit one under the other, so one cannot wait on the other.`,
+      );
+    }
+    const existing = await tx.query<{ predecessor_task_id: number; successor_task_id: number; lag_days: number }>(
+      `SELECT predecessor_task_id, successor_task_id, lag_days FROM tracker.task_dependency`,
+    );
+    const loop = wouldLoop(
+      existing.rows.map((d) => ({
+        predecessorId: Number(d.predecessor_task_id),
+        successorId: Number(d.successor_task_id),
+        lagDays: Number(d.lag_days),
+      })),
+      { predecessorId, successorId, lagDays },
+      children,
+    );
+    if (loop) {
+      throw new TrackerError(
+        "invalid",
+        `${predecessor.key} already waits on ${successor.key}, directly or through the cards under them, so this would create a loop.`,
       );
     }
     const inserted = await tx.query(
