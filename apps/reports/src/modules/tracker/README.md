@@ -30,7 +30,7 @@ Elsewhere in the app:
 ```
 src/app/(app)/tracker/          the pages: project list, board, task, people and time
 src/app/api/tracker/            read-only JSON routes for the same data
-db/tracker/migrations/          0001_schema.sql, 0002_roles.sql (PostgreSQL 15+, schema "tracker")
+db/tracker/migrations/          0001_schema.sql, 0002_roles.sql, 0003_work_kinds.sql (PostgreSQL 15+, schema "tracker")
 scripts/tracker/migrate.ts      applies the migrations (npm run db:tracker-migrate)
 scripts/tracker/run-forecast.ts the forecast as its own process, for the nightly job
 tests/tracker-*.test.ts         engine, schema, service and wording tests
@@ -57,5 +57,9 @@ Neither is set on the server yet. Until `TRACKER_DATABASE_URL` is set the module
   dates to `task_forecast` and never touches the typed ones.
 - The first estimated completion date typed becomes the baseline and is never replaced.
 - Tasks are archived, never deleted.
+- A card's kind (Epic, Feature, Story, Task, Bug, Issue) is optional. A card sits only under a
+  card of a higher kind; the service says why not in words and a database trigger enforces it.
+  A card with cards under it carries no hours in the forecast: `rollUp()` in `service/queries.ts`
+  adds up what is under it for both the board and the task page.
 - The simulation is slow. It runs from `scripts/tracker/run-forecast.ts`, never inside the web
   process.

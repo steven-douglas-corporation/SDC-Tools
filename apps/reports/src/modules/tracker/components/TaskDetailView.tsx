@@ -97,6 +97,8 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   const [priority, setPriority] = useState(task.priority.toString());
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
   const [estimated, setEstimated] = useState(task.estimatedCompletionDate ?? "");
+  const [kind, setKind] = useState(task.kind ?? "");
+  const [parentId, setParentId] = useState(task.parentTaskId?.toString() ?? "");
   const [reason, setReason] = useState("");
   const [statusId, setStatusId] = useState(task.statusId.toString());
   const [blockedReason, setBlockedReason] = useState("");
@@ -131,6 +133,9 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
       if (nextRemaining !== null && !Number.isFinite(nextRemaining)) return setError("Hours left must be a number.");
       changes.remainingEffortHours = nextRemaining;
     }
+    if ((kind || null) !== task.kind) changes.kind = kind || null;
+    const nextParent = parentId ? Number(parentId) : null;
+    if (nextParent !== task.parentTaskId) changes.parentTaskId = nextParent;
     if (Number(priority) !== task.priority) changes.priority = Number(priority);
     if ((dueDate || null) !== task.dueDate) changes.dueDate = dueDate || null;
     if ((estimated || null) !== task.estimatedCompletionDate) changes.estimatedCompletionDate = estimated || null;
@@ -143,6 +148,13 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
       },
     );
   }
+
+  // What this card could sit under, given the kind chosen in the form: anything of a higher kind.
+  // A card with no kind counts as the lowest level.
+  const lowest = Math.max(...task.kinds.map((k) => k.level));
+  const ownLevel = task.kinds.find((k) => k.key === kind)?.level ?? lowest;
+  const parents = task.parentCandidates.filter((c) => c.level < ownLevel || c.id === Number(parentId));
+  const hasChildren = task.children.length > 0;
 
   const target = task.statuses.find((s) => s.id === Number(statusId));
   const moving = target && target.id !== task.statusId;
@@ -167,6 +179,53 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                 className={`${INPUT} resize-y`}
               />
             </label>
+            {isTask && (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <label className="flex flex-col gap-1">
+                  <span className={LABEL}>Kind</span>
+                  <select
+                    value={kind}
+                    disabled={!mayChange}
+                    onChange={(e) => setKind(e.target.value)}
+                    className={INPUT}
+                  >
+                    <option value="">No kind</option>
+                    {task.kinds.map((k) => (
+                      <option key={k.key} value={k.key}>
+                        {k.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-sdc-gray-600">Optional.</span>
+                </label>
+                <label className="flex flex-col gap-1 sm:col-span-1 lg:col-span-2">
+                  <span className={LABEL}>Sits under</span>
+                  <select
+                    value={parentId}
+                    disabled={!mayChange}
+                    onChange={(e) => setParentId(e.target.value)}
+                    className={INPUT}
+                  >
+                    <option value="">Nothing</option>
+                    {parents.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.key} {c.title} ({c.kindLabel})
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-sdc-gray-600">
+                    {parents.length === 0
+                      ? "Nothing in this project is of a higher kind than this card yet."
+                      : "Only cards of a higher kind are listed: Epic, then Feature, then Story, then Task, Bug or Issue."}
+                  </span>
+                </label>
+              </div>
+            )}
+            {hasChildren && isTask && (
+              <p className="text-xs text-sdc-gray-600">
+                Cards sit under this one, so the forecast uses their hours and not the size or hours left entered here.
+              </p>
+            )}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {isTask && (
                 <label className="flex flex-col gap-1">
@@ -308,6 +367,31 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
           </div>
         </Section>
 
+        {hasChildren && (
+          <Section title="Under this card">
+            <ul className="space-y-1 text-sm">
+              {task.children.map((c) => (
+                <li key={c.key} className="grid grid-cols-[1fr_auto] gap-x-3">
+                  <span className={c.closed ? "text-sdc-gray-400 line-through" : ""}>
+                    <Link
+                      href={taskHref(c.key)}
+                      className="font-mono text-xs font-semibold text-sdc-blue hover:underline"
+                    >
+                      {c.key}
+                    </Link>{" "}
+                    {c.title}
+                    {c.kindLabel && <span className="text-sdc-gray-600"> ({c.kindLabel})</span>}
+                  </span>
+                  <span className="text-xs text-sdc-gray-600">
+                    {c.statusName}
+                    {!c.closed && c.forecastFinish && ` · forecast ${shortDate(c.forecastFinish)}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
         <Section title="Comments">
           {task.comments.length === 0 ? (
             <p className="text-sm text-sdc-gray-600">No comments yet.</p>
@@ -439,7 +523,41 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
           )}
         </Section>
 
-        {!closed && (
+        {!closed && task.rollup && (
+          <Section title="Forecast">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+              <dt className="text-sdc-gray-600">Contains</dt>
+              <dd className="text-sdc-navy">
+                {task.rollup.cards} {task.rollup.cards === 1 ? "card" : "cards"}, {task.rollup.done} done
+              </dd>
+              <dt className="text-sdc-gray-600">Left</dt>
+              <dd className="text-sdc-navy">{hours(task.rollup.remainingHours)}</dd>
+              <dt className="text-sdc-gray-600">Finishes</dt>
+              <dd className="font-semibold text-sdc-navy">{shortDate(task.rollup.forecastFinish)}</dd>
+              {task.dueDate && (
+                <>
+                  <dt className="text-sdc-gray-600">Due</dt>
+                  <dd
+                    className={
+                      task.rollup.forecastFinish && task.rollup.forecastFinish > task.dueDate
+                        ? "font-semibold text-sdc-red-text"
+                        : "text-sdc-navy"
+                    }
+                  >
+                    {shortDate(task.dueDate)}
+                  </dd>
+                </>
+              )}
+            </dl>
+            <p className="mt-2 text-sm italic text-sdc-gray-600">
+              Finishes when the cards under it do.
+              {task.rollup.notForecast > 0 &&
+                ` ${task.rollup.notForecast} of them ${task.rollup.notForecast === 1 ? "is" : "are"} not forecast, so the date is not the whole story.`}
+            </p>
+          </Section>
+        )}
+
+        {!closed && !task.rollup && (
           <Section title="Forecast">
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
               <dt className="text-sdc-gray-600">Starts</dt>
@@ -556,7 +674,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
             <dt className="text-sdc-gray-600">Project</dt>
             <dd className="text-sdc-navy">{task.projectName}</dd>
             <dt className="text-sdc-gray-600">Kind</dt>
-            <dd className="capitalize text-sdc-navy">{task.type}</dd>
+            <dd className="text-sdc-navy">{task.type === "milestone" ? "Milestone" : (task.kindLabel ?? "None")}</dd>
             <dt className="text-sdc-gray-600">Reported by</dt>
             <dd className="text-sdc-navy">{task.reporterName}</dd>
             {task.notBeforeDate && (

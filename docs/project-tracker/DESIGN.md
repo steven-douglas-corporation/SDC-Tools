@@ -74,6 +74,22 @@ set of screens are built and tested as a module of SDC Reports (`apps/reports/sr
   passes down through chains of dependencies, is computed on each run without changing the
   stored priority, and is recorded as the reason on the forecast.
 
+### Kinds of card (decided 2026-11-15)
+
+- A card can optionally be given a **kind**: Epic, Feature, Story, Task, Bug or Issue. The kind
+  is chosen on the card itself. There are no project types: a team that wants a plain list of
+  cards never picks a kind and never sees the hierarchy.
+- A card can sit under another card only if that card is of a **higher kind**: Epic, then
+  Feature, then Story, then Task, Bug and Issue together at the bottom. Levels can be skipped,
+  so a Story can sit straight under an Epic. A card with no kind counts as the bottom level: it
+  can sit under anything with a kind, and nothing can sit under it.
+- A card with cards under it carries no hours of its own in the forecast. It shows what the
+  cards under it add up to, and it finishes when the last of them does.
+- Breadcrumbs are the only navigation on a card's page, and they show the cards it sits under.
+  There is no close or back button.
+- "Issue" is there so the open issues in the RAID log can move into the tracker as ordinary
+  cards once it is in use. Risks and assumptions stay in the RAID log.
+
 ### Links to the rest of the business
 
 - Projects and tasks can optionally link to a job number, section and function codes, a team,
@@ -114,7 +130,7 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 48 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its 50 tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
 | Piece                     | Where, under `apps/reports`                                                 |
@@ -147,7 +163,8 @@ that enforce the one write path.
 - A project change log; dependency changes logged on the task.
 - Stack-rank uniqueness that can be deferred, so ranks can be swapped. An active project must
   have a rank; a planned one may not have one yet.
-- Parent tasks in the same project, one level deep.
+- Parent cards in the same project. `0003_work_kinds.sql` replaced the first rule (one level
+  deep) with kinds: a card sits only under a card of a higher kind, enforced by a trigger.
 - Roll-up view: forecast dates from one place, current run only, at-risk on P80, with counts of
   unscheduled, unestimated and stale tasks. A parent's hours are not counted on top of its subtasks.
 - Only finish-to-start dependencies; the other three types were removed until the engine supports them.
@@ -210,6 +227,12 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
   forecast and its reason; what the task waits on (add and remove, with lag) and what waits on
   it; comments; and the history, which is the status log and the change log read back together
   in plain words, newest first.
+- **Kinds and hierarchy**: the new-card form and the task page have an optional kind. The task
+  page has a "Sits under" menu that lists only cards of a higher kind, and the service refuses
+  anything else in a sentence that names the cards involved. A card shows its kind and the card
+  it sits under; a card with cards under it shows how many, how many are done, the hours left
+  and the latest forecast finish among them, on the board and on its own page. The breadcrumb
+  on a task page shows the cards above it. Changes to kind and parent are in the history.
 - **People and time** (`/tracker/people`): the length of a normal project day, a figure of their
   own for anyone whose day is shorter, time off, and company holidays. ELT sets the default,
   other people's hours and the holidays; anyone can enter their own time off.
@@ -234,6 +257,11 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
 - The P50/P80 simulation is not scheduled anywhere. It runs only when someone runs
   `npm run tracker:forecast`, so P80 is blank after any edit until it is run again.
 - Someone with `tracker:view` but not `tracker:edit` cannot enter their own time off.
+- Kinds: the "done" count in a project's header counts a parent card as a card, so "1 of 5" can
+  include an Epic. The board has no view grouped by Epic or Feature and no filter by kind. A
+  parent's P80 is not shown, only the latest plain forecast finish under it. The list of kinds
+  is fixed in a migration; there is no screen to change it. A parent card can only be chosen on
+  the task page, not when a card is first added.
 - Time off is typed in by hand. Approved time off is already in Paylocity, and the plan is to
   import it from there daily (backlog M-15). Not started, and nothing at SDC receives time off
   from Paylocity today: Reports gets worked hours, the roster and position families as report

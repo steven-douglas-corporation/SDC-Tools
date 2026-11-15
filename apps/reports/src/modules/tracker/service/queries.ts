@@ -109,11 +109,93 @@ export interface BoardStatus {
   wipLimit: number | null;
 }
 
+export interface WorkKind {
+  key: string;
+  label: string;
+  /** 1 is the top. A card may sit only under a card with a lower number. */
+  level: number;
+}
+
+/** What the cards under a parent add up to. Only cards that carry work themselves are counted. */
+export interface WorkRollup {
+  cards: number;
+  done: number;
+  remainingHours: number;
+  /** The latest forecast finish among the open cards, or null if none of them has one. */
+  forecastFinish: string | null;
+  /** Open cards the forecast could not place. While this is above zero the finish date is not the whole story. */
+  notForecast: number;
+}
+
+interface RollupInput {
+  id: number;
+  parentId: number | null;
+  closed: boolean;
+  cancelled: boolean;
+  remainingHours: number;
+  forecastFinish: string | null;
+}
+
+/**
+ * Adds up, for every card that has cards under it, the work beneath it. A cancelled card is
+ * left out altogether, as it is everywhere else. Kept free of SQL so it can be tested alone.
+ */
+export function rollUp(tasks: RollupInput[]): Map<number, WorkRollup> {
+  const children = new Map<number, RollupInput[]>();
+  for (const t of tasks) {
+    if (t.parentId == null) continue;
+    const list = children.get(t.parentId);
+    if (list) list.push(t);
+    else children.set(t.parentId, [t]);
+  }
+  const result = new Map<number, WorkRollup>();
+  const visit = (id: number): WorkRollup | null => {
+    const kids = children.get(id);
+    if (!kids) return null;
+    const sum: WorkRollup = { cards: 0, done: 0, remainingHours: 0, forecastFinish: null, notForecast: 0 };
+    for (const kid of kids) {
+      const below = visit(kid.id);
+      if (below) {
+        sum.cards += below.cards;
+        sum.done += below.done;
+        sum.remainingHours += below.remainingHours;
+        sum.notForecast += below.notForecast;
+        if (below.forecastFinish && (!sum.forecastFinish || below.forecastFinish > sum.forecastFinish)) {
+          sum.forecastFinish = below.forecastFinish;
+        }
+        continue;
+      }
+      if (kid.cancelled) continue;
+      sum.cards++;
+      if (kid.closed) {
+        sum.done++;
+        continue;
+      }
+      sum.remainingHours += kid.remainingHours;
+      if (!kid.forecastFinish) sum.notForecast++;
+      else if (!sum.forecastFinish || kid.forecastFinish > sum.forecastFinish) sum.forecastFinish = kid.forecastFinish;
+    }
+    result.set(id, sum);
+    return sum;
+  };
+  for (const id of children.keys()) if (!result.has(id)) visit(id);
+  return result;
+}
+
 export interface BoardTask {
   id: number;
   key: string;
   title: string;
   type: "task" | "milestone";
+  /** Epic, Feature, Story, Task, Bug or Issue, as shown; null when the card has no kind. */
+  kindLabel: string | null;
+  /** The card this one sits under, if any. */
+  parentKey: string | null;
+  /**
+   * Set only for a card that has other cards under it. Such a card carries no hours of its own
+   * in the forecast, so what it shows is added up from the cards beneath it, however deep.
+   */
+  rollup: WorkRollup | null;
   statusId: number;
   priority: number;
   assigneePersonId: number | null;
@@ -145,6 +227,8 @@ export interface Board {
   tasks: BoardTask[];
   people: { id: number; name: string }[];
   buckets: { id: number; label: string; hours: number; shouldSplit: boolean }[];
+  /** The kinds a card can be given, top of the hierarchy first. */
+  kinds: WorkKind[];
   /** The day the stored forecast was made for, or null if none has run. */
   forecastAsOf: string | null;
 }
@@ -154,6 +238,10 @@ interface TaskRow {
   key: string;
   title: string;
   type: "task" | "milestone";
+  kind_label: string | null;
+  parent_task_id: number | null;
+  parent_key: string | null;
+  category: BoardStatus["category"];
   status_id: number;
   priority: number;
   assignee_person_id: number | null;
@@ -205,6 +293,8 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
     );
     const tasks = await tx.query<TaskRow>(
       `SELECT t.id, p.key || '-' || t.number AS key, t.title, t.type, t.status_id, t.priority,
+              k.label AS kind_label, t.parent_task_id, s.category,
+              (SELECT p.key || '-' || up.number FROM tracker.task up WHERE up.id = t.parent_task_id) AS parent_key,
               t.assignee_person_id, a.display_name AS assignee_name,
               t.effort_estimate_hours::float8 AS estimate_hours, t.remaining_effort_hours::float8 AS remaining_hours,
               b.label AS bucket_label, t.due_date::text, t.estimated_completion_date::text,
@@ -222,6 +312,7 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
          JOIN tracker.workflow_status s ON s.id = t.status_id
     LEFT JOIN tracker.person a ON a.id = t.assignee_person_id
     LEFT JOIN tracker.effort_bucket b ON b.id = t.effort_bucket_id
+    LEFT JOIN tracker.work_kind k ON k.key = t.kind
     LEFT JOIN tracker.task_forecast f
            ON f.task_id = t.id AND f.run_id = (SELECT run_id FROM tracker.current_schedule_run)
     LEFT JOIN tracker.task dt ON dt.id = f.driver_task_id
@@ -239,6 +330,17 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
       `SELECT id, label, hours::float8 AS hours, should_split FROM tracker.effort_bucket WHERE active ORDER BY sort_order`,
     );
     const run = await tx.query<{ as_of: string }>(`SELECT as_of_date::text AS as_of FROM tracker.current_schedule_run`);
+    const kinds = await tx.query<WorkKind>(`SELECT key, label, level FROM tracker.work_kind ORDER BY sort_order`);
+    const rollups = rollUp(
+      tasks.rows.map((t) => ({
+        id: Number(t.id),
+        parentId: t.parent_task_id == null ? null : Number(t.parent_task_id),
+        closed: t.category === "done" || t.category === "cancelled",
+        cancelled: t.category === "cancelled",
+        remainingHours: Number(t.remaining_hours ?? t.estimate_hours ?? 0),
+        forecastFinish: t.forecast_finish,
+      })),
+    );
 
     return {
       project: toProject(header, admin),
@@ -253,6 +355,9 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
         key: t.key,
         title: t.title,
         type: t.type,
+        kindLabel: t.kind_label,
+        parentKey: t.parent_key,
+        rollup: rollups.get(Number(t.id)) ?? null,
         statusId: Number(t.status_id),
         priority: Number(t.priority),
         assigneePersonId: t.assignee_person_id == null ? null : Number(t.assignee_person_id),
@@ -281,6 +386,7 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
         hours: Number(b.hours),
         shouldSplit: b.should_split === true,
       })),
+      kinds: kinds.rows.map((k) => ({ key: k.key, label: k.label, level: Number(k.level) })),
       forecastAsOf: run.rows[0]?.as_of ?? null,
     };
   });

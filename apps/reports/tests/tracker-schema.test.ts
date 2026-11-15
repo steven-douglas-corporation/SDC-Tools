@@ -45,6 +45,7 @@ before(async () => {
   db = new PGlite();
   await db.exec(migration("0001_schema.sql"));
   await db.exec(migration("0002_roles.sql"));
+  await db.exec(migration("0003_work_kinds.sql"));
   await db.exec("SET search_path = tracker, public");
 
   ana = Number(
@@ -152,17 +153,23 @@ test("a task cannot use another project's status, sprint or parent", async () =>
   );
 });
 
-test("subtasks go one level deep", async () => {
-  const parent = await newTask(alpha, 910);
-  const child = await newTask(alpha, 911, { parent_task_id: parent });
-  await rejects(
-    `INSERT INTO task (project_id, number, title, reporter_person_id, status_id, parent_task_id)
-     VALUES ($1, 912, 'x', $2, $3, $4)`,
-    /itself a subtask/,
-    [alpha, ana, status.alpha!["To Do"], child],
-  );
-  const other = await newTask(alpha, 913);
-  await rejects(`UPDATE task SET parent_task_id = $1 WHERE id = $2`, /has subtasks/, [other, parent]);
+test("a card sits only under a card of a higher kind", async () => {
+  const epic = await newTask(alpha, 910, { kind: "epic" });
+  const story = await newTask(alpha, 911, { kind: "story", parent_task_id: epic });
+  const plain = await newTask(alpha, 912, { parent_task_id: story });
+  await newTask(alpha, 913, { kind: "bug", parent_task_id: epic });
+
+  // Same level, a lower kind above a higher one, and a card with no kind as a parent.
+  const other = await newTask(alpha, 914, { kind: "story" });
+  await rejects(`UPDATE task SET parent_task_id = $1 WHERE id = $2`, /higher kind/, [story, other]);
+  await rejects(`UPDATE task SET parent_task_id = $1 WHERE id = $2`, /higher kind/, [story, epic]);
+  await rejects(`UPDATE task SET parent_task_id = $1 WHERE id = $2`, /higher kind/, [plain, other]);
+
+  // Changing a kind is checked against the card above and the cards below.
+  await rejects(`UPDATE task SET kind = 'epic' WHERE id = $1`, /higher kind/, [story]);
+  await rejects(`UPDATE task SET kind = 'task' WHERE id = $1`, /no longer be of a lower kind/, [story]);
+  await rejects(`UPDATE task SET kind = 'nonsense' WHERE id = $1`, /foreign key/, [other]);
+  await db.query(`UPDATE task SET kind = 'feature' WHERE id = $1`, [story]);
 });
 
 test("milestones carry no effort; a not-before date needs a reason", async () => {
@@ -251,7 +258,7 @@ test("roll-up counts unscheduled, unestimated and stale work and ignores old run
   const scheduled = await add(1, ", effort_estimate_hours, remaining_effort_hours", ", 18, 12");
   const unassigned = await add(2, ", effort_estimate_hours", ", 30"); // no remaining: falls back to the estimate
   await add(3, "", ""); // no estimate at all
-  const parent = await add(4, ", effort_estimate_hours", ", 60");
+  const parent = await add(4, ", effort_estimate_hours, kind", ", 60, 'story'");
   await db.query(
     `INSERT INTO task (project_id, number, title, reporter_person_id, status_id, parent_task_id, effort_estimate_hours, remaining_effort_hours)
      VALUES ($1, 5, 'child', $2, $3, $4, 6, 6)`,

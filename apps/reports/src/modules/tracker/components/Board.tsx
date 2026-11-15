@@ -27,7 +27,9 @@ const COLUMN_TONE: Record<BoardStatus["category"], string> = {
 
 function NewTask({ board }: { board: BoardData }) {
   const [title, setTitle] = useState("");
-  const [type, setType] = useState<"task" | "milestone">("task");
+  // One menu for two things: an optional kind from the taxonomy, or a milestone (a date with no work).
+  const [what, setWhat] = useState("");
+  const type: "task" | "milestone" = what === "milestone" ? "milestone" : "task";
   const [bucketId, setBucketId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -46,6 +48,7 @@ function NewTask({ board }: { board: BoardData }) {
             projectKey: board.project.key,
             title,
             type,
+            kind: type === "milestone" ? null : what || null,
             effortBucketId: bucketId ? Number(bucketId) : null,
             assigneePersonId: assigneeId ? Number(assigneeId) : null,
             dueDate: dueDate || null,
@@ -58,7 +61,7 @@ function NewTask({ board }: { board: BoardData }) {
       }}
     >
       <label className="flex min-w-[16rem] flex-1 flex-col gap-1">
-        <span className={LABEL}>New task</span>
+        <span className={LABEL}>New card</span>
         <input
           required
           value={title}
@@ -69,8 +72,18 @@ function NewTask({ board }: { board: BoardData }) {
       </label>
       <label className="flex flex-col gap-1">
         <span className={LABEL}>Kind</span>
-        <select value={type} onChange={(e) => setType(e.target.value as "task" | "milestone")} className={INPUT}>
-          <option value="task">Task</option>
+        <select
+          value={what}
+          onChange={(e) => setWhat(e.target.value)}
+          className={INPUT}
+          title="Optional. A card can sit only under a card of a higher kind: Epic, then Feature, then Story, then Task, Bug or Issue."
+        >
+          <option value="">No kind</option>
+          {board.kinds.map((k) => (
+            <option key={k.key} value={k.key}>
+              {k.label}
+            </option>
+          ))}
           <option value="milestone">Milestone</option>
         </select>
       </label>
@@ -293,6 +306,11 @@ function Card({
           {task.key}
         </Link>
         <span className="flex items-center gap-1">
+          {task.kindLabel && (
+            <span className="rounded-full bg-sdc-gray-100 px-2 py-0.5 text-micro font-bold uppercase text-sdc-gray-600">
+              {task.kindLabel}
+            </span>
+          )}
           {task.type === "milestone" && (
             <span className="rounded-full bg-sdc-blue-light px-2 py-0.5 text-micro font-bold uppercase text-sdc-blue-dark">
               Milestone
@@ -315,14 +333,42 @@ function Card({
         </Link>
       </p>
 
+      {task.parentKey && (
+        <p className="mt-0.5 text-xs text-sdc-gray-600">
+          Under{" "}
+          <Link
+            href={`/tracker/${board.project.key}/${task.parentKey.slice(task.parentKey.lastIndexOf("-") + 1)}`}
+            draggable={false}
+            className="font-mono font-semibold text-sdc-blue hover:underline"
+          >
+            {task.parentKey}
+          </Link>
+        </p>
+      )}
+
       <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs text-sdc-gray-600">
-        {task.type === "task" && (
+        {/* A card with cards under it carries no hours itself: it shows what they add up to. */}
+        {task.rollup && (
+          <>
+            <dt>Contains</dt>
+            <dd className="text-sdc-navy">
+              {task.rollup.cards} {task.rollup.cards === 1 ? "card" : "cards"}, {task.rollup.done} done
+            </dd>
+            {!closed && (
+              <>
+                <dt>Left</dt>
+                <dd className="text-sdc-navy">{hours(task.rollup.remainingHours)}</dd>
+              </>
+            )}
+          </>
+        )}
+        {task.type === "task" && !task.rollup && (
           <>
             <dt>Who</dt>
             <dd className="text-sdc-navy">{task.assigneeName ?? "Nobody yet"}</dd>
           </>
         )}
-        {task.type === "task" && !closed && (
+        {task.type === "task" && !task.rollup && !closed && (
           <>
             <dt>Left</dt>
             <dd className="text-sdc-navy">
@@ -355,7 +401,13 @@ function Card({
           <>
             <dt>Forecast</dt>
             <dd className="text-sdc-navy">
-              {task.forecastFinish ? (
+              {task.rollup ? (
+                task.rollup.forecastFinish ? (
+                  <strong>{shortDate(task.rollup.forecastFinish)}</strong>
+                ) : (
+                  "—"
+                )
+              ) : task.forecastFinish ? (
                 <>
                   {task.forecastStart !== task.forecastFinish && `${shortDate(task.forecastStart)} → `}
                   <strong>{shortDate(task.forecastFinish)}</strong>
@@ -369,7 +421,15 @@ function Card({
         )}
       </dl>
 
-      {!closed && <p className="mt-2 text-xs italic text-sdc-gray-600">{forecastReason(task)}</p>}
+      {!closed && (
+        <p className="mt-2 text-xs italic text-sdc-gray-600">
+          {task.rollup
+            ? task.rollup.notForecast > 0
+              ? `Finishes when the cards under it do. ${task.rollup.notForecast} of them ${task.rollup.notForecast === 1 ? "is" : "are"} not forecast, so the date is not the whole story.`
+              : "Finishes when the cards under it do."
+            : forecastReason(task)}
+        </p>
+      )}
       {task.blockedReason && <p className="mt-1 text-xs text-sdc-red-text">Blocked: {task.blockedReason}</p>}
 
       {canEdit && (

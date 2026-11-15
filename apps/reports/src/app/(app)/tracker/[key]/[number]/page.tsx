@@ -36,16 +36,34 @@ export default async function TrackerTaskPage({ params }: { params: Promise<{ ke
         <Link href={`/tracker/${task.projectKey}`} className="text-sdc-blue hover:underline">
           {task.projectKey}
         </Link>
+        {/* The cards this one sits under, top first, so the path reads Epic / Feature / Story. */}
+        {task.ancestors.map((a) => (
+          <span key={a.key}>
+            <span className="text-sdc-gray-400"> / </span>
+            <Link
+              href={`/tracker/${task.projectKey}/${a.key.slice(a.key.lastIndexOf("-") + 1)}`}
+              title={a.title}
+              className="text-sdc-blue hover:underline"
+            >
+              {a.key}
+            </Link>
+          </span>
+        ))}
         <span className="text-sdc-gray-400"> / </span>
         <span className="text-sdc-gray-600">{task.key}</span>
       </p>
       <PageTitle className="mb-4">
         <span className="font-mono text-sdc-gray-600">{task.key}</span> {task.title}
+        {task.kindLabel && (
+          <span className="ml-2 rounded-full bg-sdc-gray-100 px-2 py-0.5 align-middle text-xs font-bold uppercase text-sdc-gray-600">
+            {task.kindLabel}
+          </span>
+        )}
         {task.archived && <span className="ml-2 text-sm font-normal text-sdc-gray-600">(archived)</span>}
       </PageTitle>
       {/* Keyed on the forecast and history so the form picks up fresh values after each save. */}
       <TaskDetailView
-        key={`${task.history.length}:${task.comments.length}:${task.statusId}:${task.waitsOn.length}`}
+        key={`${task.history.length}:${task.comments.length}:${task.statusId}:${task.waitsOn.length}:${task.children.length}`}
         task={task}
         canEdit={hasPermission(session.user.role, "tracker:edit")}
       />

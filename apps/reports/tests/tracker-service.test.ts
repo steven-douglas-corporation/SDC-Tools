@@ -57,6 +57,7 @@ before(async () => {
   pg = new PGlite();
   await pg.exec(migration("0001_schema.sql"));
   await pg.exec(migration("0002_roles.sql"));
+  await pg.exec(migration("0003_work_kinds.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
 
@@ -731,4 +732,149 @@ test("forecast run: a missing global capacity default is an error, not a silent 
   );
   const runs = await rows(`SELECT 1 FROM tracker.schedule_run WHERE status = 'running'`);
   assert.equal(runs.length, 0, "the refused run leaves nothing behind");
+});
+
+test("kinds: a card sits only under a higher kind, changes are logged, and a parent shows what is under it", async () => {
+  const { getTaskDetail } = await import("../src/modules/tracker/service/task-detail");
+  const { getBoard } = await import("../src/modules/tracker/service/queries");
+  const p = await createProject(db, ana, { key: "TAX", name: "Taxonomy" });
+  const projectId = p.id;
+  const make = (title: string, extra: Partial<Parameters<typeof createTask>[2]> = {}) =>
+    createTask(db, ana, { projectId, title, ...extra });
+
+  const epic = await make("Epic", { kind: "epic" });
+  const feature = await make("Feature", { kind: "feature", parentTaskId: epic.id });
+  const story = await make("Story", { kind: "story", parentTaskId: feature.id });
+  const task = await make("Task", { kind: "task", parentTaskId: story.id, effortEstimateHours: 6 });
+  const bug = await make("Bug", { kind: "bug", parentTaskId: epic.id, effortEstimateHours: 3 }); // levels can be skipped
+  const plain = await make("Plain", { parentTaskId: story.id, effortEstimateHours: 18, remainingEffortHours: 12 });
+  const loose = await make("Loose story", { kind: "story" });
+
+  // What is refused, in words a person can act on.
+  await refuses(
+    () => make("x", { kind: "story", parentTaskId: task.id }),
+    "invalid",
+    /TAX-4 is a Task, and a Story can sit only/,
+  );
+  await refuses(() => make("x", { parentTaskId: plain.id }), "invalid", /card with no kind/);
+  await refuses(() => make("x", { kind: "nonsense" }), "invalid", /does not exist/);
+  await refuses(() => updateTask(db, ana, loose.id, { parentTaskId: story.id }), "invalid", /higher kind/);
+  await refuses(() => updateTask(db, ana, loose.id, { parentTaskId: loose.id }), "invalid", /under itself/);
+  await refuses(() => updateTask(db, ana, epic.id, { parentTaskId: feature.id }), "invalid", /higher kind/);
+  await refuses(
+    () => updateTask(db, ana, feature.id, { kind: "story" }),
+    "invalid",
+    /TAX-3 sits under this card and is a Story/,
+  );
+  const [elsewhere] = await rows<{ id: number }>(
+    `SELECT t.id FROM tracker.task t JOIN tracker.project p ON p.id = t.project_id WHERE p.key = 'PPL' LIMIT 1`,
+  );
+  await refuses(
+    () => updateTask(db, ana, loose.id, { parentTaskId: Number(elsewhere!.id) }),
+    "invalid",
+    /same project/,
+  );
+
+  // Kind and parent can change together, and each change is in the history.
+  await updateTask(db, ana, loose.id, { kind: "task", parentTaskId: story.id }, "it was smaller than it looked");
+  await updateTask(db, ana, loose.id, { parentTaskId: feature.id });
+  await updateTask(db, ana, loose.id, { parentTaskId: null, kind: null });
+  const l = await getTaskDetail(db, ana, "TAX", loose.number);
+  assert.deepEqual(
+    l.history
+      .map((h) => h.what)
+      .filter((w) => /kind|under/i.test(w))
+      .reverse(),
+    [
+      "Kind changed from Story to Task",
+      "Moved under TAX-3",
+      "Moved under TAX-2 (was under TAX-3)",
+      "Kind changed from Task to nothing",
+      "No longer under TAX-2",
+    ],
+  );
+  assert.deepEqual([l.kind, l.parentTaskId, l.ancestors.length], [null, null, 0]);
+
+  // The task page: the path above, the cards below, and what it could sit under.
+  const t = await getTaskDetail(db, ana, "TAX", task.number);
+  assert.deepEqual([t.kind, t.kindLabel, t.parentTaskId], ["task", "Task", story.id]);
+  assert.deepEqual(
+    t.ancestors.map((a) => a.key),
+    ["TAX-1", "TAX-2", "TAX-3"],
+    "top of the hierarchy first",
+  );
+  assert.deepEqual(
+    t.parentCandidates.map((c) => [c.key, c.kindLabel]),
+    [
+      ["TAX-1", "Epic"],
+      ["TAX-2", "Feature"],
+      ["TAX-3", "Story"],
+    ],
+    "only cards that can have something under them",
+  );
+  const s = await getTaskDetail(db, ana, "TAX", story.number);
+  assert.deepEqual(
+    s.children.map((c) => [c.key, c.kindLabel]),
+    [
+      ["TAX-4", "Task"],
+      ["TAX-6", null],
+    ],
+  );
+
+  assert.deepEqual(s.rollup, { cards: 2, done: 0, remainingHours: 18, forecastFinish: null, notForecast: 2 });
+  assert.equal(t.rollup, null, "nothing sits under a task");
+
+  // The board: a parent adds up the cards that carry work, however deep; a leaf has no roll-up.
+  await changeStatus(db, ana, bug.id, await statusId(projectId, "Done"));
+  const board = await getBoard(db, ana, "TAX");
+  assert.deepEqual(
+    board.kinds.map((k) => k.label),
+    ["Epic", "Feature", "Story", "Task", "Bug", "Issue"],
+  );
+  const card = (key: string) => board.tasks.find((c) => c.key === key)!;
+  assert.deepEqual([card("TAX-4").kindLabel, card("TAX-4").parentKey, card("TAX-4").rollup], ["Task", "TAX-3", null]);
+  assert.deepEqual(card("TAX-3").rollup, {
+    cards: 2,
+    done: 0,
+    remainingHours: 18,
+    forecastFinish: null,
+    notForecast: 2,
+  });
+  assert.deepEqual(card("TAX-1").rollup, {
+    cards: 3,
+    done: 1,
+    remainingHours: 18,
+    forecastFinish: null,
+    notForecast: 2,
+  });
+});
+
+test("roll-up: latest finish wins, cancelled cards are left out, done cards count but add no hours", async () => {
+  const { rollUp } = await import("../src/modules/tracker/service/queries");
+  const card = (
+    id: number,
+    parentId: number | null,
+    o: Partial<{ closed: boolean; cancelled: boolean; h: number; f: string | null }> = {},
+  ) => ({
+    id,
+    parentId,
+    closed: o.closed ?? false,
+    cancelled: o.cancelled ?? false,
+    remainingHours: o.h ?? 0,
+    forecastFinish: o.f ?? null,
+  });
+  const r = rollUp([
+    card(1, null),
+    card(2, 1),
+    card(3, 2, { h: 6, f: "2026-11-20" }),
+    card(4, 2, { h: 12, f: "2026-12-02" }),
+    card(5, 1, { closed: true, h: 30 }),
+    card(6, 1, { closed: true, cancelled: true, h: 60 }),
+    card(7, 1, { h: 3 }),
+    card(8, null, { h: 6 }),
+  ]);
+  assert.deepEqual(r.get(2), { cards: 2, done: 0, remainingHours: 18, forecastFinish: "2026-12-02", notForecast: 0 });
+  assert.deepEqual(r.get(1), { cards: 4, done: 1, remainingHours: 21, forecastFinish: "2026-12-02", notForecast: 1 });
+  assert.equal(r.has(8), false);
+  assert.equal(r.has(3), false);
 });

@@ -1,6 +1,6 @@
 import { TrackerError, one, type Actor, type Database } from "./database";
 import { projectRole, type ProjectRole } from "./access";
-import type { BoardStatus, BoardTask } from "./queries";
+import { rollUp, type BoardStatus, type BoardTask, type WorkKind, type WorkRollup } from "./queries";
 
 // Everything the task page shows about one task: its fields, its forecast, what it waits on and
 // what waits on it, its comments, and its history. History is the status log and the change log
@@ -13,6 +13,16 @@ export interface LinkedTask {
   lagDays: number;
   /** True when that task is finished or cancelled. */
   closed: boolean;
+}
+
+export interface ChildCard {
+  key: string;
+  title: string;
+  kindLabel: string | null;
+  statusName: string;
+  /** True when that card is finished or cancelled. */
+  closed: boolean;
+  forecastFinish: string | null;
 }
 
 export interface HistoryEntry {
@@ -42,6 +52,21 @@ export interface TaskDetail {
   title: string;
   description: string | null;
   type: "task" | "milestone";
+  /** The card's kind (epic, feature, story, task, bug, issue), or null if it has none. */
+  kind: string | null;
+  kindLabel: string | null;
+  /** The card this one sits under, or null. */
+  parentTaskId: number | null;
+  /** The cards above this one, top of the hierarchy first. Empty when it sits under nothing. */
+  ancestors: { key: string; title: string }[];
+  /** The cards directly under this one. */
+  children: ChildCard[];
+  /** What everything under this card adds up to, however deep. Null when nothing sits under it. */
+  rollup: WorkRollup | null;
+  /** Every kind a card can be given, top of the hierarchy first. */
+  kinds: WorkKind[];
+  /** Cards in the same project this one could sit under, with the level each counts as. */
+  parentCandidates: { id: number; key: string; title: string; kindLabel: string; level: number }[];
   statusId: number;
   statusName: string;
   statusCategory: BoardStatus["category"];
@@ -103,6 +128,7 @@ const FIELD_LABEL: Record<string, string> = {
   priority: "Priority",
   expected_unblock_date: "Expected unblock date",
   dependency: "Dependency",
+  kind: "Kind",
 };
 
 interface DetailRow {
@@ -114,6 +140,9 @@ interface DetailRow {
   title: string;
   description: string | null;
   type: "task" | "milestone";
+  kind: string | null;
+  kind_label: string | null;
+  parent_task_id: number | null;
   status_id: number;
   status_name: string;
   status_category: BoardStatus["category"];
@@ -158,6 +187,7 @@ export async function getTaskDetail(
       tx,
       `SELECT p.id AS project_id, p.key AS project_key, p.name AS project_name,
               t.id, t.number, t.title, t.description, t.type, t.status_id, s.name AS status_name,
+              t.kind, k.label AS kind_label, t.parent_task_id,
               s.category AS status_category, t.priority,
               t.assignee_person_id, a.display_name AS assignee_name, rp.display_name AS reporter_name,
               t.effort_bucket_id, b.label AS bucket_label,
@@ -175,6 +205,7 @@ export async function getTaskDetail(
          JOIN tracker.person rp ON rp.id = t.reporter_person_id
     LEFT JOIN tracker.person a ON a.id = t.assignee_person_id
     LEFT JOIN tracker.effort_bucket b ON b.id = t.effort_bucket_id
+    LEFT JOIN tracker.work_kind k ON k.key = t.kind
     LEFT JOIN tracker.task_forecast f
            ON f.task_id = t.id AND f.run_id = (SELECT run_id FROM tracker.current_schedule_run)
     LEFT JOIN tracker.task dt ON dt.id = f.driver_task_id
@@ -224,6 +255,87 @@ export async function getTaskDetail(
                            WHERE d.predecessor_task_id = o.id AND d.successor_task_id = $2)
         ORDER BY o.number`,
       [projectId, taskId],
+    );
+
+    // The level drops at every step up, so this walk always ends; depth is how far up a card is.
+    const ancestors = await tx.query<{ key: string; title: string }>(
+      `WITH RECURSIVE up(id, parent_task_id, number, title, depth) AS (
+           SELECT a.id, a.parent_task_id, a.number, a.title, 1 FROM tracker.task a WHERE a.id = $1
+         UNION ALL
+           SELECT a.id, a.parent_task_id, a.number, a.title, up.depth + 1
+             FROM tracker.task a JOIN up ON a.id = up.parent_task_id
+       )
+       SELECT $2::text || '-' || number AS key, title FROM up ORDER BY depth DESC`,
+      [t.parent_task_id, t.project_key],
+    );
+    const children = await tx.query<{
+      id: number;
+      key: string;
+      title: string;
+      kind_label: string | null;
+      status_name: string;
+      closed: boolean;
+      forecast_finish: string | null;
+    }>(
+      `SELECT c.id, $2::text || '-' || c.number AS key, c.title, ck.label AS kind_label, cs.name AS status_name,
+              (cs.category IN ('done', 'cancelled')) AS closed, cf.scheduled_finish::text AS forecast_finish
+         FROM tracker.task c
+         JOIN tracker.workflow_status cs ON cs.id = c.status_id
+    LEFT JOIN tracker.work_kind ck ON ck.key = c.kind
+    LEFT JOIN tracker.task_forecast cf
+           ON cf.task_id = c.id AND cf.run_id = (SELECT run_id FROM tracker.current_schedule_run)
+        WHERE c.parent_task_id = $1 AND c.archived_at IS NULL
+        ORDER BY c.number`,
+      [taskId, t.project_key],
+    );
+    // A card with cards under it has no forecast of its own, so it shows what they add up to.
+    // The same sum the board uses, over the whole project, so the two screens cannot disagree.
+    let rollups = new Map<number, WorkRollup>();
+    if (children.rows.length) {
+      const all = await tx.query<{
+        id: number;
+        parent_task_id: number | null;
+        category: BoardStatus["category"];
+        left_hours: number | null;
+        forecast_finish: string | null;
+      }>(
+        `SELECT o.id, o.parent_task_id, os.category,
+                coalesce(o.remaining_effort_hours, o.effort_estimate_hours)::float8 AS left_hours,
+                f.scheduled_finish::text AS forecast_finish
+           FROM tracker.task o
+           JOIN tracker.workflow_status os ON os.id = o.status_id
+      LEFT JOIN tracker.task_forecast f
+             ON f.task_id = o.id AND f.run_id = (SELECT run_id FROM tracker.current_schedule_run)
+          WHERE o.project_id = $1 AND o.archived_at IS NULL`,
+        [projectId],
+      );
+      rollups = rollUp(
+        all.rows.map((o) => ({
+          id: Number(o.id),
+          parentId: o.parent_task_id == null ? null : Number(o.parent_task_id),
+          closed: o.category === "done" || o.category === "cancelled",
+          cancelled: o.category === "cancelled",
+          remainingHours: Number(o.left_hours ?? 0),
+          forecastFinish: o.forecast_finish,
+        })),
+      );
+    }
+    const kinds = await tx.query<WorkKind>(`SELECT key, label, level FROM tracker.work_kind ORDER BY sort_order`);
+    // Only a card with a kind above the lowest level can have anything under it.
+    const parentCandidates = await tx.query<{
+      id: number;
+      key: string;
+      title: string;
+      kind_label: string;
+      level: number;
+    }>(
+      `SELECT o.id, $3::text || '-' || o.number AS key, o.title, ok.label AS kind_label, ok.level
+         FROM tracker.task o
+         JOIN tracker.work_kind ok ON ok.key = o.kind
+        WHERE o.project_id = $1 AND o.id <> $2 AND (o.archived_at IS NULL OR o.id = $4)
+          AND ok.level < (SELECT max(level) FROM tracker.work_kind)
+        ORDER BY ok.level, o.number`,
+      [projectId, taskId, t.project_key, t.parent_task_id],
     );
 
     const statuses = await tx.query<{
@@ -313,7 +425,11 @@ export async function getTaskDetail(
             ? r.new_value
               ? `Now ${r.new_value}`
               : `No longer ${r.old_value}`
-            : `${FIELD_LABEL[r.field] ?? r.field} changed from ${shown(r.field, r.old_value)} to ${shown(r.field, r.new_value)}`,
+            : r.field === "parent"
+              ? r.new_value
+                ? `Moved under ${r.new_value}${r.old_value ? ` (was under ${r.old_value})` : ""}`
+                : `No longer under ${r.old_value}`
+              : `${FIELD_LABEL[r.field] ?? r.field} changed from ${shown(r.field, r.old_value)} to ${shown(r.field, r.new_value)}`,
         why: r.reason,
       })),
     ];
@@ -333,6 +449,28 @@ export async function getTaskDetail(
       title: t.title,
       description: t.description,
       type: t.type,
+      kind: t.kind,
+      kindLabel: t.kind_label,
+      parentTaskId: t.parent_task_id == null ? null : Number(t.parent_task_id),
+      ancestors: ancestors.rows.map((a) => ({ key: a.key, title: a.title })),
+      children: children.rows.map((c) => ({
+        key: c.key,
+        title: c.title,
+        kindLabel: c.kind_label,
+        statusName: c.status_name,
+        closed: c.closed === true,
+        // A child that is itself a parent shows the latest finish of what is under it.
+        forecastFinish: rollups.get(Number(c.id))?.forecastFinish ?? c.forecast_finish,
+      })),
+      rollup: rollups.get(taskId) ?? null,
+      kinds: kinds.rows.map((k) => ({ key: k.key, label: k.label, level: Number(k.level) })),
+      parentCandidates: parentCandidates.rows.map((c) => ({
+        id: Number(c.id),
+        key: c.key,
+        title: c.title,
+        kindLabel: c.kind_label,
+        level: Number(c.level),
+      })),
       statusId: Number(t.status_id),
       statusName: t.status_name,
       statusCategory: t.status_category,

@@ -22,6 +22,9 @@ export interface NewTask {
   dueDate?: string | null;
   notBeforeDate?: string | null;
   notBeforeReason?: string | null;
+  /** Optional: epic, feature, story, task, bug or issue. */
+  kind?: string | null;
+  /** The card this one sits under. It must be of a higher kind. */
   parentTaskId?: number | null;
   statusId?: number;
   sprintId?: number | null;
@@ -46,11 +49,17 @@ export interface TaskChanges {
   notBeforeReason?: string | null;
   expectedUnblockDate?: string | null;
   sprintId?: number | null;
+  /** Optional: epic, feature, story, task, bug or issue. Null clears it. */
+  kind?: string | null;
+  /** The card this one sits under, which must be of a higher kind. Null lifts it out. */
+  parentTaskId?: number | null;
 }
 
 interface TaskRow {
   id: number;
   project_id: number;
+  kind: string | null;
+  parent_task_id: number | null;
   status_id: number;
   type: "task" | "milestone";
   assignee_person_id: number | null;
@@ -70,7 +79,7 @@ interface TaskRow {
   archived_at: unknown;
 }
 
-const TASK_COLUMNS = `id, project_id, status_id, type, assignee_person_id, role_pool_id, priority, effort_bucket_id,
+const TASK_COLUMNS = `id, project_id, kind, parent_task_id, status_id, type, assignee_person_id, role_pool_id, priority, effort_bucket_id,
   effort_estimate_hours::text, remaining_effort_hours::text, planned_start_date::text,
   estimated_completion_date::text, baseline_completion_date::text, due_date::text, not_before_date::text,
   expected_unblock_date::text, actual_completion_date::text, sprint_id, archived_at`;
@@ -83,7 +92,65 @@ async function lockTask(tx: Tx, taskId: number): Promise<TaskRow> {
     "Task",
   );
   if (row.archived_at) throw new TrackerError("invalid", "This task is archived.");
-  return { ...row, id: Number(row.id), project_id: Number(row.project_id), status_id: Number(row.status_id) };
+  return {
+    ...row,
+    id: Number(row.id),
+    project_id: Number(row.project_id),
+    status_id: Number(row.status_id),
+    parent_task_id: row.parent_task_id == null ? null : Number(row.parent_task_id),
+  };
+}
+
+// ── Kinds and what sits under what ──────────────────────────────────────────
+// A card may sit only under a card of a higher kind. The database enforces the same rule
+// (db/tracker/migrations/0003_work_kinds.sql); it is checked here first so a person gets a
+// sentence they can act on instead of a constraint name.
+
+interface Placed {
+  label: string;
+  level: number;
+}
+
+/** A kind's label and level. A card with no kind counts as the lowest level there is. */
+async function placeOf(tx: Tx, kind: string | null): Promise<Placed> {
+  const { rows } = await tx.query<{ label: string | null; level: number }>(
+    `SELECT (SELECT label FROM tracker.work_kind WHERE key = $1::text) AS label, tracker.work_level($1::text) AS level`,
+    [kind],
+  );
+  const row = rows[0]!;
+  if (kind != null && row.label == null) throw new TrackerError("invalid", "That kind of card does not exist.");
+  return { label: row.label ?? "card with no kind", level: Number(row.level) };
+}
+
+const withArticle = (label: string) => `${/^[aeiou]/i.test(label) ? "an" : "a"} ${label}`;
+
+/** Checks that a card of `kind` may sit under `parentTaskId`, and returns the parent's key. */
+async function checkParent(
+  tx: Tx,
+  projectId: number,
+  taskId: number | null,
+  own: Placed,
+  parentTaskId: number,
+): Promise<string> {
+  if (parentTaskId === taskId) throw new TrackerError("invalid", "A card cannot sit under itself.");
+  const { rows } = await tx.query<{ key: string; project_id: number; kind: string | null; archived: boolean }>(
+    `SELECT p.key || '-' || t.number AS key, t.project_id, t.kind, (t.archived_at IS NOT NULL) AS archived
+       FROM tracker.task t JOIN tracker.project p ON p.id = t.project_id WHERE t.id = $1`,
+    [parentTaskId],
+  );
+  const parent = rows[0];
+  if (!parent || Number(parent.project_id) !== projectId) {
+    throw new TrackerError("invalid", "A card can sit only under a card in the same project.");
+  }
+  if (parent.archived) throw new TrackerError("invalid", `${parent.key} is archived.`);
+  const above = await placeOf(tx, parent.kind);
+  if (above.level >= own.level) {
+    throw new TrackerError(
+      "invalid",
+      `${parent.key} is ${withArticle(above.label)}, and ${withArticle(own.label)} can sit only under something of a higher kind.`,
+    );
+  }
+  return parent.key;
 }
 
 async function logTaskChange(
@@ -185,6 +252,10 @@ export async function createTask(
       statusId = Number(s.id);
     }
 
+    const kind = input.kind || null;
+    const own = await placeOf(tx, kind);
+    if (input.parentTaskId != null) await checkParent(tx, input.projectId, null, own, input.parentTaskId);
+
     let estimate = input.effortEstimateHours ?? null;
     if (type === "milestone") {
       if ((estimate ?? 0) > 0 || (input.remainingEffortHours ?? 0) > 0 || input.effortBucketId) {
@@ -208,9 +279,9 @@ export async function createTask(
          (project_id, number, parent_task_id, type, title, description, assignee_person_id, role_pool_id,
           reporter_person_id, status_id, priority, effort_bucket_id, effort_estimate_hours, remaining_effort_hours,
           not_before_date, not_before_reason, planned_start_date, estimated_completion_date,
-          baseline_completion_date, due_date, sprint_id, job_number, section_code, function_code, board_rank)
+          baseline_completion_date, due_date, sprint_id, job_number, section_code, function_code, board_rank, kind)
        VALUES ($1, $2, $3, $4::tracker.task_type, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-               $15, $16, $17, $18, $18, $19, $20, $21, $22, $23, $24)
+               $15, $16, $17, $18, $18, $19, $20, $21, $22, $23, $24, $25)
        RETURNING id`,
       [
         input.projectId,
@@ -237,6 +308,7 @@ export async function createTask(
         input.sectionCode ?? null,
         input.functionCode ?? null,
         rank.next,
+        kind,
       ],
       "Task",
     );
@@ -283,6 +355,58 @@ export async function updateTask(
 
     if (changes.title !== undefined) assign("title", changes.title.trim());
     if (changes.description !== undefined) assign("description", changes.description);
+
+    // Kind and parent are checked together, against each other and against the cards underneath.
+    const nextKind = changes.kind === undefined ? cur.kind : changes.kind || null;
+    const nextParent = changes.parentTaskId === undefined ? cur.parent_task_id : changes.parentTaskId;
+    if (nextKind !== cur.kind || nextParent !== cur.parent_task_id) {
+      const own = await placeOf(tx, nextKind);
+      const parentKey = nextParent == null ? null : await checkParent(tx, cur.project_id, taskId, own, nextParent);
+      if (nextKind !== cur.kind) {
+        const under = await tx.query<{ key: string; label: string | null }>(
+          `SELECT p.key || '-' || c.number AS key, k.label
+             FROM tracker.task c
+             JOIN tracker.project p ON p.id = c.project_id
+        LEFT JOIN tracker.work_kind k ON k.key = c.kind
+            WHERE c.parent_task_id = $1 AND tracker.work_level(c.kind) <= $2
+            ORDER BY c.number LIMIT 1`,
+          [taskId, own.level],
+        );
+        const child = under.rows[0];
+        if (child) {
+          throw new TrackerError(
+            "invalid",
+            `${child.key} sits under this card and is ${withArticle(child.label ?? "card with no kind")}, so this card has to stay a higher kind than that.`,
+          );
+        }
+        const before = await placeOf(tx, cur.kind);
+        assign("kind", nextKind);
+        await logTaskChange(
+          tx,
+          taskId,
+          "kind",
+          cur.kind == null ? null : before.label,
+          nextKind == null ? null : own.label,
+          actor,
+          why,
+        );
+      }
+      if (nextParent !== cur.parent_task_id) {
+        const oldKey =
+          cur.parent_task_id == null
+            ? null
+            : (
+                await one<{ key: string }>(
+                  tx,
+                  `SELECT p.key || '-' || t.number AS key FROM tracker.task t JOIN tracker.project p ON p.id = t.project_id WHERE t.id = $1`,
+                  [cur.parent_task_id],
+                  "Parent card",
+                )
+              ).key;
+        assign("parent_task_id", nextParent);
+        await logTaskChange(tx, taskId, "parent", oldKey, parentKey, actor, why);
+      }
+    }
 
     // A bucket sets the estimate; a typed estimate clears the bucket.
     let newEstimate: number | null | undefined;
