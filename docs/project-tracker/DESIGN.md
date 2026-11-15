@@ -1,0 +1,174 @@
+# SDC Project Tracker: design notes
+
+Working design record for the in-house project and task tracker. It captures what has been
+decided since the 2026-11-11 draft (spec, `sdc_tracker_schema.sql`, `forecast_prototype.py`)
+and what is still open. Uncertain items are tracked in the SDC IT RAID Log workbook
+(`SDC_IT_RAID_Log.xlsx`, kept outside this repo), under Scope = "Project Tracker". IDs below
+such as D-08 or R-06 refer to rows in that workbook.
+
+Status: draft, 2026-11-14. The schema and the forecast engine are built and tested in
+`apps/tracker`. There is no service, API or UI yet, and nothing is deployed. This work moves into `apps/reports` as the first module of the one SDC app (ADR 0006).
+
+## Decided
+
+### Platform
+
+| Topic                    | Decision                                                                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Database engine          | PostgreSQL for the tracker and for new work. Existing MySQL apps stay as they are.                                                                                                    |
+| Naming                   | Lowercase with underscores (`tracker.task`), no quoted names. The warehouse is to be renamed to match (RAID I-07).                                                                    |
+| Sign-in                  | Single sign-on for every app. Mechanism still open (RAID D-11).                                                                                                                       |
+| Forecast engine language | TypeScript, ported from the Python prototype. The spec's worked example is kept as a fixed test so the port is provably identical.                                                    |
+| One write path           | The UI, the AI chat and any webhook all go through the service. Enforced in the database: the chat gets a read-only login, and the engine's login can write only the forecast tables. |
+| AI chat                  | Talks to API endpoints, never to the tables directly.                                                                                                                                 |
+
+### Estimates
+
+- Original estimates are chosen from an enforced company standard, not typed freely.
+- Each choice is a label paired with hours, and both are shown, for example **1 Day (6 hours)**.
+- Hours follow the global definition of a day of project work (6 of 8 hours today):
+
+  | Label                     | Hours |
+  | ------------------------- | ----- |
+  | Half a day or less        | 3     |
+  | 1 Day                     | 6     |
+  | 3 Days                    | 18    |
+  | 1 Week                    | 30    |
+  | 2 Weeks (should be split) | 60    |
+
+- The hours are stored on the task, not the label, so a later change to the global day does
+  not alter estimates already made.
+- Remaining effort stays a free number, because it burns down.
+- There is no default estimate. A task with no estimate is reported as unscheduled, with the
+  reason "no estimate", and is counted on the project roll-up.
+
+### Statuses
+
+- Blocked is its own status category, alongside to do, in progress, done and cancelled. It is
+  not a kind of in progress.
+
+### Remaining effort
+
+- A last-updated date is kept for remaining effort, in addition to the change history that is
+  already logged.
+
+### Capacity
+
+- Capacity is configurable at three levels: a global default, a team override and a person
+  override. The most specific one wins.
+- Estimate buckets are global and do not vary by team or person. A person with less capacity
+  simply takes longer: a 6-hour task for someone with 2 project hours a day takes 3 days.
+- Work done outside the tracker is reflected in the person's capacity setting.
+
+### Dates on a task
+
+- **Planned start**: a person's intent. The engine ignores it; it is shown beside the forecast.
+- **Not before**: a constraint the engine obeys. Set through an explicit action with a reason.
+- **Due date**: a commitment, at least for milestones, so a single milestone can be flagged
+  at risk. New; not in the draft schema.
+
+### Scheduling
+
+- A task that blocks higher-priority work is scheduled at the priority of the most important
+  thing waiting on it. This applies to the whole ordering (project rank, sprint, task priority),
+  passes down through chains of dependencies, is computed on each run without changing the
+  stored priority, and is recorded as the reason on the forecast.
+
+### Links to the rest of the business
+
+- Projects and tasks can optionally link to a job number, section and function codes, a team,
+  and a role pool. These are in the model from the start whether or not the first release
+  uses them.
+- A **role pool** is a named group of people with the same skill, for example "Controls
+  engineer". A task can be assigned to a pool before a person is named, and the engine
+  schedules it against the pool's free capacity. Pools are not the same as roles or
+  departments: one person can be in several, and membership changes with need.
+- A **team** is where a person sits in the organisation. It drives capacity defaults and
+  reporting.
+
+## Proposed, not yet confirmed
+
+| Topic                               | Proposal                                                                                                                                                                                                                                           | RAID       |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| Where the tracker's tables live     | A `tracker` schema in the warehouse's Postgres database, with its own logins. Restore by schema, never the whole database.                                                                                                                         | D-10, R-10 |
+| How sign-in works                   | Sign in against Entra directly. One `person` table keyed by Entra object id, carrying email and Paylocity id.                                                                                                                                      | D-11       |
+| Permissions                         | Per-project membership (viewer, contributor, manager) plus two global roles: admin, and the owner of the stack rank.                                                                                                                               |            |
+| App shape                           | Service functions with API routes and screens, inside SDC Reports. The tracker is the first module of the one SDC app (ADR 0006, decided 2026-11-14); that app is SDC Reports, changed in place; moving this work into it is conversion task M-00. |            |
+| Schema changes                      | Numbered SQL migrations, as planned for the warehouse.                                                                                                                                                                                             |            |
+| Blocked tasks                       | Require a reason; allow an expected-unblock date. With a date the engine schedules from it; without one the task is unscheduled.                                                                                                                   |            |
+| AI estimate                         | The AI suggests a bucket and its reasoning in a separate field; a person accepts or overrides. Later, grounded in similar finished tasks.                                                                                                          |            |
+| At-risk flag                        | Based on P50 or P80, not the single-date forecast.                                                                                                                                                                                                 | R-06       |
+| Remaining effort on job-linked work | Defaults to budget minus Paylocity actuals, refreshed daily, with manual override.                                                                                                                                                                 | D-09, I-05 |
+| Time off and holidays               | Roster and holidays from the warehouse; time off typed into the tracker at first.                                                                                                                                                                  | DEP-05     |
+
+## Open items
+
+The SDC Scheduler question is open and recorded as RAID D-08: whether the Scheduler remains
+the customer-facing timeline with its ship date feeding a linked tracker project, or whether
+the tracker eventually takes over its planning. Until that is decided the design assumes the
+Scheduler is unchanged and the tracker only links to a job number.
+
+Other open items in the RAID log: decisions D-09 to D-14, issues I-05 to I-07, risks R-06 to
+R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
+
+## What is built
+
+Everything is in `apps/tracker`. Run `npm test` there: 27 tests, no database server needed.
+
+### Schema: `apps/tracker/db/migrations`
+
+`0001_schema.sql` replaces the 2026-11-11 draft. `0002_roles.sql` adds the three database roles
+that enforce the one write path. The tests load both into a real Postgres engine and check each
+rule below.
+
+- `blocked` status category, with a reason and an expected-unblock date on the task.
+- `due_date`, a required reason for `not_before_date`, and a last-updated stamp for remaining
+  effort that is set on change or by a confirm.
+- A `baseline_completion_date` so slip is measured against the first date typed, not the latest.
+- Estimate buckets as a company standard (`effort_bucket`), with the hours stored on the task.
+  All effort is hours; the per-project effort unit and points are gone.
+- `person` as the shared user key, plus `team`, `role_pool` and pool membership.
+- Capacity at global, team and person level with date ranges (`capacity_setting`,
+  `person_capacity_on`).
+- Optional job number on projects, and job, section and function codes on tasks.
+- A project change log; dependency changes logged on the task.
+- Stack-rank uniqueness that can be deferred, so ranks can be swapped. An active project must
+  have a rank; a planned one may not have one yet.
+- Parent tasks in the same project, one level deep.
+- Roll-up view: forecast dates from one place, current run only, at-risk on P80, with counts of
+  unscheduled, unestimated and stale tasks. A parent's hours are not counted on top of its subtasks.
+- Only finish-to-start dependencies; the other three types were removed until the engine supports them.
+
+### Forecast engine: `apps/tracker/src/forecast/engine.ts`
+
+A TypeScript port of the Python prototype. It reproduces the spec's worked example date for
+date, which is kept as a test.
+
+- Priority inheritance through chains of dependencies, reported as `priorityFrom`.
+- "No estimate", "no assignee" and "blocked" as unscheduled reasons; zero-effort scheduling for
+  milestones only.
+- Role-pool scheduling: a pool task goes to the member who would finish it first.
+- Allocation shares with no work are released; allocation and capacity date ranges are honoured.
+- Simulation shares part of each task's estimate error across its project. On a 60-task plan the
+  P50 to P80 gap is 13 days, against 4 when every task is sampled independently.
+- Self-checks (`verify`) for capacity, calendar, dependencies, effort and priority order.
+- Speed on a development PC: a 1,000-task schedule in about 10 ms; 2,000 simulation runs of it
+  in about 26 s. A schedule after every change is fine; the simulation belongs in a nightly job.
+
+### Not built, and known limits
+
+- No service layer, API, sign-in or UI. Nothing reads from or writes to the tables yet, so the
+  rules the schema leaves to the service (cycle rejection, status and change logging, a reason
+  when a task is blocked, task numbering) exist only as comments.
+- The engine takes and returns plain objects. Loading inputs from the tables and writing
+  `task_forecast` is not written.
+- Dependency lag is in calendar days. Whether it should be working days is undecided.
+- The simulation's range (0.8 to 1.5, or a bucket's low and high hours) and its shared-error
+  weight (0.5) are placeholders until there is history to calibrate them (RAID R-06).
+- Allocation release looks at whether a project has any work for the person in the run, not day
+  by day, and does not count pool tasks.
+- A coarse task larger than the biggest bucket (for example 120 hours for one job and function)
+  can be stored, but the "choose a bucket" rule for ordinary tasks is left to the service.
+- The AI estimate suggestion has no columns yet.
+- The 2026-11-11 Word spec has not been rewritten; this document and the code supersede it
+  where they differ.
