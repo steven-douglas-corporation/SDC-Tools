@@ -26,39 +26,37 @@ asked, and its design review settled them.
 
 ## Decided
 
-| Topic                  | Standard                                                                                                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| One app                | One app with a module per tool, sharing one sign-in, one navigation and one set of users (RAID D-15).                                                                                 |
-| Where it starts        | SDC Reports, changed in place. It is not copied to a new app and no new app is started.                                                                                               |
-| First new module       | The Project Tracker.                                                                                                                                                                  |
-| The other apps         | Each is rebuilt as a module of the one app and then decommissioned, where that pays. The order and the exceptions are in [PLATFORM-CONVERSION.md](../PLATFORM-CONVERSION.md).         |
-| Database engine        | PostgreSQL for every new module. Reports' existing MySQL tables move later, as their own task.                                                                                        |
-| Naming in the database | Lowercase with underscores (`tracker.task`). No quoted mixed-case names. The warehouse is renamed to match.                                                                           |
-| Sign-in                | Single sign-on. Nobody signs in twice, and nothing keeps its own passwords.                                                                                                           |
-| AI access              | AI assistants reach the app through its API endpoints or read-only tools, under the asking user's permissions. They never get direct write access to tables.                          |
-| One write path         | Everything that changes a module's data goes through that module's service layer. The database enforces it with separate logins: the service, any background engine, read-only users. |
-| Language               | TypeScript.                                                                                                                                                                           |
+| Topic                  | Standard                                                                                                                                                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One app                | One app with a module per tool, sharing one sign-in, one navigation and one set of users (RAID D-15).                                                                                                                                                                                                   |
+| Where it starts        | SDC Reports, changed in place. It is not copied to a new app and no new app is started.                                                                                                                                                                                                                 |
+| First new module       | The Project Tracker.                                                                                                                                                                                                                                                                                    |
+| The other apps         | Each is rebuilt as a module of the one app and then decommissioned, where that pays. The order and the exceptions are in [PLATFORM-CONVERSION.md](../PLATFORM-CONVERSION.md).                                                                                                                           |
+| Database engine        | PostgreSQL for every new module. Reports' existing MySQL tables move later, as their own task.                                                                                                                                                                                                          |
+| Database layout        | One PostgreSQL database with a schema per module and the warehouse beside them, so anything can be joined. Separate logins per role. Restore by schema, never the whole database (RAID D-10).                                                                                                           |
+| Naming in the database | Lowercase with underscores (`tracker.task`). No quoted mixed-case names. The warehouse is renamed to match.                                                                                                                                                                                             |
+| Sign-in                | Single sign-on. Nobody signs in twice, and nothing keeps its own passwords. The app signs in against Entra directly, matching the Microsoft account to the existing user by email (RAID D-11). This needs the app to be served over HTTPS first; Entra refuses plain-HTTP return addresses (RAID R-14). |
+| AI access              | AI assistants reach the app through its API endpoints or read-only tools, under the asking user's permissions. They never get direct write access to tables.                                                                                                                                            |
+| One write path         | Everything that changes a module's data goes through that module's service layer. The database enforces it with separate logins: the service, any background engine, read-only users.                                                                                                                   |
+| Language               | TypeScript.                                                                                                                                                                                                                                                                                             |
 
 ## Proposed
 
-| Topic                    | Recommendation                                                                                                                                                                                              | RAID       |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| How sign-on is delivered | The app signs in against Entra directly, matching the Microsoft account to the existing user by email. This needs the app to be served over HTTPS first; Entra refuses plain-HTTP return addresses.         | D-11, R-14 |
-| Database layout          | One PostgreSQL database with a schema per module and the warehouse beside them, so anything can be joined. Separate logins per role. Restore by schema, never the whole database.                           | D-10       |
-| Module layout            | Each new module gets its own folders for pages, components and logic, in place of adding to Reports' two flat folders. Existing Reports code is regrouped only when someone is working in it anyway.        |            |
-| Module API               | A module's logic lives in service functions. Its screens call them through server actions; AI tools and other systems call the same functions through API routes. Nothing else touches the module's tables. |            |
-| Background work          | Long-running work such as the forecast simulation runs as its own process, never inside the web process, which is single-instance by design.                                                                |            |
-| Schema changes           | Numbered SQL migrations for PostgreSQL modules, as the warehouse roadmap plans. Reports' MySQL tables stay on their current migration tool until they move.                                                 |            |
-| Shared facts             | One source each for people (the warehouse roster), holidays and time off. Modules read the shared copy.                                                                                                     |            |
-| Permissions              | Reports' per-role permissions cover who can reach a module. A module adds per-project or per-record access where it needs it.                                                                               |            |
-| Tests                    | Schema rules are tested against a real Postgres engine in CI with no server (as `apps/tracker` does), and business rules have a fixed worked example.                                                       |            |
+| Topic           | Recommendation                                                                                                                                                                                                                  | RAID |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| Module layout   | Set out in [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md): each new module gets its own folders, its logic lives in service functions, and its screens, API routes and background jobs all go through them. |      |
+| Background work | Long-running work such as the forecast simulation runs as its own process, never inside the web process, which is single-instance by design.                                                                                    |      |
+| Schema changes  | Numbered SQL migrations for PostgreSQL modules, as the warehouse roadmap plans. Reports' MySQL tables stay on their current migration tool until they move.                                                                     |      |
+| Shared facts    | One source each for people (the warehouse roster), holidays and time off. Modules read the shared copy.                                                                                                                         |      |
+| Permissions     | Reports' per-role permissions cover who can reach a module. A module adds per-project or per-record access where it needs it.                                                                                                   |      |
+| Tests           | Schema rules are tested against a real Postgres engine in CI with no server (as `apps/tracker` does), and business rules have a fixed worked example.                                                                           |      |
 
 ## Consequences
 
 - The tracker's schema and forecast engine, built in `apps/tracker`, move into `apps/reports` as
   its first module. The engine has no framework dependencies and uses the same test runner.
 - Work lands in a codebase that two developers change several times a day. Module conventions
-  are agreed with them first, and tracker work arrives as small pull requests on the same
+  are set in `apps/reports/docs/MODULES.md`, and tracker work arrives as small pull requests on the same
   branch-and-review flow they use.
 - A new module can stay hidden behind a permission that is off for everyone but its pilot users.
 - "Reports" becomes a misleading name. Renaming the app is its own task, later.
