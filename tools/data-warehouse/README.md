@@ -165,7 +165,15 @@ their Windows account name as the login (e.g. `dbelliveau`). Who has access is
 | `mvest`, `sbemberkar`, `dbelliveau` | Moses Vest, Shashank Bemberkar, Dan Belliveau | Superuser | Windows |
 | `dw_loader` | The loader | Owns the database and its objects | Password |
 | `reports_app` | The reports app | Read-only | Password |
+| `reports_dev` | A developer laptop running the reports app | Read-only: a member of `reports_app`, so it has exactly its rights | Password |
 | `postgres` | Built-in admin | Superuser | Password, on the server only |
+
+`reports_dev` was added on 2026-11-15 so that a development copy of the reports app never needs the
+live app's password. It was created by hand on the server (`CREATE ROLE reports_dev LOGIN`,
+`GRANT reports_app TO reports_dev`) and is not yet in `sql/05_access.sql`; add it there the next
+time that file is touched. Its password lives only in the developer's own `apps/reports/.env`.
+A development copy has its scheduled refresh switched off (`SDC_DEV_DISABLE_SYNC=1`), so it reads
+the warehouse only when someone asks it to.
 
 ### Connecting from your PC
 
