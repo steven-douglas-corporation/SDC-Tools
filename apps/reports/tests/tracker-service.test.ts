@@ -58,6 +58,7 @@ before(async () => {
   await pg.exec(migration("0001_schema.sql"));
   await pg.exec(migration("0002_roles.sql"));
   await pg.exec(migration("0003_work_kinds.sql"));
+  await pg.exec(migration("0004_count_work_cards.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
 
@@ -877,4 +878,106 @@ test("roll-up: latest finish wins, cancelled cards are left out, done cards coun
   assert.deepEqual(r.get(1), { cards: 4, done: 1, remainingHours: 21, forecastFinish: "2026-12-02", notForecast: 1 });
   assert.equal(r.has(8), false);
   assert.equal(r.has(3), false);
+});
+
+test("parents follow the cards under them, and are never closed over open work without an answer", async () => {
+  const { getTaskDetail } = await import("../src/modules/tracker/service/task-detail");
+  const { getBoard } = await import("../src/modules/tracker/service/queries");
+  const p = await createProject(db, ana, { key: "AUTO", name: "Auto" });
+  const projectId = p.id;
+  const make = (title: string, extra: Partial<Parameters<typeof createTask>[2]> = {}) =>
+    createTask(db, ana, { projectId, title, ...extra });
+  const epic = await make("Epic", { kind: "epic" });
+  const story = await make("Story", { kind: "story", parentTaskId: epic.id });
+  const a = await make("A", { parentTaskId: story.id, effortEstimateHours: 6 });
+  const b = await make("B", { parentTaskId: story.id, effortEstimateHours: 6 });
+  const c = await make("C", { kind: "bug", parentTaskId: epic.id, effortEstimateHours: 3 });
+  const done = await statusId(projectId, "Done");
+  const inProgress = await statusId(projectId, "In Progress");
+  const cancelled = await statusId(projectId, "Cancelled");
+  const where = async (id: number) => {
+    const [r] = await rows<{ name: string; finished: string | null }>(
+      `SELECT s.name, t.actual_completion_date::text AS finished
+         FROM tracker.task t JOIN tracker.workflow_status s ON s.id = t.status_id WHERE t.id = $1`,
+      [id],
+    );
+    return r!;
+  };
+
+  // The last open card under a parent closes it; a parent with open work elsewhere stays open.
+  await changeStatus(db, ana, a.id, done);
+  assert.equal((await where(story.id)).name, "Backlog");
+  assert.deepEqual(await changeStatus(db, ana, b.id, done), { moved: true, openUnder: [] });
+  assert.equal((await where(story.id)).name, "Done");
+  assert.ok((await where(story.id)).finished, "an automatic close sets the completion date too");
+  assert.equal((await where(epic.id)).name, "Backlog", "C is still open under the epic");
+
+  // Cancelling the rest finishes the epic: something under it was done, and nothing is open.
+  await changeStatus(db, ana, c.id, cancelled);
+  assert.equal((await where(epic.id)).name, "Done");
+  const e = await getTaskDetail(db, ana, "AUTO", epic.number);
+  assert.deepEqual(
+    [e.history[0]!.what, e.history[0]!.why],
+    ["Moved from Backlog to Done", "Everything under it is finished"],
+  );
+
+  // Reopening a card reopens everything above it.
+  await changeStatus(db, ana, b.id, inProgress);
+  assert.deepEqual(
+    [(await where(story.id)).name, (await where(epic.id)).name, (await where(epic.id)).finished],
+    ["In Progress", "In Progress", null],
+  );
+  await changeStatus(db, ana, b.id, done);
+  assert.deepEqual([(await where(story.id)).name, (await where(epic.id)).name], ["Done", "Done"]);
+
+  // So does a new open card under a finished parent.
+  const d = await make("D", { parentTaskId: story.id });
+  assert.deepEqual([(await where(story.id)).name, (await where(epic.id)).name], ["In Progress", "In Progress"]);
+
+  // Closing a parent by hand over open work: nothing moves, and the open cards come back.
+  const asked = await changeStatus(db, ana, epic.id, done);
+  assert.equal(asked.moved, false);
+  assert.deepEqual(
+    asked.openUnder.map((o) => [o.key, o.kindLabel, o.statusName]),
+    [
+      ["AUTO-2", "Story", "In Progress"],
+      ["AUTO-6", null, "Backlog"],
+    ],
+  );
+  assert.equal((await where(epic.id)).name, "In Progress");
+
+  // With an answer, the open cards are closed that way first, each with a note saying why.
+  assert.equal((await changeStatus(db, ana, epic.id, done, { closeUnder: "cancelled" })).moved, true);
+  assert.deepEqual(
+    [(await where(epic.id)).name, (await where(story.id)).name, (await where(d.id)).name, (await where(a.id)).name],
+    ["Done", "Cancelled", "Cancelled", "Done"],
+  );
+  const closedD = await getTaskDetail(db, ana, "AUTO", d.number);
+  assert.equal(closedD.history[0]!.why, "Closed with AUTO-1");
+
+  // A parent whose cards were all cancelled is not "done": nothing was finished.
+  const empty = await make("Second epic", { kind: "epic" });
+  const only = await make("Only", { parentTaskId: empty.id });
+  await changeStatus(db, ana, only.id, cancelled);
+  assert.equal((await where(empty.id)).name, "Backlog");
+
+  // Lifting the last open card out from under a parent closes it; archiving does the same.
+  const third = await make("Third", { kind: "story" });
+  const x = await make("X", { parentTaskId: third.id });
+  const y = await make("Y", { parentTaskId: third.id });
+  await changeStatus(db, ana, x.id, done);
+  await updateTask(db, ana, y.id, { parentTaskId: null });
+  assert.equal((await where(third.id)).name, "Done");
+
+  // The project's own count is over cards that carry work; kinds are counted as what they are.
+  const board = await getBoard(db, ana, "AUTO");
+  assert.deepEqual(
+    [board.project.doneCount, board.project.taskCount],
+    [3, 4],
+    "A, B, X done; Y open; parents not counted",
+  );
+  assert.deepEqual(board.kindCounts, [
+    { label: "Epic", total: 2, done: 1 },
+    { label: "Story", total: 1, done: 1 },
+  ]);
 });

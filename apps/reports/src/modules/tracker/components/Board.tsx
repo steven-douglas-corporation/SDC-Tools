@@ -5,7 +5,15 @@ import { useState, useTransition } from "react";
 import { BUTTON_COMPACT, BUTTON_PRIMARY, CARD_BASE, INPUT, LABEL } from "@/components/ui/classnames";
 import { confirmRemainingAction, createTaskAction, moveTaskAction, updateTaskAction, type TaskEdit } from "../actions";
 import type { Board as BoardData, BoardStatus, BoardTask } from "../service/queries";
+import type { OpenCard } from "../service/tasks";
+import { CloseUnderPrompt } from "./CloseUnderPrompt";
 import { forecastReason, hours, shortDate } from "./format";
+
+/** A move that is waiting for an answer about the open cards under the card being closed. */
+interface CloseAsk {
+  status: BoardStatus;
+  cards: OpenCard[];
+}
 
 // One project's board. Columns are the project's statuses; a card shows what a person typed
 // (who, how much is left, due date) next to what the forecast says and why.
@@ -250,6 +258,8 @@ function Card({
   canEdit,
   blockTo,
   setBlockTo,
+  closeAsk,
+  setCloseAsk,
 }: {
   task: BoardTask;
   board: BoardData;
@@ -257,6 +267,9 @@ function Card({
   /** Set while the person is being asked why this task is blocked, before the move is sent. */
   blockTo: BoardStatus | null;
   setBlockTo: (status: BoardStatus | null) => void;
+  /** Set while the person is being asked what to do with the open cards under this one. */
+  closeAsk: CloseAsk | null;
+  setCloseAsk: (ask: CloseAsk | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [blockedReason, setBlockedReason] = useState("");
@@ -266,7 +279,7 @@ function Card({
   const status = board.statuses.find((s) => s.id === task.statusId);
   const closed = status?.category === "done" || status?.category === "cancelled";
 
-  function move(to: BoardStatus, reason?: string, unblock?: string) {
+  function move(to: BoardStatus, reason?: string, unblock?: string, closeUnder?: "done" | "cancelled") {
     setError("");
     start(async () => {
       const res = await moveTaskAction({
@@ -275,8 +288,12 @@ function Card({
         toStatusId: to.id,
         blockedReason: reason ?? null,
         expectedUnblockDate: unblock || null,
+        closeUnder,
       });
       if (!res.ok) return setError(res.error);
+      // Not moved: it has open cards under it, and the person has to say what happens to them.
+      if (res.openUnder.length) return setCloseAsk({ status: to, cards: res.openUnder });
+      setCloseAsk(null);
       setBlockTo(null);
       setBlockedReason("");
       setUnblockDate("");
@@ -289,7 +306,7 @@ function Card({
     <li
       className={`${CARD_BASE} p-3 text-sm ${pending ? "opacity-60" : ""} ${canEdit && !editing && !blockTo ? "cursor-grab active:cursor-grabbing" : ""}`}
       // Not draggable while a form on the card is open: dragging would fight with selecting text in it.
-      draggable={canEdit && !editing && !blockTo}
+      draggable={canEdit && !editing && !blockTo && !closeAsk}
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAG_TYPE, String(task.id));
         e.dataTransfer.effectAllowed = "move";
@@ -501,6 +518,18 @@ function Card({
         </form>
       )}
 
+      {closeAsk && (closeAsk.status.category === "done" || closeAsk.status.category === "cancelled") && (
+        <CloseUnderPrompt
+          cardKey={task.key}
+          cards={closeAsk.cards}
+          toName={closeAsk.status.name}
+          toCategory={closeAsk.status.category}
+          pending={pending}
+          onChoose={(choice) => move(closeAsk.status, undefined, undefined, choice)}
+          onCancel={() => setCloseAsk(null)}
+        />
+      )}
+
       {error && <p className="mt-2 text-xs text-sdc-red-text">{error}</p>}
       {editing && <Editor task={task} board={board} onDone={() => setEditing(false)} />}
     </li>
@@ -518,6 +547,8 @@ export function Board({ board, canEdit }: { board: BoardData; canEdit: boolean }
   // Which card is being asked for a blocked reason. Held here, not on the card, because the
   // question can be raised two ways: from the card's own menu, or by dropping it on a blocked column.
   const [blockPrompt, setBlockPrompt] = useState<{ taskId: number; status: BoardStatus } | null>(null);
+  // The same for "what about the open cards under it", which a drop can raise as well.
+  const [closePrompt, setClosePrompt] = useState<({ taskId: number } & CloseAsk) | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [dropError, setDropError] = useState("");
   const [dropping, startDrop] = useTransition();
@@ -532,7 +563,8 @@ export function Board({ board, canEdit }: { board: BoardData; canEdit: boolean }
     if (status.category === "blocked") return setBlockPrompt({ taskId: task.id, status });
     startDrop(async () => {
       const res = await moveTaskAction({ taskId: task.id, projectKey: board.project.key, toStatusId: status.id });
-      if (!res.ok) setDropError(`${task.key}: ${res.error}`);
+      if (!res.ok) return setDropError(`${task.key}: ${res.error}`);
+      if (res.openUnder.length) setClosePrompt({ taskId: task.id, status, cards: res.openUnder });
     });
   }
 
@@ -582,6 +614,8 @@ export function Board({ board, canEdit }: { board: BoardData; canEdit: boolean }
                     canEdit={mayChange}
                     blockTo={blockPrompt?.taskId === t.id ? blockPrompt.status : null}
                     setBlockTo={(status) => setBlockPrompt(status ? { taskId: t.id, status } : null)}
+                    closeAsk={closePrompt?.taskId === t.id ? closePrompt : null}
+                    setCloseAsk={(ask) => setClosePrompt(ask ? { taskId: t.id, ...ask } : null)}
                   />
                 ))}
               </ul>

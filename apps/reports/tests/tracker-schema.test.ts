@@ -46,6 +46,7 @@ before(async () => {
   await db.exec(migration("0001_schema.sql"));
   await db.exec(migration("0002_roles.sql"));
   await db.exec(migration("0003_work_kinds.sql"));
+  await db.exec(migration("0004_count_work_cards.sql"));
   await db.exec("SET search_path = tracker, public");
 
   ana = Number(
@@ -286,7 +287,7 @@ test("roll-up counts unscheduled, unestimated and stale work and ignores old run
   );
 
   const r = await one<Record<string, unknown>>("SELECT * FROM project_rollup WHERE project_id = $1", [pid]);
-  assert.equal(Number(r.task_count), 5);
+  assert.equal(Number(r.task_count), 4, "the parent is not counted beside the card under it");
   assert.equal(Number(r.total_hours), 18 + 30 + 6, "the parent's 60 hours are not counted on top of its subtask");
   assert.equal(Number(r.remaining_hours), 12 + 30 + 6);
   assert.equal(Number(r.unscheduled_tasks), 3, "unassigned (old-run row ignored), unestimated, and the subtask");

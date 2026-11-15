@@ -13,6 +13,8 @@ import { Board } from "@/modules/tracker/components/Board";
 import { Members } from "@/modules/tracker/components/Members";
 import { hours, shortDate } from "@/modules/tracker/components/format";
 
+const plural = (label: string) => (label.endsWith("y") ? `${label.slice(0, -1)}ies` : `${label}s`);
+
 // One project's board. Thin on purpose, like ../page.tsx: permission, who is asking, the
 // module's data, the module's component.
 export default async function TrackerBoardPage({ params }: { params: Promise<{ key: string }> }) {
@@ -45,7 +47,10 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
     ["Forecast", shortDate(p.forecastFinish)],
     ["P80", shortDate(p.p80Finish)],
     ["Hours left", hours(p.remainingHours)],
+    // Cards that carry work: a card with cards under it is not counted on top of them.
     ["Done", `${p.doneCount} of ${p.taskCount}`],
+    // One figure per kind the project uses, so an Epic or a Feature is counted as what it is.
+    ...board.kindCounts.map((k): [string, string] => [plural(k.label), `${k.done} of ${k.total}`]),
   ];
 
   return (

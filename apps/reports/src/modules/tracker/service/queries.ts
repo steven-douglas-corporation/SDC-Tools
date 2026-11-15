@@ -229,6 +229,11 @@ export interface Board {
   buckets: { id: number; label: string; hours: number; shouldSplit: boolean }[];
   /** The kinds a card can be given, top of the hierarchy first. */
   kinds: WorkKind[];
+  /**
+   * How many cards of each kind the project has and how many are done, for the kinds it uses.
+   * Cancelled cards are left out. Empty for a project that uses no kinds.
+   */
+  kindCounts: { label: string; total: number; done: number }[];
   /** The day the stored forecast was made for, or null if none has run. */
   forecastAsOf: string | null;
 }
@@ -387,6 +392,12 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
         shouldSplit: b.should_split === true,
       })),
       kinds: kinds.rows.map((k) => ({ key: k.key, label: k.label, level: Number(k.level) })),
+      kindCounts: kinds.rows
+        .map((k) => {
+          const cards = tasks.rows.filter((t) => t.kind_label === k.label && t.category !== "cancelled");
+          return { label: k.label, total: cards.length, done: cards.filter((t) => t.category === "done").length };
+        })
+        .filter((c) => c.total > 0),
       forecastAsOf: run.rows[0]?.as_of ?? null,
     };
   });

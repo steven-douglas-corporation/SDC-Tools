@@ -20,6 +20,7 @@ import {
   createTask,
   removeDependency,
   updateTask,
+  type OpenCard,
   type TaskChanges,
 } from "./service/tasks";
 import { addHoliday, addTimeOff, removeHoliday, removeTimeOff, setGlobalHours, setPersonHours } from "./service/people";
@@ -150,14 +151,18 @@ export async function moveTaskAction(input: {
   toStatusId: number;
   blockedReason?: string | null;
   expectedUnblockDate?: string | null;
-}): Promise<ActionResult> {
+  /** The answer to "this card still has open cards under it": finish them too, or cancel them. */
+  closeUnder?: "done" | "cancelled";
+}): Promise<ActionResult<{ openUnder: OpenCard[] }>> {
   return act(
     async (actor) => {
-      await changeStatus(trackerDb, actor, input.taskId, input.toStatusId, {
+      // When openUnder comes back non-empty nothing was moved: the screen asks, then calls again.
+      const result = await changeStatus(trackerDb, actor, input.taskId, input.toStatusId, {
         blockedReason: input.blockedReason,
         expectedUnblockDate: input.expectedUnblockDate || null,
+        closeUnder: input.closeUnder === "done" || input.closeUnder === "cancelled" ? input.closeUnder : undefined,
       });
-      return {};
+      return { openUnder: result.openUnder };
     },
     { paths: ["/tracker", boardPath(input.projectKey)] },
   );

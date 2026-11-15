@@ -14,6 +14,8 @@ import {
   type TaskEdit,
 } from "../actions";
 import type { LinkedTask, TaskDetail } from "../service/task-detail";
+import type { OpenCard } from "../service/tasks";
+import { CloseUnderPrompt } from "./CloseUnderPrompt";
 import { forecastReason, hours, shortDate } from "./format";
 
 // One task, in full: what people typed, what the forecast says and why, what it waits on and
@@ -103,6 +105,8 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   const [statusId, setStatusId] = useState(task.statusId.toString());
   const [blockedReason, setBlockedReason] = useState("");
   const [unblockDate, setUnblockDate] = useState("");
+  // The open cards under this one, while the person is being asked what closing it does to them.
+  const [openUnder, setOpenUnder] = useState<OpenCard[] | null>(null);
   const [waitOn, setWaitOn] = useState("");
   const [lag, setLag] = useState("0");
   const [comment, setComment] = useState("");
@@ -159,6 +163,27 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   const target = task.statuses.find((s) => s.id === Number(statusId));
   const moving = target && target.id !== task.statusId;
   const toBlocked = moving && target.category === "blocked";
+
+  function moveTo(toStatusId: number, closeUnder?: "done" | "cancelled") {
+    setError("");
+    setSaved("");
+    start(async () => {
+      const res = await moveTaskAction({
+        taskId: task.id,
+        projectKey: task.projectKey,
+        toStatusId,
+        blockedReason: toBlocked ? blockedReason : null,
+        expectedUnblockDate: toBlocked ? unblockDate || null : null,
+        closeUnder,
+      });
+      if (!res.ok) return setError(res.error);
+      // Not moved: it has open cards under it, and the person has to say what happens to them.
+      if (res.openUnder.length) return setOpenUnder(res.openUnder);
+      setOpenUnder(null);
+      setBlockedReason("");
+      setUnblockDate("");
+    });
+  }
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
@@ -465,27 +490,16 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
               className="space-y-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!target || !moving) return;
-                run(
-                  () =>
-                    moveTaskAction({
-                      taskId: task.id,
-                      projectKey: task.projectKey,
-                      toStatusId: target.id,
-                      blockedReason: toBlocked ? blockedReason : null,
-                      expectedUnblockDate: toBlocked ? unblockDate || null : null,
-                    }),
-                  () => {
-                    setBlockedReason("");
-                    setUnblockDate("");
-                  },
-                );
+                if (target && moving) moveTo(target.id);
               }}
             >
               <select
                 aria-label="Move to"
                 value={statusId}
-                onChange={(e) => setStatusId(e.target.value)}
+                onChange={(e) => {
+                  setStatusId(e.target.value);
+                  setOpenUnder(null);
+                }}
                 className={`${INPUT} w-full`}
               >
                 {task.statuses.map((s) => (
@@ -514,10 +528,21 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                   </label>
                 </>
               )}
-              {moving && (
+              {moving && !openUnder && (
                 <button type="submit" disabled={pending} className={BUTTON_PRIMARY}>
                   Move to {target.name}
                 </button>
+              )}
+              {moving && openUnder && (target.category === "done" || target.category === "cancelled") && (
+                <CloseUnderPrompt
+                  cardKey={task.key}
+                  cards={openUnder}
+                  toName={target.name}
+                  toCategory={target.category}
+                  pending={pending}
+                  onChoose={(choice) => moveTo(target.id, choice)}
+                  onCancel={() => setOpenUnder(null)}
+                />
               )}
             </form>
           )}

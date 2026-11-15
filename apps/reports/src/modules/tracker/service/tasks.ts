@@ -317,6 +317,8 @@ export async function createTask(
       `INSERT INTO tracker.status_log (task_id, from_status_id, to_status_id, changed_by) VALUES ($1, NULL, $2, $3)`,
       [id, statusId, actor.personId],
     );
+    // A new open card under a finished parent reopens it.
+    await settleParents(tx, input.projectId, input.parentTaskId ?? null, actor);
     return { id, number, key: `${project.key}-${number}` };
   });
 }
@@ -494,6 +496,12 @@ export async function updateTask(
     }
 
     if (set.length) await tx.query(`UPDATE tracker.task SET ${set.join(", ")} WHERE id = $1`, params);
+
+    // Moving a card changes what sits under two parents: the one it left and the one it joined.
+    if (nextParent !== cur.parent_task_id) {
+      await settleParents(tx, cur.project_id, cur.parent_task_id, actor);
+      await settleParents(tx, cur.project_id, nextParent, actor);
+    }
   });
 }
 
@@ -510,19 +518,32 @@ export async function confirmRemainingEffort(db: Database, actor: Actor, taskId:
  * Moves a task to another status (a drag on the board). In one transaction it writes the
  * status-log row, sets the actual completion date on entering a done status and clears it on
  * leaving one, and requires a reason for a blocked status.
+ *
+ * Closing a card that has open cards under it needs `closeUnder`. Without it nothing changes
+ * and the result lists those cards (`moved: false`), so the screen can ask what to do with them.
+ * After any move, the cards above are brought into line: see settleParents.
  */
 export async function changeStatus(
   db: Database,
   actor: Actor,
   taskId: number,
   toStatusId: number,
-  options: { note?: string | null; blockedReason?: string | null; expectedUnblockDate?: string | null } = {},
-): Promise<void> {
+  options: {
+    note?: string | null;
+    blockedReason?: string | null;
+    expectedUnblockDate?: string | null;
+    /**
+     * What to do with open cards under this one when it is being closed: mark them done too, or
+     * cancel them. Left out, a card with open cards under it is not moved; see the return value.
+     */
+    closeUnder?: "done" | "cancelled";
+  } = {},
+): Promise<{ moved: boolean; openUnder: OpenCard[] }> {
   assertIsoDate(options.expectedUnblockDate, "Expected unblock date");
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const cur = await lockTask(tx, taskId);
     await requireProjectRole(tx, cur.project_id, actor, "contributor");
-    if (cur.status_id === toStatusId) return;
+    if (cur.status_id === toStatusId) return { moved: false, openUnder: [] };
 
     const statuses = await tx.query<{ id: number; project_id: number; category: string }>(
       `SELECT id, project_id, category FROM tracker.workflow_status WHERE id = ANY(ARRAY[$1::bigint, $2::bigint])`,
@@ -538,34 +559,187 @@ export async function changeStatus(
       throw new TrackerError("invalid", "Say what is blocking this task.");
     }
 
-    const rank = await one<{ next: string }>(
+    // Closing a card that still has open cards under it is never done silently. Without an
+    // answer the move is not made and the open cards are handed back, so the screen can ask.
+    if (to.category === "done" || to.category === "cancelled") {
+      const open = await openCardsUnder(tx, taskId);
+      if (open.length) {
+        if (!options.closeUnder) {
+          return {
+            moved: false,
+            openUnder: open.map((c) => ({
+              id: c.id,
+              key: c.key,
+              title: c.title,
+              kindLabel: c.kindLabel,
+              statusName: c.statusName,
+            })),
+          };
+        }
+        const target = await firstStatus(tx, cur.project_id, [options.closeUnder]);
+        if (!target) throw new TrackerError("invalid", `This project has no ${options.closeUnder} status.`);
+        const { key } = await taskKey(tx, taskId);
+        for (const card of open) {
+          await applyStatus(tx, cur.project_id, card.id, card.statusId, target, actor, `Closed with ${key}`);
+        }
+      }
+    }
+
+    await applyStatus(
       tx,
-      `SELECT (coalesce(max(board_rank), 0) + 1)::text AS next FROM tracker.task WHERE project_id = $1 AND status_id = $2`,
-      [cur.project_id, toStatusId],
-      "Board position",
+      cur.project_id,
+      taskId,
+      from ? cur.status_id : null,
+      { id: toStatusId, category: to.category },
+      actor,
+      options.note ?? blockedReason,
+      to.category === "blocked" ? { reason: blockedReason, unblock: options.expectedUnblockDate ?? null } : undefined,
     );
-    await tx.query(
-      `UPDATE tracker.task
-          SET status_id = $2,
-              board_rank = $3::numeric,
-              actual_completion_date = CASE WHEN $4 THEN coalesce(actual_completion_date, CURRENT_DATE) ELSE NULL END,
-              blocked_reason = $5,
-              expected_unblock_date = $6::date
-        WHERE id = $1`,
-      [
-        taskId,
-        toStatusId,
-        rank.next,
-        to.category === "done",
-        to.category === "blocked" ? blockedReason : null,
-        to.category === "blocked" ? (options.expectedUnblockDate ?? null) : null,
-      ],
-    );
-    await tx.query(
-      `INSERT INTO tracker.status_log (task_id, from_status_id, to_status_id, changed_by, note) VALUES ($1, $2, $3, $4, $5)`,
-      [taskId, from ? cur.status_id : null, toStatusId, actor.personId, options.note ?? blockedReason],
-    );
+    await settleParents(tx, cur.project_id, cur.parent_task_id, actor);
+    return { moved: true, openUnder: [] };
   });
+}
+
+// ── Parents follow the cards under them ─────────────────────────────────────
+// A card with cards under it is finished when they are. So it is moved to done when the last
+// open card under it closes, and moved back when a card under it is open again. Both are
+// ordinary status changes, written to the status log by whoever made the change that caused them.
+
+/** A card under a parent that is neither done nor cancelled. */
+export interface OpenCard {
+  id: number;
+  key: string;
+  title: string;
+  kindLabel: string | null;
+  statusName: string;
+}
+
+interface StatusRef {
+  id: number;
+  category: string;
+}
+
+async function firstStatus(tx: Tx, projectId: number, categories: string[]): Promise<StatusRef | null> {
+  const { rows } = await tx.query<{ id: number; category: string }>(
+    `SELECT id, category FROM tracker.workflow_status
+      WHERE project_id = $1 AND category::text = ANY($2::text[])
+      ORDER BY array_position($2::text[], category::text), sort_order, id LIMIT 1`,
+    [projectId, categories],
+  );
+  return rows[0] ? { id: Number(rows[0].id), category: rows[0].category } : null;
+}
+
+/** Every unarchived card under a card, at any depth, that is still open. */
+async function openCardsUnder(tx: Tx, taskId: number): Promise<(OpenCard & { statusId: number })[]> {
+  const { rows } = await tx.query<{
+    id: number;
+    key: string;
+    title: string;
+    kind_label: string | null;
+    status_name: string;
+    status_id: number;
+  }>(
+    `WITH RECURSIVE under(id) AS (
+         SELECT c.id FROM tracker.task c WHERE c.parent_task_id = $1 AND c.archived_at IS NULL
+       UNION ALL
+         SELECT c.id FROM tracker.task c JOIN under u ON c.parent_task_id = u.id WHERE c.archived_at IS NULL
+     )
+     SELECT t.id, p.key || '-' || t.number AS key, t.title, k.label AS kind_label, s.name AS status_name, t.status_id
+       FROM under
+       JOIN tracker.task t ON t.id = under.id
+       JOIN tracker.project p ON p.id = t.project_id
+       JOIN tracker.workflow_status s ON s.id = t.status_id
+  LEFT JOIN tracker.work_kind k ON k.key = t.kind
+      WHERE s.category NOT IN ('done', 'cancelled')
+      ORDER BY t.number`,
+    [taskId],
+  );
+  return rows.map((r) => ({
+    id: Number(r.id),
+    key: r.key,
+    title: r.title,
+    kindLabel: r.kind_label,
+    statusName: r.status_name,
+    statusId: Number(r.status_id),
+  }));
+}
+
+/** The one place a card's status is written: the row, its board position, its dates and the log. */
+async function applyStatus(
+  tx: Tx,
+  projectId: number,
+  taskId: number,
+  fromStatusId: number | null,
+  to: StatusRef,
+  actor: Actor,
+  note: string | null,
+  blocked?: { reason: string | null; unblock: string | null },
+): Promise<void> {
+  const rank = await one<{ next: string }>(
+    tx,
+    `SELECT (coalesce(max(board_rank), 0) + 1)::text AS next FROM tracker.task WHERE project_id = $1 AND status_id = $2`,
+    [projectId, to.id],
+    "Board position",
+  );
+  await tx.query(
+    `UPDATE tracker.task
+        SET status_id = $2,
+            board_rank = $3::numeric,
+            actual_completion_date = CASE WHEN $4 THEN coalesce(actual_completion_date, CURRENT_DATE) ELSE NULL END,
+            blocked_reason = $5,
+            expected_unblock_date = $6::date
+      WHERE id = $1`,
+    [taskId, to.id, rank.next, to.category === "done", blocked?.reason ?? null, blocked?.unblock ?? null],
+  );
+  await tx.query(
+    `INSERT INTO tracker.status_log (task_id, from_status_id, to_status_id, changed_by, note) VALUES ($1, $2, $3, $4, $5)`,
+    [taskId, fromStatusId, to.id, actor.personId, note],
+  );
+}
+
+/**
+ * Brings a parent into line with the cards under it, then its own parent, and so on up. Called
+ * after anything that can change the answer: a status change, a new card, a card moved under
+ * something else or lifted out, a card archived. A cancelled parent is left alone, and so is a
+ * parent whose cards were all cancelled: nothing was finished, so it is not "done".
+ */
+async function settleParents(tx: Tx, projectId: number, parentId: number | null, actor: Actor): Promise<void> {
+  let id = parentId;
+  while (id != null) {
+    const { rows } = await tx.query<{
+      status_id: number;
+      category: string;
+      parent_task_id: number | null;
+      archived: boolean;
+      open: number;
+      done: number;
+    }>(
+      `SELECT t.status_id, s.category, t.parent_task_id, (t.archived_at IS NOT NULL) AS archived,
+              (SELECT count(*) FROM tracker.task c JOIN tracker.workflow_status cs ON cs.id = c.status_id
+                WHERE c.parent_task_id = t.id AND c.archived_at IS NULL
+                  AND cs.category NOT IN ('done', 'cancelled'))::int AS open,
+              (SELECT count(*) FROM tracker.task c JOIN tracker.workflow_status cs ON cs.id = c.status_id
+                WHERE c.parent_task_id = t.id AND c.archived_at IS NULL AND cs.category = 'done')::int AS done
+         FROM tracker.task t JOIN tracker.workflow_status s ON s.id = t.status_id
+        WHERE t.id = $1 FOR UPDATE OF t`,
+      [id],
+    );
+    const p = rows[0];
+    if (!p || p.archived) return;
+    const isOpen = p.category !== "done" && p.category !== "cancelled";
+    let to: StatusRef | null = null;
+    let note = "";
+    if (isOpen && Number(p.open) === 0 && Number(p.done) > 0) {
+      to = await firstStatus(tx, projectId, ["done"]);
+      note = "Everything under it is finished";
+    } else if (p.category === "done" && Number(p.open) > 0) {
+      to = await firstStatus(tx, projectId, ["in_progress", "todo"]);
+      note = "Work under it is open again";
+    }
+    if (!to) return;
+    await applyStatus(tx, projectId, id, Number(p.status_id), to, actor, note);
+    id = p.parent_task_id == null ? null : Number(p.parent_task_id);
+  }
 }
 
 async function taskKey(tx: Tx, taskId: number): Promise<{ key: string; projectId: number }> {
@@ -678,5 +852,6 @@ export async function archiveTask(db: Database, actor: Actor, taskId: number): P
     const cur = await lockTask(tx, taskId);
     await requireProjectRole(tx, cur.project_id, actor, "manager");
     await tx.query(`UPDATE tracker.task SET archived_at = now() WHERE id = $1`, [taskId]);
+    await settleParents(tx, cur.project_id, cur.parent_task_id, actor);
   });
 }
