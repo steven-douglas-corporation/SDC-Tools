@@ -283,7 +283,15 @@ function Card({
       }}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="font-mono text-xs font-semibold text-sdc-gray-600">{task.key}</span>
+        {/* Blue, like every other link in the app, so it is obvious the card opens. */}
+        <Link
+          href={`/tracker/${board.project.key}/${task.key.slice(task.key.lastIndexOf("-") + 1)}`}
+          draggable={false}
+          title={`Open ${task.key}`}
+          className="font-mono text-xs font-semibold text-sdc-blue hover:underline"
+        >
+          {task.key}
+        </Link>
         <span className="flex items-center gap-1">
           {task.type === "milestone" && (
             <span className="rounded-full bg-sdc-blue-light px-2 py-0.5 text-micro font-bold uppercase text-sdc-blue-dark">
