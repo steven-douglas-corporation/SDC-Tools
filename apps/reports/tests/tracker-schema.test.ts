@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 
 const migration = (name: string) =>
-  readFileSync(fileURLToPath(new URL(`../db/migrations/${name}`, import.meta.url)), "utf8");
+  readFileSync(fileURLToPath(new URL(`../db/tracker/migrations/${name}`, import.meta.url)), "utf8");
 
 let db: PGlite;
 let ana: number, ben: number, alpha: number, brain: number;

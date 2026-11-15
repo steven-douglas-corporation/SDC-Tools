@@ -13,7 +13,7 @@ import {
   type Result,
   type Scheduled,
   type Task,
-} from "../src/forecast/engine.ts";
+} from "../src/modules/tracker/forecast/engine";
 
 const AS_OF = "2026-11-11"; // a Wednesday
 

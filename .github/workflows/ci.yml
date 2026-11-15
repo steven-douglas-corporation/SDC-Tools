@@ -205,29 +205,10 @@ jobs:
           AUTH_URL: http://localhost:3021
           AUTH_SECRET: ci-test-secret-do-not-use-in-production
 
-  # Schema and forecast engine only; no service or UI yet, so there is no lint
-  # config or build step. The schema tests run Postgres in-process (PGlite).
-  tracker:
-    name: Project Tracker
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/tracker
-    steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/setup-node@v4.1.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: apps/tracker/package-lock.json
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-
   # ── One status for branch protection to require ────────────────────────────
   all-green:
     name: All checks passed
-    needs: [lint-configs, assemblies, build-readiness, calendar, state-logic, shell, reports, tracker]
+    needs: [lint-configs, assemblies, build-readiness, calendar, state-logic, shell, reports]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI jobs passed"
