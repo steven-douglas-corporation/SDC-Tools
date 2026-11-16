@@ -944,8 +944,9 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const advCount = useMemo(
     () =>
       advCounts(searchRows(data.rows, searchIn, query), adv, advCtx, {
-        delivery: ADV_OPTIONS.delivery.map((o) => o.id),
-        invoicing: ADV_OPTIONS.invoicing.map((o) => o.id),
+        received: ADV_OPTIONS.received.map((o) => o.id),
+        timing: ADV_OPTIONS.timing.map((o) => o.id),
+        invoiced: ADV_OPTIONS.invoiced.map((o) => o.id),
         required: ADV_OPTIONS.required.map((o) => o.id),
         supplier: supplierOptions,
         jobStatus: statusOptions,
@@ -1348,14 +1349,14 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
           <div aria-hidden className="h-px shrink-0 bg-sdc-border" />
 
-          <SideGroup title="Filters" tip="Basic: one pick, by what the POs still owe, or Here. Advanced: any mix of delivery, invoicing, required date, supplier and job checkboxes, over open POs">
+          <SideGroup title="Filters" tip="Basic: one pick, by what the POs still owe, or Here. Advanced: any mix of received, still to come, invoiced, required date, supplier and job checkboxes, over open POs">
             <Segmented
               label="Filters"
               value={filterMode}
               onChange={setFilterMode}
               options={[
                 { value: "basic", label: "Basic", title: "One pick: by what the POs still owe, or Here (parts that have arrived)" },
-                { value: "advanced", label: "Advanced", title: "Checkboxes by category: delivery, invoicing, required date, supplier, job. Open POs only" },
+                { value: "advanced", label: "Advanced", title: "Checkboxes by category: received, still to come, invoiced, required date, supplier, job. Open POs only" },
               ]}
             />
           </SideGroup>
@@ -1393,20 +1394,28 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
               <p className="text-note text-sdc-gray-400" title="In a group, a PO needs any ticked box. Across groups, it needs all of them. A group with nothing ticked does not filter">
                 Tick any. Within a group: any of them. Across groups: all.
               </p>
-              <SideGroup title="Delivery" tip="By what has arrived and what is still to come">
+              <SideGroup title="Received" tip="How much of the order has arrived. Pair with Invoiced, e.g. All here + Not invoiced yet">
                 <CheckList
-                  label="Delivery"
-                  options={ADV_OPTIONS.delivery.map((o) => ({ ...o, count: advCount.delivery[o.id] }))}
-                  selected={adv.delivery}
-                  onToggle={(id) => toggleAdv("delivery", id)}
+                  label="Received"
+                  options={ADV_OPTIONS.received.map((o) => ({ ...o, count: advCount.received[o.id] }))}
+                  selected={adv.received}
+                  onToggle={(id) => toggleAdv("received", id)}
                 />
               </SideGroup>
-              <SideGroup title="Invoicing" tip="By what has been invoiced against what has arrived">
+              <SideGroup title="Still to come" tip="For parts not here yet: past their expected date (late), or not yet">
                 <CheckList
-                  label="Invoicing"
-                  options={ADV_OPTIONS.invoicing.map((o) => ({ ...o, count: advCount.invoicing[o.id] }))}
-                  selected={adv.invoicing}
-                  onToggle={(id) => toggleAdv("invoicing", id)}
+                  label="Still to come"
+                  options={ADV_OPTIONS.timing.map((o) => ({ ...o, count: advCount.timing[o.id] }))}
+                  selected={adv.timing}
+                  onToggle={(id) => toggleAdv("timing", id)}
+                />
+              </SideGroup>
+              <SideGroup title="Invoiced" tip="How much of the PO has been invoiced (GL-posted). Pair with Received, e.g. Nothing received yet + Fully invoiced">
+                <CheckList
+                  label="Invoiced"
+                  options={ADV_OPTIONS.invoiced.map((o) => ({ ...o, count: advCount.invoiced[o.id] }))}
+                  selected={adv.invoiced}
+                  onToggle={(id) => toggleAdv("invoiced", id)}
                 />
               </SideGroup>
               <SideGroup title="Vs required date" tip="The PO's next part to arrive, against the BOM's required date for it">

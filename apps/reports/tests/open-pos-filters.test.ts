@@ -65,15 +65,42 @@ test("nothing ticked lists every open PO", () => {
 });
 
 test("within a group any tick matches; across groups every group must", () => {
-  assert.deepEqual(shown(pick({ delivery: ["late"] })), ["LATE"]);
-  assert.deepEqual(shown(pick({ delivery: ["late", "partial"] })), ["HALF", "LATE"]);
-  assert.deepEqual(shown(pick({ delivery: ["coming"], supplier: ["Globex"] })), ["HALF", "SOON"]);
-  assert.deepEqual(shown(pick({ delivery: ["coming"], invoicing: ["invoicedNotReceived"] })), ["PAID"]);
+  assert.deepEqual(shown(pick({ timing: ["late"] })), ["LATE"]);
+  assert.deepEqual(shown(pick({ timing: ["late"], received: ["partly"] })), []);
+  assert.deepEqual(shown(pick({ received: ["none", "partly"] })), ["HALF", "LATE", "PAID", "SOON"]);
+  assert.deepEqual(shown(pick({ timing: ["coming"], supplier: ["Globex"] })), ["HALF", "SOON"]);
   assert.deepEqual(shown(pick({ jobStatus: ["HeadStart"] })), ["HALF"]);
 });
 
-test("nothing received yet leaves out partly received POs", () => {
-  assert.deepEqual(shown(pick({ delivery: ["none"] })), ["LATE", "PAID", "SOON"]);
+test("received and invoiced are separate questions that combine: e.g. paid for, nothing here", () => {
+  assert.deepEqual(shown(pick({ received: ["none"], invoiced: ["fully"] })), ["PAID"]);
+  assert.deepEqual(shown(pick({ received: ["none"], invoiced: ["none"] })), ["LATE", "SOON"]);
+  assert.deepEqual(shown(pick({ received: ["partly"] })), ["HALF"]);
+});
+
+test("each PO has exactly one received answer and one invoiced answer", () => {
+  const more = buildOpenPos(
+    new Map([
+      [
+        "1101",
+        [
+          line({ po: "ALL", total: 100, receivedQty: 1, posted: 40 }), // all here, partly invoiced
+          line({ po: "OVER", total: 100, receivedQty: 1, posted: 130 }), // all here, over-invoiced
+        ],
+      ],
+    ]),
+    JOBS,
+    TODAY,
+  );
+  for (const x of [...r.rows, ...more.rows]) {
+    const rec = ["all", "partly", "none"].filter((o) => advMatch(x, pick({ received: [o] }), ctx));
+    const inv = ["none", "partly", "fully", "over"].filter((o) => advMatch(x, pick({ invoiced: [o] }), ctx));
+    assert.equal(rec.length, 1, `${x.poNumber} received: ${rec}`);
+    assert.equal(inv.length, 1, `${x.poNumber} invoiced: ${inv}`);
+  }
+  const ans = (po: string) => more.rows.find((x) => x.poNumber === po)!;
+  assert.ok(advMatch(ans("ALL"), pick({ received: ["all"], invoiced: ["partly"] }), ctx));
+  assert.ok(advMatch(ans("OVER"), pick({ invoiced: ["over"] }), ctx));
 });
 
 test("vs required uses the next line to arrive and its BOM date", () => {
@@ -86,9 +113,9 @@ test("vs required uses the next line to arrive and its BOM date", () => {
 
 test("a count is what ticking that box would leave, on top of the other groups", () => {
   const f = pick({ supplier: ["Globex"] });
-  const c = advCounts(r.rows, f, ctx, { delivery: ["late", "coming"], invoicing: [], required: [], supplier: ["Acme", "Globex"], jobStatus: [] });
-  // Delivery counts are within Globex; supplier counts ignore the supplier ticks themselves.
-  assert.deepEqual(c.delivery, { late: 0, coming: 2 });
+  const c = advCounts(r.rows, f, ctx, { received: [], timing: ["late", "coming"], invoiced: [], required: [], supplier: ["Acme", "Globex"], jobStatus: [] });
+  // Timing counts are within Globex; supplier counts ignore the supplier ticks themselves.
+  assert.deepEqual(c.timing, { late: 0, coming: 2 });
   assert.deepEqual(c.supplier, { Acme: 2, Globex: 2 });
 });
 
