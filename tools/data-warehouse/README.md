@@ -169,9 +169,8 @@ their Windows account name as the login (e.g. `dbelliveau`). Who has access is
 | `postgres` | Built-in admin | Superuser | Password, on the server only |
 
 `reports_dev` was added on 2026-11-15 so that a development copy of the reports app never needs the
-live app's password. It was created by hand on the server (`CREATE ROLE reports_dev LOGIN`,
-`GRANT reports_app TO reports_dev`) and is not yet in `sql/05_access.sql`; add it there the next
-time that file is touched. Its password lives only in the developer's own `apps/reports/.env`.
+live app's password. It is defined in `sql/05_access.sql` with the other app logins. Its password
+lives only in the developer's own `apps/reports/.env`.
 A development copy has its scheduled refresh switched off (`SDC_DEV_DISABLE_SYNC=1`), so it reads
 the warehouse only when someone asks it to.
 
@@ -204,7 +203,9 @@ How Windows sign-in is wired (server config files in `D:\DataWarehouse\pgdata`, 
   were added to `pg_hba.conf` for `10.0.1.0/24`, with a backup beside it as
   `pg_hba.conf.bak-2026-11-15`. Before that the database dropped VPN connections without a
   message. The `/24` is an assumption from one client's address: the VPN's real address pool is
-  still to be confirmed with whoever runs the SonicWall, and the rule narrowed to match.
+  still to be confirmed with whoever runs the SonicWall, and the rule narrowed to match. The rule
+  is temporary: it only serves people connecting straight to the database from a laptop, and comes
+  out when nobody does (RAID R-15).
 - `pg_ident.conf`: `windows /^(.*)@STEVENDOUGLAS$ \1` turns `jdoe@STEVENDOUGLAS` into login `jdoe`.
 - Clients: pgAdmin and `psql` use it automatically. DBeaver needs the connection's driver
   property `gsslib` set to `sspi`. If sign-in fails from a PC (it works from the server), the
