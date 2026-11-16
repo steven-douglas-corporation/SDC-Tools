@@ -17,7 +17,8 @@ Most urgent first.
 
 1. **Done 2026-10-04, account changed 2026-11-13:** Postgres runs as the `DataWarehousePostgres`
    Windows service (`NetworkService`, automatic start, logs in `pgdata\log`), and the load is
-   scheduled daily at 05:30 (Task Scheduler `\DataWarehouse\Paylocity ingest`). It ran as `jculp`
+   scheduled every hour at :30 (Task Scheduler `\DataWarehouse\Paylocity ingest`; see "The
+   schedule"). It ran as `jculp`
    until 11/9, when Jon changed his Windows password and the task could no longer start: no
    load on 11/10-11/12, and nothing said so. It now runs as the local service account
    `SERVER-APP1\svc-datawarehouse` (see "The service account" below), and a missed load is
@@ -289,12 +290,30 @@ a person's password changes, and the task silently stops starting.
 
 ```powershell
 $action  = New-ScheduledTaskAction -Execute "C:\Windows\System32\cmd.exe" -Argument '/c C:\Python314\python.exe D:\DataWarehouse\ingest\paylocity_ingest.py --settings D:\DataWarehouse\ingest\settings.toml >> D:\DataWarehouse\logs\paylocity_ingest.log 2>&1' -WorkingDirectory D:\DataWarehouse\ingest
-$trigger = New-ScheduledTaskTrigger -Daily -At 5:30am
+$trigger = New-ScheduledTaskTrigger -Once -At 5:30am -RepetitionInterval (New-TimeSpan -Hours 1)   # every hour at :30
 Register-ScheduledTask -TaskPath "\DataWarehouse\" -TaskName "Paylocity ingest" -Action $action -Trigger $trigger -User "SERVER-APP1\svc-datawarehouse" -Password (Read-Host "Password for svc-datawarehouse")
 ```
 
 The script prints its log to the console, so the `cmd /c … >> …log 2>&1` wrapper is what
 keeps it: without it a failed run leaves only "0x1" in Task Scheduler.
+
+### The schedule
+
+Paylocity drops `current_job_hours` on the SFTP at **06:01 Eastern** (`temp_punches` at
+05:05), every day. The load must start **after** that: a run before it loads the previous
+day's file, so the hours are a day staler than they need to be.
+
+Since 11/16 the task **runs every hour at :30** (daily trigger, repeat every 1 hour for 1
+day). The 06:30 run takes the morning's file and 07:30 is a free retry, so
+`"ExpectedJob"."DueBy"` is 08:00: an alert only fires when neither worked. Each run with
+nothing new still rebuilds the facts (about 10 seconds).
+
+Why not once a day: it was, at 06:30, with "Synchronize across time zones" on. That stores
+the start as a fixed UTC time, so when EST began on 11/1 the task moved to 05:30, before the
+06:01 file, and every load took the previous day's file until 11/16. Hourly runs are immune:
+whichever hour it lands on, the next run is never more than an hour after the file. If it
+ever goes back to once a day, untick "Synchronize across time zones" (trigger > Edit); a
+`StartBoundary` ending in an offset such as `-05:00` means it is still synchronized.
 
 ### The service account (set up 2026-11-13)
 
