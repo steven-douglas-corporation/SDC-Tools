@@ -933,12 +933,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     () => ({ today: data.asOf, requiredByLine: required.byLine, jobStatus: new Map(data.allJobs.map((j) => [j.jobId, j.status])) }),
     [data.asOf, required.byLine, data.allJobs],
   );
-  // Advanced's supplier and job-status choices: every one on an open PO, most POs first.
-  const supplierOptions = useMemo(() => {
-    const n = new Map<string, number>();
-    for (const r of data.rows) for (const k of r.suppliers.length ? r.suppliers : ["No supplier"]) n.set(k, (n.get(k) ?? 0) + 1);
-    return [...n].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);
-  }, [data.rows]);
+  // Advanced's job-status choices: every status of a loaded job.
   const statusOptions = useMemo(() => [...new Set(data.allJobs.map((j) => j.status))].sort(), [data.allJobs]);
   // How many POs each box would leave, on top of the search and the other groups' ticks.
   const advCount = useMemo(
@@ -948,10 +943,9 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
         timing: ADV_OPTIONS.timing.map((o) => o.id),
         invoiced: ADV_OPTIONS.invoiced.map((o) => o.id),
         required: ADV_OPTIONS.required.map((o) => o.id),
-        supplier: supplierOptions,
         jobStatus: statusOptions,
       }),
-    [data.rows, searchIn, query, adv, advCtx, supplierOptions, statusOptions],
+    [data.rows, searchIn, query, adv, advCtx, statusOptions],
   );
 
   const shown = useMemo(
@@ -1349,14 +1343,14 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
           <div aria-hidden className="h-px shrink-0 bg-sdc-border" />
 
-          <SideGroup title="Filters" tip="Basic: one pick, by what the POs still owe, or Here. Advanced: any mix of received, still to come, invoiced, required date, supplier and job checkboxes, over open POs">
+          <SideGroup title="Filters" tip="Basic: one pick, by what the POs still owe, or Here. Advanced: any mix of received, still to come, invoiced, required date and job checkboxes, over open POs">
             <Segmented
               label="Filters"
               value={filterMode}
               onChange={setFilterMode}
               options={[
                 { value: "basic", label: "Basic", title: "One pick: by what the POs still owe, or Here (parts that have arrived)" },
-                { value: "advanced", label: "Advanced", title: "Checkboxes by category: received, still to come, invoiced, required date, supplier, job. Open POs only" },
+                { value: "advanced", label: "Advanced", title: "Checkboxes by category: received, still to come, invoiced, required date, job. Open POs only" },
               ]}
             />
           </SideGroup>
@@ -1431,16 +1425,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                     {required.state === "loading" ? "Loading required dates from the BOM…" : "Required dates couldn't be read from the BOM"}
                   </span>
                 )}
-              </SideGroup>
-              <SideGroup title="Supplier" tip="The vendor on the PO. Most POs first">
-                <div className="max-h-48 overflow-y-auto pr-1 styled-scrollbar">
-                  <CheckList
-                    label="Supplier"
-                    options={supplierOptions.map((s) => ({ id: s, label: s, count: advCount.supplier[s], tip: `POs from ${s}` }))}
-                    selected={adv.supplier}
-                    onToggle={(id) => toggleAdv("supplier", id)}
-                  />
-                </div>
               </SideGroup>
               <SideGroup title="Job status" tip="The status of the job a PO charges (any of them, for a PO split across jobs)">
                 <CheckList
