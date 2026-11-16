@@ -31,7 +31,7 @@ import {
   type OpenPoWeek,
 } from "@/lib/open-pos-rules";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
-import { ADV_OPTIONS, advActive, advCounts, advMatch, DEFAULT_ADV_FILTERS, type AdvCategory, type AdvFilters } from "@/lib/open-pos-filters";
+import { ADV_OPTIONS, advActive, advCounts, advMatch, NO_ADV_FILTERS, type AdvCategory, type AdvFilters } from "@/lib/open-pos-filters";
 
 // For managers first (the Scheduler's Vendor POs page is the buyers' worklist).
 //
@@ -823,12 +823,12 @@ function CheckList({
 
 export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosResult; schedulerVendorPosUrl?: string }) {
   // Basic: one pick, by what the POs still owe or "Here" (POs with parts that have arrived,
-  // closed ones included). Advanced: checkboxes by category (open-pos-filters.ts), starting at
-  // open POs only. Each keeps its own picks; only the one showing applies. (2026-11-16: Open /
+  // closed ones included: parts on the shelf whether or not the PO is done). Advanced: checkboxes
+  // by category (open-pos-filters.ts), over open POs only, as the page's name says. Each keeps its own picks; only the one showing applies. (2026-11-16: Open /
   // Here was a separate Show switch above them; it is a filter like the rest.)
   const [tile, setTile] = useState<TileId | "here">("all");
   const [filterMode, setFilterMode] = useState<FilterMode>("basic");
-  const [adv, setAdv] = useState<AdvFilters>(DEFAULT_ADV_FILTERS);
+  const [adv, setAdv] = useState<AdvFilters>(NO_ADV_FILTERS);
   // "here": Basic's Here pick, which lists the Here POs (no timeline; amounts are value received).
   const mode: Mode = filterMode === "basic" && tile === "here" ? "here" : "open";
   const toggleAdv = (cat: AdvCategory, id: string) =>
@@ -912,8 +912,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const metric = cur.metric;
   // Every loaded job, not only those with open POs: a closed PO can be on a job with nothing open.
   const jobName = useMemo(() => new Map(data.allJobs.map((j) => [j.jobId, j.jobName])), [data.allJobs]);
-  // Advanced's whole population: open POs, and closed ones (from the Here list) for its Closed box.
-  const allPos = useMemo(() => [...data.rows, ...data.here.filter((r) => !r.open)], [data.rows, data.here]);
 
   // What the search box looks through, per PO: its number, supplier, the jobs it charges
   // (number and name) and the parts on its lines. The app's table search rule (searchRows):
@@ -938,22 +936,21 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   // Advanced's supplier and job-status choices: every one on an open PO, most POs first.
   const supplierOptions = useMemo(() => {
     const n = new Map<string, number>();
-    for (const r of allPos) for (const k of r.suppliers.length ? r.suppliers : ["No supplier"]) n.set(k, (n.get(k) ?? 0) + 1);
+    for (const r of data.rows) for (const k of r.suppliers.length ? r.suppliers : ["No supplier"]) n.set(k, (n.get(k) ?? 0) + 1);
     return [...n].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);
-  }, [allPos]);
+  }, [data.rows]);
   const statusOptions = useMemo(() => [...new Set(data.allJobs.map((j) => j.status))].sort(), [data.allJobs]);
   // How many POs each box would leave, on top of the search and the other groups' ticks.
   const advCount = useMemo(
     () =>
-      advCounts(searchRows(allPos, searchIn, query), adv, advCtx, {
-        status: ADV_OPTIONS.status.map((o) => o.id),
+      advCounts(searchRows(data.rows, searchIn, query), adv, advCtx, {
         delivery: ADV_OPTIONS.delivery.map((o) => o.id),
         invoicing: ADV_OPTIONS.invoicing.map((o) => o.id),
         required: ADV_OPTIONS.required.map((o) => o.id),
         supplier: supplierOptions,
         jobStatus: statusOptions,
       }),
-    [allPos, searchIn, query, adv, advCtx, supplierOptions, statusOptions],
+    [data.rows, searchIn, query, adv, advCtx, supplierOptions, statusOptions],
   );
 
   const shown = useMemo(
@@ -963,11 +960,11 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           ? data.here
           : filterMode === "basic"
             ? data.rows.filter((r) => inTile(r, tile as TileId))
-            : allPos.filter((r) => advMatch(r, adv, advCtx)),
+            : data.rows.filter((r) => advMatch(r, adv, advCtx)),
         searchIn,
         query,
       ),
-    [mode, data.rows, data.here, allPos, filterMode, tile, adv, advCtx, searchIn, query],
+    [mode, data.rows, data.here, filterMode, tile, adv, advCtx, searchIn, query],
   );
 
   const tiles = useMemo(
@@ -1071,11 +1068,11 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
   const searching = query.trim() !== "";
   const filtered = searching || (filterMode === "basic" ? tile !== "all" : advActive(adv));
-  const total = mode === "here" ? data.here.length : filterMode === "advanced" ? allPos.length : data.rows.length;
+  const total = mode === "here" ? data.here.length : data.rows.length;
   const shownJobs = new Set(shown.flatMap((r) => r.jobIds)).size;
   const clearFilters = () => {
     setTile("all");
-    setAdv(DEFAULT_ADV_FILTERS);
+    setAdv(NO_ADV_FILTERS);
     setQuery("");
   };
   // The card open in the details panel, as the cards stand now (filters applied).
@@ -1351,14 +1348,14 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
           <div aria-hidden className="h-px shrink-0 bg-sdc-border" />
 
-          <SideGroup title="Filters" tip="Basic: one pick, by what the POs still owe, or Here. Advanced: any mix of status, delivery, invoicing, required date, supplier and job checkboxes">
+          <SideGroup title="Filters" tip="Basic: one pick, by what the POs still owe, or Here. Advanced: any mix of delivery, invoicing, required date, supplier and job checkboxes, over open POs">
             <Segmented
               label="Filters"
               value={filterMode}
               onChange={setFilterMode}
               options={[
                 { value: "basic", label: "Basic", title: "One pick: by what the POs still owe, or Here (parts that have arrived)" },
-                { value: "advanced", label: "Advanced", title: "Checkboxes by category: status, delivery, invoicing, required date, supplier, job" },
+                { value: "advanced", label: "Advanced", title: "Checkboxes by category: delivery, invoicing, required date, supplier, job. Open POs only" },
               ]}
             />
           </SideGroup>
@@ -1396,14 +1393,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
               <p className="text-note text-sdc-gray-400" title="In a group, a PO needs any ticked box. Across groups, it needs all of them. A group with nothing ticked does not filter">
                 Tick any. Within a group: any of them. Across groups: all.
               </p>
-              <SideGroup title="PO status" tip="Open POs still owe a delivery or an invoice. Closed ones are fully received and invoiced. Starts with Open only">
-                <CheckList
-                  label="PO status"
-                  options={ADV_OPTIONS.status.map((o) => ({ ...o, count: advCount.status[o.id] }))}
-                  selected={adv.status}
-                  onToggle={(id) => toggleAdv("status", id)}
-                />
-              </SideGroup>
               <SideGroup title="Delivery" tip="By what has arrived and what is still to come">
                 <CheckList
                   label="Delivery"

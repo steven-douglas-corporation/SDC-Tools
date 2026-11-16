@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import { buildOpenPos, type OpenPoJob } from "../src/lib/open-pos-rules";
-import { advActive, advCounts, advMatch, DEFAULT_ADV_FILTERS, NO_ADV_FILTERS, type AdvContext, type AdvFilters } from "../src/lib/open-pos-filters";
+import { advCounts, advMatch, NO_ADV_FILTERS, type AdvContext, type AdvFilters } from "../src/lib/open-pos-filters";
 
 // Open POs' Advanced filters: any tick within a group, every group with ticks.
 
@@ -86,26 +86,15 @@ test("vs required uses the next line to arrive and its BOM date", () => {
 
 test("a count is what ticking that box would leave, on top of the other groups", () => {
   const f = pick({ supplier: ["Globex"] });
-  const c = advCounts(r.rows, f, ctx, { status: [], delivery: ["late", "coming"], invoicing: [], required: [], supplier: ["Acme", "Globex"], jobStatus: [] });
+  const c = advCounts(r.rows, f, ctx, { delivery: ["late", "coming"], invoicing: [], required: [], supplier: ["Acme", "Globex"], jobStatus: [] });
   // Delivery counts are within Globex; supplier counts ignore the supplier ticks themselves.
   assert.deepEqual(c.delivery, { late: 0, coming: 2 });
   assert.deepEqual(c.supplier, { Acme: 2, Globex: 2 });
 });
 
-test("PO status: Advanced starts at open POs; Closed brings in fully received and invoiced ones", () => {
-  const withClosed = buildOpenPos(
-    new Map([["1101", [line({ po: "OPEN", total: 100, requiredDate: "2026-12-01" }), line({ po: "DONE", total: 100, posted: 100, receivedQty: 1 })]]]),
-    JOBS,
-    TODAY,
-  );
-  const all = [...withClosed.rows, ...withClosed.here.filter((x) => !x.open)];
-  const pos = (f: AdvFilters) => all.filter((x) => advMatch(x, f, ctx)).map((x) => x.poNumber).sort();
-  assert.deepEqual(pos(DEFAULT_ADV_FILTERS), ["OPEN"]);
-  assert.deepEqual(pos({ ...DEFAULT_ADV_FILTERS, status: new Set(["open", "closed"]) }), ["DONE", "OPEN"]);
-  assert.deepEqual(pos({ ...DEFAULT_ADV_FILTERS, status: new Set(["closed"]) }), ["DONE"]);
-  // Where Advanced starts is not "filtered"; anything else is.
-  assert.equal(advActive(DEFAULT_ADV_FILTERS), false);
-  assert.equal(advActive({ ...DEFAULT_ADV_FILTERS, status: new Set(["open", "closed"]) }), true);
-  // Every loaded job comes back, not only those with open POs.
+test("every loaded job comes back, not only those with open POs (a closed PO on Here can be on one)", () => {
+  const withClosed = buildOpenPos(new Map([["1101", [line({ po: "DONE", total: 100, posted: 100, receivedQty: 1 })]]]), JOBS, TODAY);
+  assert.equal(withClosed.rows.length, 0);
+  assert.deepEqual(withClosed.here.map((x) => x.poNumber), ["DONE"]);
   assert.deepEqual(withClosed.allJobs.map((j) => j.jobId), ["1101", "1102"]);
 });
