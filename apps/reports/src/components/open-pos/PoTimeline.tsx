@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { card, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -134,7 +134,16 @@ export function PoTimeline({
   requiredState,
   controls,
   subgroups,
+  compact,
+  fillParent,
 }: {
+  /**
+   * For a narrow pane (half the page, beside the cards): a narrower label column, 8 weeks to
+   * start with, and the key behind a "Key" button instead of always down the right.
+   */
+  compact?: boolean;
+  /** Fill the parent's height (a pane sized by the page) instead of reaching for the window's bottom. */
+  fillParent?: boolean;
   rows: TimelineRow[];
   asOf: string;
   onOpenPo: (r: OpenPoRow, jobId?: string) => void;
@@ -152,7 +161,7 @@ export function PoTimeline({
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   // Zoom (weeks shown) and pan (weeks from this Monday). Calendar weeks either way.
-  const [weeks, setWeeks] = useState<number>(TIMELINE_WEEKS);
+  const [weeks, setWeeks] = useState<number>(compact ? 8 : TIMELINE_WEEKS);
   const [offset, setOffset] = useState(0);
   // The PO under the pointer: it stands out wherever it appears (a PO split across jobs is
   // on several rows), and the rest dims.
@@ -167,7 +176,7 @@ export function PoTimeline({
   const todayShown = todaySlot.lane === "track";
   // Every week's start date while there is room for it; every other one when zoomed out.
   const labelEvery = weeks > 16 ? 2 : 1;
-  const grid = `minmax(180px, 240px) ${SIDE}px minmax(0, 1fr) ${SIDE}px`;
+  const grid = `${compact ? "minmax(130px, 170px)" : "minmax(180px, 240px)"} ${SIDE}px minmax(0, 1fr) ${SIDE}px`;
   // A faint line at each week boundary, drawn as the track's background.
   const weekLines = {
     backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent calc(100% / ${weeks} - 1px), rgb(226 232 240) calc(100% / ${weeks} - 1px), rgb(226 232 240) calc(100% / ${weeks}))`,
@@ -233,36 +242,10 @@ export function PoTimeline({
   // that off as well left the timeline too short to be useful (2026-11-13, by request).
   // Measured in screen px and converted to the section's own CSS px, because the app's
   // zoom makes the two differ. Never under MIN_FILL px.
+  // Inside a pane that already has its height (`fillParent`), it just fills that instead.
   const sectionRef = useRef<HTMLElement>(null);
-  const [fillHeight, setFillHeight] = useState<number | null>(null);
-  useLayoutEffect(() => {
-    const el = sectionRef.current;
-    const parent = el?.parentElement;
-    if (!el || !parent) return;
-    const scroller = scrollParent(el);
-    const isDoc = scroller === document.scrollingElement;
-    const measure = () => {
-      const r = el.getBoundingClientRect();
-      const sEl = el.offsetHeight ? r.height / el.offsetHeight : 1;
-      const sr = scroller.getBoundingClientRect();
-      const sSc = isDoc || !scroller.offsetHeight ? 1 : sr.height / scroller.offsetHeight;
-      const viewTop = isDoc ? 0 : sr.top;
-      const view = scroller.clientHeight * sSc;
-      const topInContent = r.top - viewTop + scroller.scrollTop * sSc;
-      setFillHeight(Math.max(MIN_FILL, Math.floor((view - topInContent - FILL_MARGIN) / sEl)));
-    };
-    measure();
-    // The window, and anything above the timeline changing height (the chart, the filters
-    // wrapping onto another line), move where it starts.
-    const ro = new ResizeObserver(measure);
-    ro.observe(scroller);
-    for (const sib of Array.from(parent.children)) if (sib !== el) ro.observe(sib);
-    window.addEventListener("resize", measure);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, []);
+  const fillHeight = useFillHeight(sectionRef, !fillParent);
+  const [showKey, setShowKey] = useState(false);
 
   const atToday = offset === 0;
   const ctl = `${TOOLBAR_BTN_COMPACT} !h-7 !px-2`;
@@ -271,7 +254,7 @@ export function PoTimeline({
     <section
       ref={sectionRef}
       className={card(`flex flex-col p-0 overflow-hidden select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`)}
-      style={{ height: fillHeight ?? undefined }}
+      style={{ height: fillParent ? "100%" : (fillHeight ?? undefined) }}
       aria-label="Timeline"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -331,10 +314,21 @@ export function PoTimeline({
             </button>
           ))}
         </span>
+        {compact && (
+          <button
+            type="button"
+            aria-pressed={showKey}
+            onClick={() => setShowKey((v) => !v)}
+            title="What the dots, diamonds and lines mean"
+            className={`${ctl} ${showKey ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+          >
+            Key
+          </button>
+        )}
       </div>
 
       {/* Below the controls: the weeks and rows (scrolling under a sticky header), then the key. */}
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto styled-scrollbar">
       {/* Header: months, then the week each column starts. */}
       <div className="sticky top-0 z-[5] grid border-b border-sdc-border bg-slate-100 text-note text-sdc-gray-600" style={{ gridTemplateColumns: grid }}>
@@ -491,8 +485,13 @@ export function PoTimeline({
 
         </div>
 
-        {/* The key, down the right side. Not a drag handle. */}
-        <aside data-no-pan aria-label="Key" className="flex w-48 shrink-0 cursor-default flex-col gap-4 overflow-y-auto border-l border-sdc-border bg-white px-3 py-3 text-note text-sdc-gray-600">
+        {/* The key, down the right side. Not a drag handle. Compact: over the rows, on request. */}
+        {(!compact || showKey) && (
+        <aside
+          data-no-pan
+          aria-label="Key"
+          className={`flex w-48 shrink-0 cursor-default flex-col gap-4 overflow-y-auto border-l border-sdc-border bg-white px-3 py-3 text-note text-sdc-gray-600 ${compact ? "absolute inset-y-0 right-0 z-[6] shadow-lg" : ""}`}
+        >
           <KeyGroup title="Dots" tip={dotsBy === "status" ? "Coloured by where the PO stands" : "Coloured like the line: does it arrive before the BOM needs it?"}>
             {dotsBy === "status" ? (
               <>
@@ -540,6 +539,7 @@ export function PoTimeline({
             still to arrive
           </span>
         </aside>
+        )}
       </div>
     </section>
   );
@@ -649,6 +649,46 @@ function subgroupsOf(pos: TimelinePo[], on?: boolean): { key: string | null; pos
     out[at.get(k)!].pos.push(p);
   }
   return out;
+}
+
+/**
+ * A height that takes `ref` from where it starts down to the bottom of the window (with the
+ * page scrolled to the top), less a small margin, never under MIN_FILL px. Re-measured when
+ * the window or anything beside it changes size. Measured in screen px and converted to the
+ * element's own CSS px, because the app's zoom makes the two differ. Null until measured,
+ * and always null when `on` is false.
+ */
+export function useFillHeight(ref: RefObject<HTMLElement | null>, on = true): number | null {
+  const [fillHeight, setFillHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const parent = el?.parentElement;
+    if (!on || !el || !parent) return;
+    const scroller = scrollParent(el);
+    const isDoc = scroller === document.scrollingElement;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const sEl = el.offsetHeight ? r.height / el.offsetHeight : 1;
+      const sr = scroller.getBoundingClientRect();
+      const sSc = isDoc || !scroller.offsetHeight ? 1 : sr.height / scroller.offsetHeight;
+      const viewTop = isDoc ? 0 : sr.top;
+      const view = scroller.clientHeight * sSc;
+      const topInContent = r.top - viewTop + scroller.scrollTop * sSc;
+      setFillHeight(Math.max(MIN_FILL, Math.floor((view - topInContent - FILL_MARGIN) / sEl)));
+    };
+    measure();
+    // The window, and anything above it changing height (the chart, the filters wrapping
+    // onto another line), move where it starts.
+    const ro = new ResizeObserver(measure);
+    ro.observe(scroller);
+    for (const sib of Array.from(parent.children)) if (sib !== el) ro.observe(sib);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [ref, on]);
+  return on ? fillHeight : null;
 }
 
 /** The element whose scrolling moves `el`: the nearest ancestor that scrolls vertically, else the page. */
