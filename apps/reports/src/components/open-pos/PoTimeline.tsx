@@ -74,7 +74,7 @@ function requiredText(p: TimelinePo, state: RequiredState): string {
   if (!required) return "Not on the job's BOM, so there is no required date";
   const v = vsRequired(expected, required);
   if (!v) return `Required by the BOM ${fmtDate(required)}`;
-  return `Required by the BOM ${fmtDate(required)}: ${v.days === 0 ? "arrives the day it's needed" : v.onTime ? `arrives ${days(v.days)} before it's needed` : `arrives ${days(v.days)} after it's needed`}`;
+  return `Required by the BOM ${fmtDate(required)}: ${v.days === 0 ? "arrives the day it's required" : v.onTime ? `arrives ${days(v.days)} before it's required` : `arrives ${days(v.days)} after it's required`}`;
 }
 
 function tip(p: TimelinePo, today: string, state: RequiredState): string {
@@ -467,7 +467,7 @@ export function PoTimeline({
 
         {/* The key, down the right side. Not a drag handle. */}
         <aside data-no-pan aria-label="Key" className="flex w-48 shrink-0 cursor-default flex-col gap-4 overflow-y-auto border-l border-sdc-border bg-white px-3 py-3 text-note text-sdc-gray-600">
-          <KeyGroup title="Dots" tip={dotsBy === "status" ? "Coloured by where the PO stands" : "Coloured like the line: does it arrive before the BOM needs it?"}>
+          <KeyGroup title="Dots" tip={dotsBy === "status" ? "Coloured by where the PO stands" : "Coloured like the line: does it arrive by the BOM's required date?"}>
             {dotsBy === "status" ? (
               <>
                 <Legend cls="bg-sdc-red" label="Late" tip="Expected before today and not here" />
@@ -476,25 +476,25 @@ export function PoTimeline({
               </>
             ) : (
               <>
-                <Legend cls="bg-green-600" label="Arrives in time" tip="Expected on or before the day the BOM needs it" />
-                <Legend cls="bg-red-600" label="Arrives after it's needed" tip="Expected after the day the BOM needs it" />
+                <Legend cls="bg-green-600" label="Arrives in time" tip="Expected on or before the BOM's required date" />
+                <Legend cls="bg-red-600" label="Arrives after it's required" tip="Expected after the BOM's required date" />
                 <Legend cls="bg-sdc-gray-400" label="No required date" tip="Not on the job's BOM" />
               </>
             )}
             <Legend cls="border border-sdc-gray-400 bg-white" label="No expected date" tip="Total ETO has no expected date for it (in Later)" />
           </KeyGroup>
-          <KeyGroup title="Lines" tip="Each PO row runs from when it's expected (the dot) to when the BOM needs it (the diamond)">
-            <span className="inline-flex items-center gap-1.5" title="When the BOM needs the part">
+          <KeyGroup title="Lines" tip="Each PO row runs from when it's expected (the dot) to the BOM's required date (the diamond)">
+            <span className="inline-flex items-center gap-1.5" title="The BOM's required date for the part">
               <span aria-hidden className="inline-block h-2 w-2 shrink-0 rotate-45 border-2 border-sdc-gray-600 bg-white" />
               Required by the BOM
             </span>
-            <span className="inline-flex items-center gap-1.5" title="Expected on or before the day the BOM needs it">
+            <span className="inline-flex items-center gap-1.5" title="Expected on or before the BOM's required date">
               <span aria-hidden className="inline-block h-0.5 w-4 shrink-0 bg-green-600" />
               Arrives in time
             </span>
-            <span className="inline-flex items-center gap-1.5" title="Expected after the day the BOM needs it">
+            <span className="inline-flex items-center gap-1.5" title="Expected after the BOM's required date">
               <span aria-hidden className="inline-block h-0.5 w-4 shrink-0 bg-red-600" />
-              Arrives after it&apos;s needed
+              Arrives after it&apos;s required
             </span>
             {requiredState !== "ok" && (
               <span className={requiredState === "failed" ? "text-sdc-red-text" : "text-sdc-gray-400"}>

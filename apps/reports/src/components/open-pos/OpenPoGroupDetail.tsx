@@ -172,8 +172,8 @@ function PoSection({
             <th className="px-2 py-1" title="When it is expected. ↻ means the vendor re-promised a new date">
               Expected
             </th>
-            <th className="px-2 py-1" title="When the job's BOM needs the part: green if it arrives on or before that day, red if after">
-              Needed
+            <th className="px-2 py-1" title="The BOM's required date for the part: green if it arrives on or before that date, red if after">
+              Required
             </th>
             <th className="px-3 py-1" title="Here, coming, or outstanding (past its expected date)">
               State
@@ -210,10 +210,10 @@ function PoSection({
                         ? "Not on the job's BOM (or not loaded yet), so there is no required date"
                         : undefined
                       : !v
-                        ? `Needed ${fmtDate(required)}`
+                        ? `Required ${fmtDate(required)}`
                         : v.days === 0
-                          ? `Needed ${fmtDate(required)}: arrives the day it's needed`
-                          : `Needed ${fmtDate(required)}: arrives ${days(v.days)} ${v.onTime ? "before" : "after"} it's needed`
+                          ? `Required ${fmtDate(required)}: arrives the day it's required`
+                          : `Required ${fmtDate(required)}: arrives ${days(v.days)} ${v.onTime ? "before" : "after"} it's required`
                   }
                 >
                   {required ? fmtDate(required) : "–"}

@@ -111,7 +111,7 @@ const TIP = {
   notReceived: "Value still to arrive, at PO price",
   lti: "PO value still to be invoiced. Same figure as Job Details' Left to Invoice",
   needed:
-    "When the job's BOM needs the next part still to arrive (the same line as Expected). Green: it arrives on or before that day. Red: after, by the days shown",
+    "The BOM's required date for the next part still to arrive (the same line as Expected). Green: it arrives on or before that date. Red: after, by the days shown",
   revised: (original: string) => `Re-promised by the vendor. Originally due ${fmtDate(original)}`,
 };
 
@@ -252,10 +252,10 @@ function NeededCell({ dates, state }: { dates: PoDates; state: RequiredState }) 
   if (!dates.required) return <span className={muted} title="Not on the job's BOM, so there is no required date">–</span>;
   const v = vsRequired(dates.expected, dates.required);
   const tip = !v
-    ? `Needed ${fmtDate(dates.required)}. No expected date to compare it with`
+    ? `Required ${fmtDate(dates.required)}. No expected date to compare it with`
     : v.days === 0
-      ? `Needed ${fmtDate(dates.required)}: arrives the day it's needed`
-      : `Needed ${fmtDate(dates.required)}: arrives ${days(v.days)} ${v.onTime ? "before" : "after"} it's needed`;
+      ? `Required ${fmtDate(dates.required)}: arrives the day it's required`
+      : `Required ${fmtDate(dates.required)}: arrives ${days(v.days)} ${v.onTime ? "before" : "after"} it's required`;
   return (
     <span className={`whitespace-nowrap font-mono text-label ${!v ? "text-sdc-gray-600" : v.onTime ? "text-green-700" : "font-semibold text-red-700"}`} title={tip}>
       {fmtDate(dates.required)}
@@ -276,12 +276,12 @@ function gapOf(expected: string | null, required: string | null, state: Required
   if (state === "failed") return { text: "?", cls: muted, tip: "Required dates couldn't be read from the BOM", sort: null };
   if (!required) return { text: "–", cls: muted, tip: "Not on the job's BOM, so there is no required date", sort: null };
   const v = vsRequired(expected, required);
-  if (!v) return { text: "–", cls: muted, tip: `Needed ${fmtDate(required)}. No expected date to compare it with`, sort: null };
-  const needed = `Needed ${fmtDate(required)}`;
-  if (v.days === 0) return { text: "on the day", cls: "text-green-700", tip: `${needed}: arrives the day it's needed`, sort: 0 };
+  if (!v) return { text: "–", cls: muted, tip: `Required ${fmtDate(required)}. No expected date to compare it with`, sort: null };
+  const needed = `Required ${fmtDate(required)}`;
+  if (v.days === 0) return { text: "on the day", cls: "text-green-700", tip: `${needed}: arrives the day it's required`, sort: 0 };
   return v.onTime
-    ? { text: `${v.days}d early`, cls: "text-green-700", tip: `${needed}: arrives ${days(v.days)} before it's needed`, sort: -v.days }
-    : { text: `${v.days}d late`, cls: "font-semibold text-red-700", tip: `${needed}: arrives ${days(v.days)} after it's needed`, sort: v.days };
+    ? { text: `${v.days}d early`, cls: "text-green-700", tip: `${needed}: arrives ${days(v.days)} before it's required`, sort: -v.days }
+    : { text: `${v.days}d late`, cls: "font-semibold text-red-700", tip: `${needed}: arrives ${days(v.days)} after it's required`, sort: v.days };
 }
 
 function GapCell({ gap }: { gap: Gap }) {
@@ -341,7 +341,7 @@ const listColumns = (needed: (r: OpenPoRow) => PoDates, state: RequiredState): D
   },
   {
     id: "needed",
-    header: "Needed",
+    header: "Required",
     value: (r) => needed(r).required,
     width: "130px",
     searchable: false,
@@ -485,7 +485,7 @@ function nextPoSort(cur: ListCardSort | null, id: string): ListCardSort {
 // them, and the column says so. Hover text: poSortTip.
 const PO_SORTS: { id: string; label: string }[] = [
   { id: "expected", label: "Most overdue first" },
-  { id: "needed", label: "Furthest past needed first" },
+  { id: "needed", label: "Furthest past required first" },
   { id: "amount", label: "Biggest amount first" },
   { id: "po", label: "PO number" },
 ];
@@ -657,9 +657,9 @@ function OpenPoCard({
     },
     {
       id: "needed",
-      header: "Vs needed",
+      header: "Vs required",
       headerTitle:
-        "How the expected date compares with when the job's BOM needs that same part: days early (green) or late (red). Hover for the needed date",
+        "How the expected date compares with the BOM's required date for that same part: days early (green) or late (red). Hover for the required date",
       align: "right",
       // Days late (negative when early), so the latest against the BOM can lead.
       sortValue: ({ dates }) => (dates.outstanding ? gapOf(dates.expected, dates.required).sort : null),
@@ -670,7 +670,7 @@ function OpenPoCard({
       header: "",
       width: "min-content",
       headerTitle: "Status: red late, yellow partly received, blue on schedule, green all received",
-      sortValue: ({ row, money: m }) => poDot(row, m).rank,
+      // Not sortable: it has no header text, so a bare ↕ there would not say what it sorts.
       render: ({ row, money: m }) => {
         const dot = poDot(row, m);
         return <span title={dot.tip} className={`inline-block h-2 w-2 rounded-full ${dot.cls}`} />;
@@ -1008,7 +1008,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     id === "expected"
       ? "Inside each card, the PO whose undelivered line was due longest ago first, then the soonest still to come. POs with everything here go last"
       : id === "needed"
-        ? "The PO that arrives latest against the day the job's BOM needs it first (the Vs needed column, most late first). POs with no needed date go last"
+        ? "The PO that arrives latest against the BOM's required date first (the Vs required column, most late first). POs with no required date go last"
         : id === "amount"
           ? `Largest ${amountName} first`
           : "In PO number order";
@@ -1085,8 +1085,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             value={dotsBy}
             onChange={setDotsBy}
             options={[
-              { value: "status", label: "Status", title: "Late, partly received or on schedule. The line's colour says whether it arrives before the BOM needs it" },
-              { value: "required", label: "Required date", title: "The same as the line: green if it arrives on or before the day the BOM needs it, red if after" },
+              { value: "status", label: "Status", title: "Late, partly received or on schedule. The line's colour says whether it arrives by the BOM's required date" },
+              { value: "required", label: "Required date", title: "The same as the line: green if it arrives on or before the BOM's required date, red if after" },
             ]}
           />
         </span>
@@ -1109,7 +1109,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           onChange={setView}
           options={[
             { value: "cards" as const, label: "Cards", title: "The cards only, several to a row" },
-            ...(mode === "open" ? [{ value: "timeline" as const, label: "Timeline", title: "When each PO is expected against when the BOM needs it, grouped by project or supplier" }] : []),
+            ...(mode === "open" ? [{ value: "timeline" as const, label: "Timeline", title: "When each PO is expected against the BOM's required date, grouped by project or supplier" }] : []),
             { value: "table" as const, label: "Table", title: "Every PO in one sortable list" },
           ]}
         />
