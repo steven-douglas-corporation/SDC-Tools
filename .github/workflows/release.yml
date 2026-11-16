@@ -22,7 +22,9 @@ name: Build & Release SDC Tools
 # "which version are you on?" stays answerable.
 #
 # GitHub Actions builds the installer and publishes it to GitHub Releases.
-# Every installed copy of SDC Tools auto-updates within ~30 minutes.
+# Installed copies do NOT read GitHub: sdc-updater-hub (scripts/sdc-shell-feed.js)
+# copies the newest release to the company server within ~5 minutes, and the
+# shell updates from there (http://SERVER-APP1:4015). From 2.1.5 onward.
 #
 # Backend updates (new features, bug fixes) do NOT need a new installer:
 #   → Just SSH into the server and run:  git pull && pm2 restart all
