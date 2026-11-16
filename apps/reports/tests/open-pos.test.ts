@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import { lineLeftToInvoice } from "../src/lib/left-to-invoice";
-import { buildOpenPos, isChargeLine, lineCounts, nextUpcoming, poDates, stackLines, timelineSlot, vsRequired, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob } from "../src/lib/open-pos-rules";
+import { buildOpenPos, isChargeLine, lastReceived, lineCounts, lineState, nextUpcoming, poDates, stackLines, stateCounts, timelineSlot, vsRequired, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob, type OpenPoLine } from "../src/lib/open-pos-rules";
 
 // Open POs: a PO is open when its signed Left to Invoice is not $0.00 (the Parts List's own
 // filter applied per PO) OR a part line has not fully arrived.
@@ -441,4 +441,69 @@ test("the page builds on the shared parts pipeline, not a fresh PO query", () =>
   const src = readFileSync(join(process.cwd(), "src", "lib", "open-pos.ts"), "utf8").replace(/^\s*\/\/.*$/gm, "");
   assert.match(src, /getPartsCostForJobs\(/);
   assert.doesNotMatch(src, /tblPurchaseOrder/);
+});
+
+// ── Here, Coming, Outstanding (2026-11-16) ──────────────────────────────────────────────
+
+test("line state: here once all of it arrived, outstanding past its expected date, otherwise coming", () => {
+  const l = (o: Partial<OpenPoLine>): OpenPoLine => ({
+    lineId: "pod:1", jobId: "1101", partNumber: "P", description: null, quantity: 2, receivedQty: 0, unitPrice: 1, expected: null, original: null, leftToInvoice: 0, ...o,
+  });
+  assert.equal(lineState(l({ receivedQty: 2 }), TODAY), "here");
+  assert.equal(lineState(l({ receivedQty: 1, expected: "2026-11-01" }), TODAY), "outstanding");
+  assert.equal(lineState(l({ expected: TODAY }), TODAY), "coming"); // due today is not late
+  assert.equal(lineState(l({ expected: null }), TODAY), "coming"); // no date yet
+  assert.equal(lineState(l({ receivedQty: null }), TODAY), null); // no receipt data
+  assert.equal(lineState(l({ partNumber: "Shipping" }), TODAY), null); // a charge
+  assert.equal(lineState(l({ quantity: -1 }), TODAY), null); // a credit
+  const items = [l({ receivedQty: 2 }), l({ expected: "2026-11-01" }), l({ expected: "2026-12-01", jobId: "1102" })];
+  assert.deepEqual(stateCounts(items, TODAY), { here: 1, coming: 1, outstanding: 1 });
+  assert.deepEqual(stateCounts(items, TODAY, "1102"), { here: 0, coming: 1, outstanding: 0 });
+});
+
+test("Here lists every PO with a part line arrived, closed ones too; the open list and totals are unchanged", () => {
+  const lines = new Map([
+    [
+      "1101",
+      [
+        line({ po: "CLOSED", total: 100, posted: 100, receivedQty: 1 }),
+        line({ po: "HALF", total: 50, posted: 0, receivedQty: 1 }),
+        line({ po: "HALF", total: 50, posted: 0, receivedQty: 0, requiredDate: "2026-12-01" }),
+        line({ po: "NONE", total: 80, posted: 0, receivedQty: 0, requiredDate: "2026-12-01" }),
+        line({ po: "FREIGHT", total: 20, posted: 20, receivedQty: 0, partNumber: "Shipping" }),
+      ],
+    ],
+  ]);
+  const r = buildOpenPos(lines, JOBS, TODAY);
+  assert.deepEqual(r.rows.map((x) => x.poNumber).sort(), ["HALF", "NONE"]);
+  assert.deepEqual(r.here.map((x) => x.poNumber).sort(), ["CLOSED", "HALF"]);
+  const closed = r.here.find((x) => x.poNumber === "CLOSED")!;
+  assert.equal(closed.open, false);
+  assert.equal(closed.status, "closed");
+  assert.equal(closed.money.received, 100);
+  assert.ok(r.rows.every((x) => x.open));
+  assert.equal(r.totals.openPos, 2);
+  assert.equal(r.totals.openValue, 180);
+  assert.deepEqual(r.jobs.map((j) => j.openPos), [2]);
+});
+
+test("last received: the latest receipt among part lines with something received, per job if asked", () => {
+  const l = (o: Partial<OpenPoLine>): OpenPoLine => ({
+    lineId: "pod:1", jobId: "1101", partNumber: "P", description: null, quantity: 2, receivedQty: 1, unitPrice: 1, expected: null, original: null, leftToInvoice: 0, ...o,
+  });
+  const items = [
+    l({ lineId: "pod:1", receivedQty: 1 }),
+    l({ lineId: "pod:2", receivedQty: 2, jobId: "1102" }),
+    l({ lineId: "pod:3", receivedQty: 0 }), // nothing here: its log date (if any) is not used
+    l({ lineId: "pod:4", partNumber: "Shipping", receivedQty: 1 }), // a charge
+  ];
+  const log = new Map([
+    ["pod:1", "2026-10-02"],
+    ["pod:2", "2026-10-20"],
+    ["pod:3", "2026-11-01"],
+    ["pod:4", "2026-11-03"],
+  ]);
+  assert.equal(lastReceived(items, log), "2026-10-20");
+  assert.equal(lastReceived(items, log, "1101"), "2026-10-02");
+  assert.equal(lastReceived(items, new Map()), null);
 });

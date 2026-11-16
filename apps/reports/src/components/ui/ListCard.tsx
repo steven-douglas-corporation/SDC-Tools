@@ -66,6 +66,24 @@ export type ListCardProps<T> = {
    * tall card costs nothing and a scroll box inside a scrolling page is one more thing to aim at.
    */
   fullHeight?: boolean;
+  /**
+   * Every card the same height: the list gets a fixed height and scrolls inside, however few
+   * or many rows it has. For a plain grid (ListCardGrid `flow="rows"`) whose rows line up.
+   */
+  fixedHeight?: boolean;
+  /**
+   * Makes the whole card a way into more detail: a click anywhere on it that is not a row,
+   * link or other control calls this, and a "Details" button in the header does the same
+   * from the keyboard. `detailsTitle` is that button's hover text.
+   */
+  onCardClick?: () => void;
+  detailsTitle?: string;
+  /**
+   * Rows that open in place: a click on the row (or its ▸) shows `render(row)` under it, and
+   * another click hides it. Each card remembers its own open rows. Use instead of `onRowClick`;
+   * a control inside a cell (a link, a button) keeps its own click.
+   */
+  expand?: { render: (row: T) => ReactNode; title?: (row: T, open: boolean) => string };
 };
 
 const Chevron = () => (
@@ -92,9 +110,24 @@ export function ListCard<T>({
   onSort,
   groupBy,
   fullHeight,
+  fixedHeight,
+  onCardClick,
+  detailsTitle,
+  expand,
 }: ListCardProps<T>) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  const tracks = [...columns.map((c, i) => c.width ?? (i === 0 ? "1fr" : "auto")), ...(onRowClick ? ["auto"] : [])].join(" ");
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const toggleRow = (k: string) =>
+    setExpanded((s) => {
+      const n = new Set(s);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  // Expanding rows lead with a ▸ column; clickable rows end with a chevron.
+  // min-content, not auto: when every column is "auto" the grid shares out the spare width
+  // among them, and the ▸ and chevron should stay tight rather than take a share.
+  const tracks = [...(expand ? ["min-content"] : []), ...columns.map((c, i) => c.width ?? (i === 0 ? "1fr" : "auto")), ...(onRowClick && !expand ? ["min-content"] : [])].join(" ");
   // ONE grid for the header and every row (each a subgrid of it), so an "auto" column is
   // sized once, to its widest cell. Each row used to be its own grid, sizing its auto
   // columns to its own content: a date with ↻, a wider amount or the row-only chevron
@@ -128,8 +161,38 @@ export function ListCard<T>({
       return n;
     });
 
-  const renderRow = (row: T) =>
-    onRowClick ? (
+  const renderRow = (row: T) => {
+    if (expand) {
+      const k = rowKey(row);
+      const open = expanded.has(k);
+      return (
+        <Fragment key={k}>
+          {/* A div, not a button: a cell can hold its own button (e.g. a link to the full record). */}
+          <div
+            data-row
+            onClick={() => toggleRow(k)}
+            title={expand.title?.(row, open)}
+            className={`${rowCls} cursor-pointer hover:bg-sdc-blue-light/30 ${open ? "bg-sdc-blue-light/20" : ""}`}
+          >
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-label={open ? "Hide the parts" : "Show the parts"}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleRow(k);
+              }}
+              className="w-3 text-left text-sdc-gray-400 hover:text-sdc-navy"
+            >
+              {open ? "▾" : "▸"}
+            </button>
+            {cells(row)}
+          </div>
+          {open && <div className="col-span-full border-b border-sdc-border-soft/60 bg-slate-50 px-3 py-1.5">{expand.render(row)}</div>}
+        </Fragment>
+      );
+    }
+    return onRowClick ? (
       <button key={rowKey(row)} type="button" onClick={() => onRowClick(row)} title={rowTitle?.(row)} className={`${rowCls} hover:bg-sdc-blue-light/30`}>
         {cells(row)}
         <Chevron />
@@ -139,9 +202,21 @@ export function ListCard<T>({
         {cells(row)}
       </div>
     );
+  };
 
   return (
-    <article className="flex flex-col overflow-hidden rounded-lg border border-sdc-border bg-white shadow-sm">
+    <article
+      className={`flex flex-col overflow-hidden rounded-lg border border-sdc-border bg-white shadow-sm ${onCardClick ? "cursor-pointer motion-interactive hover:border-sdc-gray-400 hover:shadow-md" : ""}`}
+      onClick={
+        onCardClick
+          ? (e) => {
+              // Rows, links, sort headers and group toggles keep their own click.
+              if ((e.target as HTMLElement).closest("button, a, input, select, label, [data-row]")) return;
+              onCardClick();
+            }
+          : undefined
+      }
+    >
       <div className="flex flex-col gap-2 border-b border-sdc-border-soft p-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -153,11 +228,23 @@ export function ListCard<T>({
               {subtitle != null && <div className="truncate text-label text-sdc-gray-400">{subtitle}</div>}
             </div>
           </div>
-          {badge && (
-            <span title={badge.title} className={`shrink-0 rounded px-1.5 py-0.5 text-micro font-bold tracking-wide ${badge.className}`}>
-              {badge.text}
-            </span>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {badge && (
+              <span title={badge.title} className={`shrink-0 rounded px-1.5 py-0.5 text-micro font-bold tracking-wide ${badge.className}`}>
+                {badge.text}
+              </span>
+            )}
+            {onCardClick && (
+              <button
+                type="button"
+                onClick={onCardClick}
+                title={detailsTitle ?? "Open the details. Clicking anywhere on the card does the same"}
+                className="rounded px-1.5 py-0.5 text-micro font-bold tracking-wide text-sdc-blue hover:bg-sdc-blue-light/50"
+              >
+                DETAILS ›
+              </button>
+            )}
+          </div>
         </div>
         {progress && (
           <div className="flex items-center gap-2" title={progress.title}>
@@ -169,8 +256,9 @@ export function ListCard<T>({
         )}
       </div>
 
-      <div className={`grid content-start gap-x-2 ${fullHeight ? "" : "max-h-56 overflow-y-auto styled-scrollbar"}`} style={grid}>
+      <div className={`grid content-start gap-x-2 ${fullHeight ? "" : fixedHeight ? "h-72 overflow-y-auto styled-scrollbar" : "max-h-56 overflow-y-auto styled-scrollbar"}`} style={grid}>
         <div className="sticky top-0 z-[1] col-span-full grid grid-cols-subgrid items-center bg-sdc-gray-100 px-3 py-1.5 text-micro font-bold uppercase tracking-wider text-sdc-gray-400">
+          {expand && <span />}
           {columns.map((c) => {
             const right = c.align === "right";
             if (!onSort || !c.sortValue)
@@ -187,14 +275,18 @@ export function ListCard<T>({
                 onClick={() => onSort(c.id)}
                 title={`${c.headerTitle ? `${c.headerTitle}. ` : ""}Click to sort; click again to reverse`}
                 aria-label={`Sort by ${typeof c.header === "string" ? c.header : c.id}${active ? `, now ${sort!.dir === "asc" ? "ascending" : "descending"}` : ""}`}
-                className={`flex items-center gap-0.5 font-bold uppercase tracking-wider hover:text-sdc-navy ${right ? "justify-end" : ""} ${active ? "text-sdc-navy" : ""}`}
+                className={`group -mx-1 flex cursor-pointer items-center gap-0.5 rounded px-1 font-bold uppercase tracking-wider hover:bg-white hover:text-sdc-navy ${right ? "justify-end" : ""} ${active ? "text-sdc-navy" : ""}`}
               >
                 {c.header}
-                {active && <span aria-hidden>{sort!.dir === "asc" ? "▲" : "▼"}</span>}
+                {/* Every sortable header shows a faint ↕ so it reads as clickable before any
+                    hover; the sorted one shows its direction (2026-11-16, as DataTable does). */}
+                <span aria-hidden className={active ? "" : "opacity-40 group-hover:opacity-100"}>
+                  {active ? (sort!.dir === "asc" ? "▲" : "▼") : "↕"}
+                </span>
               </button>
             );
           })}
-          {onRowClick && <span />}
+          {onRowClick && !expand && <span />}
         </div>
         {rows.length === 0 && emptyText != null && <p className="col-span-full px-3 py-3 text-center text-label text-sdc-gray-400">{emptyText}</p>}
         {groupBy

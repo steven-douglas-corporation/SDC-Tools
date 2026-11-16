@@ -1,16 +1,18 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { card, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
-import { addDays, daysBetween, mondayOf, stackLines, timelineSlot, vsRequired, type OpenPoMoney, type OpenPoRow, type PoDates, type TimelineSlot } from "@/lib/open-pos-rules";
+import { addDays, daysBetween, isChargeLine, lineState, mondayOf, stackLines, timelineSlot, vsRequired, type OpenPoLine, type OpenPoMoney, type OpenPoRow, type PoDates, type TimelineSlot } from "@/lib/open-pos-rules";
 
 // ── Open POs timeline: when each PO is expected, against when the BOM needs it ─────────────
 //
 // Laid out like the Scheduler's timelines: a month and week header, a dashed Today line,
-// calendar weeks from this Monday (the same weeks as the chart above). Anything before them
-// sits in the Late column, anything after in Later.
+// calendar weeks. "Today" starts a third of the weeks shown in the past (4 of 12), so late POs
+// sit at their real dates left of the line; anything before the first week sits in the Earlier
+// column, anything after the last in Later. Each PO row also says, beside its number, how late
+// it is (or how soon it is due) and the value still to arrive. The key is behind "Key".
 //
 // One group per project (or supplier), expanded by default into one row per PO. A PO row is
 // two points: a dot at the date it is expected (its next line still to arrive) and a diamond
@@ -30,6 +32,10 @@ export type TimelinePo = {
   other: string;
   /** Project rows: the row's job, so a click opens that job's view of the PO. */
   jobId?: string;
+  /** With `subgroups`: the heading this PO sits under inside its group (its supplier). */
+  group?: string;
+  /** When something on it last arrived (lastReceived), drawn as a green tick on the line; null when nothing has. */
+  received?: string | null;
 };
 
 export type TimelineRow = { key: string; label: ReactNode; sublabel: string; title: string; pos: TimelinePo[] };
@@ -72,7 +78,7 @@ function requiredText(p: TimelinePo, state: RequiredState): string {
   if (!required) return "Not on the job's BOM, so there is no required date";
   const v = vsRequired(expected, required);
   if (!v) return `Required by the BOM ${fmtDate(required)}`;
-  return `Required by the BOM ${fmtDate(required)}: ${v.days === 0 ? "arrives the day it's needed" : v.onTime ? `arrives ${days(v.days)} before it's needed` : `arrives ${days(v.days)} after it's needed`}`;
+  return `Required by the BOM ${fmtDate(required)}: ${v.days === 0 ? "arrives the day it's required" : v.onTime ? `arrives ${days(v.days)} before it's required` : `arrives ${days(v.days)} after it's required`}`;
 }
 
 function tip(p: TimelinePo, today: string, state: RequiredState): string {
@@ -83,7 +89,8 @@ function tip(p: TimelinePo, today: string, state: RequiredState): string {
       ? `Late: expected ${fmtDate(expected)}, ${days(daysBetween(expected, today))} ago`
       : `Expected ${fmtDate(expected)}`;
   const slip = revised && original && original !== expected ? ` (re-promised; the PO first asked for ${fmtDate(original)})` : "";
-  return `PO ${p.row.poNumber} · ${p.other}\n${when}${slip}\n${requiredText(p, state)}\n${usdExact(p.money.notReceived)} not yet received. Click to open`;
+  const got = p.received ? `\nLast received ${fmtDate(p.received)} (part of the order is here)` : "";
+  return `PO ${p.row.poNumber} · ${p.other}\n${when}${slip}\n${requiredText(p, state)}${got}\n${usdExact(p.money.notReceived)} not yet received. Click to open`;
 }
 
 function Dot({
@@ -131,7 +138,14 @@ export function PoTimeline({
   dotsBy,
   requiredState,
   controls,
+  subgroups,
+  requiredByLine,
+  receivedByLine,
 }: {
+  /** The BOM's required date per line (`pod:<id>`), for the part rows of an opened PO. */
+  requiredByLine: ReadonlyMap<string, string>;
+  /** When each line last had something received (the receiver log), for the part rows' ticks. */
+  receivedByLine: ReadonlyMap<string, string>;
   rows: TimelineRow[];
   asOf: string;
   onOpenPo: (r: OpenPoRow, jobId?: string) => void;
@@ -140,14 +154,33 @@ export function PoTimeline({
   requiredState: RequiredState;
   /** The page's own controls for this view (group order, dot colour), shown in the timeline's bar. */
   controls?: ReactNode;
+  /**
+   * Expanded groups list their POs under a heading per `TimelinePo.group` (the supplier, inside
+   * a project), the same split as the project cards' "Split by supplier". Headings come in the
+   * order of their first PO, soonest expected first.
+   */
+  subgroups?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   // Zoom (weeks shown) and pan (weeks from this Monday). Calendar weeks either way.
+  // "Today" starts a third of the weeks shown in the past (2026-11-16): most open POs are
+  // late, and starting at this Monday put every one of them in the narrow Earlier column with
+  // no date. Now the recent past is on the track, each late PO at its real date.
   const [weeks, setWeeks] = useState<number>(TIMELINE_WEEKS);
-  const [offset, setOffset] = useState(0);
+  const [offset, setOffset] = useState(-pastWeeks(TIMELINE_WEEKS));
+  const [showKey, setShowKey] = useState(false);
   // The PO under the pointer: it stands out wherever it appears (a PO split across jobs is
   // on several rows), and the rest dims.
   const [hoverPo, setHoverPo] = useState<string | null>(null);
+  // POs opened into their part rows, by group and PO (a PO split across jobs is in several groups).
+  const [openPos, setOpenPos] = useState<ReadonlySet<string>>(new Set());
+  const togglePo = (key: string) =>
+    setOpenPos((s) => {
+      const n = new Set(s);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
   const thisMonday = mondayOf(asOf);
   const start = addDays(thisMonday, offset * 7);
   const end = addDays(start, weeks * 7 - 1);
@@ -158,14 +191,23 @@ export function PoTimeline({
   const todayShown = todaySlot.lane === "track";
   // Every week's start date while there is room for it; every other one when zoomed out.
   const labelEvery = weeks > 16 ? 2 : 1;
-  const grid = `minmax(180px, 240px) ${SIDE}px minmax(0, 1fr) ${SIDE}px`;
+  // Room in the label column for the PO's lateness and value beside its number.
+  const grid = `minmax(240px, 300px) ${SIDE}px minmax(0, 1fr) ${SIDE}px`;
   // A faint line at each week boundary, drawn as the track's background.
   const weekLines = {
     backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent calc(100% / ${weeks} - 1px), rgb(226 232 240) calc(100% / ${weeks} - 1px), rgb(226 232 240) calc(100% / ${weeks}))`,
   };
   const todayLine = todayShown ? (
-    <div aria-hidden className="pointer-events-none absolute inset-y-0 z-[1] border-l border-dashed border-sdc-navy/60 motion-timeline-move" style={{ left: `${todayPct}%` }} />
+    <div aria-hidden className="pointer-events-none absolute inset-y-0 z-[1] border-l border-dashed border-sdc-navy motion-timeline-move" style={{ left: `${todayPct}%` }} />
   ) : null;
+  // The "Today" tag sits centred on the line, but never past the track's edge (it was cut to
+  // "day" when today fell at the very start of the weeks).
+  const todayTagShift = todayPct < 5 ? "0%" : todayPct > 95 ? "-100%" : "-50%";
+  // Zoom keeps "today" a third of the way in when it was already there.
+  const zoomTo = (n: number) => {
+    if (offset === -pastWeeks(weeks)) setOffset(-pastWeeks(n));
+    setWeeks(n);
+  };
 
   // ── Drag to pan ─────────────────────────────────────────────────────────────────
   // Press anywhere on the timeline and drag sideways: it moves a whole week at a time, by
@@ -225,37 +267,12 @@ export function PoTimeline({
   // Measured in screen px and converted to the section's own CSS px, because the app's
   // zoom makes the two differ. Never under MIN_FILL px.
   const sectionRef = useRef<HTMLElement>(null);
-  const [fillHeight, setFillHeight] = useState<number | null>(null);
-  useLayoutEffect(() => {
-    const el = sectionRef.current;
-    const parent = el?.parentElement;
-    if (!el || !parent) return;
-    const scroller = scrollParent(el);
-    const isDoc = scroller === document.scrollingElement;
-    const measure = () => {
-      const r = el.getBoundingClientRect();
-      const sEl = el.offsetHeight ? r.height / el.offsetHeight : 1;
-      const sr = scroller.getBoundingClientRect();
-      const sSc = isDoc || !scroller.offsetHeight ? 1 : sr.height / scroller.offsetHeight;
-      const viewTop = isDoc ? 0 : sr.top;
-      const view = scroller.clientHeight * sSc;
-      const topInContent = r.top - viewTop + scroller.scrollTop * sSc;
-      setFillHeight(Math.max(MIN_FILL, Math.floor((view - topInContent - FILL_MARGIN) / sEl)));
-    };
-    measure();
-    // The window, and anything above the timeline changing height (the chart, the filters
-    // wrapping onto another line), move where it starts.
-    const ro = new ResizeObserver(measure);
-    ro.observe(scroller);
-    for (const sib of Array.from(parent.children)) if (sib !== el) ro.observe(sib);
-    window.addEventListener("resize", measure);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, []);
+  // Down to the window's bottom less the page's own padding, so the page does not scroll
+  // (2026-11-16: nothing sits under the timeline any more, the note and badge moved up).
+  const fillHeight = useFillHeight(sectionRef, true, true);
 
-  const atToday = offset === 0;
+  const atToday = offset === -pastWeeks(weeks);
+  const stillToArrive = rows.reduce((s, r) => s + r.pos.reduce((a, p) => a + p.money.notReceived, 0), 0);
   const ctl = `${TOOLBAR_BTN_COMPACT} !h-7 !px-2`;
 
   return (
@@ -276,6 +293,9 @@ export function PoTimeline({
         <span className="font-semibold" title="One group per project (or supplier), one row per PO still to arrive">
           {rows.length} {rows.length === 1 ? "group" : "groups"} · {rows.reduce((n, r) => n + r.pos.length, 0)} POs
         </span>
+        <span className="tabular-nums" title="Value not yet received on the POs shown, at PO price">
+          · <span className="font-semibold text-sdc-navy">{usd(stillToArrive)}</span> still to arrive
+        </span>
         <button type="button" onClick={() => setCollapsed(new Set())} title="Show every PO's own row" className={`${ctl} ${TOOLBAR_BTN_NEUTRAL}`}>
           Expand all
         </button>
@@ -294,9 +314,9 @@ export function PoTimeline({
           </button>
           <button
             type="button"
-            onClick={() => setOffset(0)}
+            onClick={() => setOffset(-pastWeeks(weeks))}
             disabled={atToday}
-            title={atToday ? "Already starting this week" : "Back to this week"}
+            title={atToday ? "Already showing today, with the recent past on the left" : "Back to today, with the recent past on the left"}
             className={`${ctl} ${TOOLBAR_BTN_NEUTRAL} disabled:opacity-50`}
           >
             Today
@@ -314,7 +334,7 @@ export function PoTimeline({
               key={n}
               type="button"
               aria-pressed={weeks === n}
-              onClick={() => setWeeks(n)}
+              onClick={() => zoomTo(n)}
               title={`Show ${n} weeks`}
               className={`${ctl} ${weeks === n ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
             >
@@ -322,10 +342,19 @@ export function PoTimeline({
             </button>
           ))}
         </span>
+        <button
+          type="button"
+          aria-pressed={showKey}
+          onClick={() => setShowKey((v) => !v)}
+          title="What the dots, diamonds and lines mean, and how to move around"
+          className={`${ctl} ${showKey ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+        >
+          Key
+        </button>
       </div>
 
       {/* Below the controls: the weeks and rows (scrolling under a sticky header), then the key. */}
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto styled-scrollbar">
       {/* Header: months, then the week each column starts. */}
       <div className="sticky top-0 z-[5] grid border-b border-sdc-border bg-slate-100 text-note text-sdc-gray-600" style={{ gridTemplateColumns: grid }}>
@@ -333,10 +362,10 @@ export function PoTimeline({
           Weeks of
         </span>
         <span
-          className={`self-center text-center font-bold ${atToday ? "text-red-700" : "text-sdc-gray-600"}`}
-          title={atToday ? `Expected before the week of ${md(start)} and still not here` : `Expected before ${md(start)}`}
+          className={`self-center text-center font-bold ${start <= asOf ? "text-red-700" : "text-sdc-gray-600"}`}
+          title={`Expected before ${md(start)}${start <= asOf ? ", so late, and still not here. Drag right or press ◂ to see their dates" : ""}`}
         >
-          {atToday ? "Late" : "Earlier"}
+          Earlier
         </span>
         {/* Three tiers so nothing overlaps: month, the day each week starts, Today. */}
         <div ref={trackRef} className="relative h-[3.25rem] overflow-hidden" style={weekLines}>
@@ -362,7 +391,11 @@ export function PoTimeline({
           )}
           {todayLine}
           {todayShown && (
-            <span className="absolute bottom-0.5 z-[1] -translate-x-1/2 rounded bg-sdc-navy px-1 text-micro font-bold text-white" style={{ left: `${todayPct}%` }} title={`Today, ${md(asOf)}`}>
+            <span
+              className="absolute bottom-0.5 z-[1] rounded bg-sdc-navy px-1 text-micro font-bold text-white"
+              style={{ left: `${todayPct}%`, transform: `translateX(${todayTagShift})` }}
+              title={`Today, ${md(asOf)}`}
+            >
               Today
             </span>
           )}
@@ -402,22 +435,68 @@ export function PoTimeline({
                 </div>
                 <div className={sideCell} />
               </div>
-              {[...r.pos].sort(byExpected).map((p) => (
-                <PoRow
-                  key={p.row.poNumber}
-                  p={p}
-                  asOf={asOf}
-                  slot={slot}
-                  grid={grid}
-                  weekLines={weekLines}
-                  todayLine={todayLine}
-                  sideCell={sideCell}
-                  dotsBy={dotsBy}
-                  requiredState={requiredState}
-                  onOpenPo={onOpenPo}
-                  hover={hoverPo == null ? null : hoverPo === p.row.poNumber}
-                  onHover={setHoverPo}
-                />
+              {subgroupsOf([...r.pos].sort(byExpected), subgroups).map((g) => (
+                <Fragment key={`g:${g.key}`}>
+                  {g.key != null && (
+                    <div className="grid border-t border-sdc-border-soft/60 bg-white" style={{ gridTemplateColumns: grid }} onMouseEnter={() => setHoverPo(null)}>
+                      <span className="truncate py-1 pl-7 pr-2 text-label font-semibold text-sdc-gray-600" title={`${g.key}: ${g.pos.length} ${g.pos.length === 1 ? "PO" : "POs"} still to arrive`}>
+                        {g.key}
+                        <span className="font-normal text-sdc-gray-400"> · {g.pos.length} {g.pos.length === 1 ? "PO" : "POs"}</span>
+                      </span>
+                      <div className={sideCell} />
+                      <div className="relative" style={weekLines}>
+                        {todayLine}
+                      </div>
+                      <div className={sideCell} />
+                    </div>
+                  )}
+                  {g.pos.map((p) => {
+                    const poKey = `${r.key}::${p.row.poNumber}`;
+                    const poOpen = openPos.has(poKey);
+                    const hover = hoverPo == null ? null : hoverPo === p.row.poNumber;
+                    return (
+                      <Fragment key={p.row.poNumber}>
+                        <PoRow
+                          p={p}
+                          asOf={asOf}
+                          slot={slot}
+                          grid={grid}
+                          weekLines={weekLines}
+                          todayLine={todayLine}
+                          sideCell={sideCell}
+                          dotsBy={dotsBy}
+                          requiredState={requiredState}
+                          onOpenPo={onOpenPo}
+                          hover={hover}
+                          onHover={setHoverPo}
+                          indent={g.key != null}
+                          open={poOpen}
+                          onToggle={() => togglePo(poKey)}
+                        />
+                        {poOpen &&
+                          partsOf(p, asOf).map((l) => (
+                            <PartRow
+                              key={l.lineId}
+                              l={l}
+                              asOf={asOf}
+                              slot={slot}
+                              grid={grid}
+                              weekLines={weekLines}
+                              todayLine={todayLine}
+                              sideCell={sideCell}
+                              dotsBy={dotsBy}
+                              required={requiredByLine.get(l.lineId) ?? null}
+                              received={receivedByLine.get(l.lineId) ?? null}
+                              hover={hover}
+                              onHover={setHoverPo}
+                              poNumber={p.row.poNumber}
+                              indent={g.key != null}
+                            />
+                          ))}
+                      </Fragment>
+                    );
+                  })}
+                </Fragment>
               ))}
             </div>
           );
@@ -464,9 +543,15 @@ export function PoTimeline({
 
         </div>
 
-        {/* The key, down the right side. Not a drag handle. */}
-        <aside data-no-pan aria-label="Key" className="flex w-48 shrink-0 cursor-default flex-col gap-4 overflow-y-auto border-l border-sdc-border bg-white px-3 py-3 text-note text-sdc-gray-600">
-          <KeyGroup title="Dots" tip={dotsBy === "status" ? "Coloured by where the PO stands" : "Coloured like the line: does it arrive before the BOM needs it?"}>
+        {/* The key, over the right of the rows when "Key" is pressed (it took 190px of the
+            weeks' width all the time). Not a drag handle. */}
+        {showKey && (
+        <aside
+          data-no-pan
+          aria-label="Key"
+          className="absolute inset-y-0 right-0 z-[6] flex w-52 cursor-default flex-col gap-4 overflow-y-auto border-l border-sdc-border bg-white px-3 py-3 text-note text-sdc-gray-600 shadow-lg"
+        >
+          <KeyGroup title="Dots" tip={dotsBy === "status" ? "Coloured by where the PO stands" : "Coloured like the line: does it arrive by the BOM's required date?"}>
             {dotsBy === "status" ? (
               <>
                 <Legend cls="bg-sdc-red" label="Late" tip="Expected before today and not here" />
@@ -475,25 +560,33 @@ export function PoTimeline({
               </>
             ) : (
               <>
-                <Legend cls="bg-green-600" label="Arrives in time" tip="Expected on or before the day the BOM needs it" />
-                <Legend cls="bg-red-600" label="Arrives after it's needed" tip="Expected after the day the BOM needs it" />
+                <Legend cls="bg-green-600" label="Arrives in time" tip="Expected on or before the BOM's required date" />
+                <Legend cls="bg-red-600" label="Arrives after it's required" tip="Expected after the BOM's required date" />
                 <Legend cls="bg-sdc-gray-400" label="No required date" tip="Not on the job's BOM" />
               </>
             )}
             <Legend cls="border border-sdc-gray-400 bg-white" label="No expected date" tip="Total ETO has no expected date for it (in Later)" />
           </KeyGroup>
-          <KeyGroup title="Lines" tip="Each PO row runs from when it's expected (the dot) to when the BOM needs it (the diamond)">
-            <span className="inline-flex items-center gap-1.5" title="When the BOM needs the part">
+          <KeyGroup title="Lines" tip="Each PO row runs from when it's expected (the dot) to the BOM's required date (the diamond)">
+            <span className="inline-flex items-center gap-1.5" title="The BOM's required date for the part">
               <span aria-hidden className="inline-block h-2 w-2 shrink-0 rotate-45 border-2 border-sdc-gray-600 bg-white" />
               Required by the BOM
             </span>
-            <span className="inline-flex items-center gap-1.5" title="Expected on or before the day the BOM needs it">
+            <span className="inline-flex items-center gap-1.5" title="Expected on or before the BOM's required date">
               <span aria-hidden className="inline-block h-0.5 w-4 shrink-0 bg-green-600" />
               Arrives in time
             </span>
-            <span className="inline-flex items-center gap-1.5" title="Expected after the day the BOM needs it">
+            <span className="inline-flex items-center gap-1.5" title="Expected after the BOM's required date">
               <span aria-hidden className="inline-block h-0.5 w-4 shrink-0 bg-red-600" />
-              Arrives after it&apos;s needed
+              Arrives after it&apos;s required
+            </span>
+            <span className="inline-flex items-center gap-1.5" title="A late PO: from when it was expected to today, and still not here">
+              <span aria-hidden className="inline-block h-0 w-4 shrink-0 border-t-2 border-dashed border-red-600/70" />
+              Late, still not received
+            </span>
+            <span className="inline-flex items-center gap-1.5" title="When part of the order last arrived, from Total ETO's receiver log">
+              <span aria-hidden className="ml-1.5 mr-1.5 inline-block h-3.5 w-[3px] shrink-0 rounded-sm bg-sdc-green" />
+              Last received
             </span>
             {requiredState !== "ok" && (
               <span className={requiredState === "failed" ? "text-sdc-red-text" : "text-sdc-gray-400"}>
@@ -504,22 +597,107 @@ export function PoTimeline({
           <KeyGroup title="Using it" tip="How to move around the timeline">
             <span>Drag sideways to move through the weeks</span>
             <span>Hover a PO to pick it out</span>
-            <span>Click a dot or PO number to open it</span>
+            <span>Click a PO&apos;s row to show its parts, one row each</span>
+            <span>Click a dot or PO number to open the PO</span>
           </KeyGroup>
-          <span className="mt-auto border-t border-sdc-border-soft pt-2 text-sdc-gray-400" title="Value not yet received on the POs shown, at PO price">
-            <span className="block font-heading text-base font-bold tabular-nums text-sdc-navy">
-              {usd(rows.reduce((s, r) => s + r.pos.reduce((a, p) => a + p.money.notReceived, 0), 0))}
-            </span>
-            still to arrive
-          </span>
         </aside>
+        )}
       </div>
     </section>
   );
 }
 
-// One PO: its label, then a box across Late, the track and Later holding the dot (expected),
-// the diamond (required) and the line between them.
+// Where a row's marks go across Earlier, the track and Later: the dot (expected), the diamond
+// (required), the green tick (received), the expected-to-required line and a late row's wait.
+// Shared by PO rows and their part rows. The Earlier and Later columns squeeze any number of
+// weeks into one, so marks sharing one are spread across it in the order of their real dates,
+// earliest on the left. No expected date sorts last.
+type Placed = {
+  xE: string | null;
+  xQ: string | null;
+  xR: string | null;
+  v: { onTime: boolean; days: number } | null;
+  left: string | null;
+  right: string | null;
+  waitFrom: string | null;
+  waitTo: string | null;
+};
+function placeMarks(
+  d: { expected: string | null; required: string | null; received: string | null; outstanding: boolean },
+  slot: (day: string | null) => TimelineSlot,
+  asOf: string,
+): Placed {
+  const e = d.outstanding ? slot(d.expected) : null;
+  const q = d.outstanding && d.required ? slot(d.required) : null;
+  const r = d.received ? slot(d.received) : null;
+  const eSlot: TimelineSlot | null = e ? (e.lane === "none" ? { lane: "later", pct: 0 } : e) : null;
+  const marks = [
+    ...(eSlot ? [{ k: "e", s: eSlot, d: d.expected ?? "9999-12-31" }] : []),
+    ...(q && d.required ? [{ k: "q", s: q, d: d.required }] : []),
+    ...(r && d.received ? [{ k: "r", s: r, d: d.received }] : []),
+  ];
+  const frac: Record<string, number> = {};
+  for (const lane of ["late", "later"]) {
+    const inLane = marks.filter((m) => m.s.lane === lane).sort((a, b) => a.d.localeCompare(b.d));
+    inLane.forEach((m, i) => (frac[m.k] = (i + 1) / (inLane.length + 1)));
+  }
+  const xE = eSlot ? xOf(eSlot, frac.e ?? 0.5) : null;
+  const xQ = q ? xOf(q, frac.q ?? 0.5) : null;
+  const xR = r ? xOf(r, frac.r ?? 0.5) : null;
+  const v = d.outstanding ? vsRequired(d.expected, d.required) : null;
+  const [left, right] = v && xE && xQ ? (v.onTime ? [xE, xQ] : [xQ, xE]) : [null, null];
+  // A late row's wait: from its expected date to today (today's own spot, wherever the weeks are).
+  const late = d.outstanding && !!d.expected && d.expected < asOf;
+  return { xE, xQ, xR, v, left, right, waitFrom: late ? xE : null, waitTo: late ? xOf(slot(asOf), 0.5) : null };
+}
+
+// The marks on one row, minus the dot (PO rows and part rows draw their own).
+function RowMarks({ m, expected, asOf, received, receivedTip, requiredTip, hover }: {
+  m: Placed;
+  expected: string | null;
+  asOf: string;
+  received: string | null;
+  receivedTip: string;
+  requiredTip: string;
+  hover: boolean | null;
+}) {
+  const lineColor = m.v ? (m.v.onTime ? "bg-green-600/70" : "bg-red-600/70") : "";
+  const mark = m.v ? (m.v.onTime ? "border-green-600" : "border-red-600") : "border-sdc-gray-600";
+  return (
+    <>
+      {/* Still not received: a dashed red line from when it was expected to today, just under
+          the row's middle so it doesn't sit on the expected-to-required line. */}
+      {m.waitFrom && (
+        <span
+          title={`Expected ${fmtDate(expected)} and still not received: ${days(daysBetween(expected as string, asOf))} so far`}
+          className="pointer-events-auto absolute top-[calc(50%+4px)] h-0 border-t-2 border-dashed border-red-600/70 motion-timeline-move"
+          style={{ left: m.waitFrom, width: `calc((${m.waitTo}) - (${m.waitFrom}))` }}
+        />
+      )}
+      {m.xR && (
+        <span
+          title={`${receivedTip} ${fmtDate(received)}`}
+          className="pointer-events-auto absolute top-1/2 z-[3] h-[18px] w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-sm bg-sdc-green motion-timeline-move"
+          style={{ left: m.xR }}
+        />
+      )}
+      {m.v && m.left && m.right && (
+        <span aria-hidden className={`absolute top-1/2 -translate-y-1/2 motion-timeline-move ${hover ? "h-1" : "h-0.5"} ${lineColor}`} style={{ left: m.left, width: `calc((${m.right}) - (${m.left}))` }} />
+      )}
+      {m.xQ && (
+        <span
+          title={requiredTip}
+          className={`pointer-events-auto absolute top-1/2 z-[2] h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-2 bg-white motion-timeline-move ${mark}`}
+          style={{ left: m.xQ }}
+        />
+      )}
+    </>
+  );
+}
+
+// One PO: its label, then a box across Earlier, the track and Later holding its marks. A click
+// on the row (or its ▸) opens it into one row per part line (PartRow); the PO number opens the
+// PO panel, as on the cards.
 function PoRow({
   p,
   asOf,
@@ -533,7 +711,12 @@ function PoRow({
   onOpenPo,
   hover,
   onHover,
+  indent,
+  open,
+  onToggle,
 }: {
+  /** Under a supplier heading: one step further in. */
+  indent?: boolean;
   p: TimelinePo;
   asOf: string;
   slot: (day: string | null) => TimelineSlot;
@@ -547,64 +730,307 @@ function PoRow({
   /** True: this PO is under the pointer (on this row or another). False: another PO is. Null: none. */
   hover: boolean | null;
   onHover: (po: string | null) => void;
+  /** Its part rows are showing. */
+  open: boolean;
+  onToggle: () => void;
 }) {
   const { expected, required } = p.dates;
-  const e = slot(expected);
-  const q = required ? slot(required) : null;
-  const v = vsRequired(expected, required);
-  // Both in the same side column: the earlier one to the left of the later one.
-  const same = q && e.lane !== "track" && e.lane === q.lane;
-  const fE = same ? (v?.onTime ? 0.3 : 0.7) : 0.5;
-  const fQ = same ? (v?.onTime ? 0.7 : 0.3) : 0.5;
-  const xE = xOf(e.lane === "none" ? { lane: "later", pct: 0 } : e, fE);
-  const xQ = q ? xOf(q, fQ) : null;
-  const [left, right] = v ? (v.onTime ? [xE, xQ!] : [xQ!, xE]) : [null, null];
-  const lineColor = v ? (v.onTime ? "bg-green-600/70" : "bg-red-600/70") : "";
-  const mark = v ? (v.onTime ? "border-green-600" : "border-red-600") : "border-sdc-gray-600";
+  const m = placeMarks({ expected, required, received: p.received ?? null, outstanding: true }, slot, asOf);
+  const due = dueText(expected, asOf);
   return (
     <div
       className={`grid border-t border-sdc-border-soft/60 motion-timeline-move ${hover ? "bg-sdc-blue-light/60" : hover === false ? "opacity-35" : ""}`}
       style={{ gridTemplateColumns: grid, height: PO_ROW }}
       onMouseEnter={() => onHover(p.row.poNumber)}
     >
-      <button
-        type="button"
-        onClick={() => onOpenPo(p.row, p.jobId)}
-        title={tip(p, asOf, requiredState)}
-        className="flex min-w-0 items-center gap-2 pl-8 pr-2 text-left"
+      {/* A div, not a button: it holds two (the ▸ and the PO number). */}
+      <div
+        onClick={onToggle}
+        title={`${tip(p, asOf, requiredState)}\nClick the row to ${open ? "hide" : "show"} its parts; the PO number opens the PO`}
+        className={`flex min-w-0 cursor-pointer items-center gap-2 pr-2 text-left ${indent ? "pl-7" : "pl-4"}`}
         style={{ gridRow: 1, gridColumn: 1 }}
       >
-        <span className="shrink-0 font-mono text-note font-semibold text-sdc-blue underline decoration-dotted underline-offset-2">{p.row.poNumber}</span>
-        <span className="truncate text-label text-sdc-gray-600">{p.other}</span>
-      </button>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={open ? `Hide PO ${p.row.poNumber}'s parts` : `Show PO ${p.row.poNumber}'s parts`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          className="w-3 shrink-0 text-left text-sdc-gray-400 hover:text-sdc-navy"
+        >
+          {open ? "▾" : "▸"}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenPo(p.row, p.jobId);
+          }}
+          title={`Open PO ${p.row.poNumber}`}
+          className="shrink-0 font-mono text-note font-semibold text-sdc-blue underline decoration-dotted underline-offset-2 hover:text-sdc-navy"
+        >
+          {p.row.poNumber}
+        </button>
+        {/* Under a supplier heading the supplier is already said; elsewhere it (or the job) is shown. */}
+        {!indent && <span className="min-w-0 truncate text-label text-sdc-gray-600">{p.other}</span>}
+        {/* What the row is worth reading without a hover: how late (or how soon), and the value
+            still to arrive. The hover keeps the full story. */}
+        <span className="ml-auto flex shrink-0 items-baseline gap-1.5 text-label tabular-nums">
+          <span className={due.cls}>{due.text}</span>
+          <span className="text-sdc-gray-400">{usd(p.money.notReceived)}</span>
+        </span>
+      </div>
       <div className={sideCell} style={{ gridRow: 1, gridColumn: 2 }} />
       <div className="relative" style={{ ...weekLines, gridRow: 1, gridColumn: 3 }}>
         {todayLine}
       </div>
       <div className={sideCell} style={{ gridRow: 1, gridColumn: 4 }} />
-      {/* The dot, diamond and line, over all three columns. */}
       <div className="pointer-events-none relative" style={{ gridRow: 1, gridColumn: "2 / 5" }}>
-        {v && left && right && (
-          <span aria-hidden className={`absolute top-1/2 -translate-y-1/2 motion-timeline-move ${hover ? "h-1" : "h-0.5"} ${lineColor}`} style={{ left, width: `calc((${right}) - (${left}))` }} />
-        )}
-        {xQ && (
-          <span
-            title={requiredText(p, requiredState)}
-            className={`pointer-events-auto absolute top-1/2 z-[2] h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-2 bg-white motion-timeline-move ${mark}`}
-            style={{ left: xQ }}
+        <RowMarks
+          m={m}
+          expected={expected}
+          asOf={asOf}
+          received={p.received ?? null}
+          receivedTip="Last received on this PO:"
+          requiredTip={requiredText(p, requiredState)}
+          hover={hover}
+        />
+        {m.xE && (
+          <Dot
+            p={p}
+            today={asOf}
+            by={dotsBy}
+            state={requiredState}
+            onOpen={onOpenPo}
+            style={{ position: "absolute", left: m.xE, top: "50%", transform: "translate(-50%, -50%)", pointerEvents: "auto" }}
           />
         )}
-        <Dot
-          p={p}
-          today={asOf}
-          by={dotsBy}
-          state={requiredState}
-          onOpen={onOpenPo}
-          style={{ position: "absolute", left: xE, top: "50%", transform: "translate(-50%, -50%)", pointerEvents: "auto" }}
-        />
       </div>
     </div>
   );
+}
+
+const PART_ROW = 20; // px, one part line under an opened PO
+
+// One part line of an opened PO, with its own marks: its expected dot while any of it is still
+// to come, its BOM required diamond, a green tick when it last had something received, and the
+// wait line when it is late. A fully received part shows only its tick.
+function PartRow({
+  l,
+  asOf,
+  slot,
+  grid,
+  weekLines,
+  todayLine,
+  sideCell,
+  dotsBy,
+  required,
+  received,
+  hover,
+  onHover,
+  poNumber,
+  indent,
+}: {
+  l: OpenPoLine;
+  asOf: string;
+  slot: (day: string | null) => TimelineSlot;
+  grid: string;
+  weekLines: CSSProperties;
+  todayLine: ReactNode;
+  sideCell: string;
+  dotsBy: DotsBy;
+  /** The BOM's required date for this line, if loaded and on the BOM. */
+  required: string | null;
+  /** When this line last had something received, from the receiver log. */
+  received: string | null;
+  hover: boolean | null;
+  onHover: (po: string | null) => void;
+  poNumber: string;
+  indent?: boolean;
+}) {
+  const got = Math.min(l.receivedQty ?? 0, l.quantity);
+  const here = l.receivedQty != null && l.receivedQty >= l.quantity;
+  const outstanding = !here && l.receivedQty != null;
+  const m = placeMarks({ expected: l.expected, required, received: got > 0 ? received : null, outstanding }, slot, asOf);
+  const due = here ? { text: "Here", cls: "font-semibold text-green-700" } : dueText(l.expected, asOf);
+  const v = m.v;
+  const dotCls =
+    dotsBy === "required"
+      ? !l.expected
+        ? "border border-sdc-gray-400 bg-white"
+        : v == null
+          ? "bg-sdc-gray-400"
+          : v.onTime
+            ? "bg-green-600"
+            : "bg-red-600"
+      : !l.expected
+        ? "border border-sdc-gray-400 bg-white"
+        : l.expected < asOf
+          ? "bg-sdc-red"
+          : got > 0
+            ? "bg-sdc-yellow"
+            : "bg-sdc-blue";
+  const requiredTip = !required
+    ? "Not on the job's BOM, so there is no required date"
+    : v
+      ? `Required by the BOM ${fmtDate(required)}: ${v.days === 0 ? "arrives the day it's required" : `arrives ${days(v.days)} ${v.onTime ? "before" : "after"} it's required`}`
+      : `Required by the BOM ${fmtDate(required)}`;
+  return (
+    <div
+      className={`grid bg-slate-50/70 motion-timeline-move ${hover ? "bg-sdc-blue-light/40" : hover === false ? "opacity-35" : ""}`}
+      style={{ gridTemplateColumns: grid, height: PART_ROW }}
+      onMouseEnter={() => onHover(poNumber)}
+    >
+      <div
+        className={`flex min-w-0 items-center gap-2 pr-2 text-label ${indent ? "pl-14" : "pl-11"}`}
+        style={{ gridRow: 1, gridColumn: 1 }}
+        title={`${l.partNumber ?? "No part number"}${l.description ? `: ${l.description}` : ""}\n${got} of ${l.quantity} received`}
+      >
+        <span className="min-w-0 truncate font-mono text-sdc-navy">{l.partNumber ?? "–"}</span>
+        <span className="shrink-0 tabular-nums text-sdc-gray-400">
+          {l.receivedQty == null ? "?" : got}/{l.quantity}
+        </span>
+        <span className={`ml-auto shrink-0 tabular-nums ${due.cls}`}>{due.text}</span>
+      </div>
+      <div className={sideCell} style={{ gridRow: 1, gridColumn: 2 }} />
+      <div className="relative" style={{ ...weekLines, gridRow: 1, gridColumn: 3 }}>
+        {todayLine}
+      </div>
+      <div className={sideCell} style={{ gridRow: 1, gridColumn: 4 }} />
+      <div className="pointer-events-none relative" style={{ gridRow: 1, gridColumn: "2 / 5" }}>
+        <RowMarks
+          m={m}
+          expected={l.expected}
+          asOf={asOf}
+          received={received}
+          receivedTip={here ? "All here. Last received" : `${got} of ${l.quantity} here. Last received`}
+          requiredTip={requiredTip}
+          hover={hover}
+        />
+        {m.xE && (
+          <span
+            title={!l.expected ? "No expected date in Total ETO" : `${l.expected < asOf ? "Late: expected" : "Expected"} ${fmtDate(l.expected)}`}
+            className={`pointer-events-auto absolute top-1/2 z-[2] h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white motion-timeline-move ${dotCls}`}
+            style={{ left: m.xE }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * An opened PO's part lines: the row's own job's on a project row, parts only (credits and
+ * shipping / fee / tariff charges have nothing to arrive), most urgent first: outstanding,
+ * still coming, then here, each by expected date.
+ */
+function partsOf(p: TimelinePo, today: string): OpenPoLine[] {
+  const rank = (l: OpenPoLine) => ({ outstanding: 0, coming: 1, here: 2 })[lineState(l, today) ?? "here"] ?? 3;
+  return p.row.items
+    .filter((l) => (p.jobId == null || l.jobId === p.jobId) && l.quantity > 0 && !isChargeLine(l))
+    .sort((a, b) => rank(a) - rank(b) || (a.expected ?? "9").localeCompare(b.expected ?? "9"));
+}
+
+/** A PO row's short "when": days late in red, due today, or days to go. */
+function dueText(expected: string | null, today: string): { text: string; cls: string } {
+  if (!expected) return { text: "No date", cls: "text-sdc-gray-400" };
+  const d = daysBetween(today, expected);
+  if (d < 0) return { text: `${-d}d late`, cls: "font-semibold text-red-700" };
+  if (d === 0) return { text: "Due today", cls: "font-semibold text-sdc-navy" };
+  return { text: `in ${d}d`, cls: "text-sdc-gray-600" };
+}
+
+/** Weeks before this one that "Today" shows: a third of the weeks on screen, at least one. */
+function pastWeeks(weeks: number): number {
+  return Math.max(1, Math.round(weeks / 3));
+}
+
+/** A group's POs (already in order) under their `group` heading, headings in order of first PO; one unnamed run when off. */
+function subgroupsOf(pos: TimelinePo[], on?: boolean): { key: string | null; pos: TimelinePo[] }[] {
+  if (!on) return [{ key: null, pos }];
+  const out: { key: string; pos: TimelinePo[] }[] = [];
+  const at = new Map<string, number>();
+  for (const p of pos) {
+    const k = p.group ?? "No supplier";
+    if (!at.has(k)) at.set(k, out.push({ key: k, pos: [] }) - 1);
+    out[at.get(k)!].pos.push(p);
+  }
+  return out;
+}
+
+/**
+ * A height that takes `ref` from where it starts down to the bottom of the window (with the
+ * page scrolled to the top), less a small margin, never under MIN_FILL px. Re-measured when
+ * the window or anything beside it changes size. Measured in screen px and converted to the
+ * element's own CSS px, because the app's zoom makes the two differ. Null until measured,
+ * and always null when `on` is false.
+ */
+// `fitPage`: also leave room for whatever the page has below the element (its bottom padding,
+// a footer line), so the page itself does not scroll at all. Without it the element reaches
+// the window's bottom and anything after it is a short scroll away (the full-width Timeline's
+// way, by request 2026-11-13).
+export function useFillHeight(ref: RefObject<HTMLElement | null>, on = true, fitPage = false): number | null {
+  const [fillHeight, setFillHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const parent = el?.parentElement;
+    if (!on || !el || !parent) return;
+    const scroller = scrollParent(el);
+    const isDoc = scroller === document.scrollingElement;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const sEl = el.offsetHeight ? r.height / el.offsetHeight : 1;
+      const sr = scroller.getBoundingClientRect();
+      const sSc = isDoc || !scroller.offsetHeight ? 1 : sr.height / scroller.offsetHeight;
+      const viewTop = isDoc ? 0 : sr.top;
+      const view = scroller.clientHeight * sSc;
+      const topInContent = r.top - viewTop + scroller.scrollTop * sSc;
+      const below = fitPage ? spaceBelow(el, scroller) : FILL_MARGIN;
+      setFillHeight(Math.max(MIN_FILL, Math.floor((view - topInContent - below) / sEl) - (fitPage ? 1 : 0)));
+    };
+    measure();
+    // The window, and anything above it changing height (the chart, the filters wrapping
+    // onto another line), move where it starts.
+    const ro = new ResizeObserver(measure);
+    ro.observe(scroller);
+    for (const sib of Array.from(parent.children)) if (sib !== el) ro.observe(sib);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [ref, on, fitPage]);
+  return on ? fillHeight : null;
+}
+
+/**
+ * Screen px the page has under `el`, up to the bottom of `scroller`'s content: at each level
+ * up, whatever sits below it (not beside it, as in a grid row) and its parent's bottom padding
+ * and border. Never `el`'s own height, nor anything beside it, so two panes sized from it side
+ * by side cannot push each other around. Fixed and absolute things (the Flag button, panels)
+ * take no room and are skipped.
+ */
+function spaceBelow(el: HTMLElement, scroller: HTMLElement): number {
+  let below = 0;
+  for (let n: HTMLElement = el; n.parentElement; n = n.parentElement) {
+    const nr = n.getBoundingClientRect();
+    let lowest = nr.bottom;
+    for (let s = n.nextElementSibling; s; s = s.nextElementSibling) {
+      const pos = getComputedStyle(s).position;
+      if (pos === "fixed" || pos === "absolute") continue;
+      const sr = s.getBoundingClientRect();
+      if (sr.height > 0 && sr.top >= nr.bottom - 1) lowest = Math.max(lowest, sr.bottom);
+    }
+    below += lowest - nr.bottom;
+    const p = n.parentElement;
+    const ps = getComputedStyle(p);
+    const scale = p.offsetHeight ? p.getBoundingClientRect().height / p.offsetHeight : 1;
+    below += (parseFloat(ps.paddingBottom) + parseFloat(ps.borderBottomWidth)) * scale;
+    if (p === scroller) break;
+  }
+  return below;
 }
 
 /** The element whose scrolling moves `el`: the nearest ancestor that scrolls vertically, else the page. */

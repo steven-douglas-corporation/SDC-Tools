@@ -137,7 +137,9 @@ export function DataTable<T>({
               {columns.map((c) => {
                 const sortable = c.sortable !== false;
                 const active = sort?.id === c.id;
-                const arrow = active ? (sort!.dir === "asc" ? "▲" : "▼") : "";
+                // Every sortable header shows a faint ↕ so it reads as clickable before any hover;
+                // the sorted one shows its direction (2026-11-16, the same as ListCard's headers).
+                const arrow = active ? (sort!.dir === "asc" ? "▲" : "▼") : "↕";
                 return (
                   <th
                     key={c.id}
@@ -150,12 +152,12 @@ export function DataTable<T>({
                       <button
                         type="button"
                         onClick={() => toggleSort(c.id)}
-                        className={`inline-flex items-center gap-1 font-semibold hover:text-sdc-navy ${active ? "text-sdc-navy" : ""} ${
+                        className={`group -mx-1 inline-flex cursor-pointer items-center gap-1 rounded px-1 font-semibold hover:bg-white hover:text-sdc-navy ${active ? "text-sdc-navy" : ""} ${
                           c.align === "right" ? "flex-row-reverse" : ""
                         }`}
                       >
                         <span>{c.header}</span>
-                        <span aria-hidden className="w-3">
+                        <span aria-hidden className={`w-3 text-center ${active ? "" : "opacity-40 group-hover:opacity-100"}`}>
                           {arrow}
                         </span>
                       </button>
