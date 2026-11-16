@@ -600,19 +600,29 @@ function PoRow({
   const e = slot(expected);
   const q = required ? slot(required) : null;
   const v = vsRequired(expected, required);
-  // Both in the same side column: the earlier one to the left of the later one.
-  const same = q && e.lane !== "track" && e.lane === q.lane;
-  const fE = same ? (v?.onTime ? 0.3 : 0.7) : 0.5;
-  const fQ = same ? (v?.onTime ? 0.7 : 0.3) : 0.5;
-  const xE = xOf(e.lane === "none" ? { lane: "later", pct: 0 } : e, fE);
-  const xQ = q ? xOf(q, fQ) : null;
+  const r = p.received ? slot(p.received) : null;
+  // The Earlier and Later columns squeeze any number of weeks into one: marks that share one
+  // (the dot, the diamond, the received tick) are spread across it in the order of their real
+  // dates, earliest on the left, so the order still reads right. No expected date sorts last.
+  const eSlot: TimelineSlot = e.lane === "none" ? { lane: "later", pct: 0 } : e;
+  const marks = [
+    { k: "e", s: eSlot, d: expected ?? "9999-12-31" },
+    ...(q && required ? [{ k: "q", s: q, d: required }] : []),
+    ...(r && p.received ? [{ k: "r", s: r, d: p.received }] : []),
+  ];
+  const frac: Record<string, number> = {};
+  for (const lane of ["late", "later"]) {
+    const inLane = marks.filter((m) => m.s.lane === lane).sort((a, b) => a.d.localeCompare(b.d));
+    inLane.forEach((m, i) => (frac[m.k] = (i + 1) / (inLane.length + 1)));
+  }
+  const xE = xOf(eSlot, frac.e ?? 0.5);
+  const xQ = q ? xOf(q, frac.q ?? 0.5) : null;
   const [left, right] = v ? (v.onTime ? [xE, xQ!] : [xQ!, xE]) : [null, null];
   const lineColor = v ? (v.onTime ? "bg-green-600/70" : "bg-red-600/70") : "";
   const mark = v ? (v.onTime ? "border-green-600" : "border-red-600") : "border-sdc-gray-600";
   const due = dueText(expected, asOf);
-  // The latest receipt, in a side column toward its outer edge so it clears the dot there.
-  const r = p.received ? slot(p.received) : null;
-  const xR = r ? xOf(r, r.lane === "late" ? 0.15 : 0.85) : null;
+  // The latest receipt: on the track at its date, or in a side column in date order (above).
+  const xR = r ? xOf(r, frac.r ?? 0.5) : null;
   // A late PO's wait: from its expected date to today (today's own spot, wherever the weeks are).
   const late = !!expected && expected < asOf;
   const waitFrom = late ? xE : null;
@@ -660,7 +670,7 @@ function PoRow({
         {xR && (
           <span
             title={`Last received ${fmtDate(p.received ?? null)}: part of this order is here`}
-            className="pointer-events-auto absolute top-1/2 z-[2] h-3.5 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-sm bg-sdc-green motion-timeline-move"
+            className="pointer-events-auto absolute top-1/2 z-[3] h-[18px] w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-sm bg-sdc-green motion-timeline-move"
             style={{ left: xR }}
           />
         )}
