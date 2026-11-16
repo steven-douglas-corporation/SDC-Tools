@@ -34,6 +34,8 @@ export type TimelinePo = {
   jobId?: string;
   /** With `subgroups`: the heading this PO sits under inside its group (its supplier). */
   group?: string;
+  /** When something on it last arrived (lastReceived), drawn as a square; null when nothing has. */
+  received?: string | null;
 };
 
 export type TimelineRow = { key: string; label: ReactNode; sublabel: string; title: string; pos: TimelinePo[] };
@@ -87,7 +89,8 @@ function tip(p: TimelinePo, today: string, state: RequiredState): string {
       ? `Late: expected ${fmtDate(expected)}, ${days(daysBetween(expected, today))} ago`
       : `Expected ${fmtDate(expected)}`;
   const slip = revised && original && original !== expected ? ` (re-promised; the PO first asked for ${fmtDate(original)})` : "";
-  return `PO ${p.row.poNumber} · ${p.other}\n${when}${slip}\n${requiredText(p, state)}\n${usdExact(p.money.notReceived)} not yet received. Click to open`;
+  const got = p.received ? `\nLast received ${fmtDate(p.received)} (part of the order is here)` : "";
+  return `PO ${p.row.poNumber} · ${p.other}\n${when}${slip}\n${requiredText(p, state)}${got}\n${usdExact(p.money.notReceived)} not yet received. Click to open`;
 }
 
 function Dot({
@@ -534,6 +537,14 @@ export function PoTimeline({
               <span aria-hidden className="inline-block h-0.5 w-4 shrink-0 bg-red-600" />
               Arrives after it&apos;s required
             </span>
+            <span className="inline-flex items-center gap-1.5" title="A late PO: from when it was expected to today, and still not here">
+              <span aria-hidden className="inline-block h-0 w-4 shrink-0 border-t-2 border-dashed border-red-600/70" />
+              Late, still not received
+            </span>
+            <span className="inline-flex items-center gap-1.5" title="When part of the order last arrived, from Total ETO's receiver log">
+              <span aria-hidden className="inline-block h-2 w-2 shrink-0 bg-sdc-green" />
+              Last received
+            </span>
             {requiredState !== "ok" && (
               <span className={requiredState === "failed" ? "text-sdc-red-text" : "text-sdc-gray-400"}>
                 {requiredState === "loading" ? "Loading required dates…" : "Required dates couldn't be read from Total ETO"}
@@ -599,6 +610,13 @@ function PoRow({
   const lineColor = v ? (v.onTime ? "bg-green-600/70" : "bg-red-600/70") : "";
   const mark = v ? (v.onTime ? "border-green-600" : "border-red-600") : "border-sdc-gray-600";
   const due = dueText(expected, asOf);
+  // The latest receipt, in a side column toward its outer edge so it clears the dot there.
+  const r = p.received ? slot(p.received) : null;
+  const xR = r ? xOf(r, r.lane === "late" ? 0.15 : 0.85) : null;
+  // A late PO's wait: from its expected date to today (today's own spot, wherever the weeks are).
+  const late = !!expected && expected < asOf;
+  const waitFrom = late ? xE : null;
+  const waitTo = late ? xOf(slot(asOf), 0.5) : null;
   return (
     <div
       className={`grid border-t border-sdc-border-soft/60 motion-timeline-move ${hover ? "bg-sdc-blue-light/60" : hover === false ? "opacity-35" : ""}`}
@@ -627,8 +645,25 @@ function PoRow({
         {todayLine}
       </div>
       <div className={sideCell} style={{ gridRow: 1, gridColumn: 4 }} />
-      {/* The dot, diamond and line, over all three columns. */}
+      {/* The dot, diamond and line, over all three columns; under them, a late PO's wait so far
+          and the square of its latest receipt. */}
       <div className="pointer-events-none relative" style={{ gridRow: 1, gridColumn: "2 / 5" }}>
+        {/* Still not received: a dashed red line from when it was expected to today, just under
+            the row's middle so it doesn't sit on the expected-to-required line. */}
+        {waitFrom && (
+          <span
+            title={`Expected ${fmtDate(expected)} and still not received: ${days(daysBetween(expected as string, asOf))} so far`}
+            className="pointer-events-auto absolute top-[calc(50%+4px)] h-0 border-t-2 border-dashed border-red-600/70 motion-timeline-move"
+            style={{ left: waitFrom, width: `calc((${waitTo}) - (${waitFrom}))` }}
+          />
+        )}
+        {xR && (
+          <span
+            title={`Last received ${fmtDate(p.received ?? null)}: part of this order is here`}
+            className="pointer-events-auto absolute top-1/2 z-[2] h-2 w-2 -translate-x-1/2 -translate-y-1/2 bg-sdc-green ring-1 ring-white motion-timeline-move"
+            style={{ left: xR }}
+          />
+        )}
         {v && left && right && (
           <span aria-hidden className={`absolute top-1/2 -translate-y-1/2 motion-timeline-move ${hover ? "h-1" : "h-0.5"} ${lineColor}`} style={{ left, width: `calc((${right}) - (${left}))` }} />
         )}

@@ -286,6 +286,23 @@ export function poDates(
 }
 
 /**
+ * When something on a PO last arrived, for the timeline's square: the latest receipt date among
+ * its part lines with anything received (credits and shipping / fee / tariff charges left out,
+ * as everywhere on delivery). Pass `jobId` for one job's lines of a split PO. `receivedByLine` is
+ * the receiver log's latest date per line (`pod:<id>`, loadOpenPoReceivedDates). Null when none.
+ */
+export function lastReceived(items: readonly OpenPoLine[], receivedByLine: ReadonlyMap<string, string>, jobId?: string): string | null {
+  let last: string | null = null;
+  for (const i of items) {
+    if (i.quantity <= 0 || isChargeLine(i) || (jobId != null && i.jobId !== jobId)) continue;
+    if (!i.receivedQty || i.receivedQty <= 0) continue;
+    const d = receivedByLine.get(i.lineId);
+    if (d && (!last || d > last)) last = d;
+  }
+  return last;
+}
+
+/**
  * Expected against required, for the timeline's line: on time when it is expected on or
  * before the day the BOM needs it, late after. `days` is how far apart (always ≥ 0). Null
  * when either date is missing, so no line is drawn.

@@ -8,7 +8,7 @@ import { Segmented } from "@/components/ui/Segmented";
 import { searchRows, type SortDir, type TableColumnLogic } from "@/lib/data-table";
 import { OpenPoDetail } from "@/components/open-pos/OpenPoDetail";
 import { PoTimeline, useFillHeight, type DotsBy, type RequiredState, type TimelinePo, type TimelineRow } from "@/components/open-pos/PoTimeline";
-import { loadOpenPoRequiredDates } from "@/lib/open-pos-actions";
+import { loadOpenPoReceivedDates, loadOpenPoRequiredDates } from "@/lib/open-pos-actions";
 import { card, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -17,6 +17,7 @@ import {
   addCounts,
   addDays,
   isChargeLine,
+  lastReceived,
   lineCounts,
   lineState,
   poDates,
@@ -832,6 +833,21 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     };
   }, [data.rows]);
 
+  // When each line last had something received (the receiver log), for the timeline's square
+  // on a partly received PO. Read once the page is up, for open POs' lines with a receipt.
+  const [receivedByLine, setReceivedByLine] = useState<ReadonlyMap<string, string>>(new Map());
+  useEffect(() => {
+    let live = true;
+    const ids = data.rows.flatMap((r) => r.items.filter((l) => l.quantity > 0 && (l.receivedQty ?? 0) > 0).map((l) => l.lineId));
+    loadOpenPoReceivedDates(ids)
+      .then((res) => live && res.ok && setReceivedByLine(new Map(Object.entries(res.byLine))))
+      // No dates, no squares: the rest of the timeline does not depend on them.
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [data.rows]);
+
   // Here has no timeline (nothing to place on it): its view falls back to the cards.
   const shownView: View = mode === "here" && view === "timeline" ? "cards" : view;
   // The left column: down to the window's bottom, scrolling on its own when it is longer.
@@ -938,7 +954,15 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             const pos = p.pos
               .map((c) => {
                 const supplier = c.row.suppliers.join(", ") || "No supplier";
-                return { row: c.row, money: c.money, dates: c.dates, other: supplier, group: supplier, jobId: p.jobId };
+                return {
+                  row: c.row,
+                  money: c.money,
+                  dates: c.dates,
+                  other: supplier,
+                  group: supplier,
+                  jobId: p.jobId,
+                  received: lastReceived(c.row.items, receivedByLine, p.jobId),
+                };
               })
               .filter((x) => x.dates.outstanding);
             return {
@@ -956,12 +980,12 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           })
         : suppliers.map((s) => {
             const pos = s.pos
-              .map((c) => ({ row: c.row, money: c.money, dates: c.dates, other: `Job ${c.row.jobIds.join(", ")}` }))
+              .map((c) => ({ row: c.row, money: c.money, dates: c.dates, other: `Job ${c.row.jobIds.join(", ")}`, received: lastReceived(c.row.items, receivedByLine) }))
               .filter((x) => x.dates.outstanding);
             return { key: s.name, label: s.name, sublabel: sub(pos), title: s.name, pos };
           });
     return rows.filter((r) => r.pos.length > 0);
-  }, [groupBy, projects, suppliers, data.asOf]);
+  }, [groupBy, projects, suppliers, data.asOf, receivedByLine]);
 
 
   if (data.rows.length === 0 && data.here.length === 0) {

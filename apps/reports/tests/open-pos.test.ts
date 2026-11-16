@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
 import { lineLeftToInvoice } from "../src/lib/left-to-invoice";
-import { buildOpenPos, isChargeLine, lineCounts, lineState, nextUpcoming, poDates, stackLines, stateCounts, timelineSlot, vsRequired, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob, type OpenPoLine } from "../src/lib/open-pos-rules";
+import { buildOpenPos, isChargeLine, lastReceived, lineCounts, lineState, nextUpcoming, poDates, stackLines, stateCounts, timelineSlot, vsRequired, mondayOf, moneyOf, poStatus, weekRange, type OpenPoJob, type OpenPoLine } from "../src/lib/open-pos-rules";
 
 // Open POs: a PO is open when its signed Left to Invoice is not $0.00 (the Parts List's own
 // filter applied per PO) OR a part line has not fully arrived.
@@ -485,4 +485,25 @@ test("Here lists every PO with a part line arrived, closed ones too; the open li
   assert.equal(r.totals.openPos, 2);
   assert.equal(r.totals.openValue, 180);
   assert.deepEqual(r.jobs.map((j) => j.openPos), [2]);
+});
+
+test("last received: the latest receipt among part lines with something received, per job if asked", () => {
+  const l = (o: Partial<OpenPoLine>): OpenPoLine => ({
+    lineId: "pod:1", jobId: "1101", partNumber: "P", description: null, quantity: 2, receivedQty: 1, unitPrice: 1, expected: null, original: null, leftToInvoice: 0, ...o,
+  });
+  const items = [
+    l({ lineId: "pod:1", receivedQty: 1 }),
+    l({ lineId: "pod:2", receivedQty: 2, jobId: "1102" }),
+    l({ lineId: "pod:3", receivedQty: 0 }), // nothing here: its log date (if any) is not used
+    l({ lineId: "pod:4", partNumber: "Shipping", receivedQty: 1 }), // a charge
+  ];
+  const log = new Map([
+    ["pod:1", "2026-10-02"],
+    ["pod:2", "2026-10-20"],
+    ["pod:3", "2026-11-01"],
+    ["pod:4", "2026-11-03"],
+  ]);
+  assert.equal(lastReceived(items, log), "2026-10-20");
+  assert.equal(lastReceived(items, log, "1101"), "2026-10-02");
+  assert.equal(lastReceived(items, new Map()), null);
 });
