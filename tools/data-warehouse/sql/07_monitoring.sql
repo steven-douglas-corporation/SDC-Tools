@@ -25,6 +25,13 @@
 -- (paylocity_ingest.py: JOB_NAME). "DueBy" is the local (Eastern) time by which a
 -- successful run must have finished on every business day: the scheduled start
 -- plus enough slack for a slow run, not the start time itself.
+--
+-- paylocity_ingest: Paylocity drops current_job_hours on the SFTP at 06:01 Eastern
+-- (temp_punches at 05:05), so the task starts at 06:30 and is due by 07:30. It must
+-- start AFTER 06:01: a run before it loads the previous day's file and the hours
+-- are a day staler than they need to be, which is what happened 11/1-11/16 when
+-- daylight saving moved the task from 06:30 to 05:30 (see README, "The schedule").
+-- The row is upserted, so this file stays the source of truth for it.
 CREATE TABLE IF NOT EXISTS "Integration"."ExpectedJob" (
     "JobName"     text    PRIMARY KEY,
     "Description" text    NOT NULL,
@@ -36,10 +43,14 @@ CREATE TABLE IF NOT EXISTS "Integration"."ExpectedJob" (
 INSERT INTO "Integration"."ExpectedJob" ("JobName", "Description", "DueBy", "Notes")
 VALUES ('paylocity_ingest',
         'Paylocity load into the warehouse',
-        '06:30',
-        'Task Scheduler \DataWarehouse\Paylocity ingest on SERVER-APP1, daily at 05:30, runs as '
-        'SERVER-APP1\svc-datawarehouse. Output: D:\DataWarehouse\logs\paylocity_ingest.log.')
-ON CONFLICT ("JobName") DO NOTHING;
+        '07:30',
+        'Task Scheduler \DataWarehouse\Paylocity ingest on SERVER-APP1, daily at 06:30 local time '
+        '("Synchronize across time zones" OFF), runs as SERVER-APP1\svc-datawarehouse. '
+        'Output: D:\DataWarehouse\logs\paylocity_ingest.log.')
+ON CONFLICT ("JobName") DO UPDATE
+   SET "Description" = EXCLUDED."Description",
+       "DueBy"       = EXCLUDED."DueBy",
+       "Notes"       = EXCLUDED."Notes";
 
 -- ── Business days ─────────────────────────────────────────────────────────────
 --
@@ -74,7 +85,12 @@ UPDATE "Dimension"."Date" AS d
 --                         (e.g. Monday 10:00 -> Monday 06:30; Saturday -> Friday 06:30)
 --   "ExpectedDataThrough" the business day before "DueSince": a daily load that ran
 --                         Monday morning carries data through Friday
---   "IsOverdue"           no successful run since "DueSince" — the case that went
+--   "IsOverdue"           no successful run on "DueSince"'s day before its deadline
+--                         passed, i.e. none since that day's midnight. Not "since the
+--                         deadline": the run is MEANT to finish before it, and the
+--                         first version of this view, which asked for a success after
+--                         the deadline, alerted on Monday 11/16 for a load that had
+--                         succeeded an hour earlier. This is the case that went
 --                         unnoticed for three days, because a run that never started
 --                         leaves no row behind
 --   "LastRun*"            the newest run whatever its outcome, so a failure shows its
@@ -115,7 +131,7 @@ SELECT j."JobName",
        last_ok."FinishedAt"                                              AS "LastSucceededAt",
        (j."DueSinceLocal" IS NOT NULL
         AND (last_ok."FinishedAt" IS NULL
-             OR last_ok."FinishedAt" < j."DueSinceLocal" AT TIME ZONE 'America/New_York'))
+             OR last_ok."FinishedAt" < date_trunc('day', j."DueSinceLocal") AT TIME ZONE 'America/New_York'))
                                                                          AS "IsOverdue",
        EXISTS (SELECT 1 FROM "Dimension"."Date" d
                 WHERE d."Date" = j."LocalNow"::date
