@@ -275,10 +275,14 @@ export function ListCard<T>({
                 onClick={() => onSort(c.id)}
                 title={`${c.headerTitle ? `${c.headerTitle}. ` : ""}Click to sort; click again to reverse`}
                 aria-label={`Sort by ${typeof c.header === "string" ? c.header : c.id}${active ? `, now ${sort!.dir === "asc" ? "ascending" : "descending"}` : ""}`}
-                className={`flex items-center gap-0.5 font-bold uppercase tracking-wider hover:text-sdc-navy ${right ? "justify-end" : ""} ${active ? "text-sdc-navy" : ""}`}
+                className={`group -mx-1 flex cursor-pointer items-center gap-0.5 rounded px-1 font-bold uppercase tracking-wider hover:bg-white hover:text-sdc-navy ${right ? "justify-end" : ""} ${active ? "text-sdc-navy" : ""}`}
               >
                 {c.header}
-                {active && <span aria-hidden>{sort!.dir === "asc" ? "▲" : "▼"}</span>}
+                {/* Every sortable header shows a faint ↕ so it reads as clickable before any
+                    hover; the sorted one shows its direction (2026-11-16, as DataTable does). */}
+                <span aria-hidden className={active ? "" : "opacity-40 group-hover:opacity-100"}>
+                  {active ? (sort!.dir === "asc" ? "▲" : "▼") : "↕"}
+                </span>
               </button>
             );
           })}
