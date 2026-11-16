@@ -66,6 +66,8 @@ test("Total Cost, Profit and Margin hovers add up to the grid's own numbers", ()
   assert.equal(c.laborCost, 16_400);
   assert.equal(c.totalCost, 16_400 + 4_000 + 5_000 + 11_000);
   const total = explainJobCell("totalCost", c, RATES, OVERRIDES, undefined)!;
+  assert.match(total, /2024: 100\.0 hrs × \$120\.00\/hr = \$12,000\.00/);
+  assert.match(total, /2024: 40\.0 hrs × \$60\.00\/hr = \$2,400\.00/);
   assert.match(total, /\$16,400\.00 \+ \$4,000\.00 \+ \$5,000\.00 \+ \$11,000\.00 = \$36,400\.00/);
   const profit = explainJobCell("profit", c, RATES, OVERRIDES, undefined)!;
   assert.match(profit, /\$100,000\.00 − \$36,400\.00 = \$63,600\.00/);
@@ -82,4 +84,19 @@ test("Profit and Margin hovers say why they are blank when there is no Sales Pri
 test("columns without a per-job hover return undefined", () => {
   const c = computeJobCost(row(), DEFAULT_RATES, {}, undefined);
   assert.equal(explainJobCell("salesPrice", c, DEFAULT_RATES, {}, undefined), undefined);
+});
+
+test("Total Cost hover splits labor by year, with no-year hours at the default rate, and sums to the grid's labor", () => {
+  const r = row({
+    engineeringHours: 100, shopHours: 0, completeDate: null,
+    hoursByYear: { "2024": { eng: 50, shop: 0 }, "2026": { eng: 30, shop: 0 } },
+  });
+  const c = computeJobCost(r, RATES, OVERRIDES, undefined);
+  const text = explainJobCell("totalCost", c, RATES, OVERRIDES, undefined)!;
+  // 2024 from the matrix ($120), 2026 is past the matrix so default ($100), 20 no-year hrs at default
+  assert.match(text, /2024: 50\.0 hrs × \$120\.00\/hr = \$6,000\.00/);
+  assert.match(text, /2026: 30\.0 hrs × \$100\.00\/hr = \$3,000\.00/);
+  assert.match(text, /No year \(migration snapshot, through 2025-01-31\): 20\.0 hrs × \$100\.00\/hr \(default rate\) = \$2,000\.00/);
+  assert.match(text, /Eng labor .*: \$11,000\.00/);
+  assert.equal(c.laborCost, 11_000);
 });
