@@ -40,21 +40,21 @@ export function hoursByYearEntries(
   row: Pick<JobCostComputed, "engineeringHours" | "shopHours" | "hoursByYear">,
   allocation: JobHourAllocation | undefined,
   type: HourType,
-): { entries: { label: string; hours: number }[]; manual: boolean } {
+): { entries: { label: string; year: string | null; hours: number }[]; manual: boolean } {
   const total = (type === "eng" ? row.engineeringHours : row.shopHours) ?? 0;
   const alloc = allocation?.[type];
   if (alloc && alloc.length) {
     const byYear = new Map<string, number>();
     for (const a of alloc) byYear.set(a.year, (byYear.get(a.year) ?? 0) + (Number(a.hours) || 0));
-    const entries = [...byYear.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([label, hours]) => ({ label, hours }));
+    const entries = [...byYear.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([year, hours]) => ({ label: year, year, hours }));
     return { entries, manual: true };
   }
   const hby = row.hoursByYear ?? {};
   const years = Object.keys(hby).filter((y) => (hby[y][type] || 0) !== 0).sort();
-  const entries = years.map((y) => ({ label: y, hours: hby[y][type] || 0 }));
+  const entries: { label: string; year: string | null; hours: number }[] = years.map((y) => ({ label: y, year: y, hours: hby[y][type] || 0 }));
   const inYears = Object.keys(hby).reduce((s, y) => s + (hby[y][type] || 0), 0);
   const untimed = Math.max(total - inYears, 0);
-  if (untimed > UNTIMED_EPSILON) entries.push({ label: "No year (migration snapshot, through 2025-01-31)", hours: untimed });
+  if (untimed > UNTIMED_EPSILON) entries.push({ label: "No year (migration snapshot, through 2025-01-31)", year: null, hours: untimed });
   return { entries, manual: false };
 }
 
@@ -69,6 +69,26 @@ export function explainHours(
   const sum = entries.reduce((s, e) => s + e.hours, 0);
   const head = manual ? `${name} by year (manual allocation set for this job)` : `${name} by year`;
   return [head, ...entries.map((e) => `${e.label}: ${hrs(e.hours)} hrs`), `Total: ${hrs(sum)} hrs`].join("\n");
+}
+
+/**
+ * One hour type's labor, split the way laborForType costs it: each year's hours at that
+ * year's Rate Matrix rate, hours with no year at the default rate. Sums to laborForType.
+ */
+function laborLines(
+  row: JobCostComputed,
+  def: CostRates,
+  overrides: YearRateOverrides,
+  allocation: JobHourAllocation | undefined,
+  type: HourType,
+): string[] {
+  const rateKey = type === "eng" ? "engRate" : "shopRate";
+  const { entries } = hoursByYearEntries(row, allocation, type);
+  return entries.map((e) => {
+    const rate = e.year == null ? def[rateKey] : rateForYear(e.year, def, overrides)[rateKey];
+    const note = e.year == null ? " (default rate)" : "";
+    return `  ${e.label}: ${hrs(e.hours)} hrs × ${money(rate)}/hr${note} = ${money(e.hours * rate)}`;
+  });
 }
 
 // Where a job's PM% / Mfg% came from — the Rate Matrix row for its completion year, or the default.
@@ -117,6 +137,8 @@ export function explainTotalCost(
 ): string {
   const engLabor = laborForType(row, def, overrides, allocation, "eng");
   const shopLabor = laborForType(row, def, overrides, allocation, "shop");
+  const engLines = laborLines(row, def, overrides, allocation, "eng");
+  const shopLines = laborLines(row, def, overrides, allocation, "shop");
   const etcEng = row.etcEngHours || 0;
   const etcShop = row.etcShopHours || 0;
   const parts = partsCostForProfit(row, row.etcPartsCost);
@@ -128,8 +150,10 @@ export function explainTotalCost(
       : `Parts: ${money(parts.actual)} invoiced + ${money(Math.max(open, etcParts))} (larger of open PO balance ${money(open)} and ETC Parts ${money(etcParts)}) = ${money(row.partsProjected)}`;
   return [
     "Total Cost = Labor + PM $ + Mfg $ + Parts",
-    `Eng labor: ${money(engLabor)} (Eng Hrs by year × Rate Matrix Eng rate — hover Eng Hrs)`,
-    `Shop labor: ${money(shopLabor)} (Shop Hrs by year × Rate Matrix Shop rate — hover Shop Hrs)`,
+    `Eng labor (hours by year × that year's Eng rate): ${money(engLabor)}`,
+    ...(engLines.length ? engLines : ["  no Eng hours"]),
+    `Shop labor (hours by year × that year's Shop rate): ${money(shopLabor)}`,
+    ...(shopLines.length ? shopLines : ["  no Shop hours"]),
     `ETC Eng: ${hrs(etcEng)} hrs × ${money(def.engRate)}/hr (default rate) = ${money(etcEng * def.engRate)}`,
     `ETC Shop: ${hrs(etcShop)} hrs × ${money(def.shopRate)}/hr (default rate) = ${money(etcShop * def.shopRate)}`,
     `Labor subtotal: ${money(row.laborCost)}`,
