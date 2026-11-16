@@ -1100,6 +1100,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       dotsBy={dotsBy}
       requiredState={required.state}
       subgroups={groupBy === "projects" && bySupplier}
+      requiredByLine={required.byLine}
+      receivedByLine={receivedByLine}
       // The timeline's own setting, in its own bar, next to what it changes.
       controls={
         <span className="flex items-center gap-2">
