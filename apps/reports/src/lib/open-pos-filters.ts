@@ -5,8 +5,8 @@ import { poDates, stateCounts, vsRequired, type OpenPoRow } from "@/lib/open-pos
 //
 // Basic is the one Money pick. Advanced splits the same questions, and a few more, into
 // categories of checkboxes. Within a category a PO needs ANY ticked box; across categories it
-// needs ALL of them (an empty category does not filter). So "Late" + "Partly invoiced" +
-// supplier "Acme" is Acme's POs that are late and invoiced in part.
+// needs ALL of them (an empty category does not filter). So "Late" + "Partly invoiced" is the
+// POs that are late and invoiced in part. (No supplier group: the search finds POs by supplier.)
 //
 // Every test is on the whole PO, with the same figures the rest of the page uses: the line
 // states (lineState via stateCounts), the money measures (moneyOf), and for "Vs required" the
@@ -16,7 +16,7 @@ import { poDates, stateCounts, vsRequired, type OpenPoRow } from "@/lib/open-pos
 // Received and invoiced are separate groups, each one question with answers that do not overlap
 // (2026-11-16: the mixed options "Received, not invoiced" / "Invoiced, not received" became a
 // pick in each, e.g. All here + Not invoiced yet). Timing is what is still to come: late or not.
-export type AdvCategory = "received" | "timing" | "invoiced" | "required" | "supplier" | "jobStatus";
+export type AdvCategory = "received" | "timing" | "invoiced" | "required" | "jobStatus";
 export type AdvFilters = Record<AdvCategory, ReadonlySet<string>>;
 
 export const NO_ADV_FILTERS: AdvFilters = {
@@ -24,7 +24,6 @@ export const NO_ADV_FILTERS: AdvFilters = {
   timing: new Set(),
   invoiced: new Set(),
   required: new Set(),
-  supplier: new Set(),
   jobStatus: new Set(),
 };
 
@@ -96,14 +95,12 @@ export function matchesOption(r: OpenPoRow, cat: AdvCategory, opt: string, ctx: 
       if (!v) return false;
       return opt === "after" ? !v.onTime : opt === "inTime" ? v.onTime : false;
     }
-    case "supplier":
-      return (r.suppliers.length ? r.suppliers : ["No supplier"]).includes(opt);
     case "jobStatus":
       return r.jobIds.some((j) => ctx.jobStatus.get(j) === opt);
   }
 }
 
-const CATEGORIES: AdvCategory[] = ["received", "timing", "invoiced", "required", "supplier", "jobStatus"];
+const CATEGORIES: AdvCategory[] = ["received", "timing", "invoiced", "required", "jobStatus"];
 
 /** A PO passes when, in every category with something ticked, it matches one of the ticks. */
 export function advMatch(r: OpenPoRow, f: AdvFilters, ctx: AdvContext, skip?: AdvCategory): boolean {

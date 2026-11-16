@@ -68,7 +68,7 @@ test("within a group any tick matches; across groups every group must", () => {
   assert.deepEqual(shown(pick({ timing: ["late"] })), ["LATE"]);
   assert.deepEqual(shown(pick({ timing: ["late"], received: ["partly"] })), []);
   assert.deepEqual(shown(pick({ received: ["none", "partly"] })), ["HALF", "LATE", "PAID", "SOON"]);
-  assert.deepEqual(shown(pick({ timing: ["coming"], supplier: ["Globex"] })), ["HALF", "SOON"]);
+  assert.deepEqual(shown(pick({ timing: ["coming"], jobStatus: ["Active"] })), ["PAID", "SOON"]);
   assert.deepEqual(shown(pick({ jobStatus: ["HeadStart"] })), ["HALF"]);
 });
 
@@ -112,11 +112,11 @@ test("vs required uses the next line to arrive and its BOM date", () => {
 });
 
 test("a count is what ticking that box would leave, on top of the other groups", () => {
-  const f = pick({ supplier: ["Globex"] });
-  const c = advCounts(r.rows, f, ctx, { received: [], timing: ["late", "coming"], invoiced: [], required: [], supplier: ["Acme", "Globex"], jobStatus: [] });
-  // Timing counts are within Globex; supplier counts ignore the supplier ticks themselves.
-  assert.deepEqual(c.timing, { late: 0, coming: 2 });
-  assert.deepEqual(c.supplier, { Acme: 2, Globex: 2 });
+  const f = pick({ jobStatus: ["HeadStart"] });
+  const c = advCounts(r.rows, f, ctx, { received: [], timing: ["late", "coming"], invoiced: [], required: [], jobStatus: ["Active", "HeadStart"] });
+  // Timing counts are within HeadStart jobs; job-status counts ignore their own ticks.
+  assert.deepEqual(c.timing, { late: 0, coming: 1 });
+  assert.deepEqual(c.jobStatus, { Active: 3, HeadStart: 1 });
 });
 
 test("every loaded job comes back, not only those with open POs (a closed PO on Here can be on one)", () => {
