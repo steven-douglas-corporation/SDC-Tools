@@ -125,7 +125,9 @@ export function ListCard<T>({
       return n;
     });
   // Expanding rows lead with a ▸ column; clickable rows end with a chevron.
-  const tracks = [...(expand ? ["auto"] : []), ...columns.map((c, i) => c.width ?? (i === 0 ? "1fr" : "auto")), ...(onRowClick && !expand ? ["auto"] : [])].join(" ");
+  // min-content, not auto: when every column is "auto" the grid shares out the spare width
+  // among them, and the ▸ and chevron should stay tight rather than take a share.
+  const tracks = [...(expand ? ["min-content"] : []), ...columns.map((c, i) => c.width ?? (i === 0 ? "1fr" : "auto")), ...(onRowClick && !expand ? ["min-content"] : [])].join(" ");
   // ONE grid for the header and every row (each a subgrid of it), so an "auto" column is
   // sized once, to its widest cell. Each row used to be its own grid, sizing its auto
   // columns to its own content: a date with ↻, a wider amount or the row-only chevron

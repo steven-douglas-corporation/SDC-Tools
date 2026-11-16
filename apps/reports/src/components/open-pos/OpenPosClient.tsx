@@ -55,8 +55,7 @@ type TileId = "all" | MetricId;
 // Sorting belongs to the view it sorts and sits in that view's own bar.
 type Mode = "open" | "here";
 type Delivery = "all" | "coming" | "outstanding";
-// "split": the cards as one list with the timeline beside them (the default, 2026-11-16 trial).
-type View = "split" | "cards" | "timeline" | "table";
+type View = "cards" | "timeline" | "table";
 type GroupBy = "projects" | "suppliers";
 type CardSort = "amount" | "name" | "late" | "soonest" | "next";
 
@@ -266,6 +265,34 @@ function NeededCell({ dates, state }: { dates: PoDates; state: RequiredState }) 
   );
 }
 
+// ── Expected against needed, as one figure (2026-11-16) ─────────────────────────────────
+// On the cards and in their part lists the two dates sat side by side and read as one blur.
+// There the row shows only the expected date, and this says how it compares with when the
+// BOM needs the part: "4d early" (green), "on the day" (green), "12d late" (red). The needed
+// date itself is on hover, and in full in the table and the card's details panel.
+type Gap = { text: string; cls: string; tip: string; sort: number | null };
+function gapOf(expected: string | null, required: string | null, state: RequiredState = "ok"): Gap {
+  const muted = "text-sdc-gray-400";
+  if (state === "loading") return { text: "…", cls: muted, tip: "Reading required dates from the BOM", sort: null };
+  if (state === "failed") return { text: "?", cls: muted, tip: "Required dates couldn't be read from the BOM", sort: null };
+  if (!required) return { text: "–", cls: muted, tip: "Not on the job's BOM, so there is no required date", sort: null };
+  const v = vsRequired(expected, required);
+  if (!v) return { text: "–", cls: muted, tip: `Needed ${fmtDate(required)}. No expected date to compare it with`, sort: null };
+  const needed = `Needed ${fmtDate(required)}`;
+  if (v.days === 0) return { text: "on the day", cls: "text-green-700", tip: `${needed}: arrives the day it's needed`, sort: 0 };
+  return v.onTime
+    ? { text: `${v.days}d early`, cls: "text-green-700", tip: `${needed}: arrives ${days(v.days)} before it's needed`, sort: -v.days }
+    : { text: `${v.days}d late`, cls: "font-semibold text-red-700", tip: `${needed}: arrives ${days(v.days)} after it's needed`, sort: v.days };
+}
+
+function GapCell({ gap }: { gap: Gap }) {
+  return (
+    <span className={`whitespace-nowrap font-mono text-label ${gap.cls}`} title={gap.tip}>
+      {gap.text}
+    </span>
+  );
+}
+
 // The Table view: every shown PO, whole-PO amounts. `needed` reads the BOM's required dates.
 const listColumns = (needed: (r: OpenPoRow) => PoDates, state: RequiredState): DataTableColumn<OpenPoRow>[] => [
   { id: "po", header: "PO #", value: (r) => r.poNumber, width: "150px", className: "font-semibold", headerTitle: TIP.po, title: poTip },
@@ -375,7 +402,6 @@ function PoParts({ po, today, requiredByLine }: { po: CardPo; today: string; req
     <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] items-center gap-x-2.5 gap-y-1 pl-4 text-label">
       {lines.map(({ l, s }) => {
         const required = s && s !== "here" ? (requiredByLine.get(l.lineId) ?? null) : null;
-        const v = vsRequired(l.expected, required);
         const repromised = !!s && s !== "here" && !!l.original && !!l.expected && l.original !== l.expected;
         return (
           <Fragment key={l.lineId}>
@@ -392,13 +418,8 @@ function PoParts({ po, today, requiredByLine }: { po: CardPo; today: string; req
               {!s ? "–" : s === "here" ? "Here" : l.expected ? fmtDate(l.expected) : "No date"}
               {repromised && <span className="text-sdc-blue"> ↻</span>}
             </span>
-            <span
-              className={`whitespace-nowrap font-mono ${v ? (v.onTime ? "text-green-700" : "font-semibold text-red-700") : "text-sdc-gray-400"}`}
-              title={required ? `Needed by the BOM ${fmtDate(required)}${v && v.days > 0 ? `: arrives ${days(v.days)} ${v.onTime ? "before" : "after"} it's needed` : ""}` : undefined}
-            >
-              {required ? fmtDate(required) : "–"}
-              {v && !v.onTime && v.days > 0 && <span> +{v.days}d</span>}
-            </span>
+            {/* How it compares with when it is needed, not a second date beside the first. */}
+            {s && s !== "here" ? <GapCell gap={gapOf(l.expected, required)} /> : <span className="text-sdc-gray-400">–</span>}
             {s ? (
               <span title={STATE_TIP[s]} className={`rounded-full px-1.5 text-micro font-bold ${STATE_CLS[s]}`}>
                 {STATE_LABEL[s]}
@@ -457,7 +478,7 @@ function groupCard(pos: CardPo[], metric: MetricId) {
 
 // The PO columns' sort. The first click sorts text and dates A→Z / soonest first, and
 // amounts and counts biggest first; the second click reverses.
-const PO_SORT_FIRST: Record<string, SortDir> = { po: "asc", supplier: "asc", lines: "desc", expected: "asc", needed: "asc", status: "asc", flow: "asc" };
+const PO_SORT_FIRST: Record<string, SortDir> = { po: "asc", supplier: "asc", lines: "desc", expected: "asc", needed: "desc", status: "asc", flow: "asc" };
 function nextPoSort(cur: ListCardSort | null, id: string): ListCardSort {
   if (cur?.id === id) return { id, dir: cur.dir === "asc" ? "desc" : "asc" };
   return { id, dir: PO_SORT_FIRST[id] ?? "asc" };
@@ -471,7 +492,7 @@ const PO_SORTS: { id: string; label: string; asc: string; desc: string }[] = [
   { id: "lines", label: "Lines received", asc: "Least received first", desc: "Most received first" },
   { id: "expected", label: "Next due", asc: "Soonest first", desc: "Latest first" },
   { id: "flow", label: "Here, coming, then late", asc: "Here first", desc: "Late first" },
-  { id: "needed", label: "Needed date", asc: "Soonest first", desc: "Latest first" },
+  { id: "needed", label: "Vs needed", asc: "Most early first", desc: "Most late first" },
   { id: "status", label: "Status", asc: "Late first", desc: "Received first" },
 ];
 const DEFAULT_PO_SORT: ListCardSort = { id: "expected", dir: "asc" };
@@ -557,10 +578,7 @@ function OpenPoCard({
   requiredState,
   requiredByLine,
   onOpenCard,
-  full,
 }: {
-  /** Every PO shown, the card as tall as its list (no scroll box inside). Otherwise one fixed height. */
-  full?: boolean;
   /** BOM required dates by line, for the parts shown when a PO row is opened. */
   requiredByLine: ReadonlyMap<string, string>;
   title: ReactNode;
@@ -593,8 +611,10 @@ function OpenPoCard({
       id: "po",
       header: "PO #",
       headerTitle: TIP.po,
-      // With a Supplier column, that column takes the leftover width and the PO # fits its text.
-      width: supplierColumn ? "auto" : undefined,
+      // Fits its text. With a Supplier column, that column takes the leftover width; without
+      // one, the leftover is shared evenly by PO #, Received, Expected and Needed (all "auto"),
+      // instead of all of it opening a gap after the PO number.
+      width: "auto",
       sortValue: ({ row }) => row.poNumber,
       // The PO number opens the PO panel; the rest of the row opens its parts in place.
       render: ({ row }) => (
@@ -658,15 +678,18 @@ function OpenPoCard({
     },
     {
       id: "needed",
-      header: "Needed",
-      headerTitle: TIP.needed,
+      header: "Vs needed",
+      headerTitle:
+        "How the expected date compares with when the job's BOM needs that same part: days early (green) or late (red). Hover for the needed date",
       align: "right",
-      sortValue: ({ dates }) => (dates.outstanding ? dates.required : null),
-      render: ({ dates }) => <NeededCell dates={dates} state={requiredState} />,
+      // Days late (negative when early), so the latest against the BOM can lead.
+      sortValue: ({ dates }) => (dates.outstanding ? gapOf(dates.expected, dates.required).sort : null),
+      render: ({ dates }) => (dates.outstanding ? <GapCell gap={gapOf(dates.expected, dates.required, requiredState)} /> : <span className="text-sdc-gray-400">–</span>),
     },
     {
       id: "status",
       header: "",
+      width: "min-content",
       headerTitle: "Status: red late, yellow partly received, blue on schedule, green all received",
       sortValue: ({ row, money: m }) => poDot(row, m).rank,
       render: ({ row, money: m }) => {
@@ -682,8 +705,7 @@ function OpenPoCard({
   if (flow && poSort.dir === "desc") rows.reverse();
   return (
     <ListCard
-      fixedHeight={!full}
-      fullHeight={full}
+      fixedHeight
       onCardClick={onOpenCard}
       detailsTitle="Every PO on this card, line by line: what is here, coming and outstanding. Clicking anywhere on the card does the same"
       title={title}
@@ -790,7 +812,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const [delivery, setDelivery] = useState<Delivery>("all");
   const [partialOnly, setPartialOnly] = useState(false);
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<View>("split");
+  const [view, setView] = useState<View>("cards");
   const [groupBy, setGroupBy] = useState<GroupBy>("projects");
   // The PO open in the panel, and which of its jobs' BOM the panel shows (the card's job on a
   // project card or timeline row, otherwise the PO's first job).
@@ -836,13 +858,13 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   }, [data.rows]);
 
   // Here has no timeline (nothing to place on it): its view falls back to the cards.
-  const shownView: View = mode === "here" && (view === "timeline" || view === "split") ? "cards" : view;
-  // Side by side, the cards and the timeline share one height: down to the window's bottom.
-  const splitRef = useRef<HTMLDivElement>(null);
-  const splitHeight = useFillHeight(splitRef, shownView === "split");
-  // The left column: the same height, from the same place, in every view.
+  const shownView: View = mode === "here" && view === "timeline" ? "cards" : view;
+  // The left column: down to the window's bottom, scrolling on its own when it is longer.
+  // Beside the Timeline (which fits the window) it stops above the page's bottom padding too,
+  // so the page does not scroll; in Cards and Table the page scrolls anyway and the column
+  // stays in view as it does.
   const sideRef = useRef<HTMLElement>(null);
-  const sideHeight = useFillHeight(sideRef);
+  const sideHeight = useFillHeight(sideRef, true, shownView === "timeline");
   const cur = mode === "here" ? HERE_TILE : TILES.find((t) => t.id === tile)!;
   const metric = cur.metric;
   const jobName = useMemo(() => new Map(data.jobs.map((j) => [j.jobId, j.jobName])), [data.jobs]);
@@ -992,15 +1014,12 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   })();
   const cardCount = groupBy === "projects" ? projects.length : suppliers.length;
   const poSortDef = PO_SORTS.find((s) => s.id === poSort?.id);
-  // The cards, one per project or supplier: the Cards grid and the list beside the timeline.
-  // `full`: every PO shown, no scroll box of its own (the list beside the timeline, where a
-  // card's own scrollbar caught the wheel before the list did). Otherwise one height for all.
-  const cardEls = (full: boolean) =>
+  // The cards, one per project or supplier.
+  const cardEls =
     groupBy === "projects"
       ? projects.map((p) => (
           <OpenPoCard
             key={p.jobId}
-            full={full}
             title={
               <a href={jobHref(p.jobId)} className="hover:underline">
                 {p.jobId}
@@ -1028,7 +1047,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       : suppliers.map((s) => (
           <OpenPoCard
             key={s.name}
-            full={full}
             title={s.name}
             titleTip={s.name}
             subtitle={`${s.pos.length} ${s.pos.length === 1 ? "PO" : "POs"} · ${s.jobs} ${s.jobs === 1 ? "job" : "jobs"}`}
@@ -1047,7 +1065,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             onOpenCard={() => setOpenCard({ kind: "suppliers", key: s.name })}
           />
         ));
-  const timeline = (compact: boolean) => (
+  const timeline = (
     <PoTimeline
       rows={timelineRows}
       asOf={data.asOf}
@@ -1056,8 +1074,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       dotsBy={dotsBy}
       requiredState={required.state}
       subgroups={groupBy === "projects" && bySupplier}
-      compact={compact}
-      fillParent={compact}
       // The timeline's own setting, in its own bar, next to what it changes.
       controls={
         <span className="flex items-center gap-2">
@@ -1079,7 +1095,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
   return (
     <div className="flex flex-col gap-5">
-      {/* The chart leads in Open: when the value still to arrive lands. */}
+      {/* The chart leads in Open: when the value still to arrive lands, by week. */}
       {mode === "open" && <WeekChart weeks={data.weeks} />}
 
       {/* ── View: HOW the POs below are drawn, right above them ─────────────────────── */}
@@ -1090,19 +1106,45 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           value={shownView}
           onChange={setView}
           options={[
-            ...(mode === "open" ? [{ value: "split" as const, label: "Cards + timeline", title: "The cards as a list, with the timeline beside them" }] : []),
             { value: "cards" as const, label: "Cards", title: "The cards only, several to a row" },
-            ...(mode === "open" ? [{ value: "timeline" as const, label: "Timeline", title: "The timeline only, the full width" }] : []),
+            ...(mode === "open" ? [{ value: "timeline" as const, label: "Timeline", title: "When each PO is expected against when the BOM needs it, grouped by project or supplier" }] : []),
             { value: "table" as const, label: "Table", title: "Every PO in one sortable list" },
           ]}
         />
+        {/* Moved up from below the views (2026-11-16) so the page fits the window without
+            scrolling: the cards and timeline reach the bottom, and nothing sits under them. */}
+        <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-note text-sdc-gray-400">
+            To chase a PO, add tracking or notes:{" "}
+            {schedulerVendorPosUrl ? (
+              <a
+                href={schedulerVendorPosUrl}
+                target="_blank"
+                rel="noreferrer"
+                title="Opens the Scheduler's Vendor POs page in a new tab, where buyers set ETAs, tracking and notes"
+                className="text-sdc-blue hover:underline"
+              >
+                Scheduler › Vendor POs ↗
+              </a>
+            ) : (
+              "the Scheduler's Vendor POs page"
+            )}
+          </span>
+          <span
+            tabIndex={0}
+            title="This page is new. Its layout and figures may change. Use Flag (bottom right) to report anything that looks wrong."
+            className="rounded-full border border-amber-300 bg-amber-50 px-3 py-0.5 text-note font-semibold text-amber-800"
+          >
+            Experimental, may change
+          </span>
+        </span>
       </div>
 
-      {/* ── Side by side (2026-11-16, trial): every control down a column on the left, then
-          the cards as one list, then the timeline over the rest. ──────────────────────────── */}
+      {/* ── Every control down a column on the left, the chosen view beside it ──────────
+          (2026-11-16. The cards-beside-timeline trial is on branch trial/open-pos-split-layout.) */}
       <div className="grid items-start gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
-        {/* The controls, in the order they are used: what to show, find, narrow down, then
-            how to draw and order it. As tall as the cards and timeline beside it (down to the
+        {/* The controls: search, then how the cards are grouped and ordered, then what to show
+            and narrow it down to (Show, the totals, Deliveries). As tall as the cards and timeline beside it (down to the
             window's bottom), scrolling on its own when it is longer; it stays in place while
             the page scrolls. */}
         <aside
@@ -1147,69 +1189,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
               )}
             </span>
           </div>
-
-          <SideGroup
-            title="Show"
-            tip={mode === "open" ? "A PO is open until it is both received and invoiced" : "Every PO on these jobs with at least one part line fully received, including closed ones"}
-          >
-            <OptionList
-              label="Show"
-              value={mode}
-              onChange={setMode}
-              options={[
-                { value: "open", label: "Open", detail: data.rows.length, title: "POs still owing a delivery or an invoice" },
-                { value: "here", label: "Here", detail: data.here.length, title: "POs with parts that have arrived, open or closed (received and invoiced)" },
-              ]}
-            />
-          </SideGroup>
-
-          {mode === "open" && (
-            <>
-              <SideGroup title="Filter" tip="Which POs: one total at a time. All open is every PO still owing a delivery or an invoice">
-                <OptionList
-                  label="Filter by total"
-                  value={tile}
-                  onChange={setTile}
-                  options={tiles.map((t) => ({
-                    value: t.id,
-                    label: t.label,
-                    detail: t.id === "all" ? `${t.pos} POs` : usd(t.value),
-                    tone: t.id === "late" ? ("danger" as const) : undefined,
-                    title: `${t.hint}. ${t.id === "all" ? `${t.pos} POs` : `${usdExact(t.value)} on ${t.pos} POs`}, ${t.jobs} jobs`,
-                  }))}
-                />
-              </SideGroup>
-              <SideGroup title="Deliveries" tip="On top of the total above: POs with parts still coming, or past their expected date (outstanding). A PO can be both">
-                <OptionList
-                  label="Deliveries"
-                  value={delivery}
-                  onChange={setDelivery}
-                  options={[
-                    { value: "all", label: "Any", detail: deliveryCounts.all, title: "Every PO the total above lists, whatever its deliveries" },
-                    { value: "coming", label: "Coming", detail: deliveryCounts.coming, title: "POs with parts still expected: today or later, or not dated yet" },
-                    {
-                      value: "outstanding",
-                      label: "Outstanding",
-                      detail: deliveryCounts.outstanding,
-                      tone: "danger" as const,
-                      title: "POs with parts past their expected date (the vendor's re-promised date when there is one) and still not here",
-                    },
-                  ]}
-                />
-                <button
-                  type="button"
-                  aria-pressed={partialOnly}
-                  onClick={() => setPartialOnly((v) => !v)}
-                  title="Another filter, on top of the ones above: only POs where some of the order has arrived and the rest is still expected"
-                  className={`${TOOLBAR_BTN_COMPACT} ${partialOnly ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL} mt-1 shrink-0 justify-start`}
-                >
-                  {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inTile(r, tile) && r.partiallyReceived).length})
-                </button>
-              </SideGroup>
-            </>
-          )}
-
-          <div aria-hidden className="h-px shrink-0 bg-sdc-border" />
 
           {shownView !== "table" && (
             <SideGroup title="Group by" tip="What a card or timeline group is">
@@ -1284,29 +1263,81 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             </SideGroup>
           )}
 
+          <div aria-hidden className="h-px shrink-0 bg-sdc-border" />
+
+          <SideGroup
+            title="Show"
+            tip={mode === "open" ? "A PO is open until it is both received and invoiced" : "Every PO on these jobs with at least one part line fully received, including closed ones"}
+          >
+            <OptionList
+              label="Show"
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: "open", label: "Open", detail: data.rows.length, title: "POs still owing a delivery or an invoice" },
+                { value: "here", label: "Here", detail: data.here.length, title: "POs with parts that have arrived, open or closed (received and invoiced)" },
+              ]}
+            />
+          </SideGroup>
+
+          {mode === "open" && (
+            <>
+              <SideGroup title="Filter" tip="Which POs: one total at a time. All open is every PO still owing a delivery or an invoice">
+                <OptionList
+                  label="Filter by total"
+                  value={tile}
+                  onChange={setTile}
+                  options={tiles.map((t) => ({
+                    value: t.id,
+                    label: t.label,
+                    detail: t.id === "all" ? `${t.pos} POs` : usd(t.value),
+                    tone: t.id === "late" ? ("danger" as const) : undefined,
+                    title: `${t.hint}. ${t.id === "all" ? `${t.pos} POs` : `${usdExact(t.value)} on ${t.pos} POs`}, ${t.jobs} jobs`,
+                  }))}
+                />
+              </SideGroup>
+              <SideGroup title="Deliveries" tip="On top of the total above: POs with parts still coming, or past their expected date (outstanding). A PO can be both">
+                <OptionList
+                  label="Deliveries"
+                  value={delivery}
+                  onChange={setDelivery}
+                  options={[
+                    { value: "all", label: "Any", detail: deliveryCounts.all, title: "Every PO the total above lists, whatever its deliveries" },
+                    { value: "coming", label: "Coming", detail: deliveryCounts.coming, title: "POs with parts still expected: today or later, or not dated yet" },
+                    {
+                      value: "outstanding",
+                      label: "Outstanding",
+                      detail: deliveryCounts.outstanding,
+                      tone: "danger" as const,
+                      title: "POs with parts past their expected date (the vendor's re-promised date when there is one) and still not here",
+                    },
+                  ]}
+                />
+                <button
+                  type="button"
+                  aria-pressed={partialOnly}
+                  onClick={() => setPartialOnly((v) => !v)}
+                  title="Another filter, on top of the ones above: only POs where some of the order has arrived and the rest is still expected"
+                  className={`${TOOLBAR_BTN_COMPACT} ${partialOnly ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL} mt-1 shrink-0 justify-start`}
+                >
+                  {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inTile(r, tile) && r.partiallyReceived).length})
+                </button>
+              </SideGroup>
+            </>
+          )}
         </aside>
 
         <div className="min-w-0">
           {noCards && <p className={card("text-center text-sm text-sdc-gray-400")}>No POs match these filters. Try Clear filters.</p>}
 
-          {shownView === "split" && !noCards && (
-            <div ref={splitRef} style={{ height: splitHeight ?? undefined }} className="grid min-h-0 grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4">
-              {/* The cards as one list, scrolling on their own beside the timeline. */}
-              <section aria-label={groupBy === "projects" ? "Project cards" : "Supplier cards"} className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1 styled-scrollbar [&>*]:shrink-0">
-                {cardEls(true)}
-              </section>
-              {timeline(true)}
-            </div>
-          )}
-
           {/* One height for every card (its list scrolls inside), so a plain grid: left to right. */}
           {shownView === "cards" && !noCards && (
             <section aria-label={groupBy === "projects" ? "Project cards" : "Supplier cards"}>
-              <ListCardGrid min={380}>{cardEls(false)}</ListCardGrid>
+              <ListCardGrid min={380}>{cardEls}</ListCardGrid>
             </section>
           )}
 
-          {shownView === "timeline" && timeline(false)}
+          {shownView === "timeline" && timeline}
 
           {shownView === "table" && (
             <section className="flex flex-col gap-2" aria-label="Table of POs">
@@ -1334,36 +1365,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           )}
         </div>
       </div>
-
-      <p className="text-note text-sdc-gray-400">
-        This page shows where the money stands. To chase a PO, add tracking or notes, use{" "}
-        {schedulerVendorPosUrl ? (
-          <a
-            href={schedulerVendorPosUrl}
-            target="_blank"
-            rel="noreferrer"
-            title="Opens the Scheduler's Vendor POs page in a new tab, where buyers set ETAs, tracking and notes"
-            className="text-sdc-blue hover:underline"
-          >
-            Scheduler › Vendor POs ↗
-          </a>
-        ) : (
-          "the Scheduler's Vendor POs page"
-        )}
-        .
-      </p>
-
-      {/* Bottom-left of the content area, opposite the Flag button. Sticky rather than
-          fixed so it never lands under the sidebar, whose width the user can drag. Not
-          sticky on the Timeline, which reaches the bottom of the window: pinned there it
-          would cover the timeline's last PO labels, so it stays in the page below it. */}
-      <span
-        tabIndex={0}
-        title="This page is new. Its layout and figures may change. Use Flag (bottom right) to report anything that looks wrong."
-        className={`${shownView === "timeline" || shownView === "split" ? "" : "sticky bottom-4"} self-start rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-note font-semibold text-amber-800 shadow-sm`}
-      >
-        Experimental, may change
-      </span>
 
       {openPo && (
         <OpenPoDetail
