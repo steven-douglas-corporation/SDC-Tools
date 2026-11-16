@@ -103,6 +103,7 @@ what the seed and [DEV-TEST-DATA.md](DEV-TEST-DATA.md) are for.
 |---|---|
 | [`docker-compose.dev.yml`](../docker-compose.dev.yml) | A MySQL 8 container (loopback-only, port 3317, `--lower-case-table-names=1`) for Reports' own tables, and a PostgreSQL 16 container (loopback-only, port 5437) for modules that keep their data there |
 | [`apps/reports/scripts/tracker/migrate.ts`](../apps/reports/scripts/tracker/migrate.ts) | `npm run db:tracker-migrate`. Applies the Project Tracker's numbered SQL migrations once each, in order. `--dev-logins` also creates the `tracker_app` and `tracker_forecast` logins and refuses any database host but this machine |
+| [`apps/reports/scripts/tracker/migrate-server.ps1`](../apps/reports/scripts/tracker/migrate-server.ps1) | The same migrations, applied to the company PostgreSQL server by an administrator. Asks for the password with the typing hidden; `-PrintSql` shows what it would run and sends nothing |
 | [`apps/reports/scripts/tracker/run-forecast.ts`](../apps/reports/scripts/tracker/run-forecast.ts) | `npm run tracker:forecast`. Runs the tracker's forecast as its own process, as the nightly job will |
 | [`apps/reports/.env.dev.example`](../apps/reports/.env.dev.example) | The dev profile. Every real-system credential is left blank on purpose |
 | [`apps/reports/prisma/seed-dev.ts`](../apps/reports/prisma/seed-dev.ts) | Baseline dataset. Deterministic, idempotent, refuses non-local databases |

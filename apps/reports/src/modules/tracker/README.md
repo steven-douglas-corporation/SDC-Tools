@@ -34,6 +34,7 @@ src/app/(app)/tracker/          the pages: project list, board, timeline, task, 
 src/app/api/tracker/            read-only JSON routes for the same data
 db/tracker/migrations/          0001 schema, 0002 roles, 0003 work kinds, 0004 done count, 0005 kind required, 0006 requested by (PostgreSQL 15+)
 scripts/tracker/migrate.ts      applies the migrations (npm run db:tracker-migrate)
+scripts/tracker/migrate-server.ps1  applies them to the company server, and creates the two logins
 scripts/tracker/run-forecast.ts the forecast as its own process, for the nightly job
 tests/tracker-*.test.ts         engine, schema, service and wording tests
 ```
@@ -50,7 +51,7 @@ tests use PGlite, which is Postgres compiled to WebAssembly and runs inside the 
 | `TRACKER_DATABASE_URL`        | the app, for everything people do | `tracker_service` |
 | `TRACKER_ENGINE_DATABASE_URL` | the forecast job only             | `tracker_engine`  |
 
-Neither is set on the server yet. Until `TRACKER_DATABASE_URL` is set the module is off. For local development both are in `.env.dev.example`, along with `TRACKER_ADMIN_DATABASE_URL`, which only `npm run db:tracker-migrate` uses; see docs/DEV-ENVIRONMENT.md at the repo root.
+Neither is set on the server yet. Until `TRACKER_DATABASE_URL` is set the module is off. On the server the schema and the two logins (`tracker_app`, `tracker_forecast`) come from `scripts/tracker/migrate-server.ps1`, which an administrator runs by hand; it creates the logins without passwords, so one has to be set for each before these two settings can be filled in. Run it again before deploying code that needs a new migration. For local development both are in `.env.dev.example`, along with `TRACKER_ADMIN_DATABASE_URL`, which only `npm run db:tracker-migrate` uses; see docs/DEV-ENVIRONMENT.md at the repo root.
 
 ## Rules worth knowing before changing anything
 
