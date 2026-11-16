@@ -134,6 +134,11 @@ export async function createTaskAction(input: {
   effortBucketId: number | null;
   assigneePersonId: number | null;
   dueDate: string | null;
+  description?: string | null;
+  parentTaskId?: number | null;
+  /** Left out or null: the person making the card. */
+  requestedByPersonId?: number | null;
+  priority?: number;
 }): Promise<ActionResult<{ key: string }>> {
   return act(
     async (actor) => {
@@ -145,6 +150,10 @@ export async function createTaskAction(input: {
         effortBucketId: input.type === "milestone" || input.kind === "milestone" ? null : input.effortBucketId,
         assigneePersonId: input.assigneePersonId,
         dueDate: input.dueDate || null,
+        description: input.description?.trim() || null,
+        parentTaskId: input.parentTaskId ?? null,
+        requestedByPersonId: input.requestedByPersonId ?? undefined,
+        priority: input.priority,
       });
       return { key: t.key };
     },

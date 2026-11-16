@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { BUTTON_COMPACT, BUTTON_PRIMARY, CARD_BASE, INPUT, LABEL } from "@/components/ui/classnames";
-import { confirmRemainingAction, createTaskAction, moveTaskAction, updateTaskAction, type TaskEdit } from "../actions";
+import { BUTTON_COMPACT, CARD_BASE } from "@/components/ui/classnames";
+import { confirmRemainingAction, moveTaskAction, updateTaskAction, type TaskEdit } from "../actions";
 import type { Board as BoardData, BoardStatus, BoardTask } from "../service/queries";
 import type { OpenCard } from "../service/tasks";
 import { CloseUnderPrompt } from "./CloseUnderPrompt";
-import { KindHelp } from "./KindHelp";
+import { NewCardDialog } from "./NewCardDialog";
 import { forecastReason, hours, shortDate, uncountedComparison } from "./format";
 
 /** A move that is waiting for an answer about the open cards under the card being closed. */
@@ -33,106 +33,6 @@ const COLUMN_TONE: Record<BoardStatus["category"], string> = {
   done: "border-t-sdc-green",
   cancelled: "border-t-sdc-border",
 };
-
-function NewTask({ board }: { board: BoardData }) {
-  const [title, setTitle] = useState("");
-  // The card's kind. Task unless something else is chosen; a milestone is a date with no work.
-  const [what, setWhat] = useState("task");
-  const type: "task" | "milestone" = what === "milestone" ? "milestone" : "task";
-  const [bucketId, setBucketId] = useState("");
-  const [assigneeId, setAssigneeId] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [error, setError] = useState("");
-  const [pending, start] = useTransition();
-
-  return (
-    <form
-      className={`${CARD_BASE} flex flex-wrap items-end gap-3 p-4`}
-      onSubmit={(e) => {
-        e.preventDefault();
-        setError("");
-        start(async () => {
-          const res = await createTaskAction({
-            projectId: board.project.id,
-            projectKey: board.project.key,
-            title,
-            type,
-            kind: what,
-            effortBucketId: bucketId ? Number(bucketId) : null,
-            assigneePersonId: assigneeId ? Number(assigneeId) : null,
-            dueDate: dueDate || null,
-          });
-          if (!res.ok) return setError(res.error);
-          setTitle("");
-          setBucketId("");
-          setDueDate("");
-        });
-      }}
-    >
-      <label className="flex min-w-[16rem] flex-1 flex-col gap-1">
-        <span className={LABEL}>New card</span>
-        <input
-          required
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="What needs doing"
-          className={INPUT}
-        />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={`${LABEL} flex items-center gap-1.5`}>
-          Kind <KindHelp kinds={board.kinds} />
-        </span>
-        <select
-          value={what}
-          onChange={(e) => setWhat(e.target.value)}
-          className={INPUT}
-          title="A card can sit only under a card of a higher kind: Epic, then Feature, then Story, then Task, Bug, Issue or Milestone."
-        >
-          {board.kinds.map((k) => (
-            <option key={k.key} value={k.key}>
-              {k.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {type === "task" && (
-        <label className="flex flex-col gap-1">
-          <span className={LABEL}>Size</span>
-          <select value={bucketId} onChange={(e) => setBucketId(e.target.value)} className={INPUT}>
-            <option value="">No estimate yet</option>
-            {board.buckets.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.label} ({b.hours} hours){b.shouldSplit ? " — consider splitting" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {type === "task" && (
-        <label className="flex flex-col gap-1">
-          <span className={LABEL}>Assignee</span>
-          <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className={INPUT}>
-            <option value="">Nobody yet</option>
-            {board.people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Due</span>
-        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={INPUT} />
-      </label>
-      <button type="submit" disabled={pending} className={BUTTON_PRIMARY}>
-        {pending ? "Adding…" : "Add"}
-      </button>
-      {error && <p className="w-full text-sm text-sdc-red-text">{error}</p>}
-    </form>
-  );
-}
 
 function Editor({ task, board, onDone }: { task: BoardTask; board: BoardData; onDone: () => void }) {
   const [assigneeId, setAssigneeId] = useState(task.assigneePersonId?.toString() ?? "");
@@ -579,7 +479,11 @@ export function Board({ board, canEdit }: { board: BoardData; canEdit: boolean }
 
   return (
     <div className="space-y-4">
-      {mayChange && <NewTask board={board} />}
+      {mayChange && (
+        <div className="flex justify-end">
+          <NewCardDialog board={board} />
+        </div>
+      )}
       {dropError && <p className="text-sm text-sdc-red-text">{dropError}</p>}
       <div className={`flex gap-3 overflow-x-auto pb-2 ${dropping ? "opacity-70" : ""}`}>
         {columns.map((s) => {
