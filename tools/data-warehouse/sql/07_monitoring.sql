@@ -27,10 +27,12 @@
 -- plus enough slack for a slow run, not the start time itself.
 --
 -- paylocity_ingest: Paylocity drops current_job_hours on the SFTP at 06:01 Eastern
--- (temp_punches at 05:05), so the task starts at 06:30 and is due by 07:30. It must
--- start AFTER 06:01: a run before it loads the previous day's file and the hours
--- are a day staler than they need to be, which is what happened 11/1-11/16 when
--- daylight saving moved the task from 06:30 to 05:30 (see README, "The schedule").
+-- (temp_punches at 05:05). Since 11/16 the task runs every hour at :30, so the 06:30
+-- run takes that morning's file and 07:30 is a retry; due by 08:00 so the retry has
+-- finished before anything alerts. A load must run AFTER 06:01: before it, it takes
+-- the previous day's file and the hours are a day staler than they need to be, which
+-- is what happened 11/1-11/16 when daylight saving moved the then once-a-day task
+-- from 06:30 to 05:30 (see README, "The schedule").
 -- The row is upserted, so this file stays the source of truth for it.
 CREATE TABLE IF NOT EXISTS "Integration"."ExpectedJob" (
     "JobName"     text    PRIMARY KEY,
@@ -43,9 +45,9 @@ CREATE TABLE IF NOT EXISTS "Integration"."ExpectedJob" (
 INSERT INTO "Integration"."ExpectedJob" ("JobName", "Description", "DueBy", "Notes")
 VALUES ('paylocity_ingest',
         'Paylocity load into the warehouse',
-        '07:30',
-        'Task Scheduler \DataWarehouse\Paylocity ingest on SERVER-APP1, daily at 06:30 local time '
-        '("Synchronize across time zones" OFF), runs as SERVER-APP1\svc-datawarehouse. '
+        '08:00',
+        'Task Scheduler \DataWarehouse\Paylocity ingest on SERVER-APP1, every hour at :30, '
+        'runs as SERVER-APP1\svc-datawarehouse. '
         'Output: D:\DataWarehouse\logs\paylocity_ingest.log.')
 ON CONFLICT ("JobName") DO UPDATE
    SET "Description" = EXCLUDED."Description",

@@ -17,8 +17,8 @@ Most urgent first.
 
 1. **Done 2026-10-04, account changed 2026-11-13:** Postgres runs as the `DataWarehousePostgres`
    Windows service (`NetworkService`, automatic start, logs in `pgdata\log`), and the load is
-   scheduled daily at 06:30 (Task Scheduler `\DataWarehouse\Paylocity ingest`; see "The
-   schedule" for why not earlier). It ran as `jculp`
+   scheduled every hour at :30 (Task Scheduler `\DataWarehouse\Paylocity ingest`; see "The
+   schedule"). It ran as `jculp`
    until 11/9, when Jon changed his Windows password and the task could no longer start: no
    load on 11/10-11/12, and nothing said so. It now runs as the local service account
    `SERVER-APP1\svc-datawarehouse` (see "The service account" below), and a missed load is
@@ -290,7 +290,7 @@ a person's password changes, and the task silently stops starting.
 
 ```powershell
 $action  = New-ScheduledTaskAction -Execute "C:\Windows\System32\cmd.exe" -Argument '/c C:\Python314\python.exe D:\DataWarehouse\ingest\paylocity_ingest.py --settings D:\DataWarehouse\ingest\settings.toml >> D:\DataWarehouse\logs\paylocity_ingest.log 2>&1' -WorkingDirectory D:\DataWarehouse\ingest
-$trigger = New-ScheduledTaskTrigger -Daily -At 6:30am
+$trigger = New-ScheduledTaskTrigger -Once -At 5:30am -RepetitionInterval (New-TimeSpan -Hours 1)   # every hour at :30
 Register-ScheduledTask -TaskPath "\DataWarehouse\" -TaskName "Paylocity ingest" -Action $action -Trigger $trigger -User "SERVER-APP1\svc-datawarehouse" -Password (Read-Host "Password for svc-datawarehouse")
 ```
 
@@ -301,15 +301,19 @@ keeps it: without it a failed run leaves only "0x1" in Task Scheduler.
 
 Paylocity drops `current_job_hours` on the SFTP at **06:01 Eastern** (`temp_punches` at
 05:05), every day. The load must start **after** that: a run before it loads the previous
-day's file, so the hours are a day staler than they need to be. Hence 06:30, with
-`"ExpectedJob"."DueBy"` at 07:30.
+day's file, so the hours are a day staler than they need to be.
 
-**"Synchronize across time zones" must be OFF** (trigger > Edit). With it on, Task Scheduler
-stores the start as a fixed UTC time, and daylight saving moves the local start by an hour.
-That happened: created 10/4 at 06:30 EDT, the task ran at 05:30 from 11/1 when EST began,
-before the 06:01 file, until 11/16. `Get-ScheduledTask … | % Triggers | % StartBoundary`
-shows it: a value ending in an offset (`-05:00`) is synchronized; a plain local time
-(`2026-11-16T06:30:00`) is not.
+Since 11/16 the task **runs every hour at :30** (daily trigger, repeat every 1 hour for 1
+day). The 06:30 run takes the morning's file and 07:30 is a free retry, so
+`"ExpectedJob"."DueBy"` is 08:00: an alert only fires when neither worked. Each run with
+nothing new still rebuilds the facts (about 10 seconds).
+
+Why not once a day: it was, at 06:30, with "Synchronize across time zones" on. That stores
+the start as a fixed UTC time, so when EST began on 11/1 the task moved to 05:30, before the
+06:01 file, and every load took the previous day's file until 11/16. Hourly runs are immune:
+whichever hour it lands on, the next run is never more than an hour after the file. If it
+ever goes back to once a day, untick "Synchronize across time zones" (trigger > Edit); a
+`StartBoundary` ending in an offset such as `-05:00` means it is still synchronized.
 
 ### The service account (set up 2026-11-13)
 
