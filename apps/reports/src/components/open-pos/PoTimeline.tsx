@@ -9,8 +9,10 @@ import { addDays, daysBetween, mondayOf, stackLines, timelineSlot, vsRequired, t
 // ── Open POs timeline: when each PO is expected, against when the BOM needs it ─────────────
 //
 // Laid out like the Scheduler's timelines: a month and week header, a dashed Today line,
-// calendar weeks from this Monday (the same weeks as the chart above). Anything before them
-// sits in the Late column, anything after in Later.
+// calendar weeks. "Today" starts a third of the weeks shown in the past (4 of 12), so late POs
+// sit at their real dates left of the line; anything before the first week sits in the Earlier
+// column, anything after the last in Later. Each PO row also says, beside its number, how late
+// it is (or how soon it is due) and the value still to arrive. The key is behind "Key".
 //
 // One group per project (or supplier), expanded by default into one row per PO. A PO row is
 // two points: a dot at the date it is expected (its next line still to arrive) and a diamond
@@ -152,8 +154,12 @@ export function PoTimeline({
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   // Zoom (weeks shown) and pan (weeks from this Monday). Calendar weeks either way.
+  // "Today" starts a third of the weeks shown in the past (2026-11-16): most open POs are
+  // late, and starting at this Monday put every one of them in the narrow Earlier column with
+  // no date. Now the recent past is on the track, each late PO at its real date.
   const [weeks, setWeeks] = useState<number>(TIMELINE_WEEKS);
-  const [offset, setOffset] = useState(0);
+  const [offset, setOffset] = useState(-pastWeeks(TIMELINE_WEEKS));
+  const [showKey, setShowKey] = useState(false);
   // The PO under the pointer: it stands out wherever it appears (a PO split across jobs is
   // on several rows), and the rest dims.
   const [hoverPo, setHoverPo] = useState<string | null>(null);
@@ -167,14 +173,23 @@ export function PoTimeline({
   const todayShown = todaySlot.lane === "track";
   // Every week's start date while there is room for it; every other one when zoomed out.
   const labelEvery = weeks > 16 ? 2 : 1;
-  const grid = `minmax(180px, 240px) ${SIDE}px minmax(0, 1fr) ${SIDE}px`;
+  // Room in the label column for the PO's lateness and value beside its number.
+  const grid = `minmax(240px, 300px) ${SIDE}px minmax(0, 1fr) ${SIDE}px`;
   // A faint line at each week boundary, drawn as the track's background.
   const weekLines = {
     backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent calc(100% / ${weeks} - 1px), rgb(226 232 240) calc(100% / ${weeks} - 1px), rgb(226 232 240) calc(100% / ${weeks}))`,
   };
   const todayLine = todayShown ? (
-    <div aria-hidden className="pointer-events-none absolute inset-y-0 z-[1] border-l border-dashed border-sdc-navy/60 motion-timeline-move" style={{ left: `${todayPct}%` }} />
+    <div aria-hidden className="pointer-events-none absolute inset-y-0 z-[1] border-l border-dashed border-sdc-navy motion-timeline-move" style={{ left: `${todayPct}%` }} />
   ) : null;
+  // The "Today" tag sits centred on the line, but never past the track's edge (it was cut to
+  // "day" when today fell at the very start of the weeks).
+  const todayTagShift = todayPct < 5 ? "0%" : todayPct > 95 ? "-100%" : "-50%";
+  // Zoom keeps "today" a third of the way in when it was already there.
+  const zoomTo = (n: number) => {
+    if (offset === -pastWeeks(weeks)) setOffset(-pastWeeks(n));
+    setWeeks(n);
+  };
 
   // ── Drag to pan ─────────────────────────────────────────────────────────────────
   // Press anywhere on the timeline and drag sideways: it moves a whole week at a time, by
@@ -238,7 +253,8 @@ export function PoTimeline({
   // (2026-11-16: nothing sits under the timeline any more, the note and badge moved up).
   const fillHeight = useFillHeight(sectionRef, true, true);
 
-  const atToday = offset === 0;
+  const atToday = offset === -pastWeeks(weeks);
+  const stillToArrive = rows.reduce((s, r) => s + r.pos.reduce((a, p) => a + p.money.notReceived, 0), 0);
   const ctl = `${TOOLBAR_BTN_COMPACT} !h-7 !px-2`;
 
   return (
@@ -259,6 +275,9 @@ export function PoTimeline({
         <span className="font-semibold" title="One group per project (or supplier), one row per PO still to arrive">
           {rows.length} {rows.length === 1 ? "group" : "groups"} · {rows.reduce((n, r) => n + r.pos.length, 0)} POs
         </span>
+        <span className="tabular-nums" title="Value not yet received on the POs shown, at PO price">
+          · <span className="font-semibold text-sdc-navy">{usd(stillToArrive)}</span> still to arrive
+        </span>
         <button type="button" onClick={() => setCollapsed(new Set())} title="Show every PO's own row" className={`${ctl} ${TOOLBAR_BTN_NEUTRAL}`}>
           Expand all
         </button>
@@ -277,9 +296,9 @@ export function PoTimeline({
           </button>
           <button
             type="button"
-            onClick={() => setOffset(0)}
+            onClick={() => setOffset(-pastWeeks(weeks))}
             disabled={atToday}
-            title={atToday ? "Already starting this week" : "Back to this week"}
+            title={atToday ? "Already showing today, with the recent past on the left" : "Back to today, with the recent past on the left"}
             className={`${ctl} ${TOOLBAR_BTN_NEUTRAL} disabled:opacity-50`}
           >
             Today
@@ -297,7 +316,7 @@ export function PoTimeline({
               key={n}
               type="button"
               aria-pressed={weeks === n}
-              onClick={() => setWeeks(n)}
+              onClick={() => zoomTo(n)}
               title={`Show ${n} weeks`}
               className={`${ctl} ${weeks === n ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
             >
@@ -305,10 +324,19 @@ export function PoTimeline({
             </button>
           ))}
         </span>
+        <button
+          type="button"
+          aria-pressed={showKey}
+          onClick={() => setShowKey((v) => !v)}
+          title="What the dots, diamonds and lines mean, and how to move around"
+          className={`${ctl} ${showKey ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
+        >
+          Key
+        </button>
       </div>
 
       {/* Below the controls: the weeks and rows (scrolling under a sticky header), then the key. */}
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto styled-scrollbar">
       {/* Header: months, then the week each column starts. */}
       <div className="sticky top-0 z-[5] grid border-b border-sdc-border bg-slate-100 text-note text-sdc-gray-600" style={{ gridTemplateColumns: grid }}>
@@ -316,10 +344,10 @@ export function PoTimeline({
           Weeks of
         </span>
         <span
-          className={`self-center text-center font-bold ${atToday ? "text-red-700" : "text-sdc-gray-600"}`}
-          title={atToday ? `Expected before the week of ${md(start)} and still not here` : `Expected before ${md(start)}`}
+          className={`self-center text-center font-bold ${start <= asOf ? "text-red-700" : "text-sdc-gray-600"}`}
+          title={`Expected before ${md(start)}${start <= asOf ? ", so late, and still not here. Drag right or press ◂ to see their dates" : ""}`}
         >
-          {atToday ? "Late" : "Earlier"}
+          Earlier
         </span>
         {/* Three tiers so nothing overlaps: month, the day each week starts, Today. */}
         <div ref={trackRef} className="relative h-[3.25rem] overflow-hidden" style={weekLines}>
@@ -345,7 +373,11 @@ export function PoTimeline({
           )}
           {todayLine}
           {todayShown && (
-            <span className="absolute bottom-0.5 z-[1] -translate-x-1/2 rounded bg-sdc-navy px-1 text-micro font-bold text-white" style={{ left: `${todayPct}%` }} title={`Today, ${md(asOf)}`}>
+            <span
+              className="absolute bottom-0.5 z-[1] rounded bg-sdc-navy px-1 text-micro font-bold text-white"
+              style={{ left: `${todayPct}%`, transform: `translateX(${todayTagShift})` }}
+              title={`Today, ${md(asOf)}`}
+            >
               Today
             </span>
           )}
@@ -465,8 +497,14 @@ export function PoTimeline({
 
         </div>
 
-        {/* The key, down the right side. Not a drag handle. */}
-        <aside data-no-pan aria-label="Key" className="flex w-48 shrink-0 cursor-default flex-col gap-4 overflow-y-auto border-l border-sdc-border bg-white px-3 py-3 text-note text-sdc-gray-600">
+        {/* The key, over the right of the rows when "Key" is pressed (it took 190px of the
+            weeks' width all the time). Not a drag handle. */}
+        {showKey && (
+        <aside
+          data-no-pan
+          aria-label="Key"
+          className="absolute inset-y-0 right-0 z-[6] flex w-52 cursor-default flex-col gap-4 overflow-y-auto border-l border-sdc-border bg-white px-3 py-3 text-note text-sdc-gray-600 shadow-lg"
+        >
           <KeyGroup title="Dots" tip={dotsBy === "status" ? "Coloured by where the PO stands" : "Coloured like the line: does it arrive by the BOM's required date?"}>
             {dotsBy === "status" ? (
               <>
@@ -507,13 +545,8 @@ export function PoTimeline({
             <span>Hover a PO to pick it out</span>
             <span>Click a dot or PO number to open it</span>
           </KeyGroup>
-          <span className="mt-auto border-t border-sdc-border-soft pt-2 text-sdc-gray-400" title="Value not yet received on the POs shown, at PO price">
-            <span className="block font-heading text-base font-bold tabular-nums text-sdc-navy">
-              {usd(rows.reduce((s, r) => s + r.pos.reduce((a, p) => a + p.money.notReceived, 0), 0))}
-            </span>
-            still to arrive
-          </span>
         </aside>
+        )}
       </div>
     </section>
   );
@@ -565,6 +598,7 @@ function PoRow({
   const [left, right] = v ? (v.onTime ? [xE, xQ!] : [xQ!, xE]) : [null, null];
   const lineColor = v ? (v.onTime ? "bg-green-600/70" : "bg-red-600/70") : "";
   const mark = v ? (v.onTime ? "border-green-600" : "border-red-600") : "border-sdc-gray-600";
+  const due = dueText(expected, asOf);
   return (
     <div
       className={`grid border-t border-sdc-border-soft/60 motion-timeline-move ${hover ? "bg-sdc-blue-light/60" : hover === false ? "opacity-35" : ""}`}
@@ -580,7 +614,13 @@ function PoRow({
       >
         <span className="shrink-0 font-mono text-note font-semibold text-sdc-blue underline decoration-dotted underline-offset-2">{p.row.poNumber}</span>
         {/* Under a supplier heading the supplier is already said; elsewhere it (or the job) is shown. */}
-        {!indent && <span className="truncate text-label text-sdc-gray-600">{p.other}</span>}
+        {!indent && <span className="min-w-0 truncate text-label text-sdc-gray-600">{p.other}</span>}
+        {/* What the row is worth reading without a hover: how late (or how soon), and the value
+            still to arrive. The hover keeps the full story. */}
+        <span className="ml-auto flex shrink-0 items-baseline gap-1.5 text-label tabular-nums">
+          <span className={due.cls}>{due.text}</span>
+          <span className="text-sdc-gray-400">{usd(p.money.notReceived)}</span>
+        </span>
       </button>
       <div className={sideCell} style={{ gridRow: 1, gridColumn: 2 }} />
       <div className="relative" style={{ ...weekLines, gridRow: 1, gridColumn: 3 }}>
@@ -610,6 +650,20 @@ function PoRow({
       </div>
     </div>
   );
+}
+
+/** A PO row's short "when": days late in red, due today, or days to go. */
+function dueText(expected: string | null, today: string): { text: string; cls: string } {
+  if (!expected) return { text: "No date", cls: "text-sdc-gray-400" };
+  const d = daysBetween(today, expected);
+  if (d < 0) return { text: `${-d}d late`, cls: "font-semibold text-red-700" };
+  if (d === 0) return { text: "Due today", cls: "font-semibold text-sdc-navy" };
+  return { text: `in ${d}d`, cls: "text-sdc-gray-600" };
+}
+
+/** Weeks before this one that "Today" shows: a third of the weeks on screen, at least one. */
+function pastWeeks(weeks: number): number {
+  return Math.max(1, Math.round(weeks / 3));
 }
 
 /** A group's POs (already in order) under their `group` heading, headings in order of first PO; one unnamed run when off. */
