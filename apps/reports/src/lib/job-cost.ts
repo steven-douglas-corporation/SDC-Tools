@@ -63,12 +63,15 @@ export type JobCostRow = {
 export type JobCostComputed = JobCostRow & {
   pmCost: number;
   mfgCost: number;
+  /**
+   * Labor Cost column: hours × rate only — (Eng Hrs + ETC Eng) × Eng rate + (Shop Hrs + ETC Shop) ×
+   * Shop rate. Worked hours at the Rate Matrix rate for the year (or the manual allocation), ETC
+   * hours at the default rate. Excludes PM $, Mfg $ and parts.
+   */
   laborCost: number;
   /**
-   * Total Cost column (2026-11-13): labour only, hours × rate — (Eng Hrs + ETC Eng) × Eng rate
-   * + (Shop Hrs + ETC Shop) × Shop rate. Worked hours at the Rate Matrix rate for the year (or the
-   * manual allocation), ETC hours at the default rate. Excludes PM $, Mfg $ and parts; `profit`
-   * is untouched and equals sales − (totalCost + pmCost + mfgCost + partsProjected).
+   * Total Cost column: everything Profit subtracts —
+   * laborCost + pmCost + mfgCost + partsProjected — so `profit` = salesPrice − totalCost.
    */
   totalCost: number;
   /** The parts figure profit actually subtracts — see `partsCostForProfit`. */
@@ -197,10 +200,11 @@ export function laborForType(
 /**
  * The full per-job rollup — unchanged from the original's compute():
  *   Labor Cost = Σ_year(EngHours[year] × EngRate[year]) + Σ_year(ShopHours[year] × ShopRate[year])
- *              + Sales × PM%[completionYear] + Sales × Mfg%[completionYear]
- *   x (cost)   = Labor Cost + ETC_EngHours × EngRate_default + ETC_ShopHours × ShopRate_default
- *   y (parts)  = partsCostForProfit(row, ETC_PartsCost).projected   [2026-09-14; was PartCost + ETC_PartsCost]
- *   Profit     = Sales Price − (x + y)              [null if no Sales Price]
+ *              + ETC_EngHours × EngRate_default + ETC_ShopHours × ShopRate_default
+ *   PM $ / Mfg $ = Sales × PM%[completionYear] / Sales × Mfg%[completionYear]
+ *   Parts      = partsCostForProfit(row, ETC_PartsCost).projected   [2026-09-14; was PartCost + ETC_PartsCost]
+ *   Total Cost = Labor Cost + PM $ + Mfg $ + Parts
+ *   Profit     = Sales Price − Total Cost            [null if no Sales Price]
  *   Margin     = Profit ÷ Sales Price × 100
  *
  * PM%/Mfg% are a share of sales, applied once at the job's completion-year
@@ -224,20 +228,19 @@ export function computeJobCost(
   const rc = compYear ? rateForYear(compYear, def, overrides) : def;
   const pmCost = sales * (rc.pmPct / 100);
   const mfgCost = sales * (rc.mfgPct / 100);
-  const laborCost = blendedLabor + pmCost + mfgCost;
 
   const isComplete = row.status === "Complete";
   const etcEngHours = isComplete ? 0 : row.etcEngHours;
   const etcShopHours = isComplete ? 0 : row.etcShopHours;
   const etcPartsCost = isComplete ? 0 : row.etcPartsCost;
 
-  const totalCost = blendedLabor + (etcEngHours || 0) * def.engRate + (etcShopHours || 0) * def.shopRate;
-  const x = laborCost + (etcEngHours || 0) * def.engRate + (etcShopHours || 0) * def.shopRate;
+  const laborCost = blendedLabor + (etcEngHours || 0) * def.engRate + (etcShopHours || 0) * def.shopRate;
   // The Parts Purchased / Parts Invoiced COLUMNS keep showing commitment and
   // GL-posted actual respectively — those labels are honest. Only what profit
   // subtracts changes: see partsCostForProfit.
   const y = partsCostForProfit(row, etcPartsCost).projected;
-  const profit = row.salesPrice != null ? sales - x - y : null;
+  const totalCost = laborCost + pmCost + mfgCost + y;
+  const profit = row.salesPrice != null ? sales - totalCost : null;
   const margin = profit != null && sales ? (profit / sales) * 100 : null;
   const percentComplete = isComplete ? 100 : row.percentComplete;
 

@@ -38,7 +38,7 @@ import { JobCostHourAllocationModal } from "@/components/JobCostHourAllocationMo
 
 type ColKey =
   | "customerName" | "jobType" | "actualHours" | "engineeringHours" | "shopHours" | "otherHours" | "serviceHours"
-  | "pmCost" | "mfgCost" | "totalCost" | "etcEngHours" | "etcShopHours" | "etcPartsCost"
+  | "pmCost" | "mfgCost" | "laborCost" | "totalCost" | "etcEngHours" | "etcShopHours" | "etcPartsCost"
   | "partInvoiced" | "percentComplete" | "salesPrice" | "startDate" | "completeDate"
   | "profit" | "margin";
 
@@ -124,6 +124,7 @@ const COLS: ColMeta[] = [
   { key: "totalCost", label: "Total Cost", group: "sales", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "profit", label: "Profit", group: "sales", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "margin", label: "Margin", group: "sales", type: "number", widthClass: PCT_COL_W },
+  { key: "laborCost", label: "Labor Cost", group: "sales", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "otherHours", label: "Other Hrs", group: "other", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
 ];
 
@@ -135,6 +136,7 @@ const WRAP_LABEL: Partial<Record<ColKey, [string, string]>> = {
   partInvoiced: ["Parts", "Invoiced"],
   percentComplete: ["%", "Complete"],
   salesPrice: ["Sales", "Price"],
+  laborCost: ["Labor", "Cost"],
   totalCost: ["Total", "Cost"],
   startDate: ["Start", "Date"],
   completeDate: ["Complete", "Date"],
@@ -167,26 +169,28 @@ function buildColTips(etcMonth: string | null, inventoryAsOf: string | null, rat
     : "No submitted Monthly ETC month exists yet, so this shows —.";
   return {
     engineeringHours:
-      "Eng Hrs — all-time actual hours on Engineering-group sections. Adds the pre-tracking migration snapshot, the frozen Monthly ETC hours for months the punch import doesn't cover, and Paylocity punches folded onto the job's sections. Runs through the latest synced day (through the picked month on an As-of view). Service & Spares (80-/90-) are excluded. Costed in Total Cost at the Eng rate for the year the hours were worked.",
+      "Eng Hrs — all-time actual hours on Engineering-group sections. Adds the pre-tracking migration snapshot, the frozen Monthly ETC hours for months the punch import doesn't cover, and Paylocity punches folded onto the job's sections. Runs through the latest synced day (through the picked month on an As-of view). Service & Spares (80-/90-) are excluded. Costed in Labor Cost at the Eng rate for the year the hours were worked.",
     shopHours:
-      "Shop Hrs — same sources and cut-off as Eng Hrs, for Shop-group sections (build / test / install). Costed in Total Cost at the Shop rate for the year worked.",
+      "Shop Hrs — same sources and cut-off as Eng Hrs, for Shop-group sections (build / test / install). Costed in Labor Cost at the Shop rate for the year worked.",
     partInvoiced:
       "Parts Invoiced — GL-posted parts spend from Total ETO (the Projects tab's Parts Actual). For closed jobs below the final-parts cutoff it is the final Parts Cost Actual imported from the Sage job ledger. Always current: the As-of picker does not move it. Profit adds still-to-come parts on top (see Profit).",
-    etcEngHours: `ETC Eng — Engineering hours still to do. ${etcSrc} Each section is reduced by its own hours worked after that month and floored at 0, so an overrun on one section never shrinks another. — means the job had no row in that submission; Complete jobs show 0. Added to Total Cost at the default Eng rate (${rates.engRate}/hr).`,
-    etcShopHours: `ETC Shop — Shop hours still to do. ${etcSrc} Same per-section reduction and 0 floor as ETC Eng; — means no row in that submission; Complete jobs show 0. Added to Total Cost at the default Shop rate (${rates.shopRate}/hr).`,
+    etcEngHours: `ETC Eng — Engineering hours still to do. ${etcSrc} Each section is reduced by its own hours worked after that month and floored at 0, so an overrun on one section never shrinks another. — means the job had no row in that submission; Complete jobs show 0. Added to Labor Cost at the default Eng rate (${rates.engRate}/hr).`,
+    etcShopHours: `ETC Shop — Shop hours still to do. ${etcSrc} Same per-section reduction and 0 floor as ETC Eng; — means no row in that submission; Complete jobs show 0. Added to Labor Cost at the default Shop rate (${rates.shopRate}/hr).`,
     etcPartsCost: `ETC Parts — parts still to spend. ${etcSrc} Starts from Parts New ETC (Left to Invoice + Left to Purchase) less GL-posted parts spend since, floored at 0. $0 means the forecast is used up, not that parts are free — Profit still counts invoiced parts plus any open PO balance. — means no row in that submission; Complete jobs show 0.`,
     pmCost: "PM $ — Sales Price × PM % for the job's Complete Date year (Rate Matrix; the default PM % when there is no Complete Date). A share of sales, not hours. The rates in the Rate Matrix are used as entered.",
     mfgCost: "Mfg $ — Sales Price × Mfg % for the job's Complete Date year (Rate Matrix; the default Mfg % when there is no Complete Date). A share of sales, not hours. The rates in the Rate Matrix are used as entered.",
+    laborCost:
+      `Labor Cost — hours × rate only. = (Eng Hrs + ETC Eng) × Eng rate + (Shop Hrs + ETC Shop) × Shop rate. Worked hours use the Rate Matrix rate for the year they were worked (a manual hour allocation from the Job Id overrides; hours with no year use the default, currently Eng $${rates.engRate}/hr and Shop $${rates.shopRate}/hr); ETC hours always use those default rates. Complete jobs have no ETC. Does not include PM $, Mfg $ or parts.`,
     totalCost:
-      `Total Cost — labour only: hours × rate. = (Eng Hrs + ETC Eng) × Eng rate + (Shop Hrs + ETC Shop) × Shop rate. Worked hours use the Rate Matrix rate for the year they were worked (a manual hour allocation from the Job Id overrides; hours with no year use the default, currently Eng $${rates.engRate}/hr and Shop $${rates.shopRate}/hr); ETC hours always use those default rates. Complete jobs have no ETC. Does not include PM $, Mfg $ or parts.`,
+      "Total Cost — everything Profit subtracts. = Labor Cost + PM $ + Mfg $ + projected parts. Projected parts = Parts Invoiced + the larger of (open PO balance not yet invoiced, ETC Parts); Complete jobs use Parts Invoiced only and no ETC. So Sales Price − Total Cost = Profit.",
     salesPrice:
       "Sales Price — the job's Sales Price on the Projects tab plus its Change Quote (an as-of view uses that month's inventory-workbook figure instead). Falls back to the inventory workbook / Power BI price when the Projects tab has none. Blank when no source has a price.",
     percentComplete: `% Complete — read from the inventory workbook snapshot${inventoryAsOf ? ` (as of ${inventoryAsOf})` : ""}, not calculated here. Complete jobs show 100%. — means the job isn't in the snapshot.`,
     profit:
-      "Profit = Sales Price − (Total Cost + PM $ + Mfg $ + projected parts). Projected parts = Parts Invoiced + the larger of (open PO balance not yet invoiced, ETC Parts); Complete jobs use Parts Invoiced only and no ETC. Blank when the job has no Sales Price.",
+      "Profit = Sales Price − Total Cost, where Total Cost = Labor Cost + PM $ + Mfg $ + projected parts (Parts Invoiced + the larger of the open PO balance and ETC Parts; Complete jobs use Parts Invoiced only). Blank when the job has no Sales Price.",
     margin: "Margin = Profit ÷ Sales Price × 100. Blank when the job has no Sales Price.",
     otherHours:
-      "Other Hrs — hours on sections that are neither Engineering nor Shop (e.g. PM / Management 10-111). Same sources and cut-off as Eng Hrs; Service & Spares (80-/90-) excluded. Counted in a job's actual hours but costed at $0 in Total Cost — PM and Mfg cost are modelled as a % of sales instead.",
+      "Other Hrs — hours on sections that are neither Engineering nor Shop (e.g. PM / Management 10-111). Same sources and cut-off as Eng Hrs; Service & Spares (80-/90-) excluded. Counted in a job's actual hours but costed at $0 in Labor Cost — PM and Mfg cost are modelled as a % of sales instead.",
   };
 }
 
@@ -704,7 +708,7 @@ export function JobCostExplorer({
     const sum = (f: keyof JobCostComputed) => visibleRows.reduce((a, r) => a + (Number(r[f]) || 0), 0);
     return {
       actualHours: sum("actualHours"), engineeringHours: sum("engineeringHours"), shopHours: sum("shopHours"), otherHours: sum("otherHours"), serviceHours: sum("serviceHours"),
-      pmCost: sum("pmCost"), mfgCost: sum("mfgCost"), totalCost: sum("totalCost"),
+      pmCost: sum("pmCost"), mfgCost: sum("mfgCost"), laborCost: sum("laborCost"), totalCost: sum("totalCost"),
       etcEngHours: sum("etcEngHours"), etcShopHours: sum("etcShopHours"), etcPartsCost: sum("etcPartsCost"),
       partInvoiced: sum("partInvoiced"), salesPrice: sum("salesPrice"),
       profit: visibleRows.some((r) => r.profit != null) ? sum("profit") : null,
@@ -1371,6 +1375,7 @@ export function JobCostExplorer({
                         {fmtPct(r.margin)}
                       </td>
                     )}
+                    {!hiddenCols.has("laborCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("laborCost")} ${zebra}`}>{fmtMoney(r.laborCost)}</td>}
                     {!hiddenCols.has("otherHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("otherHours")} ${zebra}`}>{r.otherHours ? fmtNum(r.otherHours) : "—"}</td>}
                   </tr>
                 );
@@ -1407,6 +1412,7 @@ export function JobCostExplorer({
                   <td className={`px-2 py-1.5 text-right ${vBorder("profit")} ${totals.profit != null && totals.profit >= 0 ? "text-sdc-green-text" : "text-sdc-red-text"}`}>{fmtMoney(totals.profit)}</td>
                 )}
                 {!hiddenCols.has("margin") && <td className={`px-2 py-1.5 ${vBorder("margin")}`} />}
+                {!hiddenCols.has("laborCost") && <td className={`px-2 py-1.5 text-right ${vBorder("laborCost")}`}>{fmtMoney(totals.laborCost)}</td>}
                 {!hiddenCols.has("otherHours") && <td className={`px-2 py-1.5 text-right ${vBorder("otherHours")}`}>{fmtNum(totals.otherHours)}</td>}
               </tr>
             </tfoot>
