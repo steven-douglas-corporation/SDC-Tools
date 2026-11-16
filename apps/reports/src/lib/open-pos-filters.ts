@@ -13,16 +13,23 @@ import { poDates, stateCounts, vsRequired, type OpenPoRow } from "@/lib/open-pos
 // PO's next line still to arrive against its BOM required date (poDates + vsRequired), the same
 // line as the cards' Expected and Vs required columns. Pure, no React: tested on its own.
 
-export type AdvCategory = "delivery" | "invoicing" | "required" | "supplier" | "jobStatus";
+export type AdvCategory = "status" | "delivery" | "invoicing" | "required" | "supplier" | "jobStatus";
 export type AdvFilters = Record<AdvCategory, ReadonlySet<string>>;
 
 export const NO_ADV_FILTERS: AdvFilters = {
+  status: new Set(),
   delivery: new Set(),
   invoicing: new Set(),
   required: new Set(),
   supplier: new Set(),
   jobStatus: new Set(),
 };
+
+/**
+ * Where Advanced starts, and what Clear filters goes back to: open POs only. Closed POs (fully
+ * received and invoiced, from the Here list) come in when Closed is ticked.
+ */
+export const DEFAULT_ADV_FILTERS: AdvFilters = { ...NO_ADV_FILTERS, status: new Set(["open"]) };
 
 export type AdvContext = {
   today: string;
@@ -33,7 +40,11 @@ export type AdvContext = {
 };
 
 /** The fixed options of each fixed category, in the order shown, with their hover text. */
-export const ADV_OPTIONS: Record<"delivery" | "invoicing" | "required", { id: string; label: string; tip: string }[]> = {
+export const ADV_OPTIONS: Record<"status" | "delivery" | "invoicing" | "required", { id: string; label: string; tip: string }[]> = {
+  status: [
+    { id: "open", label: "Open", tip: "Still owing a delivery or an invoice" },
+    { id: "closed", label: "Closed", tip: "Fully received and fully invoiced, with at least one part received (as on the Here list)" },
+  ],
   delivery: [
     { id: "late", label: "Late", tip: "Parts past their expected date (the vendor's re-promised date when there is one) and still not here" },
     { id: "coming", label: "Coming", tip: "Parts still expected: today or later, or not dated yet" },
@@ -56,6 +67,8 @@ export const ADV_OPTIONS: Record<"delivery" | "invoicing" | "required", { id: st
 /** Does one PO pass one option of one category? */
 export function matchesOption(r: OpenPoRow, cat: AdvCategory, opt: string, ctx: AdvContext): boolean {
   switch (cat) {
+    case "status":
+      return opt === "open" ? r.open : opt === "closed" ? !r.open : false;
     case "delivery": {
       const s = stateCounts(r.items, ctx.today);
       if (opt === "late") return s.outstanding > 0;
@@ -85,7 +98,7 @@ export function matchesOption(r: OpenPoRow, cat: AdvCategory, opt: string, ctx: 
   }
 }
 
-const CATEGORIES: AdvCategory[] = ["delivery", "invoicing", "required", "supplier", "jobStatus"];
+const CATEGORIES: AdvCategory[] = ["status", "delivery", "invoicing", "required", "supplier", "jobStatus"];
 
 /** A PO passes when, in every category with something ticked, it matches one of the ticks. */
 export function advMatch(r: OpenPoRow, f: AdvFilters, ctx: AdvContext, skip?: AdvCategory): boolean {
@@ -98,7 +111,9 @@ export function advMatch(r: OpenPoRow, f: AdvFilters, ctx: AdvContext, skip?: Ad
   return true;
 }
 
-export const advActive = (f: AdvFilters) => CATEGORIES.some((c) => f[c].size > 0);
+/** Anything picked beyond where Advanced starts (open POs only, nothing else ticked). */
+export const advActive = (f: AdvFilters) =>
+  CATEGORIES.some((c) => (c === "status" ? !(f.status.size === 1 && f.status.has("open")) : f[c].size > 0));
 
 /**
  * How many POs each option would leave: those passing every OTHER category's ticks that match

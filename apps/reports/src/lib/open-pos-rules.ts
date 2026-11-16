@@ -208,6 +208,11 @@ export type OpenPosResult = {
    * an open PO here is the same object as in `rows`. Newest purchase first.
    */
   here: OpenPoRow[];
+  /**
+   * Every job loaded (name and status), not only the ones with open POs (`jobs`): closed POs
+   * on the Here list and in Advanced's Closed can be on a job with nothing open.
+   */
+  allJobs: OpenPoJob[];
   jobs: OpenPoJobSummary[];
   totals: { openPos: number; openValue: number; pastDuePos: number; awaitingDeliveryValue: number; suppliers: number };
   /** Value not yet received on open POs, by when it is expected: late, CHART_WEEKS calendar weeks from this one, later, no date. */
@@ -640,6 +645,7 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
     asOf: today,
     rows,
     here,
+    allJobs: [...jobs],
     weeks,
     jobs: jobSummaries,
     totals: {
