@@ -27,6 +27,7 @@ import {
   busySlot,
 } from "@/components/ui/classnames";
 import { usd, hours } from "@/components/ui/format";
+import { explainJobCell } from "@/lib/job-cost-explain";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { MenuStatus, MenuGroup, MenuBulkActions, MenuCheckbox } from "@/components/MenuStatus";
@@ -38,7 +39,7 @@ import { JobCostHourAllocationModal } from "@/components/JobCostHourAllocationMo
 
 type ColKey =
   | "customerName" | "jobType" | "actualHours" | "engineeringHours" | "shopHours" | "otherHours" | "serviceHours"
-  | "pmCost" | "mfgCost" | "laborCost" | "totalCost" | "etcEngHours" | "etcShopHours" | "etcPartsCost"
+  | "pmCost" | "mfgCost" | "totalCost" | "etcEngHours" | "etcShopHours" | "etcPartsCost"
   | "partInvoiced" | "percentComplete" | "salesPrice" | "startDate" | "completeDate"
   | "profit" | "margin";
 
@@ -67,7 +68,7 @@ const COMPACT_SELECT = `${BTN_H_COMPACT} rounded-md border border-sdc-border bg-
 // (2026-11-13) Job | Date | Cost to Date | ETC | Standard Fees | Sales / Margin | Other Hrs.
 // "hours" is Cost to Date (hours + Parts Invoiced, so the old "parts" group is gone) and "labor" is
 // Standard Fees; the keys keep their old names so nothing keyed on them changes.
-type GroupKey = "identity" | "sold" | "hours" | "etc" | "labor" | "sales" | "laborCost" | "other";
+type GroupKey = "identity" | "sold" | "hours" | "etc" | "labor" | "sales" | "other";
 
 const GROUP_META: Record<GroupKey, { label: string; band: string; text: string }> = {
   identity: { label: "Job", band: "bg-sdc-gray-100", text: "text-sdc-gray-600" },
@@ -76,7 +77,6 @@ const GROUP_META: Record<GroupKey, { label: string; band: string; text: string }
   etc: { label: "ETC", band: "bg-sdc-yellow-bg", text: "text-sdc-yellow-text" },
   labor: { label: "Standard Fees", band: "bg-sdc-navy/5", text: "text-sdc-navy" },
   sales:{ label: "Sales / Margin", band: "bg-sdc-lime/15", text: "text-sdc-navy" },
-  laborCost: { label: "Labor Cost", band: "bg-sdc-navy/5", text: "text-sdc-navy" },
   other: { label: "Other", band: "bg-sdc-gray-100", text: "text-sdc-gray-600" },
 };
 
@@ -109,7 +109,7 @@ const COLS: ColMeta[] = [
   { key: "jobType", label: "Type", group: "identity", type: "text", widthClass: "min-w-[6rem]" },
   // Column order here IS the on-screen order (header, Columns picker, export). The body and totals
   // rows below are hand-written, so they must be kept in this same order:
-  // Job | Date | Cost to Date | ETC | Standard Fees | Sales / Margin | Labor Cost | Other Hrs.
+  // Job | Date | Cost to Date | ETC | Standard Fees | Sales / Margin | Other Hrs.
   { key: "startDate", label: "Start Date", group: "sold", type: "date", widthClass: DATE_COL_W },
   { key: "completeDate", label: "Complete Date", group: "sold", type: "date", widthClass: DATE_COL_W },
   { key: "engineeringHours", label: "Eng Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
@@ -125,7 +125,6 @@ const COLS: ColMeta[] = [
   { key: "totalCost", label: "Total Cost", group: "sales", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "profit", label: "Profit", group: "sales", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "margin", label: "Margin", group: "sales", type: "number", widthClass: PCT_COL_W },
-  { key: "laborCost", label: "Labor Cost", group: "laborCost", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "otherHours", label: "Other Hrs", group: "other", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
 ];
 
@@ -137,7 +136,6 @@ const WRAP_LABEL: Partial<Record<ColKey, [string, string]>> = {
   partInvoiced: ["Parts", "Invoiced"],
   percentComplete: ["%", "Complete"],
   salesPrice: ["Sales", "Price"],
-  laborCost: ["Labor", "Cost"],
   totalCost: ["Total", "Cost"],
   startDate: ["Start", "Date"],
   completeDate: ["Complete", "Date"],
@@ -170,20 +168,18 @@ function buildColTips(etcMonth: string | null, inventoryAsOf: string | null, rat
     : "No submitted Monthly ETC month exists yet, so this shows —.";
   return {
     engineeringHours:
-      "Eng Hrs — all-time actual hours on Engineering-group sections. Adds the pre-tracking migration snapshot, the frozen Monthly ETC hours for months the punch import doesn't cover, and Paylocity punches folded onto the job's sections. Runs through the latest synced day (through the picked month on an As-of view). Service & Spares (80-/90-) are excluded. Costed in Labor Cost at the Eng rate for the year the hours were worked.",
+      "Eng Hrs — all-time actual hours on Engineering-group sections. Adds the pre-tracking migration snapshot, the frozen Monthly ETC hours for months the punch import doesn't cover, and Paylocity punches folded onto the job's sections. Runs through the latest synced day (through the picked month on an As-of view). Service & Spares (80-/90-) are excluded. Costed in Total Cost at the Eng rate for the year the hours were worked.",
     shopHours:
-      "Shop Hrs — same sources and cut-off as Eng Hrs, for Shop-group sections (build / test / install). Costed in Labor Cost at the Shop rate for the year worked.",
+      "Shop Hrs — same sources and cut-off as Eng Hrs, for Shop-group sections (build / test / install). Costed in Total Cost at the Shop rate for the year worked.",
     partInvoiced:
       "Parts Invoiced — GL-posted parts spend from Total ETO (the Projects tab's Parts Actual). For closed jobs below the final-parts cutoff it is the final Parts Cost Actual imported from the Sage job ledger. Always current: the As-of picker does not move it. Profit adds still-to-come parts on top (see Profit).",
-    etcEngHours: `ETC Eng — Engineering hours still to do. ${etcSrc} Each section is reduced by its own hours worked after that month and floored at 0, so an overrun on one section never shrinks another. — means the job had no row in that submission; Complete jobs show 0. Added to Labor Cost at the default Eng rate (${rates.engRate}/hr).`,
-    etcShopHours: `ETC Shop — Shop hours still to do. ${etcSrc} Same per-section reduction and 0 floor as ETC Eng; — means no row in that submission; Complete jobs show 0. Added to Labor Cost at the default Shop rate (${rates.shopRate}/hr).`,
+    etcEngHours: `ETC Eng — Engineering hours still to do. ${etcSrc} Each section is reduced by its own hours worked after that month and floored at 0, so an overrun on one section never shrinks another. — means the job had no row in that submission; Complete jobs show 0. Added to Total Cost at the default Eng rate (${rates.engRate}/hr).`,
+    etcShopHours: `ETC Shop — Shop hours still to do. ${etcSrc} Same per-section reduction and 0 floor as ETC Eng; — means no row in that submission; Complete jobs show 0. Added to Total Cost at the default Shop rate (${rates.shopRate}/hr).`,
     etcPartsCost: `ETC Parts — parts still to spend. ${etcSrc} Starts from Parts New ETC (Left to Invoice + Left to Purchase) less GL-posted parts spend since, floored at 0. $0 means the forecast is used up, not that parts are free — Profit still counts invoiced parts plus any open PO balance. — means no row in that submission; Complete jobs show 0.`,
     pmCost: "PM $ — Sales Price × PM % for the job's Complete Date year (Rate Matrix; the default PM % when there is no Complete Date). A share of sales, not hours. The rates in the Rate Matrix are used as entered.",
     mfgCost: "Mfg $ — Sales Price × Mfg % for the job's Complete Date year (Rate Matrix; the default Mfg % when there is no Complete Date). A share of sales, not hours. The rates in the Rate Matrix are used as entered.",
-    laborCost:
-      `Labor Cost — hours × rate only. = (Eng Hrs + ETC Eng) × Eng rate + (Shop Hrs + ETC Shop) × Shop rate. Worked hours use the Rate Matrix rate for the year they were worked (a manual hour allocation from the Job Id overrides; hours with no year use the default, currently Eng $${rates.engRate}/hr and Shop $${rates.shopRate}/hr); ETC hours always use those default rates. Complete jobs have no ETC. Does not include PM $, Mfg $ or parts.`,
     totalCost:
-      "Total Cost — everything Profit subtracts. = Labor Cost + PM $ + Mfg $ + projected parts. Projected parts = Parts Invoiced + the larger of (open PO balance not yet invoiced, ETC Parts); Complete jobs use Parts Invoiced only and no ETC. So Sales Price − Total Cost = Profit.",
+      `Total Cost — everything Profit subtracts. = Labor + PM $ + Mfg $ + projected parts. Labor = (Eng Hrs + ETC Eng) × Eng rate + (Shop Hrs + ETC Shop) × Shop rate: worked hours at the Rate Matrix rate for the year they were worked (a manual hour allocation overrides; hours with no year use the default, currently Eng $${rates.engRate}/hr and Shop $${rates.shopRate}/hr), ETC hours at those default rates. Projected parts = Parts Invoiced + the larger of (open PO balance not yet invoiced, ETC Parts); Complete jobs use Parts Invoiced only and no ETC. So Sales Price − Total Cost = Profit.`,
     salesPrice:
       "Sales Price — the job's Sales Price on the Projects tab plus its Change Quote (an as-of view uses that month's inventory-workbook figure instead). Falls back to the inventory workbook / Power BI price when the Projects tab has none. Blank when no source has a price.",
     percentComplete: `% Complete — read from the inventory workbook snapshot${inventoryAsOf ? ` (as of ${inventoryAsOf})` : ""}, not calculated here. Complete jobs show 100%. — means the job isn't in the snapshot.`,
@@ -191,7 +187,7 @@ function buildColTips(etcMonth: string | null, inventoryAsOf: string | null, rat
       "Profit = Sales Price − Total Cost, where Total Cost = Labor Cost + PM $ + Mfg $ + projected parts (Parts Invoiced + the larger of the open PO balance and ETC Parts; Complete jobs use Parts Invoiced only). Blank when the job has no Sales Price.",
     margin: "Margin = Profit ÷ Sales Price × 100. Blank when the job has no Sales Price.",
     otherHours:
-      "Other Hrs — hours on sections that are neither Engineering nor Shop (e.g. PM / Management 10-111). Same sources and cut-off as Eng Hrs; Service & Spares (80-/90-) excluded. Counted in a job's actual hours but costed at $0 in Labor Cost — PM and Mfg cost are modelled as a % of sales instead.",
+      "Other Hrs — hours on sections that are neither Engineering nor Shop (e.g. PM / Management 10-111). Same sources and cut-off as Eng Hrs; Service & Spares (80-/90-) excluded. Counted in a job's actual hours but costed at $0 in Total Cost — PM and Mfg cost are modelled as a % of sales instead.",
   };
 }
 
@@ -709,7 +705,7 @@ export function JobCostExplorer({
     const sum = (f: keyof JobCostComputed) => visibleRows.reduce((a, r) => a + (Number(r[f]) || 0), 0);
     return {
       actualHours: sum("actualHours"), engineeringHours: sum("engineeringHours"), shopHours: sum("shopHours"), otherHours: sum("otherHours"), serviceHours: sum("serviceHours"),
-      pmCost: sum("pmCost"), mfgCost: sum("mfgCost"), laborCost: sum("laborCost"), totalCost: sum("totalCost"),
+      pmCost: sum("pmCost"), mfgCost: sum("mfgCost"), totalCost: sum("totalCost"),
       etcEngHours: sum("etcEngHours"), etcShopHours: sum("etcShopHours"), etcPartsCost: sum("etcPartsCost"),
       partInvoiced: sum("partInvoiced"), salesPrice: sum("salesPrice"),
       profit: visibleRows.some((r) => r.profit != null) ? sum("profit") : null,
@@ -1026,7 +1022,7 @@ export function JobCostExplorer({
                   the same grouping the table already shows, instead of one
                   undifferentiated wall of checkboxes. */}
               <div className="max-h-[calc(var(--app-vh)_*_0.6)] overflow-y-auto styled-scrollbar">
-                {(["sold", "hours", "etc", "labor", "sales", "laborCost", "other"] as const).map((g) => {
+                {(["sold", "hours", "etc", "labor", "sales", "other"] as const).map((g) => {
                   const cols = COLS.filter((c) => c.group === g);
                   if (cols.length === 0) return null;
                   const shown = cols.filter((c) => !hiddenCols.has(c.key)).length;
@@ -1289,6 +1285,7 @@ export function JobCostExplorer({
             <tbody>
               {visibleRows.map((r, i) => {
                 const alloc = allocations[r.jobId];
+                const cellTip = (key: string, row: typeof r) => explainJobCell(key, row, rates, overrides, alloc);
                 // Translucent for normal cells — it composites with the row's
                 // OWN hover tint underneath (see TABLE_ROW_HOVER on the <tr>);
                 // opaque for the two frozen cells, which must stay solid on
@@ -1335,8 +1332,8 @@ export function JobCostExplorer({
                     </td>
                     {!hiddenCols.has("startDate") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("startDate")} ${zebra}`}>{r.startDate ?? "—"}</td>}
                     {!hiddenCols.has("completeDate") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("completeDate")} ${zebra}`}>{r.completeDate ?? "—"}</td>}
-                    {!hiddenCols.has("engineeringHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("engineeringHours")} ${zebra}`}>{fmtNum(r.engineeringHours)}</td>}
-                    {!hiddenCols.has("shopHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("shopHours")} ${zebra}`}>{fmtNum(r.shopHours)}</td>}
+                    {!hiddenCols.has("engineeringHours") && <td title={cellTip("engineeringHours", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("engineeringHours")} ${zebra}`}>{fmtNum(r.engineeringHours)}</td>}
+                    {!hiddenCols.has("shopHours") && <td title={cellTip("shopHours", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("shopHours")} ${zebra}`}>{fmtNum(r.shopHours)}</td>}
                     {!hiddenCols.has("partInvoiced") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("partInvoiced")} ${zebra}`}>{fmtMoney(r.partInvoiced)}</td>}
                     {!hiddenCols.has("etcEngHours") && (
                       <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("etcEngHours")} ${zebra}`}>
@@ -1353,13 +1350,14 @@ export function JobCostExplorer({
                         {r.etcPartsCost == null ? "—" : fmtMoney(r.etcPartsCost)}
                       </td>
                     )}
-                    {!hiddenCols.has("pmCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("pmCost")} ${zebra}`}>{fmtMoney(r.pmCost)}</td>}
-                    {!hiddenCols.has("mfgCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("mfgCost")} ${zebra}`}>{fmtMoney(r.mfgCost)}</td>}
+                    {!hiddenCols.has("pmCost") && <td title={cellTip("pmCost", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("pmCost")} ${zebra}`}>{fmtMoney(r.pmCost)}</td>}
+                    {!hiddenCols.has("mfgCost") && <td title={cellTip("mfgCost", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("mfgCost")} ${zebra}`}>{fmtMoney(r.mfgCost)}</td>}
                     {!hiddenCols.has("percentComplete") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("percentComplete")} ${zebra}`}>{fmtPct(r.percentComplete)}</td>}
                     {!hiddenCols.has("salesPrice") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("salesPrice")} ${zebra}`}>{fmtMoney(r.salesPrice)}</td>}
-                    {!hiddenCols.has("totalCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("totalCost")} ${zebra}`}>{fmtMoney(r.totalCost)}</td>}
+                    {!hiddenCols.has("totalCost") && <td title={cellTip("totalCost", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("totalCost")} ${zebra}`}>{fmtMoney(r.totalCost)}</td>}
                     {!hiddenCols.has("profit") && (
                       <td
+                        title={cellTip("profit", r)}
                         className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("profit")} ${
                           r.profit == null ? zebra : r.profit >= 0 ? "bg-sdc-green-bg/50 text-sdc-green-text" : "bg-sdc-red-bg/50 text-sdc-red-text"
                         }`}
@@ -1369,6 +1367,7 @@ export function JobCostExplorer({
                     )}
                     {!hiddenCols.has("margin") && (
                       <td
+                        title={cellTip("margin", r)}
                         className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("margin")} ${
                           r.margin == null ? zebra : r.margin >= 0 ? "bg-sdc-green-bg/50 text-sdc-green-text" : "bg-sdc-red-bg/50 text-sdc-red-text"
                         }`}
@@ -1376,7 +1375,6 @@ export function JobCostExplorer({
                         {fmtPct(r.margin)}
                       </td>
                     )}
-                    {!hiddenCols.has("laborCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("laborCost")} ${zebra}`}>{fmtMoney(r.laborCost)}</td>}
                     {!hiddenCols.has("otherHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("otherHours")} ${zebra}`}>{r.otherHours ? fmtNum(r.otherHours) : "—"}</td>}
                   </tr>
                 );
@@ -1413,7 +1411,6 @@ export function JobCostExplorer({
                   <td className={`px-2 py-1.5 text-right ${vBorder("profit")} ${totals.profit != null && totals.profit >= 0 ? "text-sdc-green-text" : "text-sdc-red-text"}`}>{fmtMoney(totals.profit)}</td>
                 )}
                 {!hiddenCols.has("margin") && <td className={`px-2 py-1.5 ${vBorder("margin")}`} />}
-                {!hiddenCols.has("laborCost") && <td className={`px-2 py-1.5 text-right ${vBorder("laborCost")}`}>{fmtMoney(totals.laborCost)}</td>}
                 {!hiddenCols.has("otherHours") && <td className={`px-2 py-1.5 text-right ${vBorder("otherHours")}`}>{fmtNum(totals.otherHours)}</td>}
               </tr>
             </tfoot>
