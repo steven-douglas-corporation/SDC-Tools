@@ -42,7 +42,9 @@ import { dayOf, hasInvoiceBalance, lineLeftToInvoice } from "@/lib/left-to-invoi
 // there and not here. The aggregate floor at 0 is the other (Job Details floors a job's
 // total; a PO row here is signed, like the Parts List column).
 
-export type OpenPoStatus = "past-due" | "awaiting-delivery" | "awaiting-invoice" | "over-invoiced" | "open";
+// `closed`: fully received and fully invoiced. Only ever on the Here list (`OpenPosResult.here`),
+// never on `rows`.
+export type OpenPoStatus = "past-due" | "awaiting-delivery" | "awaiting-invoice" | "over-invoiced" | "open" | "closed";
 
 /** Plain-language labels, one place, so the grid, the filter and the KPI cards agree. */
 export const OPEN_PO_STATUS_LABEL: Record<OpenPoStatus, string> = {
@@ -51,7 +53,37 @@ export const OPEN_PO_STATUS_LABEL: Record<OpenPoStatus, string> = {
   "awaiting-invoice": "Received, awaiting invoice",
   "over-invoiced": "Invoiced more than ordered",
   open: "Open",
+  closed: "Received and invoiced",
 };
+
+// ── Here, Coming, Outstanding (2026-11-16) ──────────────────────────────────────────────
+//
+// Every part line is in one of three delivery states:
+//   here         all of it has arrived;
+//   coming       not all here, expected today or later (or no date yet);
+//   outstanding  not all here, and its expected date (re-promised if any, `lineDue`) has passed.
+// A partly received line is coming or outstanding: it is "here" only once all of it is.
+// Credits, charge lines and lines with no receipt data have no state (null).
+export type DeliveryState = "here" | "coming" | "outstanding";
+
+export function lineState(l: OpenPoLine, today: string): DeliveryState | null {
+  if (l.quantity <= 0 || isChargeLine(l) || l.receivedQty == null) return null;
+  if (l.receivedQty >= l.quantity) return "here";
+  return l.expected && l.expected < today ? "outstanding" : "coming";
+}
+
+export type StateCounts = Record<DeliveryState, number>;
+
+/** How many of a PO's part lines are here, coming and outstanding. Pass `jobId` for one job's lines. */
+export function stateCounts(items: readonly OpenPoLine[], today: string, jobId?: string): StateCounts {
+  const c: StateCounts = { here: 0, coming: 0, outstanding: 0 };
+  for (const i of items) {
+    if (jobId != null && i.jobId !== jobId) continue;
+    const s = lineState(i, today);
+    if (s) c[s]++;
+  }
+  return c;
+}
 
 export type OpenPoJob = { jobId: string; jobName: string; status: string };
 
@@ -86,6 +118,8 @@ export const CHART_WEEKS = 8;
 
 export type OpenPoRow = {
   poNumber: string;
+  /** False for a PO that is fully received and invoiced: on the Here list only. */
+  open: boolean;
   /** Every job (of the ones loaded) this PO charges, ascending. */
   jobIds: string[];
   suppliers: string[];
@@ -168,6 +202,12 @@ export type OpenPoJobSummary = {
 export type OpenPosResult = {
   asOf: string;
   rows: OpenPoRow[];
+  /**
+   * What is here: every PO, open or closed, with at least one part line fully received.
+   * Built from the same lines as `rows` (closed POs were already loaded, only dropped), so
+   * an open PO here is the same object as in `rows`. Newest purchase first.
+   */
+  here: OpenPoRow[];
   jobs: OpenPoJobSummary[];
   totals: { openPos: number; openValue: number; pastDuePos: number; awaitingDeliveryValue: number; suppliers: number };
   /** Value not yet received on open POs, by when it is expected: late, CHART_WEEKS calendar weeks from this one, later, no date. */
@@ -405,7 +445,8 @@ function minDay(a: string | null, b: string | null): string | null {
  * Status for an open PO. Order matters: money first (an over-invoiced PO is a finance
  * problem whatever its deliveries say), then lateness, then what it is waiting on.
  */
-export function poStatus(x: { leftToInvoice: number; receiptsKnown: boolean; linesPastDue: number; linesReceived: number; linesReceivable: number }): OpenPoStatus {
+export function poStatus(x: { open?: boolean; leftToInvoice: number; receiptsKnown: boolean; linesPastDue: number; linesReceived: number; linesReceivable: number }): OpenPoStatus {
+  if (x.open === false) return "closed";
   if (x.leftToInvoice < 0) return "over-invoiced";
   if (!x.receiptsKnown) return "open";
   if (x.linesPastDue > 0) return "past-due";
@@ -435,13 +476,16 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
   }
 
   const rows: OpenPoRow[] = [];
+  const here: OpenPoRow[] = [];
   // Per job: [openValue, awaitingDeliveryValue, pastDue?, oldest] for each open PO it carries.
   const jobAcc = new Map<string, { openPos: number; pastDuePos: number; openValue: number; awaiting: number; oldest: string | null }>();
 
   for (const [poNumber, acc] of byPo) {
     const lines = acc.lines.map((x) => x.line);
     const leftToInvoice = lines.reduce((s, l) => s + lineLeftToInvoice(l), 0);
-    if (!hasInvoiceBalance(leftToInvoice) && !lines.some(owesDelivery)) continue;
+    const open = hasInvoiceBalance(leftToInvoice) || lines.some(owesDelivery);
+    // A closed PO is only of use to the Here list: skip it unless a part line has arrived.
+    if (!open && !lines.some((l) => receivable(l) && fullyReceived(l))) continue;
 
     let nextDue: string | null = null;
     let originalDue: string | null = null;
@@ -476,6 +520,7 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
 
     const row: OpenPoRow = {
       poNumber,
+      open,
       jobIds,
       suppliers: [...new Set(lines.map((l) => l.supplier).filter((s): s is string => !!s))],
       purchaseDate,
@@ -510,6 +555,8 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
       })),
     };
     row.status = poStatus(row);
+    if (linesReceived > 0) here.push(row);
+    if (!open) continue;
     rows.push(row);
 
     // Each job's share of this PO: its own lines only, so a PO split across jobs is not
@@ -529,7 +576,7 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
   }
 
   // Past due first, then the largest balance: the order someone working the list wants.
-  const rank: Record<OpenPoStatus, number> = { "past-due": 0, "over-invoiced": 1, "awaiting-delivery": 2, open: 3, "awaiting-invoice": 4 };
+  const rank: Record<OpenPoStatus, number> = { "past-due": 0, "over-invoiced": 1, "awaiting-delivery": 2, open: 3, "awaiting-invoice": 4, closed: 5 };
   rows.sort((a, b) => rank[a.status] - rank[b.status] || Math.abs(b.leftToInvoice) - Math.abs(a.leftToInvoice));
 
   const jobSummaries: OpenPoJobSummary[] = jobs
@@ -570,9 +617,12 @@ export function buildOpenPos(linesByJob: ReadonlyMap<string, readonly PartsCostL
   }
   const weeks: OpenPoWeek[] = [...weekTotals].map(([key, v]) => ({ key, notReceived: r2(v) }));
 
+  here.sort((a, b) => (b.purchaseDate ?? "").localeCompare(a.purchaseDate ?? "") || a.poNumber.localeCompare(b.poNumber, undefined, { numeric: true }));
+
   return {
     asOf: today,
     rows,
+    here,
     weeks,
     jobs: jobSummaries,
     totals: {
