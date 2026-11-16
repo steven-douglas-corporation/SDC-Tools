@@ -174,11 +174,11 @@ test("computeJobCost: ETC (future) hours always cost at the default rate, never 
   // A year override that would change the answer if it were (wrongly) applied to ETC hours.
   const overrides = { [String(new Date().getFullYear())]: { engRate: 99999 } };
   const c = computeJobCost(row, DEFAULT_RATES, overrides, undefined);
-  assert.equal(c.laborCost, 0); // no worked hours, no sales-based PM/Mfg
+  assert.equal(c.laborCost, 10 * DEFAULT_RATES.engRate); // ETC hours at the default rate, never the year override
   assert.equal(c.profit, 0 - 10 * DEFAULT_RATES.engRate);
 });
 
-test("computeJobCost: totalCost is labour only — (worked + ETC hours) x rate — and leaves profit as it was", () => {
+test("computeJobCost: laborCost is hours x rate only; totalCost is everything profit subtracts", () => {
   const row = baseRow({
     status: "Active",
     salesPrice: 1_000_000,
@@ -194,12 +194,14 @@ test("computeJobCost: totalCost is labour only — (worked + ETC hours) x rate �
   });
   const c = computeJobCost(row, DEFAULT_RATES, {}, undefined);
   // No per-year hours, so worked hours cost at the default rates; ETC hours always do.
-  assert.equal(c.totalCost, (100 + 10) * DEFAULT_RATES.engRate + (200 + 20) * DEFAULT_RATES.shopRate);
-  // Profit still subtracts PM and Mfg (percent of sales) and parts, exactly as before.
-  assert.equal(c.profit, 1_000_000 - (c.totalCost + c.pmCost + c.mfgCost + c.partsProjected));
+  assert.equal(c.laborCost, (100 + 10) * DEFAULT_RATES.engRate + (200 + 20) * DEFAULT_RATES.shopRate);
+  // Total Cost adds PM and Mfg (percent of sales) and projected parts on top of labor, and
+  // Profit is Sales minus exactly that.
+  assert.equal(c.totalCost, c.laborCost + c.pmCost + c.mfgCost + c.partsProjected);
+  assert.equal(c.profit, 1_000_000 - c.totalCost);
   // A Complete job zeroes ETC first, so only worked hours remain.
   const done = computeJobCost({ ...row, status: "Complete" }, DEFAULT_RATES, {}, undefined);
-  assert.equal(done.totalCost, 100 * DEFAULT_RATES.engRate + 200 * DEFAULT_RATES.shopRate);
+  assert.equal(done.laborCost, 100 * DEFAULT_RATES.engRate + 200 * DEFAULT_RATES.shopRate);
 });
 
 test("computeJobCost: profit is null with no sales price on file, not zero", () => {
@@ -223,7 +225,7 @@ test("computeJobCost: margin is profit as a percentage of sales", () => {
     completeDate: null,
   });
   const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
-  // x = laborCost (0 + PM/Mfg on 1000 at 10%/10% = 200) = 200; y = 200
+  // PM + Mfg on 1000 at 10%/10% = 200, no labor; parts = 200 → totalCost 400
   assert.equal(c.profit, 1000 - 200 - 200);
   assert.equal(c.margin, ((1000 - 200 - 200) / 1000) * 100);
 });
