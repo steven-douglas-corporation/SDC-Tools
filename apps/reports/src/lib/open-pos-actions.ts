@@ -18,7 +18,7 @@ export async function loadOpenPoRequiredDates(lineIds: string[]): Promise<Requir
 }
 
 /**
- * Open POs' timeline: when each PO line last had something received, for the square marking a
+ * Open POs' timeline: when each PO line last had something received, for the green tick marking a
  * partly received PO's latest receipt. Asked once the page is up, for lines with a receipt.
  */
 export async function loadOpenPoReceivedDates(lineIds: string[]): Promise<ReceivedDates> {

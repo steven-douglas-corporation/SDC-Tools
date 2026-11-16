@@ -34,7 +34,7 @@ export type TimelinePo = {
   jobId?: string;
   /** With `subgroups`: the heading this PO sits under inside its group (its supplier). */
   group?: string;
-  /** When something on it last arrived (lastReceived), drawn as a square; null when nothing has. */
+  /** When something on it last arrived (lastReceived), drawn as a green tick on the line; null when nothing has. */
   received?: string | null;
 };
 
@@ -542,7 +542,7 @@ export function PoTimeline({
               Late, still not received
             </span>
             <span className="inline-flex items-center gap-1.5" title="When part of the order last arrived, from Total ETO's receiver log">
-              <span aria-hidden className="inline-block h-2 w-2 shrink-0 bg-sdc-green" />
+              <span aria-hidden className="ml-1.5 mr-1.5 inline-block h-3.5 w-[3px] shrink-0 rounded-sm bg-sdc-green" />
               Last received
             </span>
             {requiredState !== "ok" && (
@@ -646,7 +646,7 @@ function PoRow({
       </div>
       <div className={sideCell} style={{ gridRow: 1, gridColumn: 4 }} />
       {/* The dot, diamond and line, over all three columns; under them, a late PO's wait so far
-          and the square of its latest receipt. */}
+          and the green tick of its latest receipt. */}
       <div className="pointer-events-none relative" style={{ gridRow: 1, gridColumn: "2 / 5" }}>
         {/* Still not received: a dashed red line from when it was expected to today, just under
             the row's middle so it doesn't sit on the expected-to-required line. */}
@@ -660,7 +660,7 @@ function PoRow({
         {xR && (
           <span
             title={`Last received ${fmtDate(p.received ?? null)}: part of this order is here`}
-            className="pointer-events-auto absolute top-1/2 z-[2] h-2 w-2 -translate-x-1/2 -translate-y-1/2 bg-sdc-green ring-1 ring-white motion-timeline-move"
+            className="pointer-events-auto absolute top-1/2 z-[2] h-3.5 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-sm bg-sdc-green motion-timeline-move"
             style={{ left: xR }}
           />
         )}

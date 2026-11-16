@@ -833,7 +833,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     };
   }, [data.rows]);
 
-  // When each line last had something received (the receiver log), for the timeline's square
+  // When each line last had something received (the receiver log), for the timeline's green tick
   // on a partly received PO. Read once the page is up, for open POs' lines with a receipt.
   const [receivedByLine, setReceivedByLine] = useState<ReadonlyMap<string, string>>(new Map());
   useEffect(() => {
@@ -841,7 +841,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     const ids = data.rows.flatMap((r) => r.items.filter((l) => l.quantity > 0 && (l.receivedQty ?? 0) > 0).map((l) => l.lineId));
     loadOpenPoReceivedDates(ids)
       .then((res) => live && res.ok && setReceivedByLine(new Map(Object.entries(res.byLine))))
-      // No dates, no squares: the rest of the timeline does not depend on them.
+      // No dates, no ticks: the rest of the timeline does not depend on them.
       .catch(() => {});
     return () => {
       live = false;

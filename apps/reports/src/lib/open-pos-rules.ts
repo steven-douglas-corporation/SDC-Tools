@@ -286,7 +286,7 @@ export function poDates(
 }
 
 /**
- * When something on a PO last arrived, for the timeline's square: the latest receipt date among
+ * When something on a PO last arrived, for the timeline's green tick: the latest receipt date among
  * its part lines with anything received (credits and shipping / fee / tariff charges left out,
  * as everywhere on delivery). Pass `jobId` for one job's lines of a split PO. `receivedByLine` is
  * the receiver log's latest date per line (`pod:<id>`, loadOpenPoReceivedDates). Null when none.
