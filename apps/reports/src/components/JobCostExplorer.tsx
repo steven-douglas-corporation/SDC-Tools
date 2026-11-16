@@ -67,7 +67,7 @@ const COMPACT_SELECT = `${BTN_H_COMPACT} rounded-md border border-sdc-border bg-
 // (2026-11-13) Job | Date | Cost to Date | ETC | Standard Fees | Sales / Margin | Other Hrs.
 // "hours" is Cost to Date (hours + Parts Invoiced, so the old "parts" group is gone) and "labor" is
 // Standard Fees; the keys keep their old names so nothing keyed on them changes.
-type GroupKey = "identity" | "sold" | "hours" | "etc" | "labor" | "sales" | "other";
+type GroupKey = "identity" | "sold" | "hours" | "etc" | "labor" | "sales" | "laborCost" | "other";
 
 const GROUP_META: Record<GroupKey, { label: string; band: string; text: string }> = {
   identity: { label: "Job", band: "bg-sdc-gray-100", text: "text-sdc-gray-600" },
@@ -76,6 +76,7 @@ const GROUP_META: Record<GroupKey, { label: string; band: string; text: string }
   etc: { label: "ETC", band: "bg-sdc-yellow-bg", text: "text-sdc-yellow-text" },
   labor: { label: "Standard Fees", band: "bg-sdc-navy/5", text: "text-sdc-navy" },
   sales:{ label: "Sales / Margin", band: "bg-sdc-lime/15", text: "text-sdc-navy" },
+  laborCost: { label: "Labor Cost", band: "bg-sdc-navy/5", text: "text-sdc-navy" },
   other: { label: "Other", band: "bg-sdc-gray-100", text: "text-sdc-gray-600" },
 };
 
@@ -108,7 +109,7 @@ const COLS: ColMeta[] = [
   { key: "jobType", label: "Type", group: "identity", type: "text", widthClass: "min-w-[6rem]" },
   // Column order here IS the on-screen order (header, Columns picker, export). The body and totals
   // rows below are hand-written, so they must be kept in this same order:
-  // Job | Date | Cost to Date | ETC | Standard Fees | Sales / Margin | Other Hrs.
+  // Job | Date | Cost to Date | ETC | Standard Fees | Sales / Margin | Labor Cost | Other Hrs.
   { key: "startDate", label: "Start Date", group: "sold", type: "date", widthClass: DATE_COL_W },
   { key: "completeDate", label: "Complete Date", group: "sold", type: "date", widthClass: DATE_COL_W },
   { key: "engineeringHours", label: "Eng Hrs", group: "hours", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
@@ -124,7 +125,7 @@ const COLS: ColMeta[] = [
   { key: "totalCost", label: "Total Cost", group: "sales", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "profit", label: "Profit", group: "sales", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "margin", label: "Margin", group: "sales", type: "number", widthClass: PCT_COL_W },
-  { key: "laborCost", label: "Labor Cost", group: "sales", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
+  { key: "laborCost", label: "Labor Cost", group: "laborCost", type: "currency", widthClass: "w-[96px] min-w-[96px]" },
   { key: "otherHours", label: "Other Hrs", group: "other", type: "hours", widthClass: "w-[64px] min-w-[64px]" },
 ];
 
@@ -1025,7 +1026,7 @@ export function JobCostExplorer({
                   the same grouping the table already shows, instead of one
                   undifferentiated wall of checkboxes. */}
               <div className="max-h-[calc(var(--app-vh)_*_0.6)] overflow-y-auto styled-scrollbar">
-                {(["sold", "hours", "etc", "labor", "sales", "other"] as const).map((g) => {
+                {(["sold", "hours", "etc", "labor", "sales", "laborCost", "other"] as const).map((g) => {
                   const cols = COLS.filter((c) => c.group === g);
                   if (cols.length === 0) return null;
                   const shown = cols.filter((c) => !hiddenCols.has(c.key)).length;
