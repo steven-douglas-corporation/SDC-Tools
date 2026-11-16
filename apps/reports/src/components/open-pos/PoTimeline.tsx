@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { card, TOOLBAR_BTN_ACTIVE, TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
 import { usd, usdExact } from "@/components/ui/format";
 import { fmtDate } from "@/lib/po-detail";
@@ -30,6 +30,8 @@ export type TimelinePo = {
   other: string;
   /** Project rows: the row's job, so a click opens that job's view of the PO. */
   jobId?: string;
+  /** With `subgroups`: the heading this PO sits under inside its group (its supplier). */
+  group?: string;
 };
 
 export type TimelineRow = { key: string; label: ReactNode; sublabel: string; title: string; pos: TimelinePo[] };
@@ -131,6 +133,7 @@ export function PoTimeline({
   dotsBy,
   requiredState,
   controls,
+  subgroups,
 }: {
   rows: TimelineRow[];
   asOf: string;
@@ -140,6 +143,12 @@ export function PoTimeline({
   requiredState: RequiredState;
   /** The page's own controls for this view (group order, dot colour), shown in the timeline's bar. */
   controls?: ReactNode;
+  /**
+   * Expanded groups list their POs under a heading per `TimelinePo.group` (the supplier, inside
+   * a project), the same split as the project cards' "Split by supplier". Headings come in the
+   * order of their first PO, soonest expected first.
+   */
+  subgroups?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   // Zoom (weeks shown) and pan (weeks from this Monday). Calendar weeks either way.
@@ -402,22 +411,40 @@ export function PoTimeline({
                 </div>
                 <div className={sideCell} />
               </div>
-              {[...r.pos].sort(byExpected).map((p) => (
-                <PoRow
-                  key={p.row.poNumber}
-                  p={p}
-                  asOf={asOf}
-                  slot={slot}
-                  grid={grid}
-                  weekLines={weekLines}
-                  todayLine={todayLine}
-                  sideCell={sideCell}
-                  dotsBy={dotsBy}
-                  requiredState={requiredState}
-                  onOpenPo={onOpenPo}
-                  hover={hoverPo == null ? null : hoverPo === p.row.poNumber}
-                  onHover={setHoverPo}
-                />
+              {subgroupsOf([...r.pos].sort(byExpected), subgroups).map((g) => (
+                <Fragment key={`g:${g.key}`}>
+                  {g.key != null && (
+                    <div className="grid border-t border-sdc-border-soft/60 bg-white" style={{ gridTemplateColumns: grid }} onMouseEnter={() => setHoverPo(null)}>
+                      <span className="truncate py-1 pl-7 pr-2 text-label font-semibold text-sdc-gray-600" title={`${g.key}: ${g.pos.length} ${g.pos.length === 1 ? "PO" : "POs"} still to arrive`}>
+                        {g.key}
+                        <span className="font-normal text-sdc-gray-400"> · {g.pos.length} {g.pos.length === 1 ? "PO" : "POs"}</span>
+                      </span>
+                      <div className={sideCell} />
+                      <div className="relative" style={weekLines}>
+                        {todayLine}
+                      </div>
+                      <div className={sideCell} />
+                    </div>
+                  )}
+                  {g.pos.map((p) => (
+                    <PoRow
+                      key={p.row.poNumber}
+                      p={p}
+                      asOf={asOf}
+                      slot={slot}
+                      grid={grid}
+                      weekLines={weekLines}
+                      todayLine={todayLine}
+                      sideCell={sideCell}
+                      dotsBy={dotsBy}
+                      requiredState={requiredState}
+                      onOpenPo={onOpenPo}
+                      hover={hoverPo == null ? null : hoverPo === p.row.poNumber}
+                      onHover={setHoverPo}
+                      indent={g.key != null}
+                    />
+                  ))}
+                </Fragment>
               ))}
             </div>
           );
@@ -533,7 +560,10 @@ function PoRow({
   onOpenPo,
   hover,
   onHover,
+  indent,
 }: {
+  /** Under a supplier heading: one step further in. */
+  indent?: boolean;
   p: TimelinePo;
   asOf: string;
   slot: (day: string | null) => TimelineSlot;
@@ -571,11 +601,12 @@ function PoRow({
         type="button"
         onClick={() => onOpenPo(p.row, p.jobId)}
         title={tip(p, asOf, requiredState)}
-        className="flex min-w-0 items-center gap-2 pl-8 pr-2 text-left"
+        className={`flex min-w-0 items-center gap-2 pr-2 text-left ${indent ? "pl-11" : "pl-8"}`}
         style={{ gridRow: 1, gridColumn: 1 }}
       >
         <span className="shrink-0 font-mono text-note font-semibold text-sdc-blue underline decoration-dotted underline-offset-2">{p.row.poNumber}</span>
-        <span className="truncate text-label text-sdc-gray-600">{p.other}</span>
+        {/* Under a supplier heading the supplier is already said; elsewhere it (or the job) is shown. */}
+        {!indent && <span className="truncate text-label text-sdc-gray-600">{p.other}</span>}
       </button>
       <div className={sideCell} style={{ gridRow: 1, gridColumn: 2 }} />
       <div className="relative" style={{ ...weekLines, gridRow: 1, gridColumn: 3 }}>
@@ -605,6 +636,19 @@ function PoRow({
       </div>
     </div>
   );
+}
+
+/** A group's POs (already in order) under their `group` heading, headings in order of first PO; one unnamed run when off. */
+function subgroupsOf(pos: TimelinePo[], on?: boolean): { key: string | null; pos: TimelinePo[] }[] {
+  if (!on) return [{ key: null, pos }];
+  const out: { key: string; pos: TimelinePo[] }[] = [];
+  const at = new Map<string, number>();
+  for (const p of pos) {
+    const k = p.group ?? "No supplier";
+    if (!at.has(k)) at.set(k, out.push({ key: k, pos: [] }) - 1);
+    out[at.get(k)!].pos.push(p);
+  }
+  return out;
 }
 
 /** The element whose scrolling moves `el`: the nearest ancestor that scrolls vertically, else the page. */
