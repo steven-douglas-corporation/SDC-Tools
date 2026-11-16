@@ -4,6 +4,16 @@
 // array in the click popup. Edit this file directly when bumping the rev.
 window.RELEASE_NOTES = [
   {
+    version: '13.39',
+    date: '2026-11-16',
+    notes: [
+      'The Overlaps card is off until you ask for it.',
+      '',
+      'SCHEDULE:',
+      '   ▸ The card at the top right of a job that lists who is booked past 100% (names, dates, peak %) no longer opens with every schedule. It had stayed on for anyone who clicked ⚠ Overlaps once. It now starts off each time the app opens; click ⚠ Overlaps in the Timeline group to see it. My work is unchanged — each person’s overlaps still show there.',
+    ],
+  },
+  {
     version: '13.38',
     date: '2026-11-12',
     notes: [

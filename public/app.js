@@ -35146,9 +35146,12 @@ function loadScheduleView() {
       // H view-pill: per-department quoted-vs-scheduled hours on the grid
       // subheaders. OFF by default — opt-in readout.
       showDeptHours: !!saved.showDeptHours,
-      // ⚠ Overlaps card (Timeline bracket). Off on a job unless turned on;
-      // My work turns it on for the visit (PERSONAL_VIEW_ON).
-      showOverlaps: !!saved.showOverlaps,
+      // ⚠ Overlaps card (Timeline bracket). Always OFF on open, like Hide
+      // complete — it is something you ask for, not a setting. Restoring it
+      // from the saved view left the card on every schedule for anyone who
+      // had clicked it once (Dan, 11/16: "off by default"). My work still
+      // turns it on for the visit (PERSONAL_VIEW_ON).
+      showOverlaps: false,
     };
   } catch {
     return { flatten: false, sortByStart: false, ganttOnly: false, criticalPath: false, criticalOnly: false, showArrowLags: true, showBarMeta: false, showInlineAlloc: true, actionsMode: 'combined', hideCompleted: false, showMachineColors: true, showDeptHours: false, riskMode: false, riskOverlay: false, controlsMode: false, controlsOverlay: false, eventsMode: false, eventsOverlay: false, showProjectStats: true };
