@@ -8,6 +8,7 @@ import {
   isUtilityJob,
   laborForType,
   rateForYear,
+  RATE_MATRIX_YEARS,
   partsCostForProfit,
   jobCostTotals,
   type JobCostComputed,
@@ -61,6 +62,27 @@ test("rateForYear with no override at all returns the default untouched", () => 
   assert.deepEqual(r, DEFAULT_RATES);
 });
 
+test("rateForYear: before 2022 uses the 2022 row, 2022-2025 their own rows, 2026+ the default", () => {
+  const ov = {
+    "2022": { engRate: 120, shopRate: 90, pmPct: 0, mfgPct: 0 },
+    "2023": { engRate: 125 },
+    "2025": { engRate: 140, shopRate: 100 },
+    "2026": { engRate: 999 }, // stale row from an older save: ignored
+    "2018": { engRate: 888 }, // stale row: ignored
+  };
+  assert.deepEqual(rateForYear("2017", DEFAULT_RATES, ov), { engRate: 120, shopRate: 90, pmPct: 0, mfgPct: 0 });
+  assert.deepEqual(rateForYear("2021", DEFAULT_RATES, ov), rateForYear("2022", DEFAULT_RATES, ov));
+  assert.equal(rateForYear("2023", DEFAULT_RATES, ov).engRate, 125);
+  assert.equal(rateForYear("2023", DEFAULT_RATES, ov).shopRate, DEFAULT_RATES.shopRate); // blank cell = default
+  assert.equal(rateForYear("2025", DEFAULT_RATES, ov).shopRate, 100);
+  assert.deepEqual(rateForYear("2026", DEFAULT_RATES, ov), DEFAULT_RATES);
+  assert.deepEqual(rateForYear("2031", DEFAULT_RATES, ov), DEFAULT_RATES);
+});
+
+test("the Rate Matrix shows 2025 down to 2022, newest first", () => {
+  assert.deepEqual(RATE_MATRIX_YEARS, ["2025", "2024", "2023", "2022"]);
+});
+
 test("laborForType costs the aggregate hours at the default rate with no year data", () => {
   const row = baseRow({ hoursByYear: {}, engineeringHours: 60 });
   const cost = laborForType(row, DEFAULT_RATES, {}, undefined, "eng");
@@ -104,7 +126,7 @@ test("laborForType prefers a manual allocation over the automatic year breakdown
 test("computeJobCost: PM/Mfg % apply at the completion-year rate, not the work-year rate", () => {
   const row = baseRow({
     salesPrice: 10000,
-    completeDate: "2026-03-01",
+    completeDate: "2025-03-01",
     hoursByYear: {},
     engineeringHours: 0,
     shopHours: 0,
@@ -113,7 +135,7 @@ test("computeJobCost: PM/Mfg % apply at the completion-year rate, not the work-y
     etcPartsCost: 0,
     partCost: 0,
   });
-  const overrides = { "2026": { pmPct: 5, mfgPct: 2 } };
+  const overrides = { "2025": { pmPct: 5, mfgPct: 2 } };
   const c = computeJobCost(row, DEFAULT_RATES, overrides, undefined);
   assert.equal(c.pmCost, 10000 * 0.05);
   assert.equal(c.mfgCost, 10000 * 0.02);

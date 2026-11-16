@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   computeJobCost,
   isUtilityJob,
+  RATE_MATRIX_YEARS,
   type CostRates,
   type JobCostComputed,
   type JobCostRow,
@@ -1417,7 +1418,7 @@ export function JobCostExplorer({
         <JobCostRateMatrixModal
           defaultRates={rates}
           overrides={overrides}
-          years={[...new Set([...years, ...Object.keys(overrides)])].sort((a, b) => b.localeCompare(a))}
+          years={RATE_MATRIX_YEARS}
           onClose={() => setRateMatrixOpen(false)}
           onConfirm={confirmRates}
         />
