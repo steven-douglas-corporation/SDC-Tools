@@ -21,7 +21,6 @@ import {
   lineCounts,
   lineState,
   poDates,
-  stateCounts,
   vsRequired,
   weekRange,
   type LineCounts,
@@ -32,6 +31,7 @@ import {
   type OpenPoWeek,
 } from "@/lib/open-pos-rules";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { ADV_OPTIONS, advActive, advCounts, advMatch, NO_ADV_FILTERS, type AdvCategory, type AdvFilters } from "@/lib/open-pos-filters";
 
 // For managers first (the Scheduler's Vendor POs page is the buyers' worklist).
 //
@@ -54,7 +54,7 @@ type TileId = "all" | MetricId;
 //            which is one flat list of POs.
 // Sorting belongs to the view it sorts and sits in that view's own bar.
 type Mode = "open" | "here";
-type Delivery = "all" | "coming" | "outstanding";
+type FilterMode = "basic" | "advanced";
 type View = "cards" | "timeline" | "table";
 type GroupBy = "projects" | "suppliers";
 type CardSort = "next" | "amount" | "name";
@@ -782,11 +782,59 @@ function OptionList<T extends string>({
   );
 }
 
+// Advanced's checkboxes: any number ticked, each with the POs it would leave and hover text.
+function CheckList({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: { id: string; label: string; count: number | undefined; tip: string }[];
+  selected: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div role="group" aria-label={label} className="flex flex-col gap-0.5">
+      {options.map((o) => {
+        const on = selected.has(o.id);
+        return (
+          <button
+            key={o.id}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onToggle(o.id)}
+            title={`${o.tip}. ${o.count ?? 0} ${o.count === 1 ? "PO" : "POs"} with the other ticks. Click to ${on ? "untick" : "tick"}`}
+            className={`flex items-baseline gap-2 rounded-md border px-2 py-1 text-left text-xs motion-interactive ${
+              on ? "border-sdc-navy bg-sdc-blue-light/50 font-semibold text-sdc-navy" : "border-transparent text-sdc-gray-600 hover:border-sdc-border hover:bg-white"
+            }`}
+          >
+            <span aria-hidden className="w-3 shrink-0">
+              {on ? "☑" : "☐"}
+            </span>
+            <span className="min-w-0 flex-1 truncate">{o.label}</span>
+            <span className={`shrink-0 tabular-nums ${o.count ? "" : "text-sdc-gray-400"}`}>{o.count ?? 0}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosResult; schedulerVendorPosUrl?: string }) {
   const [mode, setMode] = useState<Mode>("open");
   const [tile, setTile] = useState<TileId>("all");
-  const [delivery, setDelivery] = useState<Delivery>("all");
-  const [partialOnly, setPartialOnly] = useState(false);
+  // Basic: the one Money pick. Advanced: checkboxes by category (open-pos-filters.ts). Each keeps
+  // its own picks; only the one showing applies.
+  const [filterMode, setFilterMode] = useState<FilterMode>("basic");
+  const [adv, setAdv] = useState<AdvFilters>(NO_ADV_FILTERS);
+  const toggleAdv = (cat: AdvCategory, id: string) =>
+    setAdv((a) => {
+      const n = new Set(a[cat]);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return { ...a, [cat]: n };
+    });
   const [query, setQuery] = useState("");
   const [view, setView] = useState<View>("cards");
   const [groupBy, setGroupBy] = useState<GroupBy>("projects");
@@ -856,7 +904,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   // stays in view as it does.
   const sideRef = useRef<HTMLElement>(null);
   const sideHeight = useFillHeight(sideRef, true, shownView === "timeline");
-  const cur = mode === "here" ? HERE_TILE : TILES.find((t) => t.id === tile)!;
+  // Advanced has no Money pick: the cards show All open's amount (left to invoice).
+  const cur = mode === "here" ? HERE_TILE : filterMode === "advanced" ? TILES[0] : TILES.find((t) => t.id === tile)!;
   const metric = cur.metric;
   const jobName = useMemo(() => new Map(data.jobs.map((j) => [j.jobId, j.jobName])), [data.jobs]);
 
@@ -875,22 +924,43 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
   // Deliveries: a PO is Coming while any of its part lines is still expected (today on, or no
   // date), Outstanding while any is past its expected date. A PO can be both.
-  const inDelivery = (r: OpenPoRow, d: Delivery) => d === "all" || stateCounts(r.items, data.asOf)[d] > 0;
-  const deliveryCounts = useMemo(() => {
-    const base = data.rows.filter((r) => inTile(r, tile) && (!partialOnly || r.partiallyReceived));
-    return { all: base.length, coming: base.filter((r) => inDelivery(r, "coming")).length, outstanding: base.filter((r) => inDelivery(r, "outstanding")).length };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- inDelivery only reads data.asOf
-  }, [data.rows, data.asOf, tile, partialOnly]);
+  // What the Advanced tests need beyond the PO: today, the BOM's required dates, job statuses.
+  const advCtx = useMemo(
+    () => ({ today: data.asOf, requiredByLine: required.byLine, jobStatus: new Map(data.jobs.map((j) => [j.jobId, j.jobStatus])) }),
+    [data.asOf, required.byLine, data.jobs],
+  );
+  // Advanced's supplier and job-status choices: every one on an open PO, most POs first.
+  const supplierOptions = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const r of data.rows) for (const k of r.suppliers.length ? r.suppliers : ["No supplier"]) n.set(k, (n.get(k) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);
+  }, [data.rows]);
+  const statusOptions = useMemo(() => [...new Set(data.jobs.map((j) => j.jobStatus))].sort(), [data.jobs]);
+  // How many POs each box would leave, on top of the search and the other groups' ticks.
+  const advCount = useMemo(
+    () =>
+      advCounts(searchRows(data.rows, searchIn, query), adv, advCtx, {
+        delivery: ADV_OPTIONS.delivery.map((o) => o.id),
+        invoicing: ADV_OPTIONS.invoicing.map((o) => o.id),
+        required: ADV_OPTIONS.required.map((o) => o.id),
+        supplier: supplierOptions,
+        jobStatus: statusOptions,
+      }),
+    [data.rows, searchIn, query, adv, advCtx, supplierOptions, statusOptions],
+  );
 
   const shown = useMemo(
     () =>
       searchRows(
-        mode === "here" ? data.here : data.rows.filter((r) => inTile(r, tile) && inDelivery(r, delivery) && (!partialOnly || r.partiallyReceived)),
+        mode === "here"
+          ? data.here
+          : filterMode === "basic"
+            ? data.rows.filter((r) => inTile(r, tile))
+            : data.rows.filter((r) => advMatch(r, adv, advCtx)),
         searchIn,
         query,
       ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- inDelivery only reads data.asOf
-    [mode, data.rows, data.here, data.asOf, tile, delivery, partialOnly, searchIn, query],
+    [mode, data.rows, data.here, filterMode, tile, adv, advCtx, searchIn, query],
   );
 
   const tiles = useMemo(
@@ -993,13 +1063,12 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   }
 
   const searching = query.trim() !== "";
-  const filtered = searching || (mode === "open" && (tile !== "all" || delivery !== "all" || partialOnly));
+  const filtered = searching || (mode === "open" && (filterMode === "basic" ? tile !== "all" : advActive(adv)));
   const total = mode === "here" ? data.here.length : data.rows.length;
   const shownJobs = new Set(shown.flatMap((r) => r.jobIds)).size;
   const clearFilters = () => {
     setTile("all");
-    setDelivery("all");
-    setPartialOnly(false);
+    setAdv(NO_ADV_FILTERS);
     setQuery("");
   };
   // The card open in the details panel, as the cards stand now (filters applied).
@@ -1291,47 +1360,88 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           </SideGroup>
 
           {mode === "open" && (
+            <SideGroup title="Filters" tip="Basic: one pick, by what the POs still owe. Advanced: any mix of delivery, invoicing, required date, supplier and job checkboxes">
+              <Segmented
+                label="Filters"
+                value={filterMode}
+                onChange={setFilterMode}
+                options={[
+                  { value: "basic", label: "Basic", title: "One pick, by what the POs still owe (Money)" },
+                  { value: "advanced", label: "Advanced", title: "Checkboxes by category: delivery, invoicing, required date, supplier, job" },
+                ]}
+              />
+            </SideGroup>
+          )}
+
+          {mode === "open" && filterMode === "basic" && (
+            <SideGroup title="Money" tip="Which POs to list, by what they still owe: one at a time. All open is every PO still owing a delivery or an invoice. The amount picked here is also what the cards show and what Biggest amount first sorts by">
+              <OptionList
+                label="Money"
+                value={tile}
+                onChange={setTile}
+                options={tiles.map((t) => ({
+                  value: t.id,
+                  label: t.label,
+                  detail: t.id === "all" ? `${t.pos} POs` : usd(t.value),
+                  tone: t.id === "late" ? ("danger" as const) : undefined,
+                  title: `${t.hint}. ${t.id === "all" ? `${t.pos} POs` : `${usdExact(t.value)} on ${t.pos} POs`}, ${t.jobs} jobs`,
+                }))}
+              />
+            </SideGroup>
+          )}
+
+          {mode === "open" && filterMode === "advanced" && (
             <>
-              <SideGroup title="Money" tip="Which POs to list, by what they still owe: one at a time. All open is every PO still owing a delivery or an invoice. The amount picked here is also what the cards show and what Biggest amount first sorts by">
-                <OptionList
-                  label="Money"
-                  value={tile}
-                  onChange={setTile}
-                  options={tiles.map((t) => ({
-                    value: t.id,
-                    label: t.label,
-                    detail: t.id === "all" ? `${t.pos} POs` : usd(t.value),
-                    tone: t.id === "late" ? ("danger" as const) : undefined,
-                    title: `${t.hint}. ${t.id === "all" ? `${t.pos} POs` : `${usdExact(t.value)} on ${t.pos} POs`}, ${t.jobs} jobs`,
-                  }))}
+              <p className="text-note text-sdc-gray-400" title="In a group, a PO needs any ticked box. Across groups, it needs all of them. A group with nothing ticked does not filter">
+                Tick any. Within a group: any of them. Across groups: all.
+              </p>
+              <SideGroup title="Delivery" tip="By what has arrived and what is still to come">
+                <CheckList
+                  label="Delivery"
+                  options={ADV_OPTIONS.delivery.map((o) => ({ ...o, count: advCount.delivery[o.id] }))}
+                  selected={adv.delivery}
+                  onToggle={(id) => toggleAdv("delivery", id)}
                 />
               </SideGroup>
-              <SideGroup title="Deliveries" tip="On top of the Money pick: POs with parts still coming, or parts past their expected date and still not here (outstanding). A PO with both is in both">
-                <OptionList
-                  label="Deliveries"
-                  value={delivery}
-                  onChange={setDelivery}
-                  options={[
-                    { value: "all", label: "Any", detail: deliveryCounts.all, title: "Every PO the Money pick lists, whatever its deliveries" },
-                    { value: "coming", label: "Coming", detail: deliveryCounts.coming, title: "POs with parts still expected: today or later, or not dated yet" },
-                    {
-                      value: "outstanding",
-                      label: "Outstanding",
-                      detail: deliveryCounts.outstanding,
-                      tone: "danger" as const,
-                      title: "POs with parts past their expected date (the vendor's re-promised date when there is one) and still not here",
-                    },
-                  ]}
+              <SideGroup title="Invoicing" tip="By what has been invoiced against what has arrived">
+                <CheckList
+                  label="Invoicing"
+                  options={ADV_OPTIONS.invoicing.map((o) => ({ ...o, count: advCount.invoicing[o.id] }))}
+                  selected={adv.invoicing}
+                  onToggle={(id) => toggleAdv("invoicing", id)}
                 />
-                <button
-                  type="button"
-                  aria-pressed={partialOnly}
-                  onClick={() => setPartialOnly((v) => !v)}
-                  title="On top of the picks above: only POs where some of the order has arrived and the rest is still to come"
-                  className={`${TOOLBAR_BTN_COMPACT} ${partialOnly ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL} mt-1 shrink-0 justify-start`}
-                >
-                  {partialOnly ? "☑" : "☐"} Only partially received ({data.rows.filter((r) => inTile(r, tile) && r.partiallyReceived).length})
-                </button>
+              </SideGroup>
+              <SideGroup title="Vs required date" tip="The PO's next part to arrive, against the BOM's required date for it">
+                {required.state === "ok" ? (
+                  <CheckList
+                    label="Vs required date"
+                    options={ADV_OPTIONS.required.map((o) => ({ ...o, count: advCount.required[o.id] }))}
+                    selected={adv.required}
+                    onToggle={(id) => toggleAdv("required", id)}
+                  />
+                ) : (
+                  <span className="text-note text-sdc-gray-400">
+                    {required.state === "loading" ? "Loading required dates from the BOM…" : "Required dates couldn't be read from the BOM"}
+                  </span>
+                )}
+              </SideGroup>
+              <SideGroup title="Supplier" tip="The vendor on the PO. Most POs first">
+                <div className="max-h-48 overflow-y-auto pr-1 styled-scrollbar">
+                  <CheckList
+                    label="Supplier"
+                    options={supplierOptions.map((s) => ({ id: s, label: s, count: advCount.supplier[s], tip: `POs from ${s}` }))}
+                    selected={adv.supplier}
+                    onToggle={(id) => toggleAdv("supplier", id)}
+                  />
+                </div>
+              </SideGroup>
+              <SideGroup title="Job status" tip="The status of the job a PO charges (any of them, for a PO split across jobs)">
+                <CheckList
+                  label="Job status"
+                  options={statusOptions.map((s) => ({ id: s, label: s, count: advCount.jobStatus[s], tip: `POs charging a ${s} job` }))}
+                  selected={adv.jobStatus}
+                  onToggle={(id) => toggleAdv("jobStatus", id)}
+                />
               </SideGroup>
             </>
           )}
