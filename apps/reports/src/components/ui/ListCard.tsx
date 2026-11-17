@@ -9,7 +9,7 @@ import { splitInOrder } from "@/lib/column-flow";
 // per vendor, its POs underneath) and shared so other pages that group POs or parts get the
 // same card instead of drawing their own.
 //
-// Deliberately small. The header holds a title, a subtitle, an optional avatar and badge; the
+// Deliberately small. The header holds a title, a subtitle, an optional avatar, figure and badge; the
 // body is one bar; the list takes columns like DataTable does. Anything more belongs on the
 // page the card links to, not on the card.
 
@@ -39,6 +39,8 @@ export type ListCardProps<T> = {
   subtitle?: ReactNode;
   avatar?: ReactNode;
   badge?: { text: string; className: string; title?: string };
+  /** A figure at the header's right, before the badge: e.g. the amount the cards are ordered by, with what it is under it. */
+  figure?: { value: ReactNode; label?: ReactNode; title?: string };
   /** One bar under the header. `pct` is clamped to 0–100 for drawing; `label` sits to its right. */
   progress?: { pct: number; barClassName: string; label: ReactNode; labelClassName?: string; title?: string };
   columns: ListCardColumn<T>[];
@@ -98,6 +100,7 @@ export function ListCard<T>({
   subtitle,
   avatar,
   badge,
+  figure,
   progress,
   columns,
   rows,
@@ -229,6 +232,12 @@ export function ListCard<T>({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
+            {figure && (
+              <span title={figure.title} className="mr-1 flex flex-col items-end leading-tight">
+                <span className="text-sm font-bold tabular-nums text-sdc-navy">{figure.value}</span>
+                {figure.label != null && <span className="text-micro text-sdc-gray-400">{figure.label}</span>}
+              </span>
+            )}
             {badge && (
               <span title={badge.title} className={`shrink-0 rounded px-1.5 py-0.5 text-micro font-bold tracking-wide ${badge.className}`}>
                 {badge.text}
