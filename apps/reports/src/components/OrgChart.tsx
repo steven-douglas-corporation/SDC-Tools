@@ -3,7 +3,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { card } from "@/components/ui/classnames";
 import { resolveEmployeeGroup } from "@/lib/employee-card-theme";
 import type { OrgBand, OrgChart as OrgChartData, OrgNode, OrgTeamCard } from "@/lib/org-chart";
-import { groupByFunction, sectionActive, type SectionKey } from "@/lib/org-chart-groups";
+import { groupByFunction, sectionActive, type FunctionGroups, type SectionKey } from "@/lib/org-chart-groups";
 import { DepartmentCardHeader, EmployeePersonRow, HandPlacedSection, TempsSection } from "@/components/EmployeePersonRow";
 import { isPaylocityId, comparePositionCode, rowMatchesSearch, type EmployeeRow } from "@/lib/employee-row";
 import { filterOrgNodes, countOrgNodes } from "@/lib/org-chart-search";
@@ -15,6 +15,7 @@ import { OpenPositionsDropdown } from "@/components/OpenPositionsDropdown";
 import type { HiringPosition } from "@/lib/hiring-positions";
 import { countOpenings } from "@/lib/hiring-openings";
 import { cardId, LEADERS_CARD, placeHiringOnChart } from "@/lib/org-chart-hiring";
+import { PanZoomCanvas } from "@/components/PanZoomCanvas";
 
 // The Employees page's Org chart view (2026-10-02): the same department cards
 // as the Cards view — same header, same "N active" line, same person rows
@@ -273,15 +274,182 @@ function Part({ label, active, className, children }: { label: string | null; ac
   );
 }
 
-export type OrgChartGrouping = "function" | "leader";
+// "canvas" (2026-11-16, experimental): the function groups drawn as a tree on a
+// pan-and-zoom canvas (see CanvasLayout) instead of flowing to the page width.
+export type OrgChartGrouping = "function" | "leader" | "canvas";
 
 // The function groups, in page order, and which sections of
 // lib/org-chart-groups.ts each one draws. Execution draws its sections as Parts.
-const FUNCTIONS: { key: "growth" | "execution" | "support"; title: string; sections: SectionKey[] }[] = [
-  { key: "growth", title: "Growth", sections: ["growth"] },
-  { key: "execution", title: "Execution", sections: ["pm", "engineering", "operations"] },
-  { key: "support", title: "Support", sections: ["support"] },
+const FUNCTIONS: { key: "growth" | "execution" | "support"; title: string; blurb: string; sections: SectionKey[] }[] = [
+  { key: "growth", title: "Growth", blurb: "Win the work", sections: ["growth"] },
+  { key: "execution", title: "Execution", blurb: "Quote to ship", sections: ["pm", "engineering", "operations"] },
+  { key: "support", title: "Support", blurb: "Run the business", sections: ["support"] },
 ];
+
+// ── The Canvas view (2026-11-16, experimental) ──────────────────────────────
+//
+// The function groups as a tree, laid out at a fixed width on a pan-and-zoom
+// canvas (PanZoomCanvas.tsx), so nothing has to wrap to the page:
+//
+//                       [ Leadership ]
+//                             │
+//        ┌────────────────────┼────────────────────┐
+//    [ Growth ]       [ Execution            ]   [ Support ]
+//     stacked         [ Project management   ]    stacked
+//                     [ Engineering│Operations]
+//                        stacked     stacked
+//
+// Teams no function takes ("Reporting to X") and Not placed sit in a row under
+// the tree. Same cards, same search and same hiring placement as the other views.
+const CANVAS_COL = "flex w-[20rem] flex-col gap-3";
+// Connectors, the classic CSS tree: each branch draws its share of the bar
+// across the top (half of it at the two ends) and a drop to its own centre.
+// The bar runs into the gap between branches (-left/-right = half of gap-10).
+// (Written out in full: Tailwind only generates what it finds literally.)
+const CANVAS_STEM = "h-8 border-l-[1.5px] border-sdc-gray-400";
+const CANVAS_BRANCHES = "flex items-start justify-center gap-10";
+const CANVAS_BRANCH =
+  "relative pt-8 before:absolute before:-left-5 before:-right-5 before:top-0 before:border-t-[1.5px] before:border-sdc-gray-400 before:content-[''] first:before:left-1/2 last:before:right-1/2 after:absolute after:left-1/2 after:top-0 after:h-8 after:border-l-[1.5px] after:border-sdc-gray-400 after:content-['']";
+
+// How many columns each part of Execution spreads its cards over on the canvas.
+const CANVAS_PART_COLUMNS: Record<"engineering" | "operations", number> = { engineering: 2, operations: 3 };
+
+// Deals cards into `n` columns, each to the shortest so far, so the columns end
+// up about even. A card's height is guessed from what it draws: a header's worth
+// plus a row per person shown. In order, so teams still read left to right.
+function balanceColumns<T extends { item: { heads: OrgNode[] } }>(cards: T[], n: number): T[][] {
+  const cols = Array.from({ length: Math.max(1, Math.min(n, cards.length)) }, () => ({ height: 0, cards: [] as T[] }));
+  for (const c of cards) {
+    const shortest = cols.reduce((a, b) => (b.height < a.height ? b : a));
+    shortest.cards.push(c);
+    shortest.height += 4 + countOrgNodes(c.item.heads);
+  }
+  return cols.map((c) => c.cards);
+}
+
+function CanvasPanel({
+  title,
+  blurb,
+  active,
+  accent = false,
+  dashed = false,
+  children,
+}: {
+  title: string;
+  blurb?: string;
+  active?: number;
+  /** Execution: tinted, the way the eye should be drawn. */
+  accent?: boolean;
+  dashed?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      className={`rounded-2xl border p-4 shadow-sm ${dashed ? "border-dashed" : ""} ${
+        accent ? "border-sdc-green/50 bg-sdc-green-bg/70" : "border-sdc-border bg-white/80"
+      }`}
+    >
+      <header className="mb-3 text-center">
+        <h3 className="font-heading text-base font-bold text-sdc-navy">{title}</h3>
+        <p className="text-xs text-sdc-muted">
+          {blurb}
+          {blurb && active != null && " · "}
+          {active != null && `${active} active`}
+        </p>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function CanvasLayout({
+  leadership,
+  functions,
+  sections,
+  teamCard,
+  others,
+  notPlaced,
+}: {
+  leadership: React.ReactNode;
+  functions: { key: string; title: string; blurb: string; active: number; cards: { band: OrgBand; item: { card: OrgTeamCard; heads: OrgNode[] } }[] }[];
+  sections: FunctionGroups<{ card: OrgTeamCard; heads: OrgNode[] }>["sections"];
+  teamCard: (b: OrgBand, c: OrgTeamCard, heads: OrgNode[], reportsTo: string | null) => React.ReactNode;
+  others: { title: string; active: number; cards: React.ReactNode[] }[];
+  notPlaced: React.ReactNode;
+}) {
+  const card = ({ band: b, item }: { band: OrgBand; item: { card: OrgTeamCard; heads: OrgNode[] } }) => teamCard(b, item.card, item.heads, b.leader.name);
+  const parts = (["engineering", "operations"] as const).filter((k) => sections[k].cards.length > 0);
+  return (
+    <div className="p-6">
+      {leadership && (
+        <div className="flex flex-col items-center">
+          <div className="w-[20rem]">{leadership}</div>
+          {functions.length > 0 && <div className={CANVAS_STEM} />}
+        </div>
+      )}
+
+      <div className={CANVAS_BRANCHES}>
+        {functions.map((f) => (
+          <div key={f.key} className={leadership ? CANVAS_BRANCH : ""}>
+            {f.key === "execution" ? (
+              <CanvasPanel title={f.title} blurb={f.blurb} active={f.active} accent>
+                {sections.pm.cards.length > 0 && (
+                  // Project management spans the panel. `w-0 min-w-full`: as wide as
+                  // the parts under it, without its own text widening the panel.
+                  <div className={`flex gap-3 ${parts.length ? "w-0 min-w-full" : ""}`}>
+                    {sections.pm.cards.map((c) => (
+                      <div key={cardId(c.band.leader.id, c.item.card.team)} className={parts.length ? "min-w-0 flex-1" : "w-[20rem]"}>
+                        {card(c)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {parts.length > 0 && (
+                  <div className={`flex items-start gap-4 ${sections.pm.cards.length ? "mt-4" : ""}`}>
+                    {parts.map((k) => (
+                      <div key={k}>
+                        <h4 className="mb-2 text-center text-xs font-semibold text-sdc-navy">
+                          {PART_LABEL[k]}
+                          <span className="ml-2 font-normal text-sdc-gray-400">{sectionActive(sections[k])} active</span>
+                        </h4>
+                        <div className="flex items-start gap-3">
+                          {balanceColumns(sections[k].cards, CANVAS_PART_COLUMNS[k]).map((col, i) => (
+                            <div key={i} className={CANVAS_COL}>
+                              {col.map(card)}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CanvasPanel>
+            ) : (
+              <CanvasPanel title={f.title} blurb={f.blurb} active={f.active}>
+                <div className={CANVAS_COL}>{f.cards.map(card)}</div>
+              </CanvasPanel>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {(others.length > 0 || notPlaced) && (
+        <div className="mt-12 flex items-start justify-center gap-10">
+          {others.map((o) => (
+            <CanvasPanel key={o.title} title={o.title} active={o.active}>
+              <div className={CANVAS_COL}>{o.cards}</div>
+            </CanvasPanel>
+          ))}
+          {notPlaced && (
+            <CanvasPanel title="Not placed" dashed>
+              <div className="w-[20rem]">{notPlaced}</div>
+            </CanvasPanel>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 // Execution's part headers. Project management has none: its one card already says it.
 const PART_LABEL: Partial<Record<SectionKey, string>> = { engineering: "Engineering", operations: "Operations" };
 
@@ -389,23 +557,70 @@ export function OrgChart({
     </Group>
   );
   const pmActive = sectionActive(sections.pm);
+
+  // The Leadership card and the Not placed card, shared by both layouts.
+  const showLeaders = !match || leaders.length > 0;
+  const leadershipCard = showLeaders ? (
+    <TeamCard
+      id={LEADERS_CARD}
+      team="exec"
+      count={chart.leaderActive}
+      inactive={chart.leaderCount - chart.leaderActive}
+      shown={shownOf(leaders, chart.leaders)}
+      nodes={chart.leaders}
+      ctx={ctx}
+    >
+      {(title) => <Tree nodes={leaders} cardTitle={title} ctx={{ ...ctx, leadershipCard: true }} />}
+    </TeamCard>
+  ) : null;
+  const notPlacedCard =
+    unplaced.length > 0 || unplacedHiring.length > 0 ? (
+      <section className="flex flex-col rounded-xl border border-dashed border-sdc-border bg-white">
+        <p className="rounded-t-[11px] border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-1.5 text-xs text-sdc-muted">
+          {unplaced.length > 0
+            ? "No Leadership above them — their team is left as it is"
+            : "Open positions whose hiring manager isn't on the chart — open one to place it"}
+        </p>
+        <ul className="p-1.5">
+          {unplaced.map((u) => {
+            const row = people.get(u.id);
+            return row ? (
+              <li key={u.id}>
+                <EmployeePersonRow p={row} cardTitle="" onSelect={onSelectPerson} note={u.detail} />
+              </li>
+            ) : null;
+          })}
+        </ul>
+        <OpenPositionsDropdown positions={unplacedHiring} onSelect={ctx.onSelectHiring} />
+      </section>
+    ) : null;
+
+  if (groupBy === "canvas") {
+    return (
+      <PanZoomCanvas className="h-[max(30rem,calc(var(--app-vh)-16rem))]">
+        <CanvasLayout
+          leadership={leadershipCard}
+          functions={functions}
+          sections={sections}
+          teamCard={teamCard}
+          others={other.map(({ band: b, cards }) => ({
+            title: `Reporting to ${b.leader.name}`,
+            active: cards.reduce((n, x) => n + x.card.active, 0),
+            cards: cards.map(({ card: c, heads }) => teamCard(b, c, heads, null)),
+          }))}
+          notPlaced={notPlacedCard}
+        />
+      </PanZoomCanvas>
+    );
+  }
+
   return (
     // Groups share a line when they fit, the same flow the Cards view uses. A
     // size container, so Execution can give way by the chart's width (see Part).
     <div className="@container flex flex-wrap items-start gap-x-5 gap-y-4">
-      {(!match || leaders.length > 0) && (
+      {leadershipCard && (
         <Group title="Leadership" active={chart.leaderActive} cardCount={1}>
-          <TeamCard
-            id={LEADERS_CARD}
-            team="exec"
-            count={chart.leaderActive}
-            inactive={chart.leaderCount - chart.leaderActive}
-            shown={shownOf(leaders, chart.leaders)}
-            nodes={chart.leaders}
-            ctx={ctx}
-          >
-            {(title) => <Tree nodes={leaders} cardTitle={title} ctx={{ ...ctx, leadershipCard: true }} />}
-          </TeamCard>
+          {leadershipCard}
         </Group>
       )}
 
@@ -461,26 +676,9 @@ export function OrgChart({
         </>
       )}
 
-      {(unplaced.length > 0 || unplacedHiring.length > 0) && (
+      {notPlacedCard && (
         <Group title="Not placed" active={unplaced.filter((u) => u.active).length} cardCount={1}>
-          <section className="flex flex-col rounded-xl border border-dashed border-sdc-border bg-white">
-            <p className="rounded-t-[11px] border-b border-sdc-border bg-sdc-gray-50 px-3.5 py-1.5 text-xs text-sdc-muted">
-              {unplaced.length > 0
-                ? "No Leadership above them — their team is left as it is"
-                : "Open positions whose hiring manager isn't on the chart — open one to place it"}
-            </p>
-            <ul className="p-1.5">
-              {unplaced.map((u) => {
-                const row = people.get(u.id);
-                return row ? (
-                  <li key={u.id}>
-                    <EmployeePersonRow p={row} cardTitle="" onSelect={onSelectPerson} note={u.detail} />
-                  </li>
-                ) : null;
-              })}
-            </ul>
-            <OpenPositionsDropdown positions={unplacedHiring} onSelect={ctx.onSelectHiring} />
-          </section>
+          {notPlacedCard}
         </Group>
       )}
     </div>

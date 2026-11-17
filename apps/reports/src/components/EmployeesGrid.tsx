@@ -242,6 +242,8 @@ export function EmployeesGrid({
                   [
                     ["function", "By function"],
                     ["leader", "By reporting line"],
+                    // Experimental (2026-11-16): the function groups as a tree on a pan-and-zoom canvas.
+                    ["canvas", "Canvas (beta)"],
                   ] as const
                 ).map(([g, label]) => (
                   <button
