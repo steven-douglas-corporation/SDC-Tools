@@ -10,7 +10,7 @@ import { runDax } from "@/lib/powerbi-client";
 import { withTimeoutOrNull } from "@/lib/with-timeout";
 import { getInventorySnapshotForDate, listInventorySnapshotDates } from "@/lib/job-cost-inventory-snapshot";
 import { drawDownEtc, NO_ETC_ACTIVITY, type EtcActivity } from "@/lib/job-cost-etc-drawdown";
-import type { HoursByYear, JobCostRow } from "@/lib/job-cost";
+import { WARRANTY_BUCKET_OVERRIDES, type HoursByYear, type JobCostRow } from "@/lib/job-cost";
 
 // ── Job Cost Explorer data assembly ─────────────────────────────────────────
 //
@@ -42,6 +42,8 @@ for (const s of SECTIONS) {
   const group = billingGroupForSection(s.code);
   SECTION_BUCKET[s.code] = group === "Engineering" ? "eng" : group === "Shop" ? "shop" : "other";
 }
+// Warranty codes with no column of their own: costed as Shop / Eng here (see job-cost.ts).
+Object.assign(SECTION_BUCKET, WARRANTY_BUCKET_OVERRIDES);
 
 // The 1990–2100 "lifetime" window these constants supplied is gone: the Parts
 // Actual column now calls getPartsActualByJob(), which is unwindowed by
