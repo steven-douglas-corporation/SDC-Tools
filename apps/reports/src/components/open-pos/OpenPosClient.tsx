@@ -901,12 +901,16 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
   // Here has no timeline (nothing to place on it): its view falls back to the cards.
   const shownView: View = mode === "here" && view === "timeline" ? "cards" : view;
-  // The left column: down to the window's bottom, scrolling on its own when it is longer.
-  // Beside the Timeline (which fits the window) it stops above the page's bottom padding too,
-  // so the page does not scroll; in Cards and Table the page scrolls anyway and the column
-  // stays in view as it does.
+  // The left column: as tall as its controls, up to a cap, scrolling on its own past it.
+  // Beside the Timeline (which fits the window, so the page does not scroll) the cap is
+  // measured: down to the window's bottom, above the page's bottom padding. In Cards and Table
+  // the page scrolls and the column spends that time pinned 1rem from the top, so the cap is
+  // the whole window less 1rem above and below: plain CSS, nothing measured. At the very top
+  // of the page its bottom can start a short scroll below the window. (2026-11-17: measured
+  // there too, it was capped at the room left under the page header, even once pinned.)
   const sideRef = useRef<HTMLElement>(null);
-  const sideHeight = useFillHeight(sideRef, true, shownView === "timeline");
+  const sideHeight = useFillHeight(sideRef, shownView === "timeline", true);
+  const sideCap = shownView !== "timeline" ? "calc(var(--app-vh) - 2rem)" : sideHeight ? `${sideHeight}px` : "none";
   // Advanced has no Money pick: the cards show All open's amount (left to invoice).
   const cur = mode === "here" ? HERE_TILE : filterMode === "advanced" ? TILES[0] : (TILES.find((t) => t.id === tile) ?? TILES[0]);
   const metric = cur.metric;
@@ -1240,14 +1244,14 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           (2026-11-16. The cards-beside-timeline trial is on branch trial/open-pos-split-layout.) */}
       <div className="grid items-start gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
         {/* The controls: search, then how the cards are grouped and ordered, then what to show
-            and narrow it down to (Show, the totals, Deliveries). As tall as the cards and timeline beside it (down to the
-            window's bottom), scrolling on its own when it is longer; it stays in place while
-            the page scrolls. */}
+            and narrow it down to (Show, the totals, Deliveries). As tall as its controls, up to
+            the cap set by sideCap (about the window's height), scrolling on its own past it; it
+            stays in place while the page scrolls. */}
         <aside
           ref={sideRef}
           aria-label="Filter and order"
-          style={{ "--side-h": sideHeight ? `${sideHeight}px` : "auto" } as CSSProperties}
-          className="styled-scrollbar flex flex-col gap-4 lg:sticky lg:top-4 lg:h-[var(--side-h)] lg:overflow-y-auto lg:pr-1 [&>*]:shrink-0"
+          style={{ "--side-h": sideCap } as CSSProperties}
+          className="styled-scrollbar flex flex-col gap-4 lg:sticky lg:top-4 lg:max-h-[var(--side-h)] lg:overflow-y-auto lg:pr-1 [&>*]:shrink-0"
         >
           <div className="flex flex-col gap-1.5">
             {/* Search: over every view. The same box as Job Details' Parts List. */}
