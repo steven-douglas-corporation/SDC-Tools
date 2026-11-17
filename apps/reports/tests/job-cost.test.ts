@@ -379,3 +379,11 @@ test("Service & Spares: bucketed by the Projects grid's own test, kept out of To
   assert.doesNotMatch(explorer, /key: "serviceHours", label/);
   assert.doesNotMatch(explorer, /key: "actualHours", label/);
 });
+
+test("Warranty codes without their own column are costed: 70-413/70-414 as Shop, 70-312/70-517 as Eng", async () => {
+  const { WARRANTY_BUCKET_OVERRIDES } = await import("../src/lib/job-cost");
+  assert.deepEqual(WARRANTY_BUCKET_OVERRIDES, { "70-413": "shop", "70-414": "shop", "70-312": "eng", "70-517": "eng" });
+  // job-cost-source applies them over the section-derived buckets.
+  const src = readFileSync(join(__dirname, "..", "src", "lib", "job-cost-source.ts"), "utf8");
+  assert.match(src, /Object\.assign\(SECTION_BUCKET, WARRANTY_BUCKET_OVERRIDES\)/);
+});

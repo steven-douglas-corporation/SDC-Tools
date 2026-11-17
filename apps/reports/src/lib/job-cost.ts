@@ -118,6 +118,22 @@ export function partsCostForProfit(
 }
 
 /**
+ * Warranty (phase 70) codes that have no Eng/Shop column of their own, assigned to a billing group
+ * for PROFITABILITY only (2026-11-17), so their hours are costed at the Eng/Shop rate instead of
+ * sitting in Other Hrs at $0:
+ *   70-413, 70-414 -> Shop      70-312, 70-517 -> Engineering
+ * Deliberately local to the Job Cost Explorer: sections.ts keeps them as their own unmapped codes
+ * (the ETC grid and Job Hours pages are signed off on that), so those pages' Eng/Shop totals do not
+ * move. Add a code here only on the business's say-so.
+ */
+export const WARRANTY_BUCKET_OVERRIDES: Readonly<Record<string, "eng" | "shop">> = {
+  "70-413": "shop",
+  "70-414": "shop",
+  "70-312": "eng",
+  "70-517": "eng",
+};
+
+/**
  * Real jobs only — matches the original's UTILITY_IDS. These are Total ETO
  * clearing/placeholder rows, not actual jobs; kept as a literal set rather
  * than derived, exactly as before.
