@@ -73,6 +73,8 @@ export type ListCardProps<T> = {
    * or many rows it has. For a plain grid (ListCardGrid `flow="rows"`) whose rows line up.
    */
   fixedHeight?: boolean;
+  /** With `fixedHeight`: the list's height in CSS px. Default 288 (Tailwind h-72). */
+  listHeight?: number;
   /**
    * Makes the whole card a way into more detail: a click anywhere on it that is not a row,
    * link or other control calls this, and a "Details" button in the header does the same
@@ -114,6 +116,7 @@ export function ListCard<T>({
   groupBy,
   fullHeight,
   fixedHeight,
+  listHeight,
   onCardClick,
   detailsTitle,
   expand,
@@ -265,7 +268,10 @@ export function ListCard<T>({
         )}
       </div>
 
-      <div className={`grid content-start gap-x-2 ${fullHeight ? "" : fixedHeight ? "h-72 overflow-y-auto styled-scrollbar" : "max-h-56 overflow-y-auto styled-scrollbar"}`} style={grid}>
+      <div
+        className={`grid content-start gap-x-2 ${fullHeight ? "" : fixedHeight ? `${listHeight ? "" : "h-72"} overflow-y-auto styled-scrollbar` : "max-h-56 overflow-y-auto styled-scrollbar"}`}
+        style={!fullHeight && fixedHeight && listHeight ? { ...grid, height: `${listHeight}px` } : grid}
+      >
         <div className="sticky top-0 z-[1] col-span-full grid grid-cols-subgrid items-center bg-sdc-gray-100 px-3 py-1.5 text-micro font-bold uppercase tracking-wider text-sdc-gray-400">
           {expand && <span />}
           {columns.map((c) => {

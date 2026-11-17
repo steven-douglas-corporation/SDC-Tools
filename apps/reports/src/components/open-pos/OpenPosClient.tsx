@@ -1,10 +1,12 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { CARD_SIZES, readCardSize, serverCardSize, subscribeCardSize, writeCardSize } from "@/lib/open-pos-card-size";
 import { OpenPoGroupDetail, STATE_CLS, STATE_LABEL, STATE_TIP } from "@/components/open-pos/OpenPoGroupDetail";
 import { SupplierAvatar } from "@/components/procurement/PoDetailPanel";
 import { ListCard, ListCardGrid, type ListCardColumn, type ListCardSort } from "@/components/ui/ListCard";
 import { Segmented } from "@/components/ui/Segmented";
+import { StepSlider } from "@/components/ui/StepSlider";
 import { searchRows, type SortDir, type TableColumnLogic } from "@/lib/data-table";
 import { OpenPoDetail } from "@/components/open-pos/OpenPoDetail";
 import { PoTimeline, useFillHeight, type DotsBy, type RequiredState, type TimelinePo, type TimelineRow } from "@/components/open-pos/PoTimeline";
@@ -558,6 +560,7 @@ function OpenPoCard({
   bySupplier,
   supplierColumn,
   amountInHeader,
+  listHeight,
   today,
   requiredState,
   requiredByLine,
@@ -588,6 +591,8 @@ function OpenPoCard({
   supplierColumn?: boolean;
   /** The cards are ordered by amount: the amount moves from the subtitle to the header's right, in bold. */
   amountInHeader?: boolean;
+  /** The PO list's height in CSS px, from the Card size slider. */
+  listHeight: number;
 }) {
   const p = pct(counts.received, counts.lines);
   const valuePct = pct(money.received, money.ordered);
@@ -707,6 +712,7 @@ function OpenPoCard({
   return (
     <ListCard
       fixedHeight
+      listHeight={listHeight}
       onCardClick={onOpenCard}
       detailsTitle="Every PO on this card, line by line: what is here, coming and outstanding. Clicking anywhere on the card does the same"
       title={title}
@@ -879,6 +885,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const [sort, setSort] = useState<CardSort>("next");
   // One PO order for every card: clicking a column header in any card sorts them all.
   const [poSort, setPoSort] = useState<ListCardSort | null>(DEFAULT_PO_SORT);
+  // Card size (Cards view), this browser's own: lib/open-pos-card-size.ts.
+  const cardSize = useSyncExternalStore(subscribeCardSize, readCardSize, serverCardSize);
   // On by default (2026-11-16, by request): a project's POs under their supplier.
   const [bySupplier, setBySupplier] = useState(true);
   const [dotsBy, setDotsBy] = useState<DotsBy>("status");
@@ -1139,6 +1147,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const poSortChoice =
     poSort == null ? "amount" : (PO_SORTS.find((s) => s.id === poSort.id && PO_SORT_FIRST[s.id] === poSort.dir)?.id ?? "");
   const choosePoSort = (id: string) => setPoSort({ id, dir: PO_SORT_FIRST[id] ?? "asc" });
+  const cardDims = CARD_SIZES[cardSize];
   // The cards, one per project or supplier.
   const cardEls =
     groupBy === "projects"
@@ -1161,6 +1170,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             bySupplier={bySupplier}
             supplierColumn={supplierColumn}
             amountInHeader={sort === "amount"}
+            listHeight={cardDims.list}
             onOpenPo={(r) => openRow(r, p.jobId)}
             poSort={poSort}
             onPoSort={onPoSort}
@@ -1183,6 +1193,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             oldestLate={s.oldestLate}
             pos={s.pos}
             amountInHeader={sort === "amount"}
+            listHeight={cardDims.list}
             onOpenPo={openRow}
             poSort={poSort}
             onPoSort={onPoSort}
@@ -1240,6 +1251,23 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             { value: "table" as const, label: "Table", title: "Every PO in one sortable list" },
           ]}
         />
+        {/* Cards only: one slider for both the cards' width (how many to a row) and their
+            lists' height (how many POs before scrolling). Remembered in this browser. */}
+        {shownView === "cards" && (
+          <span className="ml-3 flex items-center gap-2.5" title="Smaller: more cards to a row, fewer POs showing in each. Larger: fewer, bigger cards. Remembered in this browser">
+            <span className={CONTROL_LABEL}>Card size</span>
+            <StepSlider
+              label="Card size"
+              value={cardSize}
+              steps={CARD_SIZES.length}
+              onChange={writeCardSize}
+              valueText={(s) => `Size ${s + 1} of ${CARD_SIZES.length}`}
+              width={176}
+              start={<span aria-hidden className="h-2 w-2.5 rounded-sm border-[1.5px] border-sdc-gray-400" />}
+              end={<span aria-hidden className="h-3.5 w-[18px] rounded-sm border-[1.5px] border-sdc-gray-400" />}
+            />
+          </span>
+        )}
         {/* Moved up from below the views (2026-11-16) so the page fits the window without
             scrolling: the cards and timeline reach the bottom, and nothing sits under them. */}
         <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -1477,7 +1505,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           {/* One height for every card (its list scrolls inside), so a plain grid: left to right. */}
           {shownView === "cards" && !noCards && (
             <section aria-label={groupBy === "projects" ? "Project cards" : "Supplier cards"}>
-              <ListCardGrid min={380}>{cardEls}</ListCardGrid>
+              <ListCardGrid min={cardDims.min}>{cardEls}</ListCardGrid>
             </section>
           )}
 
