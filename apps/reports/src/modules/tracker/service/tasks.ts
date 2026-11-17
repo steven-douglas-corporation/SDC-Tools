@@ -91,7 +91,7 @@ const TASK_COLUMNS = `id, project_id, kind, parent_task_id, status_id, type, ass
   estimated_completion_date::text, baseline_completion_date::text, due_date::text, not_before_date::text,
   expected_unblock_date::text, actual_completion_date::text, sprint_id, archived_at`;
 
-async function lockTask(tx: Tx, taskId: number): Promise<TaskRow> {
+export async function lockTask(tx: Tx, taskId: number): Promise<TaskRow> {
   const row = await one<TaskRow>(
     tx,
     `SELECT ${TASK_COLUMNS} FROM tracker.task WHERE id = $1 FOR UPDATE`,

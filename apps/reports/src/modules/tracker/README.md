@@ -14,6 +14,7 @@ service/              the only code that touches the tracker's tables
   access.ts             project roles and global roles
   projects.ts           people records, projects, members, stack ranks
   tasks.ts              tasks, status changes, dependencies, comments, archiving
+  checklist.ts          a card's checklist: small steps to tick off, with no hours and no effect on the forecast
   people.ts             project members, capacity, time off, holidays
   forecast.ts           load inputs from the tables, run the engine, store the result
   queries.ts            what the project list and the board read
@@ -32,7 +33,7 @@ Elsewhere in the app:
 ```
 src/app/(app)/tracker/          the pages: project list, board, timeline, task, people and time
 src/app/api/tracker/            read-only JSON routes for the same data
-db/tracker/migrations/          0001 schema, 0002 roles, 0003 work kinds, 0004 done count, 0005 kind required, 0006 requested by (PostgreSQL 15+)
+db/tracker/migrations/          0001 schema, 0002 roles, 0003 work kinds, 0004 done count, 0005 kind required, 0006 requested by, 0007 checklist (PostgreSQL 15+)
 scripts/tracker/migrate.ts      applies the migrations (npm run db:tracker-migrate)
 scripts/tracker/migrate-server.ps1  applies them to the company server, and creates the two logins
 scripts/tracker/run-forecast.ts the forecast as its own process, for the nightly job

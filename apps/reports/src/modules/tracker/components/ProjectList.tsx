@@ -14,8 +14,9 @@ import {
 } from "@/components/ui/classnames";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { createProjectAction, moveProjectRankAction, setProjectRankAction, setProjectStateAction } from "../actions";
+import type { RankClash } from "../service/projects";
 import type { ProjectListItem } from "../service/queries";
-import { hours, leftOutOfForecast, shortDate } from "./format";
+import { hours, leftOutOfForecast, rankClashEffect, shortDate } from "./format";
 import { P80Help } from "./HelpTip";
 
 // The tracker's front page: every project the person can see, in stack-rank order, with the
@@ -52,19 +53,26 @@ function RankCell({
 }) {
   const [value, setValue] = useState(p.portfolioRank?.toString() ?? "");
   const [error, setError] = useState("");
+  // Set while the person is being asked whether to take a rank another project holds.
+  const [ask, setAsk] = useState<{ rank: number; clash: RankClash } | null>(null);
   const [pending, start] = useTransition();
   if (!canRank) return <>{p.portfolioRank ?? "—"}</>;
 
-  function save() {
+  const reset = () => setValue(p.portfolioRank?.toString() ?? "");
+
+  function save(replace = false) {
     const next = value.trim() === "" ? null : Number(value);
     if (next === p.portfolioRank) return;
     setError("");
     start(async () => {
-      const res = await setProjectRankAction(p.id, next);
+      const res = await setProjectRankAction(p.id, next, replace);
       if (!res.ok) {
         setError(res.error);
-        setValue(p.portfolioRank?.toString() ?? "");
+        setAsk(null);
+        return reset();
       }
+      // Another project holds that rank: nothing has changed yet, and the person is asked first.
+      setAsk(res.clash && next !== null ? { rank: next, clash: res.clash } : null);
     });
   }
 
@@ -75,9 +83,9 @@ function RankCell({
           aria-label={`Stack rank for ${p.key}`}
           inputMode="numeric"
           value={value}
-          disabled={pending}
+          disabled={pending || ask !== null}
           onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ""))}
-          onBlur={save}
+          onBlur={() => save()}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
           className="w-12 rounded-md border border-sdc-border px-2 py-1 text-center text-sm focus:border-sdc-blue focus:outline-none"
         />
@@ -89,7 +97,7 @@ function RankCell({
                 type="button"
                 aria-label={`Move ${p.key} ${direction} one place`}
                 title={`Move ${direction} one place`}
-                disabled={pending || (direction === "up" ? first : last)}
+                disabled={pending || ask !== null || (direction === "up" ? first : last)}
                 onClick={() => {
                   setError("");
                   start(async () => {
@@ -105,6 +113,42 @@ function RankCell({
           </span>
         )}
       </span>
+      {ask && (
+        <span
+          role="alertdialog"
+          aria-label={`Rank ${ask.rank} is taken`}
+          className="mt-2 flex w-56 flex-col gap-2 rounded-md border border-sdc-border bg-white p-2 text-left text-xs text-sdc-navy shadow-sm"
+          onKeyDown={(e) => {
+            if (e.key !== "Escape") return;
+            setAsk(null);
+            reset();
+          }}
+        >
+          <span>
+            <strong>
+              {ask.clash.holderKey} ({ask.clash.holderName})
+            </strong>{" "}
+            is at rank {ask.rank}. Put {p.key} there instead? {rankClashEffect(ask.clash)}
+          </span>
+          <span className="flex justify-end gap-2">
+            <button
+              type="button"
+              autoFocus
+              disabled={pending}
+              className={BUTTON_COMPACT}
+              onClick={() => {
+                setAsk(null);
+                reset();
+              }}
+            >
+              Cancel
+            </button>
+            <button type="button" disabled={pending} className={BUTTON_COMPACT} onClick={() => save(true)}>
+              {pending ? "Moving…" : `Yes, make ${p.key} rank ${ask.rank}`}
+            </button>
+          </span>
+        </span>
+      )}
       {error && <span className="mt-1 max-w-[12rem] text-xs text-sdc-red-text">{error}</span>}
     </span>
   );

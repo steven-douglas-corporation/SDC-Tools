@@ -49,6 +49,7 @@ before(async () => {
   await db.exec(migration("0004_count_work_cards.sql"));
   await db.exec(migration("0005_kind_required.sql"));
   await db.exec(migration("0006_requested_by.sql"));
+  await db.exec(migration("0007_checklist.sql"));
   await db.exec("SET search_path = tracker, public");
 
   ana = Number(
@@ -321,6 +322,40 @@ test("one write path: each database role can write only its own tables", async (
     await db.exec("RESET ROLE; SET ROLE tracker_readonly");
     await db.query("SELECT count(*) FROM tracker.project_rollup");
     await rejects(`UPDATE tracker.task SET title = 'chat edit' WHERE id = $1`, /permission denied/, [id]);
+  } finally {
+    await db.exec("RESET ROLE");
+  }
+});
+
+test("checklist: the service role writes it, the others only read; a tick needs who and when", async () => {
+  const id = await newTask(alpha, 950);
+  try {
+    await db.exec("SET ROLE tracker_service");
+    const item = await one<{ id: number }>(
+      `INSERT INTO tracker.task_checklist_item (task_id, body, position, created_by_person_id)
+       VALUES ($1, 'Order parts', 1, $2) RETURNING id`,
+      [id, ana],
+    );
+    await rejects(
+      `INSERT INTO tracker.task_checklist_item (task_id, body, position, created_by_person_id) VALUES ($1, '   ', 2, $2)`,
+      /check constraint/,
+      [id, ana],
+    );
+    await rejects(
+      `UPDATE tracker.task_checklist_item SET done_at = now() WHERE id = $1`,
+      /task_checklist_item_done_pair/,
+      [item.id],
+    );
+    await db.query(`UPDATE tracker.task_checklist_item SET done_at = now(), done_by_person_id = $2 WHERE id = $1`, [
+      item.id,
+      ben,
+    ]);
+
+    for (const role of ["tracker_engine", "tracker_readonly"]) {
+      await db.exec(`RESET ROLE; SET ROLE ${role}`);
+      await db.query(`SELECT count(*) FROM tracker.task_checklist_item`);
+      await rejects(`DELETE FROM tracker.task_checklist_item WHERE id = $1`, /permission denied/, [item.id]);
+    }
   } finally {
     await db.exec("RESET ROLE");
   }

@@ -61,6 +61,7 @@ before(async () => {
   await pg.exec(migration("0004_count_work_cards.sql"));
   await pg.exec(migration("0005_kind_required.sql"));
   await pg.exec(migration("0006_requested_by.sql"));
+  await pg.exec(migration("0007_checklist.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
 
@@ -1334,6 +1335,30 @@ test("stack rank: a project moves up, down or to a rank, and the others close up
   );
   await refuses(() => moveProjectRank(db, boss, two, "up"), "invalid", /no stack rank yet/);
 
+  // Asking first: who holds a rank, and what taking it would move. Asking changes nothing.
+  const { rankClash } = await import("../src/modules/tracker/service/projects");
+  assert.deepEqual(await rankClash(db, boss, two, 1), {
+    holderKey: "RK3",
+    holderName: "RK3",
+    moved: 2,
+    direction: "down",
+  });
+  assert.deepEqual(await rankClash(db, boss, two, 2), {
+    holderKey: "RK1",
+    holderName: "RK1",
+    moved: 1,
+    direction: "down",
+  });
+  assert.equal(await rankClash(db, boss, two, 3), null, "a free rank needs no question");
+  assert.equal(await rankClash(db, boss, three, 1), null, "nor does the rank it already has");
+  assert.deepEqual(
+    await rankClash(db, boss, three, 2),
+    { holderKey: "RK1", holderName: "RK1", moved: 1, direction: "up" },
+    "moving down the list pulls the ones it passes up",
+  );
+  await refuses(() => rankClash(db, ana, two, 1), "forbidden");
+  assert.deepEqual(await order(), ["RK3", "RK1"]);
+
   // Each project whose rank changed has it in its change log.
   const log = await rows<{ old_value: string | null; new_value: string | null }>(
     `SELECT old_value, new_value FROM tracker.project_change_log WHERE project_id = $1 AND field = 'portfolio_rank' ORDER BY id`,
@@ -1351,4 +1376,90 @@ test("stack rank: a project moves up, down or to a rank, and the others close up
 
   await refuses(() => moveProjectRank(db, ana, one, 1), "forbidden");
   await refuses(() => moveProjectRank(db, boss, one, 0), "invalid");
+});
+
+test("checklist: add, tick, reword, reorder and remove; shown on the card and counted on the board", async () => {
+  const { getTaskDetail } = await import("../src/modules/tracker/service/task-detail");
+  const { getBoard } = await import("../src/modules/tracker/service/queries");
+  const { addChecklistItem, moveChecklistItem, removeChecklistItem, renameChecklistItem, setChecklistItemDone } =
+    await import("../src/modules/tracker/service/checklist");
+  const [p] = await rows<{ id: number }>(`SELECT id FROM tracker.project WHERE key = 'PPL'`);
+  const projectId = Number(p!.id);
+  const card = await createTask(db, ana, { projectId, title: "Card with a checklist", remainingEffortHours: 4 });
+  const list = async () => (await getTaskDetail(db, cal, "PPL", card.number)).checklist;
+
+  const a = await addChecklistItem(db, ben, card.id, "  Order   parts ");
+  const b = await addChecklistItem(db, ben, card.id, "Book the crane");
+  const c = await addChecklistItem(db, ana, card.id, "Tell the customer");
+  assert.deepEqual(
+    (await list()).map((i) => [i.body, i.done]),
+    [
+      ["Order parts", false],
+      ["Book the crane", false],
+      ["Tell the customer", false],
+    ],
+    "kept in the order added, with stray spaces tidied",
+  );
+
+  await refuses(() => addChecklistItem(db, cal, card.id, "viewers cannot add"), "forbidden");
+  await refuses(() => addChecklistItem(db, ben, card.id, "   "), "invalid");
+  await refuses(() => addChecklistItem(db, ben, card.id, "x".repeat(501)), "invalid", /too long/);
+  await refuses(() => setChecklistItemDone(db, cal, a, true), "forbidden");
+  await refuses(() => setChecklistItemDone(db, ben, 999_999, true), "not_found");
+
+  // Ticking records who did it. Ticking again does not overwrite that.
+  await setChecklistItemDone(db, ben, b, true);
+  await setChecklistItemDone(db, ana, b, true);
+  let items = await list();
+  assert.deepEqual([items[1]!.done, items[1]!.doneBy?.startsWith("Ben")], [true, true]);
+  assert.ok(items[1]!.doneAt && /^\d{4}-\d{2}-\d{2}T/.test(items[1]!.doneAt));
+
+  await moveChecklistItem(db, ben, c, "up");
+  await moveChecklistItem(db, ben, c, "up");
+  await moveChecklistItem(db, ben, c, "up"); // already first: nothing happens
+  await moveChecklistItem(db, ben, b, "down"); // already last
+  await renameChecklistItem(db, ben, a, "Order the parts");
+  items = await list();
+  assert.deepEqual(
+    items.map((i) => [i.body, i.done]),
+    [
+      ["Tell the customer", false],
+      ["Order the parts", false],
+      ["Book the crane", true],
+    ],
+  );
+
+  const onBoard = (await getBoard(db, cal, "PPL")).tasks.find((t) => t.id === card.id)!;
+  assert.deepEqual([onBoard.checklistTotal, onBoard.checklistDone], [3, 1]);
+  const other = (await getBoard(db, cal, "PPL")).tasks.find((t) => t.id !== card.id)!;
+  assert.deepEqual([other.checklistTotal, other.checklistDone], [0, 0], "a card with no checklist counts as none");
+
+  await setChecklistItemDone(db, ana, b, false);
+  await removeChecklistItem(db, ben, a);
+  items = await list();
+  assert.deepEqual(
+    items.map((i) => [i.body, i.done, i.doneBy]),
+    [
+      ["Tell the customer", false, null],
+      ["Book the crane", false, null],
+    ],
+  );
+
+  // A checklist is not part of the plan: it leaves no trace in the history and no hours change.
+  const d = await getTaskDetail(db, cal, "PPL", card.number);
+  assert.ok(!d.history.some((h) => /checklist|crane|parts/i.test(h.what)));
+  assert.equal(d.remainingHours, 4);
+
+  // An archived card's checklist is frozen.
+  await archiveTask(db, ana, card.id);
+  await refuses(() => addChecklistItem(db, ben, card.id, "too late"), "invalid", /archived/);
+  await refuses(() => setChecklistItemDone(db, ben, c, true), "invalid", /archived/);
+});
+
+test("checklist: a card holds 50 items at most", async () => {
+  const { addChecklistItem } = await import("../src/modules/tracker/service/checklist");
+  const [p] = await rows<{ id: number }>(`SELECT id FROM tracker.project WHERE key = 'PPL'`);
+  const card = await createTask(db, ana, { projectId: Number(p!.id), title: "Long list" });
+  for (let i = 1; i <= 50; i++) await addChecklistItem(db, ana, card.id, `Step ${i}`);
+  await refuses(() => addChecklistItem(db, ana, card.id, "Step 51"), "invalid", /50 items/);
 });

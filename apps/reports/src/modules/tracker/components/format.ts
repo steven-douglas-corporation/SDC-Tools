@@ -114,3 +114,13 @@ export function forecastReason(t: ReasonInput): string {
       return `Can start now.${pulled}`;
   }
 }
+
+/**
+ * What taking a stack rank another project holds does to the others, in words. `moved` counts
+ * the projects that change place, the one holding the rank included.
+ */
+export function rankClashEffect(clash: { holderKey: string; moved: number; direction: "down" | "up" }): string {
+  return clash.moved <= 1
+    ? `${clash.holderKey} moves ${clash.direction} one place.`
+    : `${clash.holderKey} and ${clash.moved - 1} other ${clash.moved === 2 ? "project" : "projects"} each move ${clash.direction} one place.`;
+}

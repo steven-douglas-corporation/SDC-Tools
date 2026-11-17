@@ -87,3 +87,11 @@ test("what a forecast leaves out is said in whole phrases, without counting a ca
     "1 card has hours left that nobody has confirmed lately",
   ]);
 });
+
+test("taking a rank another project holds says what moves, and which way", async () => {
+  const { rankClashEffect } = await import("../src/modules/tracker/components/format");
+  const clash = (moved: number, direction: "down" | "up") => ({ holderKey: "ALPHA", moved, direction });
+  assert.equal(rankClashEffect(clash(1, "down")), "ALPHA moves down one place.");
+  assert.equal(rankClashEffect(clash(2, "down")), "ALPHA and 1 other project each move down one place.");
+  assert.equal(rankClashEffect(clash(4, "up")), "ALPHA and 3 other projects each move up one place.");
+});

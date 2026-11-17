@@ -52,6 +52,16 @@ export interface TaskComment {
   at: string;
 }
 
+/** One line of a card's checklist: a small step to tick off, with no hours and no forecast. */
+export interface ChecklistItem {
+  id: number;
+  body: string;
+  done: boolean;
+  /** Who ticked it, and when (UTC, ISO 8601). Null while it is not ticked. */
+  doneBy: string | null;
+  doneAt: string | null;
+}
+
 export interface TaskDetail {
   projectId: number;
   projectKey: string;
@@ -131,6 +141,8 @@ export interface TaskDetail {
   statuses: BoardStatus[];
   people: { id: number; name: string }[];
   buckets: { id: number; label: string; hours: number }[];
+  /** In the order the card shows them. */
+  checklist: ChecklistItem[];
   comments: TaskComment[];
   history: HistoryEntry[];
 }
@@ -411,6 +423,12 @@ export async function getTaskDetail(
       `SELECT id, label, hours::float8 AS hours FROM tracker.effort_bucket WHERE active OR id = $1 ORDER BY sort_order`,
       [t.effort_bucket_id],
     );
+    const checklist = await tx.query<{ id: number; body: string; done_by: string | null; done_at: string | null }>(
+      `SELECT i.id, i.body, p.display_name AS done_by, ${utc("i.done_at")} AS done_at
+         FROM tracker.task_checklist_item i LEFT JOIN tracker.person p ON p.id = i.done_by_person_id
+        WHERE i.task_id = $1 ORDER BY i.position, i.id`,
+      [taskId],
+    );
     const comments = await tx.query<{ id: number; author: string; body: string; at: string }>(
       `SELECT c.id, p.display_name AS author, c.body, ${utc("c.created_at")} AS at
          FROM tracker.task_comment c JOIN tracker.person p ON p.id = c.author_person_id
@@ -584,6 +602,13 @@ export async function getTaskDetail(
       })),
       people: people.rows.map((p) => ({ id: Number(p.id), name: p.name })),
       buckets: buckets.rows.map((b) => ({ id: Number(b.id), label: b.label, hours: Number(b.hours) })),
+      checklist: checklist.rows.map((i) => ({
+        id: Number(i.id),
+        body: i.body,
+        done: i.done_at != null,
+        doneBy: i.done_by,
+        doneAt: i.done_at,
+      })),
       comments: comments.rows.map((c) => ({ id: Number(c.id), author: c.author, body: c.body, at: c.at })),
       history: history.map(({ at, who, what, why }) => ({ at, who, what, why })),
     };

@@ -303,6 +303,14 @@ function Card({
             </dd>
           </>
         )}
+        {task.checklistTotal > 0 && (
+          <>
+            <dt>Checklist</dt>
+            <dd className="text-sdc-navy">
+              {task.checklistDone} of {task.checklistTotal} ticked
+            </dd>
+          </>
+        )}
         {task.dueDate && (
           <>
             <dt>Due</dt>

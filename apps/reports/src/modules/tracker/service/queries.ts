@@ -267,6 +267,9 @@ export interface BoardTask {
   /** The more important task this one was pulled forward for. */
   priorityFromKey: string | null;
   unscheduledReason: string | null;
+  /** The card's checklist: how many items it has and how many are ticked. Both 0 when it has none. */
+  checklistTotal: number;
+  checklistDone: number;
 }
 
 export interface Board {
@@ -315,6 +318,8 @@ interface TaskRow {
   driver_task_key: string | null;
   priority_from_key: string | null;
   unscheduled_reason: string | null;
+  checklist_total: number;
+  checklist_done: number;
 }
 
 /** One project's board: its columns, its unarchived tasks with their forecast, and what the forms need. */
@@ -359,7 +364,8 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
               f.scheduled_start::text AS forecast_start, f.scheduled_finish::text AS forecast_finish,
               f.p80_finish::text, f.driver, f.unscheduled_reason,
               dp.key || '-' || dt.number AS driver_task_key,
-              pp.key || '-' || pt.number AS priority_from_key
+              pp.key || '-' || pt.number AS priority_from_key,
+              coalesce(cl.total, 0)::int AS checklist_total, coalesce(cl.done, 0)::int AS checklist_done
          FROM tracker.task t
          JOIN tracker.project p ON p.id = t.project_id
          JOIN tracker.workflow_status s ON s.id = t.status_id
@@ -372,6 +378,8 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
     LEFT JOIN tracker.project dp ON dp.id = dt.project_id
     LEFT JOIN tracker.task pt ON pt.id = f.priority_from_task_id
     LEFT JOIN tracker.project pp ON pp.id = pt.project_id
+    LEFT JOIN (SELECT task_id, count(*) AS total, count(done_at) AS done
+                 FROM tracker.task_checklist_item GROUP BY task_id) cl ON cl.task_id = t.id
         WHERE t.project_id = $1 AND t.archived_at IS NULL
         ORDER BY t.board_rank, t.id`,
       [projectId],
@@ -448,6 +456,8 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
         driverTaskKey: t.driver_task_key,
         priorityFromKey: t.priority_from_key,
         unscheduledReason: t.unscheduled_reason,
+        checklistTotal: Number(t.checklist_total),
+        checklistDone: Number(t.checklist_done),
       })),
       people: people.rows.map((p) => ({ id: Number(p.id), name: p.name })),
       buckets: buckets.rows.map((b) => ({

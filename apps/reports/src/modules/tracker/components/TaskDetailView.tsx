@@ -16,6 +16,7 @@ import {
 } from "../actions";
 import type { LinkedTask, TaskDetail } from "../service/task-detail";
 import type { OpenCard } from "../service/tasks";
+import { Checklist } from "./Checklist";
 import { CloseUnderPrompt } from "./CloseUnderPrompt";
 import { P80Help } from "./HelpTip";
 import { KindHelp } from "./KindHelp";
@@ -464,6 +465,16 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
             </ul>
           </Section>
         )}
+
+        <Section title="Checklist">
+          <Checklist
+            taskId={task.id}
+            taskKey={task.key}
+            projectKey={task.projectKey}
+            items={task.checklist}
+            mayChange={mayChange}
+          />
+        </Section>
 
         <Section title="Comments">
           {task.comments.length === 0 ? (

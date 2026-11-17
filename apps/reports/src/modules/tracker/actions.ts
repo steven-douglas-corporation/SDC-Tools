@@ -5,7 +5,15 @@ import { assertActionPermission } from "@/lib/require-permission";
 import { trackerDb, trackerEngineDb } from "./db";
 import { trackerActor } from "./current-actor";
 import { TrackerError, type Actor } from "./service/database";
-import { createProject, moveProjectRank, setProjectMember, updateProject, type ProjectState } from "./service/projects";
+import {
+  createProject,
+  moveProjectRank,
+  rankClash,
+  setProjectMember,
+  updateProject,
+  type ProjectState,
+  type RankClash,
+} from "./service/projects";
 import {
   addComment,
   addDependency,
@@ -19,6 +27,13 @@ import {
   type TaskChanges,
 } from "./service/tasks";
 import { addHoliday, addTimeOff, removeHoliday, removeTimeOff, setGlobalHours, setPersonHours } from "./service/people";
+import {
+  addChecklistItem,
+  moveChecklistItem,
+  removeChecklistItem,
+  renameChecklistItem,
+  setChecklistItemDone,
+} from "./service/checklist";
 import { runForecast } from "./service/forecast";
 
 // The tracker screens' way in (docs/MODULES.md: "two doors, one room"). Each action checks the
@@ -53,7 +68,11 @@ async function reforecast(): Promise<void> {
 
 async function act<T extends object>(
   work: (actor: Actor) => Promise<T>,
-  options: { paths: string[]; forecast?: boolean },
+  options: {
+    paths: string[];
+    forecast?: boolean;
+    /** True when nothing was changed after all. */ unless?: () => boolean;
+  },
 ): Promise<ActionResult<T>> {
   const session = await assertActionPermission("tracker:edit");
   let result: T;
@@ -63,6 +82,7 @@ async function act<T extends object>(
     if (e instanceof TrackerError) return { ok: false, error: e.message };
     throw e;
   }
+  if (options.unless?.()) return { ok: true, ...result };
   if (options.forecast !== false) await reforecast();
   for (const p of options.paths) revalidatePath(p);
   return { ok: true, ...result };
@@ -88,15 +108,31 @@ export async function createProjectAction(input: {
   );
 }
 
-/** Sets one project's stack rank. Only the portfolio owner (in this app: ELT) may. */
-export async function setProjectRankAction(projectId: number, rank: number | null): Promise<ActionResult> {
+/**
+ * Sets one project's stack rank. Only the portfolio owner (in this app: ELT) may.
+ *
+ * A rank another project holds is not taken silently: unless `replace` is set, nothing changes
+ * and `clash` says who holds it and what would move, so the screen can ask first. With
+ * `replace`, the project goes there and the others shift one place, so ranks never clash.
+ */
+export async function setProjectRankAction(
+  projectId: number,
+  rank: number | null,
+  replace = false,
+): Promise<ActionResult<{ clash: RankClash | null }>> {
+  let changed = false;
   return act(
     async (actor) => {
-      // Typing a rank puts the project there and moves the others down, so ranks never clash.
+      if (rank !== null && !replace && Number.isInteger(rank) && rank >= 1) {
+        const clash = await rankClash(trackerDb, actor, projectId, rank);
+        if (clash) return { clash };
+      }
       await moveProjectRank(trackerDb, actor, projectId, rank);
-      return {};
+      changed = true;
+      return { clash: null };
     },
-    { paths: ["/tracker"] },
+    // Asking the question changes nothing, so there is nothing to recompute or redraw.
+    { paths: ["/tracker", "/tracker/timeline"], unless: () => !changed },
   );
 }
 
@@ -294,6 +330,37 @@ export async function addCommentAction(input: {
       return {};
     },
     { paths: [taskPath(input.taskKey)], forecast: false },
+  );
+}
+
+// ── Checklist ───────────────────────────────────────────────────────────────
+// A checklist never changes the forecast, so none of these rerun it. The board is refreshed as
+// well as the card, because the card's face on the board shows how many items are ticked.
+
+export type ChecklistChange =
+  | { do: "add"; body: string }
+  | { do: "tick"; itemId: number; done: boolean }
+  | { do: "rename"; itemId: number; body: string }
+  | { do: "remove"; itemId: number }
+  | { do: "move"; itemId: number; direction: "up" | "down" };
+
+export async function checklistAction(input: {
+  taskId: number;
+  taskKey: string;
+  projectKey: string;
+  change: ChecklistChange;
+}): Promise<ActionResult> {
+  const c = input.change;
+  return act(
+    async (actor) => {
+      if (c.do === "add") await addChecklistItem(trackerDb, actor, input.taskId, c.body);
+      else if (c.do === "tick") await setChecklistItemDone(trackerDb, actor, c.itemId, c.done);
+      else if (c.do === "rename") await renameChecklistItem(trackerDb, actor, c.itemId, c.body);
+      else if (c.do === "remove") await removeChecklistItem(trackerDb, actor, c.itemId);
+      else await moveChecklistItem(trackerDb, actor, c.itemId, c.direction);
+      return {};
+    },
+    { paths: [boardPath(input.projectKey), taskPath(input.taskKey)], forecast: false },
   );
 }
 

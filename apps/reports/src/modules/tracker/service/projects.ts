@@ -329,3 +329,48 @@ export async function moveProjectRank(
   if (to === null) ranks.push({ projectId, rank: null });
   await setPortfolioRanks(db, actor, ranks, reason);
 }
+
+/** What typing a stack rank that is already taken would do, so the person can be asked first. */
+export interface RankClash {
+  /** The project that holds the rank now. */
+  holderKey: string;
+  holderName: string;
+  /** How many ranked projects change place, the holder included, and which way they go. */
+  moved: number;
+  direction: "down" | "up";
+}
+
+/**
+ * Says whether giving `projectId` the stack rank `rank` would displace another open project.
+ * Null when the rank is free, is past the end of the list, or is the one the project has. It
+ * changes nothing: `moveProjectRank` does the move once the person has agreed.
+ *
+ * A project that moves up the list, or joins it, pushes the ones from that rank down one place.
+ * A project that moves down the list pulls the ones it passes up one place.
+ */
+export async function rankClash(
+  db: Database,
+  actor: Actor,
+  projectId: number,
+  rank: number,
+): Promise<RankClash | null> {
+  return db.transaction(async (tx) => {
+    await requireGlobalRole(tx, actor, "portfolio_owner");
+    const { rows } = await tx.query<{ id: number; key: string; name: string; portfolio_rank: number }>(
+      `SELECT id, key, name, portfolio_rank FROM tracker.project
+        WHERE portfolio_rank IS NOT NULL AND state NOT IN ('completed', 'cancelled')
+        ORDER BY portfolio_rank, id`,
+    );
+    const holder = rows.find((r) => Number(r.portfolio_rank) === rank);
+    if (!holder || Number(holder.id) === projectId) return null;
+    const mine = rows.find((r) => Number(r.id) === projectId);
+    const from = mine ? Number(mine.portfolio_rank) : null;
+    const movingDown = from !== null && from < rank;
+    const moved = rows.filter((r) => {
+      const at = Number(r.portfolio_rank);
+      if (Number(r.id) === projectId) return false;
+      return movingDown ? at > from && at <= rank : at >= rank && (from === null || at < from);
+    }).length;
+    return { holderKey: holder.key, holderName: holder.name, moved, direction: movingDown ? "up" : "down" };
+  });
+}
