@@ -229,7 +229,7 @@ function RequiredCell({ expected, required, state = "ok" }: { expected: string |
 
 // The Table view: every shown PO, whole-PO amounts. `needed` reads the BOM's required dates.
 const listColumns = (needed: (r: OpenPoRow) => PoDates, state: RequiredState): DataTableColumn<OpenPoRow>[] => [
-  { id: "po", header: "PO #", value: (r) => r.poNumber, width: "150px", className: "font-semibold", headerTitle: TIP.po, title: poTip },
+  { id: "po", header: "PO #", value: (r) => r.poNumber, width: "100px", className: "font-semibold", headerTitle: TIP.po, title: poTip },
   {
     id: "status",
     header: "Status",
