@@ -564,7 +564,7 @@ function OpenPoCard({
   requiredByLine: ReadonlyMap<string, string>;
   title: ReactNode;
   titleTip: string;
-  /** What comes before the item count, e.g. "8 POs" or "3 POs · 2 jobs". */
+  /** What comes before "x/y items received", e.g. "8 POs" or "3 POs · 2 jobs". */
   subtitle: string;
   avatar?: ReactNode;
   /** The selected tile; its `metric` is the money the subtitle shows. */
@@ -713,7 +713,8 @@ function OpenPoCard({
       titleTip={titleTip}
       subtitle={
         <span title={`${countsTip(counts)}${amountInHeader ? "" : `. ${amountTip}`}`}>
-          {subtitle} · {counts.lines} {counts.lines === 1 ? "item" : "items"}
+          {/* Received x/y: the card's POs' line counts added up, the same figure as its % bar (2026-11-18, by request). */}
+          {subtitle} · {counts.received}/{counts.lines} {counts.lines === 1 ? "item" : "items"} received
           {!amountInHeader && ` · ${usd(money[metric.metric])} ${METRIC_PHRASE[metric.metric]}`}
         </span>
       }
