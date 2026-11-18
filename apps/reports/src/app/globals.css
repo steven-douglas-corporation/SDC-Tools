@@ -801,6 +801,67 @@ summary {
   background: var(--sdc-gray-50);
 }
 
+/* ── StepSlider's native range input (components/ui/StepSlider.tsx) ──────────
+ * The input stays for the keyboard and screen readers; its own track is see-through
+ * so the drawn track, fill and ticks underneath show. Only the handle is styled here.
+ * The handle is 14px: StepSlider's ticks and fill are inset 7px to line up with it. */
+.step-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+}
+.step-slider::-webkit-slider-runnable-track {
+  height: 14px;
+  background: transparent;
+}
+.step-slider::-moz-range-track {
+  height: 14px;
+  background: transparent;
+}
+.step-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 2px solid var(--sdc-blue);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition-property: transform, box-shadow;
+  transition-duration: var(--motion-hover);
+  transition-timing-function: var(--ease-out);
+}
+.step-slider::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 2px solid var(--sdc-blue);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition-property: transform, box-shadow;
+  transition-duration: var(--motion-hover);
+  transition-timing-function: var(--ease-out);
+}
+.step-slider:hover::-webkit-slider-thumb,
+.step-slider:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.step-slider:hover::-moz-range-thumb,
+.step-slider:active::-moz-range-thumb {
+  transform: scale(1.15);
+}
+.step-slider:focus-visible {
+  outline: none;
+}
+.step-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--sdc-blue-light);
+}
+.step-slider:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--sdc-blue-light);
+}
+
 /* ── The drill-through card's height ceiling (§49) ───────────────────────────
  *
  * A drill card opens BESIDE the KPI summary card, and the two are now sized

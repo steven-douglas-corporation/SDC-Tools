@@ -9,7 +9,7 @@ import { splitInOrder } from "@/lib/column-flow";
 // per vendor, its POs underneath) and shared so other pages that group POs or parts get the
 // same card instead of drawing their own.
 //
-// Deliberately small. The header holds a title, a subtitle, an optional avatar and badge; the
+// Deliberately small. The header holds a title, a subtitle, an optional avatar, figure and badge; the
 // body is one bar; the list takes columns like DataTable does. Anything more belongs on the
 // page the card links to, not on the card.
 
@@ -39,6 +39,8 @@ export type ListCardProps<T> = {
   subtitle?: ReactNode;
   avatar?: ReactNode;
   badge?: { text: string; className: string; title?: string };
+  /** A figure at the header's right, before the badge: e.g. the amount the cards are ordered by, with what it is under it. */
+  figure?: { value: ReactNode; label?: ReactNode; title?: string };
   /** One bar under the header. `pct` is clamped to 0–100 for drawing; `label` sits to its right. */
   progress?: { pct: number; barClassName: string; label: ReactNode; labelClassName?: string; title?: string };
   columns: ListCardColumn<T>[];
@@ -71,6 +73,8 @@ export type ListCardProps<T> = {
    * or many rows it has. For a plain grid (ListCardGrid `flow="rows"`) whose rows line up.
    */
   fixedHeight?: boolean;
+  /** With `fixedHeight`: the list's height in CSS px. Default 288 (Tailwind h-72). */
+  listHeight?: number;
   /**
    * Makes the whole card a way into more detail: a click anywhere on it that is not a row,
    * link or other control calls this, and a "Details" button in the header does the same
@@ -98,6 +102,7 @@ export function ListCard<T>({
   subtitle,
   avatar,
   badge,
+  figure,
   progress,
   columns,
   rows,
@@ -111,6 +116,7 @@ export function ListCard<T>({
   groupBy,
   fullHeight,
   fixedHeight,
+  listHeight,
   onCardClick,
   detailsTitle,
   expand,
@@ -229,6 +235,12 @@ export function ListCard<T>({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
+            {figure && (
+              <span title={figure.title} className="mr-1 flex flex-col items-end leading-tight">
+                <span className="text-sm font-bold tabular-nums text-sdc-navy">{figure.value}</span>
+                {figure.label != null && <span className="text-micro text-sdc-gray-400">{figure.label}</span>}
+              </span>
+            )}
             {badge && (
               <span title={badge.title} className={`shrink-0 rounded px-1.5 py-0.5 text-micro font-bold tracking-wide ${badge.className}`}>
                 {badge.text}
@@ -256,7 +268,10 @@ export function ListCard<T>({
         )}
       </div>
 
-      <div className={`grid content-start gap-x-2 ${fullHeight ? "" : fixedHeight ? "h-72 overflow-y-auto styled-scrollbar" : "max-h-56 overflow-y-auto styled-scrollbar"}`} style={grid}>
+      <div
+        className={`grid content-start gap-x-2 ${fullHeight ? "" : fixedHeight ? `${listHeight ? "" : "h-72"} overflow-y-auto styled-scrollbar` : "max-h-56 overflow-y-auto styled-scrollbar"}`}
+        style={!fullHeight && fixedHeight && listHeight ? { ...grid, height: `${listHeight}px` } : grid}
+      >
         <div className="sticky top-0 z-[1] col-span-full grid grid-cols-subgrid items-center bg-sdc-gray-100 px-3 py-1.5 text-micro font-bold uppercase tracking-wider text-sdc-gray-400">
           {expand && <span />}
           {columns.map((c) => {

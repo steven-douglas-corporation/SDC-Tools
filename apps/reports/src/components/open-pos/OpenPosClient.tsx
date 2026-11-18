@@ -1,10 +1,12 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { CARD_SIZES, readCardSize, serverCardSize, subscribeCardSize, writeCardSize } from "@/lib/open-pos-card-size";
 import { OpenPoGroupDetail, STATE_CLS, STATE_LABEL, STATE_TIP } from "@/components/open-pos/OpenPoGroupDetail";
 import { SupplierAvatar } from "@/components/procurement/PoDetailPanel";
 import { ListCard, ListCardGrid, type ListCardColumn, type ListCardSort } from "@/components/ui/ListCard";
 import { Segmented } from "@/components/ui/Segmented";
+import { StepSlider } from "@/components/ui/StepSlider";
 import { searchRows, type SortDir, type TableColumnLogic } from "@/lib/data-table";
 import { OpenPoDetail } from "@/components/open-pos/OpenPoDetail";
 import { PoTimeline, useFillHeight, type DotsBy, type RequiredState, type TimelinePo, type TimelineRow } from "@/components/open-pos/PoTimeline";
@@ -473,17 +475,18 @@ function groupCard(pos: CardPo[], metric: MetricId) {
 
 // The PO columns' sort. The first click sorts text and dates A→Z / soonest first, and
 // amounts and counts biggest first; the second click reverses.
-const PO_SORT_FIRST: Record<string, SortDir> = { po: "asc", supplier: "asc", lines: "desc", expected: "asc", needed: "desc", status: "asc" };
+const PO_SORT_FIRST: Record<string, SortDir> = { po: "asc", supplier: "asc", lines: "desc", expected: "asc", needed: "desc", status: "asc", amount: "desc" };
 function nextPoSort(cur: ListCardSort | null, id: string): ListCardSort {
   if (cur?.id === id) return { id, dir: cur.dir === "asc" ? "desc" : "asc" };
   return { id, dir: PO_SORT_FIRST[id] ?? "asc" };
 }
 
 // The order of the POs inside every card, in the left column: four, each saying which way it
-// runs (2026-11-16: down from eight plus a reverse button). "amount" is the card's own order
-// (biggest first, no column sort); the rest are a column sort in its first direction, so the
-// column headers and these stay one state. A header clicked to anything else selects none of
-// them, and the column says so. Hover text: poSortTip.
+// runs (2026-11-16: down from eight plus a reverse button). Each is a column sort in its first
+// direction, so the column headers and these stay one state. "amount" sorts the Amount column,
+// which the cards show only while sorted by it (2026-11-17: the order went by a figure no
+// column showed). A header clicked to anything else selects none of them, and the column says
+// so. A null sort is the cards' own order, which is also biggest amount first. Hover text: poSortTip.
 const PO_SORTS: { id: string; label: string }[] = [
   { id: "expected", label: "Most overdue first" },
   { id: "needed", label: "Furthest past required first" },
@@ -535,8 +538,10 @@ const METRIC_PHRASE: Record<MetricId, string> = {
 
 // One card per job or vendor, on the shared ListCard (the same card as Job Details' Parts
 // card view), with the same header: who it is, one status badge, the share of PO lines
-// received as a bar and "%", and the selected tile's figure in the subtitle; then its POs: PO #, supplier (project cards), lines received, expected,
-// status. Value received is on the bar's hover, not a column.
+// received as a bar and "%", and the selected tile's figure in the subtitle (in bold at the
+// header's right instead while the cards are ordered by it); then its POs: PO #, supplier
+// (project cards), lines received, expected, vs required, the amount (only while the POs are
+// ordered by it), status. Value received is on the bar's hover, not a column.
 // The PO columns sort on click, one order shared by every card; project cards can group
 // their POs under each supplier.
 function OpenPoCard({
@@ -554,6 +559,8 @@ function OpenPoCard({
   onPoSort,
   bySupplier,
   supplierColumn,
+  amountInHeader,
+  listHeight,
   today,
   requiredState,
   requiredByLine,
@@ -582,6 +589,10 @@ function OpenPoCard({
   bySupplier?: boolean;
   /** Project cards, ungrouped: a Supplier column. Supplier cards are the supplier already. */
   supplierColumn?: boolean;
+  /** The cards are ordered by amount: the amount moves from the subtitle to the header's right, in bold. */
+  amountInHeader?: boolean;
+  /** The PO list's height in CSS px, from the Card size slider. */
+  listHeight: number;
 }) {
   const p = pct(counts.received, counts.lines);
   const valuePct = pct(money.received, money.ordered);
@@ -666,6 +677,24 @@ function OpenPoCard({
       sortValue: ({ dates }) => (dates.outstanding ? gapOf(dates.expected, dates.required).sort : null),
       render: ({ dates }) => (dates.outstanding ? <GapCell gap={gapOf(dates.expected, dates.required, requiredState)} /> : <span className="text-sdc-gray-400">–</span>),
     },
+    // The amount the POs are ordered by, shown only while they are (by the left column's
+    // "Biggest amount first", this header, or the cards' own order when nothing is picked).
+    ...(poSort == null || poSort.id === "amount"
+      ? [
+          {
+            id: "amount",
+            header: "Amount",
+            headerTitle: `${METRIC_PHRASE[metric.metric]} on each PO, for the selected tile (${metric.label}); on a project card, this job's share`,
+            align: "right",
+            sortValue: ({ money: m }) => m[metric.metric],
+            render: ({ money: m }) => (
+              <span className="text-label tabular-nums text-sdc-navy" title={`${usdExact(m[metric.metric])} ${METRIC_PHRASE[metric.metric]}`}>
+                {usd(m[metric.metric])}
+              </span>
+            ),
+          } satisfies ListCardColumn<CardPo>,
+        ]
+      : []),
     {
       id: "status",
       header: "",
@@ -679,18 +708,22 @@ function OpenPoCard({
     },
   ];
   const chip = cardChip(money.late, oldestLate, p);
+  const amountTip = `${METRIC_PHRASE[metric.metric]}: ${usdExact(money[metric.metric])}, for the selected tile (${metric.label})`;
   return (
     <ListCard
       fixedHeight
+      listHeight={listHeight}
       onCardClick={onOpenCard}
       detailsTitle="Every PO on this card, line by line: what is here, coming and outstanding. Clicking anywhere on the card does the same"
       title={title}
       titleTip={titleTip}
       subtitle={
-        <span title={`${countsTip(counts)}. ${METRIC_PHRASE[metric.metric]}: ${usdExact(money[metric.metric])}, for the selected tile (${metric.label})`}>
-          {subtitle} · {counts.lines} {counts.lines === 1 ? "item" : "items"} · {usd(money[metric.metric])} {METRIC_PHRASE[metric.metric]}
+        <span title={`${countsTip(counts)}${amountInHeader ? "" : `. ${amountTip}`}`}>
+          {subtitle} · {counts.lines} {counts.lines === 1 ? "item" : "items"}
+          {!amountInHeader && ` · ${usd(money[metric.metric])} ${METRIC_PHRASE[metric.metric]}`}
         </span>
       }
+      figure={amountInHeader ? { value: usd(money[metric.metric]), label: METRIC_PHRASE[metric.metric], title: `${amountTip}. The cards are ordered by this, biggest first` } : undefined}
       avatar={avatar}
       badge={{ text: chip.text, className: chip.cls, title: chip.tip }}
       progress={{
@@ -852,6 +885,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const [sort, setSort] = useState<CardSort>("next");
   // One PO order for every card: clicking a column header in any card sorts them all.
   const [poSort, setPoSort] = useState<ListCardSort | null>(DEFAULT_PO_SORT);
+  // Card size (Cards view), this browser's own: lib/open-pos-card-size.ts.
+  const cardSize = useSyncExternalStore(subscribeCardSize, readCardSize, serverCardSize);
   // On by default (2026-11-16, by request): a project's POs under their supplier.
   const [bySupplier, setBySupplier] = useState(true);
   const [dotsBy, setDotsBy] = useState<DotsBy>("status");
@@ -1111,7 +1146,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   // Which choice the current order is: "" when a column header has sorted the cards some other way.
   const poSortChoice =
     poSort == null ? "amount" : (PO_SORTS.find((s) => s.id === poSort.id && PO_SORT_FIRST[s.id] === poSort.dir)?.id ?? "");
-  const choosePoSort = (id: string) => setPoSort(id === "amount" ? null : { id, dir: PO_SORT_FIRST[id] ?? "asc" });
+  const choosePoSort = (id: string) => setPoSort({ id, dir: PO_SORT_FIRST[id] ?? "asc" });
+  const cardDims = CARD_SIZES[cardSize];
   // The cards, one per project or supplier.
   const cardEls =
     groupBy === "projects"
@@ -1133,6 +1169,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             pos={p.pos}
             bySupplier={bySupplier}
             supplierColumn={supplierColumn}
+            amountInHeader={sort === "amount"}
+            listHeight={cardDims.list}
             onOpenPo={(r) => openRow(r, p.jobId)}
             poSort={poSort}
             onPoSort={onPoSort}
@@ -1154,6 +1192,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             counts={s.counts}
             oldestLate={s.oldestLate}
             pos={s.pos}
+            amountInHeader={sort === "amount"}
+            listHeight={cardDims.list}
             onOpenPo={openRow}
             poSort={poSort}
             onPoSort={onPoSort}
@@ -1211,6 +1251,23 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             { value: "table" as const, label: "Table", title: "Every PO in one sortable list" },
           ]}
         />
+        {/* Cards only: one slider for both the cards' width (how many to a row) and their
+            lists' height (how many POs before scrolling). Remembered in this browser. */}
+        {shownView === "cards" && (
+          <span className="ml-3 flex items-center gap-2.5" title="Smaller: more cards to a row, fewer POs showing in each. Larger: fewer, bigger cards. Remembered in this browser">
+            <span className={CONTROL_LABEL}>Card size</span>
+            <StepSlider
+              label="Card size"
+              value={cardSize}
+              steps={CARD_SIZES.length}
+              onChange={writeCardSize}
+              valueText={(s) => `Size ${s + 1} of ${CARD_SIZES.length}`}
+              width={176}
+              start={<span aria-hidden className="h-2 w-2.5 rounded-sm border-[1.5px] border-sdc-gray-400" />}
+              end={<span aria-hidden className="h-3.5 w-[18px] rounded-sm border-[1.5px] border-sdc-gray-400" />}
+            />
+          </span>
+        )}
         {/* Moved up from below the views (2026-11-16) so the page fits the window without
             scrolling: the cards and timeline reach the bottom, and nothing sits under them. */}
         <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -1448,7 +1505,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           {/* One height for every card (its list scrolls inside), so a plain grid: left to right. */}
           {shownView === "cards" && !noCards && (
             <section aria-label={groupBy === "projects" ? "Project cards" : "Supplier cards"}>
-              <ListCardGrid min={380}>{cardEls}</ListCardGrid>
+              <ListCardGrid min={cardDims.min}>{cardEls}</ListCardGrid>
             </section>
           )}
 
