@@ -436,7 +436,8 @@ function PoParts({ po, today, requiredByLine }: { po: CardPo; today: string; req
 // Three, each saying which way it runs (2026-11-16: down from five; "Most late" ran the same as
 // the first whenever a card had a late line, and "Soonest expected" was that minus late lines).
 // Labels and hover text depend on what the cards are and the Money pick: sortLabel / sortTip.
-const SORTS: { id: CardSort }[] = [{ id: "next" }, { id: "amount" }, { id: "name" }];
+// "name" (Job number / Supplier A–Z) is first and the default (2026-11-18, by request).
+const SORTS: { id: CardSort }[] = [{ id: "name" }, { id: "next" }, { id: "amount" }];
 type CardOrderable = { totals: Record<MetricId, number>; next: string | null };
 const byDay = (a: string | null, b: string | null) => (a ?? "9999").localeCompare(b ?? "9999");
 
@@ -479,13 +480,14 @@ function nextPoSort(cur: ListCardSort | null, id: string): ListCardSort {
 // which the cards show only while sorted by it (2026-11-17: the order went by a figure no
 // column showed). A header clicked to anything else selects none of them, and the column says
 // so. A null sort is the cards' own order, which is also biggest amount first. Hover text: poSortTip.
+// PO number is first and the default (2026-11-18, by request).
 const PO_SORTS: { id: string; label: string }[] = [
+  { id: "po", label: "PO number" },
   { id: "expected", label: "Most overdue first" },
   { id: "needed", label: "Furthest past required first" },
   { id: "amount", label: "Biggest amount first" },
-  { id: "po", label: "PO number" },
 ];
-const DEFAULT_PO_SORT: ListCardSort = { id: "expected", dir: "asc" };
+const DEFAULT_PO_SORT: ListCardSort = { id: "po", dir: "asc" };
 
 const CONTROL_LABEL ="text-xs font-semibold uppercase tracking-wide text-sdc-muted";
 
@@ -874,7 +876,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   // the current cards each render, so it follows the filters. Hidden while a PO panel is open
   // on top of it (two drawers would both close on Escape), and back when that one closes.
   const [openCard, setOpenCard] = useState<{ kind: GroupBy; key: string } | null>(null);
-  const [sort, setSort] = useState<CardSort>("next");
+  const [sort, setSort] = useState<CardSort>("name");
   // One PO order for every card: clicking a column header in any card sorts them all.
   const [poSort, setPoSort] = useState<ListCardSort | null>(DEFAULT_PO_SORT);
   // Card size (Cards view), this browser's own: lib/open-pos-card-size.ts.
