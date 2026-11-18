@@ -17,20 +17,17 @@ import { fmtDate } from "@/lib/po-detail";
 import { hasInvoiceBalance } from "@/lib/left-to-invoice";
 import {
   addCounts,
-  addDays,
   isChargeLine,
   lastReceived,
   lineCounts,
   lineState,
   poDates,
   vsRequired,
-  weekRange,
   type LineCounts,
   type PoDates,
   type OpenPoMoney,
   type OpenPoRow,
   type OpenPosResult,
-  type OpenPoWeek,
 } from "@/lib/open-pos-rules";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ADV_OPTIONS, advActive, advCounts, advMatch, NO_ADV_FILTERS, type AdvCategory, type AdvFilters } from "@/lib/open-pos-filters";
@@ -89,10 +86,6 @@ const inTile = (r: OpenPoRow, id: TileId) => (id === "all" ? true : id === "left
 const sumMoney = (ms: OpenPoMoney[], id: MetricId) => Math.round(ms.reduce((s, m) => s + m[id], 0) * 100) / 100;
 const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
-function dayLabel(day: string): string {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-}
 // Hover text, one place for the words each column and control uses everywhere on the page.
 const TIP = {
   po: "Purchase order number in Total ETO",
@@ -158,65 +151,6 @@ function StatusChip({ row, small }: { row: OpenPoRow; small?: boolean }) {
     <span title={chip.tip} className={`rounded-full px-2 py-0.5 font-semibold ${small ? "text-note" : ""} ${chip.cls}`}>
       {chip.text}
     </span>
-  );
-}
-
-function WeekChart({ weeks }: { weeks: OpenPoWeek[] }) {
-  const bars = weeks.filter((w) => w.key !== "no-date");
-  const noDate = weeks.find((w) => w.key === "no-date")?.notReceived ?? 0;
-  const max = Math.max(...bars.map((w) => w.notReceived), 1);
-  const label = (k: string) => (k === "late" ? "Late" : k === "later" ? "Later" : weekRange(k));
-  const axisTip = (k: string) =>
-    k === "late"
-      ? "Expected before today and still not here"
-      : k === "later"
-        ? "Expected after the weeks shown"
-        : `Expected ${dayLabel(k)} to ${dayLabel(addDays(k, 6))} (Monday to Sunday)`;
-  return (
-    <section className={card("p-4")} aria-labelledby="op-weeks">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2
-          id="op-weeks"
-          className="text-sm font-bold text-sdc-navy"
-          title="Value still to arrive at PO price, grouped by the week each line is expected. Uses the vendor's re-promised date when there is one"
-        >
-          Value not yet received, by week expected
-        </h2>
-        <span className="flex gap-4 text-note text-sdc-gray-600">
-          <span className="inline-flex items-center gap-1.5" title="Expected before today and still not here">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-sdc-navy" />
-            Late
-          </span>
-          <span className="inline-flex items-center gap-1.5" title="Expected today or later">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-sdc-blue" />
-            Expected
-          </span>
-        </span>
-      </div>
-      <div className="mt-3 grid h-36 items-end gap-2" style={{ gridTemplateColumns: `repeat(${bars.length}, minmax(0, 1fr))` }}>
-        {bars.map((w) => (
-          <div key={w.key} className="flex h-full flex-col justify-end gap-1" title={`${label(w.key)}: ${usdExact(w.notReceived)} not yet received`}>
-            <span className="text-center text-note font-semibold tabular-nums text-sdc-navy">{w.notReceived ? usd(w.notReceived) : "–"}</span>
-            <div
-              className={`rounded-t ${w.key === "late" ? "bg-sdc-navy" : "bg-sdc-blue"}`}
-              style={{ height: `${Math.round((w.notReceived / max) * 100)}px`, minHeight: 2 }}
-            />
-          </div>
-        ))}
-      </div>
-      <div className="mt-1 grid gap-2 border-t border-sdc-border pt-1" style={{ gridTemplateColumns: `repeat(${bars.length}, minmax(0, 1fr))` }}>
-        {bars.map((w) => (
-          <span key={w.key} title={axisTip(w.key)} className={`text-center text-note ${w.key === "late" ? "font-bold text-red-700" : "text-sdc-gray-600"}`}>
-            {label(w.key)}
-          </span>
-        ))}
-      </div>
-      {noDate > 0 && (
-        <p className="mt-2 text-note text-sdc-gray-400" title="No required or re-promised date on these lines in Total ETO, so they cannot be placed in a week">
-          Plus {usd(noDate)} on lines Total ETO has no date for.
-        </p>
-      )}
-    </section>
   );
 }
 
@@ -1230,9 +1164,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
   return (
     <div className="flex flex-col gap-5">
-      {/* The chart leads in Open: when the value still to arrive lands, by week. */}
-      {mode === "open" && <WeekChart weeks={data.weeks} />}
-
+      {/* The "Value not yet received, by week expected" chart that led here was removed
+          (2026-11-18, by request). Its data (OpenPosResult.weeks) is still built server-side. */}
       {/* ── View: HOW the POs below are drawn, right above them ─────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         <span className={CONTROL_LABEL}>View</span>

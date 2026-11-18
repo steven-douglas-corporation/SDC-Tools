@@ -991,8 +991,8 @@ export function useFillHeight(ref: RefObject<HTMLElement | null>, on = true, fit
       setFillHeight(Math.max(MIN_FILL, Math.floor((view - topInContent - below) / sEl) - (fitPage ? 1 : 0)));
     };
     measure();
-    // The window, and anything above it changing height (the chart, the filters wrapping
-    // onto another line), move where it starts.
+    // The window, and anything above it changing height (the View bar wrapping onto another
+    // line), move where it starts.
     const ro = new ResizeObserver(measure);
     ro.observe(scroller);
     for (const sib of Array.from(parent.children)) if (sib !== el) ro.observe(sib);
