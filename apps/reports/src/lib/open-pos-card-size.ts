@@ -3,7 +3,9 @@
 // Open POs' card size (Cards view), per browser like the app's other display preferences.
 // One step scales both ways at once: the card's width (`min`, the grid's narrowest card, so
 // how many fit to a row) and the height of its PO list (`list`, so how many POs show before
-// it scrolls). Step 2 is the size the cards were before the slider (2026-11-17).
+// it scrolls). Step 2 is the size the cards were before the slider (2026-11-17). The default
+// is one step larger, step 3 (2026-11-18, by request: fewer cards across). A browser that
+// has already moved the slider keeps its own step.
 export const CARD_SIZES: readonly { min: number; list: number }[] = [
   { min: 300, list: 176 },
   { min: 340, list: 232 },
@@ -11,7 +13,7 @@ export const CARD_SIZES: readonly { min: number; list: number }[] = [
   { min: 460, list: 384 },
   { min: 560, list: 480 },
 ];
-export const DEFAULT_CARD_SIZE = 2;
+export const DEFAULT_CARD_SIZE = 3;
 
 const KEY = "open-pos-card-size";
 const EVENT = "open-pos-card-size-change";

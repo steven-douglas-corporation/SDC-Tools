@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { CARD_SIZES, DEFAULT_CARD_SIZE, parseCardSize } from "../src/lib/open-pos-card-size";
 
-test("card size: the default step is the size the cards were before the slider", () => {
-  assert.deepEqual(CARD_SIZES[DEFAULT_CARD_SIZE], { min: 380, list: 288 });
+test("card size: the default is one step larger than the cards were before the slider (fewer across)", () => {
+  assert.deepEqual(CARD_SIZES[DEFAULT_CARD_SIZE - 1], { min: 380, list: 288 });
+  assert.deepEqual(CARD_SIZES[DEFAULT_CARD_SIZE], { min: 460, list: 384 });
 });
 
 test("card size: every step is bigger both ways than the one before", () => {
