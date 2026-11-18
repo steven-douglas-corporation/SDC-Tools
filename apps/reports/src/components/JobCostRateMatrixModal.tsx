@@ -190,8 +190,8 @@ export function JobCostRateMatrixModal({
           </tbody>
         </table>
         <p className="mt-3 text-note text-sdc-muted">
-          A job&apos;s hours are costed at the rate for the year they were worked; a job spanning years is blended automatically. Work and jobs before 2022 use the 2022 rates; 2026 and later use the default rates above.
-          PM &amp; Mfg % use the job&apos;s completion-year rate, applied to Sales Price exactly as entered (enter the rate after any reduction). Blank cell = default.
+          A job&apos;s hours are costed at the rate for the year they were worked; a job spanning years is blended automatically. Work and jobs before 2024 use the 2024 rates; 2026 and later use the default rates above.
+          PM &amp; Mfg $ = Sales Price × the job&apos;s completion-year % × 80% (the 20% profit share is removed; the % itself is used as entered). Blank cell = default.
         </p>
         <p className="mt-1 text-note text-sdc-muted">Changes apply to every job, for everyone, only when you press Confirm.</p>
 

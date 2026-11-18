@@ -144,8 +144,14 @@ export function isUtilityJob(jobId: string): boolean {
   return UTILITY_JOB_IDS.has(jobId) || !jobId.trim();
 }
 
+/**
+ * PM $ and Mfg $ count only 80% of Sales × their Rate Matrix %, which removes the 20% profit share
+ * from those two costs. The Rate Matrix % itself stays as entered.
+ */
+export const PM_MFG_FACTOR = 0.8;
+
 /** The Rate Matrix has one row per year from FIRST to LAST. */
-export const RATE_MATRIX_FIRST_YEAR = 2022;
+export const RATE_MATRIX_FIRST_YEAR = 2024;
 export const RATE_MATRIX_LAST_YEAR = 2025;
 /** The matrix's years, newest first (what the Rate Matrix shows). */
 export const RATE_MATRIX_YEARS: string[] = Array.from(
@@ -155,11 +161,11 @@ export const RATE_MATRIX_YEARS: string[] = Array.from(
 
 /**
  * The rates for one year (a year worked, or a job's completion year):
- *   before 2022      -> the 2022 row's rates
- *   2022 to 2025     -> that year's own row
+ *   before 2024      -> the 2024 row's rates
+ *   2024 to 2025     -> that year's own row
  *   2026 and later   -> the default rates
  * A blank cell in a row means "use the default" for that rate. Never zero-filled.
- * Rows saved for years outside 2022-2025 (older saves) are ignored.
+ * Rows saved for years outside 2024-2025 (older saves, e.g. 2022/2023) are ignored.
  */
 export function rateForYear(year: string, def: CostRates, overrides: YearRateOverrides): CostRates {
   const n = Number(year);
@@ -217,7 +223,7 @@ export function laborForType(
  * The full per-job rollup — unchanged from the original's compute():
  *   Labor Cost = Σ_year(EngHours[year] × EngRate[year]) + Σ_year(ShopHours[year] × ShopRate[year])
  *              + ETC_EngHours × EngRate_default + ETC_ShopHours × ShopRate_default
- *   PM $ / Mfg $ = Sales × PM%[completionYear] / Sales × Mfg%[completionYear]
+ *   PM $ / Mfg $ = Sales × PM%[completionYear] × 80% / Sales × Mfg%[completionYear] × 80%   (see PM_MFG_FACTOR)
  *   Parts      = partsCostForProfit(row, ETC_PartsCost).projected   [2026-09-14; was PartCost + ETC_PartsCost]
  *   Total Cost = Labor Cost + PM $ + Mfg $ + Parts
  *   Profit     = Sales Price − Total Cost            [null if no Sales Price]
@@ -242,8 +248,8 @@ export function computeJobCost(
 
   const compYear = row.completeDate ? row.completeDate.slice(0, 4) : null;
   const rc = compYear ? rateForYear(compYear, def, overrides) : def;
-  const pmCost = sales * (rc.pmPct / 100);
-  const mfgCost = sales * (rc.mfgPct / 100);
+  const pmCost = sales * (rc.pmPct / 100) * PM_MFG_FACTOR;
+  const mfgCost = sales * (rc.mfgPct / 100) * PM_MFG_FACTOR;
 
   const isComplete = row.status === "Complete";
   const etcEngHours = isComplete ? 0 : row.etcEngHours;

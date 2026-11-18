@@ -11,6 +11,7 @@ import {
   laborForType,
   partsCostForProfit,
   rateForYear,
+  PM_MFG_FACTOR,
   RATE_MATRIX_FIRST_YEAR,
   RATE_MATRIX_LAST_YEAR,
   type CostRates,
@@ -114,10 +115,11 @@ function explainShareOfSales(
   const p = rc[key];
   const value = key === "pmPct" ? row.pmCost : row.mfgCost;
   return [
-    `${name} = Sales Price × ${key === "pmPct" ? "PM" : "Mfg"} %`,
+    `${name} = Sales Price × ${key === "pmPct" ? "PM" : "Mfg"} % × 80%`,
     `Sales Price: ${row.salesPrice == null ? "none on file (counted as $0.00)" : money(sales)}`,
     `${key === "pmPct" ? "PM" : "Mfg"} %: ${pct(p)} — ${pctSource(year, key, overrides)}`,
-    `${money(sales)} × ${pct(p)} = ${money(value)}`,
+    `Factor: ${pct(PM_MFG_FACTOR * 100)} (removes the 20% profit share)`,
+    `${money(sales)} × ${pct(p)} × ${pct(PM_MFG_FACTOR * 100)} = ${money(value)}`,
   ].join("\n");
 }
 

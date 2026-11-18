@@ -62,25 +62,27 @@ test("rateForYear with no override at all returns the default untouched", () => 
   assert.deepEqual(r, DEFAULT_RATES);
 });
 
-test("rateForYear: before 2022 uses the 2022 row, 2022-2025 their own rows, 2026+ the default", () => {
+test("rateForYear: before 2024 uses the 2024 row, 2024-2025 their own rows, 2026+ the default", () => {
   const ov = {
-    "2022": { engRate: 120, shopRate: 90, pmPct: 0, mfgPct: 0 },
-    "2023": { engRate: 125 },
+    "2022": { engRate: 111 }, // stale row from an older save: ignored
+    "2023": { engRate: 125 }, // stale row from an older save: ignored
+    "2024": { engRate: 130, shopRate: 90, pmPct: 0, mfgPct: 0 },
     "2025": { engRate: 140, shopRate: 100 },
     "2026": { engRate: 999 }, // stale row from an older save: ignored
     "2018": { engRate: 888 }, // stale row: ignored
   };
-  assert.deepEqual(rateForYear("2017", DEFAULT_RATES, ov), { engRate: 120, shopRate: 90, pmPct: 0, mfgPct: 0 });
-  assert.deepEqual(rateForYear("2021", DEFAULT_RATES, ov), rateForYear("2022", DEFAULT_RATES, ov));
-  assert.equal(rateForYear("2023", DEFAULT_RATES, ov).engRate, 125);
-  assert.equal(rateForYear("2023", DEFAULT_RATES, ov).shopRate, DEFAULT_RATES.shopRate); // blank cell = default
+  assert.deepEqual(rateForYear("2017", DEFAULT_RATES, ov), { engRate: 130, shopRate: 90, pmPct: 0, mfgPct: 0 });
+  assert.deepEqual(rateForYear("2022", DEFAULT_RATES, ov), rateForYear("2024", DEFAULT_RATES, ov));
+  assert.deepEqual(rateForYear("2023", DEFAULT_RATES, ov), rateForYear("2024", DEFAULT_RATES, ov));
+  assert.equal(rateForYear("2025", DEFAULT_RATES, ov).engRate, 140);
+  assert.equal(rateForYear("2025", DEFAULT_RATES, ov).pmPct, DEFAULT_RATES.pmPct); // blank cell = default
   assert.equal(rateForYear("2025", DEFAULT_RATES, ov).shopRate, 100);
   assert.deepEqual(rateForYear("2026", DEFAULT_RATES, ov), DEFAULT_RATES);
   assert.deepEqual(rateForYear("2031", DEFAULT_RATES, ov), DEFAULT_RATES);
 });
 
-test("the Rate Matrix shows 2025 down to 2022, newest first", () => {
-  assert.deepEqual(RATE_MATRIX_YEARS, ["2025", "2024", "2023", "2022"]);
+test("the Rate Matrix shows 2025 down to 2024, newest first", () => {
+  assert.deepEqual(RATE_MATRIX_YEARS, ["2025", "2024"]);
 });
 
 test("laborForType costs the aggregate hours at the default rate with no year data", () => {
@@ -123,7 +125,7 @@ test("laborForType prefers a manual allocation over the automatic year breakdown
   assert.equal(cost, 30 * DEFAULT_RATES.engRate);
 });
 
-test("computeJobCost: PM/Mfg % apply at the completion-year rate, not the work-year rate", () => {
+test("computeJobCost: PM/Mfg = Sales x completion-year % x 80%, not the work-year rate", () => {
   const row = baseRow({
     salesPrice: 10000,
     completeDate: "2025-03-01",
@@ -137,8 +139,8 @@ test("computeJobCost: PM/Mfg % apply at the completion-year rate, not the work-y
   });
   const overrides = { "2025": { pmPct: 5, mfgPct: 2 } };
   const c = computeJobCost(row, DEFAULT_RATES, overrides, undefined);
-  assert.equal(c.pmCost, 10000 * 0.05);
-  assert.equal(c.mfgCost, 10000 * 0.02);
+  assert.equal(c.pmCost, 10000 * 0.05 * 0.8);
+  assert.equal(c.mfgCost, 10000 * 0.02 * 0.8);
 });
 
 test("computeJobCost: a Complete job zeroes ETC before costing and forces 100% complete", () => {
@@ -225,9 +227,10 @@ test("computeJobCost: margin is profit as a percentage of sales", () => {
     completeDate: null,
   });
   const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
-  // PM + Mfg on 1000 at 10%/10% = 200, no labor; parts = 200 → totalCost 400
-  assert.equal(c.profit, 1000 - 200 - 200);
-  assert.equal(c.margin, ((1000 - 200 - 200) / 1000) * 100);
+  // PM + Mfg on 1000 at 10%/10%, each at 80% = 160, no labor; parts = 200 → totalCost 360
+  assert.equal(c.pmCost + c.mfgCost, 160);
+  assert.equal(c.profit, 1000 - c.pmCost - c.mfgCost - 200);
+  assert.equal(c.margin, (c.profit! / 1000) * 100);
 });
 
 test("isUtilityJob matches the known clearing/placeholder IDs and blank IDs, not real jobs", () => {
@@ -287,8 +290,8 @@ test("computeJobCost: profit subtracts the projected parts figure and exposes it
   });
   const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
   assert.equal(c.partsProjected, 170_000);
-  // x = PM 10% + Mfg 10% of sales = 200k; y = 170k
-  assert.equal(c.profit, 1_000_000 - 200_000 - 170_000);
+  // PM 10% + Mfg 10% of sales, each at 80% = 160k; parts = 170k
+  assert.equal(c.profit, 1_000_000 - 160_000 - 170_000);
   // The columns keep their honest meanings: Purchased is still commitment.
   assert.equal(c.partCost, 150_000);
   assert.equal(c.partInvoiced, 100_000);

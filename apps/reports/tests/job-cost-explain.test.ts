@@ -41,10 +41,10 @@ test("PM $ hover shows Sales × % with the Rate Matrix year it came from, and ma
   const c = computeJobCost(row(), RATES, OVERRIDES, undefined);
   const text = explainJobCell("pmCost", c, RATES, OVERRIDES, undefined)!;
   assert.match(text, /2024 Rate Matrix row/);
-  assert.match(text, /\$100,000\.00 × 4% = \$4,000\.00/);
-  assert.equal(c.pmCost, 4000);
+  assert.match(text, /\$100,000\.00 × 4% × 80% = \$3,200\.00/);
+  assert.equal(c.pmCost, 3200);
   const mfg = explainJobCell("mfgCost", c, RATES, OVERRIDES, undefined)!;
-  assert.match(mfg, /\$100,000\.00 × 5% = \$5,000\.00/);
+  assert.match(mfg, /\$100,000\.00 × 5% × 80% = \$4,000\.00/);
 });
 
 test("PM % hover names the default when there is no Complete Date or the year is after the matrix", () => {
@@ -61,18 +61,18 @@ test("Total Cost, Profit and Margin hovers add up to the grid's own numbers", ()
     etcEngHours: 10, etcShopHours: 20, etcPartsCost: 5000, partCost: 8000, partInvoiced: 6000,
   });
   const c = computeJobCost(r, RATES, OVERRIDES, undefined);
-  // labor = 100×120 + 40×60 + 10×100 + 20×50 = 16,400; PM 4,000; Mfg 5,000;
+  // labor = 100×120 + 40×60 + 10×100 + 20×50 = 16,400; PM 4%×80% = 3,200; Mfg 5%×80% = 4,000;
   // parts = 6,000 + max(open 2,000, ETC 5,000) = 11,000
   assert.equal(c.laborCost, 16_400);
-  assert.equal(c.totalCost, 16_400 + 4_000 + 5_000 + 11_000);
+  assert.equal(c.totalCost, 16_400 + 3_200 + 4_000 + 11_000);
   const total = explainJobCell("totalCost", c, RATES, OVERRIDES, undefined)!;
   assert.match(total, /2024: 100\.0 hrs × \$120\.00\/hr = \$12,000\.00/);
   assert.match(total, /2024: 40\.0 hrs × \$60\.00\/hr = \$2,400\.00/);
-  assert.match(total, /\$16,400\.00 \+ \$4,000\.00 \+ \$5,000\.00 \+ \$11,000\.00 = \$36,400\.00/);
+  assert.match(total, /\$16,400\.00 \+ \$3,200\.00 \+ \$4,000\.00 \+ \$11,000\.00 = \$34,600\.00/);
   const profit = explainJobCell("profit", c, RATES, OVERRIDES, undefined)!;
-  assert.match(profit, /\$100,000\.00 − \$36,400\.00 = \$63,600\.00/);
+  assert.match(profit, /\$100,000\.00 − \$34,600\.00 = \$65,400\.00/);
   const margin = explainJobCell("margin", c, RATES, OVERRIDES, undefined)!;
-  assert.match(margin, /\$63,600\.00 ÷ \$100,000\.00 × 100 = 63\.60%/);
+  assert.match(margin, /\$65,400\.00 ÷ \$100,000\.00 × 100 = 65\.40%/);
 });
 
 test("Profit and Margin hovers say why they are blank when there is no Sales Price", () => {
