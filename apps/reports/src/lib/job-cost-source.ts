@@ -10,7 +10,7 @@ import { runDax } from "@/lib/powerbi-client";
 import { withTimeoutOrNull } from "@/lib/with-timeout";
 import { getInventorySnapshotForDate, listInventorySnapshotDates } from "@/lib/job-cost-inventory-snapshot";
 import { drawDownEtc, NO_ETC_ACTIVITY, type EtcActivity } from "@/lib/job-cost-etc-drawdown";
-import { WARRANTY_BUCKET_OVERRIDES, type HoursByYear, type JobCostRow } from "@/lib/job-cost";
+import { WARRANTY_BUCKET_OVERRIDES, type HoursByYear, type JobCostRow, type SalesPriceDetail } from "@/lib/job-cost";
 
 // ── Job Cost Explorer data assembly ─────────────────────────────────────────
 //
@@ -438,6 +438,12 @@ export async function loadJobCostRows(asOf: string | null = null): Promise<JobCo
     // orders, and adding to it could count them twice.
     const projectsPrice = !asOf && j.salesPrice != null ? Number(j.salesPrice) + Number(j.changeQuote ?? 0) : null;
     const salesPrice = projectsPrice ?? inv?.salesPrice ?? salesFallback.get(j.jobId) ?? null;
+    const salesPriceDetail: SalesPriceDetail = {
+      source: projectsPrice != null ? "projects" : inv?.salesPrice != null ? "inventory" : salesFallback.get(j.jobId) != null ? "powerbi" : null,
+      projectsSalesPrice: j.salesPrice != null ? Number(j.salesPrice) : null,
+      changeQuote: j.changeQuote != null ? Number(j.changeQuote) : null,
+      asOf,
+    };
 
     return {
       jobId: j.jobId,
@@ -464,6 +470,7 @@ export async function loadJobCostRows(asOf: string | null = null): Promise<JobCo
           ? Number(j.costActualHistorical)
           : (partsInvoicedMap.get(j.jobId) ?? null),
       salesPrice,
+      salesPriceDetail,
       startDate: j.startDate ? j.startDate.toISOString().slice(0, 10) : null,
       completeDate: j.completeDate ? j.completeDate.toISOString().slice(0, 10) : null,
       percentComplete: inv?.percentComplete ?? null,
