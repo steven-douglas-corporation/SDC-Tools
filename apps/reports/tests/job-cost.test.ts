@@ -125,7 +125,7 @@ test("laborForType prefers a manual allocation over the automatic year breakdown
   assert.equal(cost, 30 * DEFAULT_RATES.engRate);
 });
 
-test("computeJobCost: PM/Mfg = Sales x completion-year % x 80%, not the work-year rate", () => {
+test("computeJobCost: PM/Mfg = Sales x completion-year %, not the work-year rate", () => {
   const row = baseRow({
     salesPrice: 10000,
     completeDate: "2025-03-01",
@@ -139,8 +139,8 @@ test("computeJobCost: PM/Mfg = Sales x completion-year % x 80%, not the work-yea
   });
   const overrides = { "2025": { pmPct: 5, mfgPct: 2 } };
   const c = computeJobCost(row, DEFAULT_RATES, overrides, undefined);
-  assert.equal(c.pmCost, 10000 * 0.05 * 0.8);
-  assert.equal(c.mfgCost, 10000 * 0.02 * 0.8);
+  assert.equal(c.pmCost, 10000 * 0.05);
+  assert.equal(c.mfgCost, 10000 * 0.02);
 });
 
 test("computeJobCost: a Complete job zeroes ETC before costing and forces 100% complete", () => {
@@ -227,8 +227,8 @@ test("computeJobCost: margin is profit as a percentage of sales", () => {
     completeDate: null,
   });
   const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
-  // PM + Mfg on 1000 at 10%/10%, each at 80% = 160, no labor; parts = 200 → totalCost 360
-  assert.equal(c.pmCost + c.mfgCost, 160);
+  // PM + Mfg on 1000 at 10%/10%, = 200, no labor; parts = 200 → totalCost 400
+  assert.equal(c.pmCost + c.mfgCost, 200);
   assert.equal(c.profit, 1000 - c.pmCost - c.mfgCost - 200);
   assert.equal(c.margin, (c.profit! / 1000) * 100);
 });
@@ -290,8 +290,8 @@ test("computeJobCost: profit subtracts the projected parts figure and exposes it
   });
   const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
   assert.equal(c.partsProjected, 170_000);
-  // PM 10% + Mfg 10% of sales, each at 80% = 160k; parts = 170k
-  assert.equal(c.profit, 1_000_000 - 160_000 - 170_000);
+  // PM 10% + Mfg 10% of sales = 200k; parts = 170k
+  assert.equal(c.profit, 1_000_000 - 200_000 - 170_000);
   // The columns keep their honest meanings: Purchased is still commitment.
   assert.equal(c.partCost, 150_000);
   assert.equal(c.partInvoiced, 100_000);
