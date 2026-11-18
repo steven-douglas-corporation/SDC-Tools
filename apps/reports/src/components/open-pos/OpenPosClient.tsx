@@ -17,39 +17,38 @@ import { fmtDate } from "@/lib/po-detail";
 import { hasInvoiceBalance } from "@/lib/left-to-invoice";
 import {
   addCounts,
-  addDays,
   isChargeLine,
   lastReceived,
   lineCounts,
   lineState,
   poDates,
   vsRequired,
-  weekRange,
   type LineCounts,
   type PoDates,
   type OpenPoMoney,
   type OpenPoRow,
   type OpenPosResult,
-  type OpenPoWeek,
 } from "@/lib/open-pos-rules";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ADV_OPTIONS, advActive, advCounts, advMatch, NO_ADV_FILTERS, type AdvCategory, type AdvFilters } from "@/lib/open-pos-filters";
 
 // For managers first (the Scheduler's Vendor POs page is the buyers' worklist).
 //
-// Six tiles, one question each. "All open" is the default and the "show all" state: a PO is
-// open while it owes a delivery or an invoice (open-pos-rules.ts). Then the delivery side
-// (Late, Not yet received), the two mirrors side by side (Invoiced, not received / Received,
-// not invoiced), and the invoice side (Not yet invoiced). Each tile but All open shows the
-// money behind it and lists the POs that carry that money; All open shows its PO count, and
-// its cards are ordered by Left to invoice. All client-side: the server sent every open PO.
+// Three tiles, one question each. "All open" is the "show all" state: a PO is open while it
+// owes a delivery or an invoice (open-pos-rules.ts). "Not yet received" is the default
+// (DEFAULT_TILE). Then the delivery side
+// (Late, Not yet received). Each tile but All open shows the money behind it and lists the POs
+// that carry that money; All open shows its PO count, and its cards are ordered by Left to
+// invoice. All client-side: the server sent every open PO.
+// (2026-11-18, by request: the invoice tiles, Invoiced not received / Received not invoiced /
+// Not yet invoiced, left Basic. Advanced's Invoiced checkboxes still filter by invoice.)
 
 /** The money measures a tile can be about (keys of OpenPoMoney). `received` is the Here list's. */
 type MetricId = "late" | "notReceived" | "invoicedNotReceived" | "receivedNotInvoiced" | "leftToInvoice" | "received";
 type TileId = "all" | MetricId;
 // Four separate choices, each with its own control, so no button does two jobs:
 //   Show     WHAT the page is about: what is still open, or what is here (received).
-//   Filter   WHICH POs: the six tiles (one at a time), Deliveries (coming / outstanding)
+//   Filter   WHICH POs: the tiles (one at a time), Deliveries (coming / outstanding)
 //            and "Only partially received". Open only.
 //   View     HOW they are drawn: cards, the timeline (Open only), or one table.
 //   Group by WHAT a card or timeline group is: a project or a supplier. Not for the table,
@@ -73,34 +72,20 @@ const TILES: { id: TileId; metric: MetricId; label: string; short: string; hint:
   { id: "all", metric: "leftToInvoice", label: "All open", short: "Left to invoice", hint: "Every PO still owing a delivery or an invoice" },
   { id: "late", metric: "late", label: "Late", short: "Late", hint: "Not yet received, on lines past their expected date" },
   { id: "notReceived", metric: "notReceived", label: "Not yet received", short: "Not yet received", hint: "Ordered quantity not yet received, at PO price" },
-  {
-    id: "invoicedNotReceived",
-    metric: "invoicedNotReceived",
-    label: "Invoiced, not received",
-    short: "Invoiced, not received",
-    hint: "Invoiced beyond what has arrived, on part lines still to come: paid for, not here yet",
-  },
-  { id: "receivedNotInvoiced", metric: "receivedNotInvoiced", label: "Received, not invoiced", short: "Received, not invoiced", hint: "Received at PO price, less what has been invoiced on that line" },
-  {
-    id: "leftToInvoice",
-    metric: "leftToInvoice",
-    label: "Not yet invoiced",
-    short: "Left to invoice",
-    hint: "Left to invoice is not $0.00, including any invoiced more than ordered. Same figure as Job Details' Left to Invoice",
-  },
 ];
 
 /** Show: Here. Not a tile: it stands in for one, so the cards and the status line read the same way. */
 const HERE_TILE = { id: "received" as TileId, metric: "received" as MetricId, label: "Here", short: "Received", hint: "POs with parts that have arrived, open or closed" };
 
+// Basic's starting pick, and where Clear filters goes back to (2026-11-18, by request: the page
+// is about parts still to arrive, so a PO that is all here but not yet invoiced is not listed
+// until All open or Here is picked).
+const DEFAULT_TILE: TileId = "notReceived";
+
 const inTile = (r: OpenPoRow, id: TileId) => (id === "all" ? true : id === "leftToInvoice" ? hasInvoiceBalance(r.leftToInvoice) : r.money[id] > 0);
 const sumMoney = (ms: OpenPoMoney[], id: MetricId) => Math.round(ms.reduce((s, m) => s + m[id], 0) * 100) / 100;
 const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
-function dayLabel(day: string): string {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-}
 // Hover text, one place for the words each column and control uses everywhere on the page.
 const TIP = {
   po: "Purchase order number in Total ETO",
@@ -169,65 +154,6 @@ function StatusChip({ row, small }: { row: OpenPoRow; small?: boolean }) {
   );
 }
 
-function WeekChart({ weeks }: { weeks: OpenPoWeek[] }) {
-  const bars = weeks.filter((w) => w.key !== "no-date");
-  const noDate = weeks.find((w) => w.key === "no-date")?.notReceived ?? 0;
-  const max = Math.max(...bars.map((w) => w.notReceived), 1);
-  const label = (k: string) => (k === "late" ? "Late" : k === "later" ? "Later" : weekRange(k));
-  const axisTip = (k: string) =>
-    k === "late"
-      ? "Expected before today and still not here"
-      : k === "later"
-        ? "Expected after the weeks shown"
-        : `Expected ${dayLabel(k)} to ${dayLabel(addDays(k, 6))} (Monday to Sunday)`;
-  return (
-    <section className={card("p-4")} aria-labelledby="op-weeks">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2
-          id="op-weeks"
-          className="text-sm font-bold text-sdc-navy"
-          title="Value still to arrive at PO price, grouped by the week each line is expected. Uses the vendor's re-promised date when there is one"
-        >
-          Value not yet received, by week expected
-        </h2>
-        <span className="flex gap-4 text-note text-sdc-gray-600">
-          <span className="inline-flex items-center gap-1.5" title="Expected before today and still not here">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-sdc-navy" />
-            Late
-          </span>
-          <span className="inline-flex items-center gap-1.5" title="Expected today or later">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-sdc-blue" />
-            Expected
-          </span>
-        </span>
-      </div>
-      <div className="mt-3 grid h-36 items-end gap-2" style={{ gridTemplateColumns: `repeat(${bars.length}, minmax(0, 1fr))` }}>
-        {bars.map((w) => (
-          <div key={w.key} className="flex h-full flex-col justify-end gap-1" title={`${label(w.key)}: ${usdExact(w.notReceived)} not yet received`}>
-            <span className="text-center text-note font-semibold tabular-nums text-sdc-navy">{w.notReceived ? usd(w.notReceived) : "–"}</span>
-            <div
-              className={`rounded-t ${w.key === "late" ? "bg-sdc-navy" : "bg-sdc-blue"}`}
-              style={{ height: `${Math.round((w.notReceived / max) * 100)}px`, minHeight: 2 }}
-            />
-          </div>
-        ))}
-      </div>
-      <div className="mt-1 grid gap-2 border-t border-sdc-border pt-1" style={{ gridTemplateColumns: `repeat(${bars.length}, minmax(0, 1fr))` }}>
-        {bars.map((w) => (
-          <span key={w.key} title={axisTip(w.key)} className={`text-center text-note ${w.key === "late" ? "font-bold text-red-700" : "text-sdc-gray-600"}`}>
-            {label(w.key)}
-          </span>
-        ))}
-      </div>
-      {noDate > 0 && (
-        <p className="mt-2 text-note text-sdc-gray-400" title="No required or re-promised date on these lines in Total ETO, so they cannot be placed in a week">
-          Plus {usd(noDate)} on lines Total ETO has no date for.
-        </p>
-      )}
-    </section>
-  );
-}
-
 const jobHref = (jobId: string) => `/job-hours?jobs=${encodeURIComponent(jobId)}`;
 
 function JobLinks({ jobIds }: { jobIds: string[] }) {
@@ -245,33 +171,23 @@ function JobLinks({ jobIds }: { jobIds: string[] }) {
   );
 }
 
-// When the BOM needs the PO's next part to arrive, against when it is expected: green on or
-// before, red after with "+Nd". The same line as the Expected column (poDates), so the two agree.
+// The table's Required column: when the BOM needs the PO's next part to arrive, the same line as
+// the Expected column (poDates), so the two agree. Drawn by RequiredCell, like the cards.
 function NeededCell({ dates, state }: { dates: PoDates; state: RequiredState }) {
-  const muted = "font-mono text-label text-sdc-gray-400";
-  if (!dates.outstanding) return <span className={muted} title="Nothing still to arrive">–</span>;
-  if (state === "loading") return <span className={muted} title="Reading required dates from the BOM">…</span>;
-  if (state === "failed") return <span className={muted} title="Required dates couldn't be read from the BOM">?</span>;
-  if (!dates.required) return <span className={muted} title="Not on the job's BOM, so there is no required date">–</span>;
-  const v = vsRequired(dates.expected, dates.required);
-  const tip = !v
-    ? `Required ${fmtDate(dates.required)}. No expected date to compare it with`
-    : v.days === 0
-      ? `Required ${fmtDate(dates.required)}: arrives the day it's required`
-      : `Required ${fmtDate(dates.required)}: arrives ${days(v.days)} ${v.onTime ? "before" : "after"} it's required`;
-  return (
-    <span className={`whitespace-nowrap font-mono text-label ${!v ? "text-sdc-gray-600" : v.onTime ? "text-green-700" : "font-semibold text-red-700"}`} title={tip}>
-      {fmtDate(dates.required)}
-      {v && !v.onTime && v.days > 0 && <span> +{v.days}d</span>}
-    </span>
-  );
+  if (!dates.outstanding)
+    return (
+      <span className="font-mono text-label text-sdc-gray-400" title="Nothing still to arrive">
+        –
+      </span>
+    );
+  return <RequiredCell expected={dates.expected} required={dates.required} state={state} />;
 }
 
-// ── Expected against needed, as one figure (2026-11-16) ─────────────────────────────────
-// On the cards and in their part lists the two dates sat side by side and read as one blur.
-// There the row shows only the expected date, and this says how it compares with when the
-// BOM needs the part: "4d early" (green), "on the day" (green), "12d late" (red). The needed
-// date itself is on hover, and in full in the table and the card's details panel.
+// ── Expected against needed (2026-11-16; dates back on the cards 2026-11-18) ────────────
+// On the cards and in their part lists the two dates once sat side by side and read as one
+// blur, so the cards showed only this comparison: "4d early" (green), "on the day" (green),
+// "12d late" (red). By request the cards show the required date again (RequiredCell). gapOf
+// still supplies the hover text and the sort.
 type Gap = { text: string; cls: string; tip: string; sort: number | null };
 function gapOf(expected: string | null, required: string | null, state: RequiredState = "ok"): Gap {
   const muted = "text-sdc-gray-400";
@@ -291,6 +207,22 @@ function GapCell({ gap }: { gap: Gap }) {
   return (
     <span className={`whitespace-nowrap font-mono text-label ${gap.cls}`} title={gap.tip}>
       {gap.text}
+    </span>
+  );
+}
+
+// The required date itself, on the cards, their part lists and the table (2026-11-18, by
+// request: "show the required date"). Just the date, in gray. Tried 2026-11-18 and dropped the
+// same day: colouring it (two red dates beside an overdue Expected read as one phrase) and a
+// "+Nd" suffix (it shifted the right-aligned dates so the column no longer lined up). How it
+// compares with Expected is on hover (gapOf) and in "Furthest past required first".
+// Loading / failed / not on the BOM: gapOf's mark.
+function RequiredCell({ expected, required, state = "ok" }: { expected: string | null; required: string | null; state?: RequiredState }) {
+  const gap = gapOf(expected, required, state);
+  if (!required || state !== "ok") return <GapCell gap={gap} />;
+  return (
+    <span className="whitespace-nowrap font-mono text-label text-sdc-gray-600" title={gap.tip}>
+      {fmtDate(required)}
     </span>
   );
 }
@@ -414,14 +346,20 @@ function PoParts({ po, today, requiredByLine }: { po: CardPo; today: string; req
               {l.quantity <= 0 ? "Credit" : isChargeLine(l) ? "Charge" : `${l.receivedQty == null ? "?" : Math.min(l.receivedQty, l.quantity)}/${l.quantity}`}
             </span>
             <span
-              className={`whitespace-nowrap font-mono ${s === "outstanding" ? "font-semibold text-sdc-red-text" : "text-sdc-gray-600"}`}
+              className={`whitespace-nowrap font-mono ${
+                s === "outstanding"
+                  ? "font-semibold text-sdc-red-text"
+                  : s === "coming" && vsRequired(l.expected, required)?.onTime
+                    ? "text-sdc-green-text"
+                    : "text-sdc-gray-600"
+              }`}
               title={repromised ? TIP.revised(l.original as string) : s === "outstanding" ? "Past its expected date and not all here" : undefined}
             >
               {!s ? "–" : s === "here" ? "Here" : l.expected ? fmtDate(l.expected) : "No date"}
               {repromised && <span className="text-sdc-blue"> ↻</span>}
             </span>
-            {/* How it compares with when it is needed, not a second date beside the first. */}
-            {s && s !== "here" ? <GapCell gap={gapOf(l.expected, required)} /> : <span className="text-sdc-gray-400">–</span>}
+            {/* When the BOM needs it; how Expected compares is on hover. */}
+            {s && s !== "here" ? <RequiredCell expected={l.expected} required={required} /> : <span className="text-sdc-gray-400">–</span>}
             {s ? (
               <span title={STATE_TIP[s]} className={`rounded-full px-1.5 text-micro font-bold ${STATE_CLS[s]}`}>
                 {STATE_LABEL[s]}
@@ -444,7 +382,8 @@ function PoParts({ po, today, requiredByLine }: { po: CardPo; today: string; req
 // Three, each saying which way it runs (2026-11-16: down from five; "Most late" ran the same as
 // the first whenever a card had a late line, and "Soonest expected" was that minus late lines).
 // Labels and hover text depend on what the cards are and the Money pick: sortLabel / sortTip.
-const SORTS: { id: CardSort }[] = [{ id: "next" }, { id: "amount" }, { id: "name" }];
+// "name" (Job number / Supplier A–Z) is first and the default (2026-11-18, by request).
+const SORTS: { id: CardSort }[] = [{ id: "name" }, { id: "next" }, { id: "amount" }];
 type CardOrderable = { totals: Record<MetricId, number>; next: string | null };
 const byDay = (a: string | null, b: string | null) => (a ?? "9999").localeCompare(b ?? "9999");
 
@@ -487,13 +426,14 @@ function nextPoSort(cur: ListCardSort | null, id: string): ListCardSort {
 // which the cards show only while sorted by it (2026-11-17: the order went by a figure no
 // column showed). A header clicked to anything else selects none of them, and the column says
 // so. A null sort is the cards' own order, which is also biggest amount first. Hover text: poSortTip.
+// PO number is first and the default (2026-11-18, by request).
 const PO_SORTS: { id: string; label: string }[] = [
+  { id: "po", label: "PO number" },
   { id: "expected", label: "Most overdue first" },
   { id: "needed", label: "Furthest past required first" },
   { id: "amount", label: "Biggest amount first" },
-  { id: "po", label: "PO number" },
 ];
-const DEFAULT_PO_SORT: ListCardSort = { id: "expected", dir: "asc" };
+const DEFAULT_PO_SORT: ListCardSort = { id: "po", dir: "asc" };
 
 const CONTROL_LABEL ="text-xs font-semibold uppercase tracking-wide text-sdc-muted";
 
@@ -570,7 +510,7 @@ function OpenPoCard({
   requiredByLine: ReadonlyMap<string, string>;
   title: ReactNode;
   titleTip: string;
-  /** What comes before the item count, e.g. "8 POs" or "3 POs · 2 jobs". */
+  /** What comes before "x/y items received", e.g. "8 POs" or "3 POs · 2 jobs". */
   subtitle: string;
   avatar?: ReactNode;
   /** The selected tile; its `metric` is the money the subtitle shows. */
@@ -657,9 +597,17 @@ function OpenPoCard({
       align: "right",
       // The card's own lines (poDates): on a project card, this job's share of a split PO.
       sortValue: ({ dates }) => (dates.outstanding ? dates.expected : null),
+      // Red when overdue; green when it arrives on or before the Required date (2026-11-18, by
+      // request); gray otherwise, or while the required dates are still loading.
       render: ({ row, money: m, dates }) => (
         <span
-          className={`whitespace-nowrap font-mono text-label ${m.late > 0 ? "text-sdc-red-text" : "text-sdc-gray-600"}`}
+          className={`whitespace-nowrap font-mono text-label ${
+            m.late > 0
+              ? "text-sdc-red-text"
+              : dates.outstanding && requiredState === "ok" && vsRequired(dates.expected, dates.required)?.onTime
+                ? "text-sdc-green-text"
+                : "text-sdc-gray-600"
+          }`}
           title={dates.revised && dates.original ? TIP.revised(dates.original) : expectedTip(row, m.notReceived)}
         >
           {dates.expected ? fmtDate(dates.expected) : dates.outstanding ? "No date" : "Here"}
@@ -669,13 +617,14 @@ function OpenPoCard({
     },
     {
       id: "needed",
-      header: "Vs required",
+      header: "Required",
       headerTitle:
-        "How the expected date compares with the BOM's required date for that same part: days early (green) or late (red). Hover for the required date",
+        "The BOM's required date for the part in the Expected column. Hover a date to see how Expected compares with it. Sorts most late against it first",
       align: "right",
       // Days late (negative when early), so the latest against the BOM can lead.
       sortValue: ({ dates }) => (dates.outstanding ? gapOf(dates.expected, dates.required).sort : null),
-      render: ({ dates }) => (dates.outstanding ? <GapCell gap={gapOf(dates.expected, dates.required, requiredState)} /> : <span className="text-sdc-gray-400">–</span>),
+      render: ({ dates }) =>
+        dates.outstanding ? <RequiredCell expected={dates.expected} required={dates.required} state={requiredState} /> : <span className="text-sdc-gray-400">–</span>,
     },
     // The amount the POs are ordered by, shown only while they are (by the left column's
     // "Biggest amount first", this header, or the cards' own order when nothing is picked).
@@ -719,7 +668,8 @@ function OpenPoCard({
       titleTip={titleTip}
       subtitle={
         <span title={`${countsTip(counts)}${amountInHeader ? "" : `. ${amountTip}`}`}>
-          {subtitle} · {counts.lines} {counts.lines === 1 ? "item" : "items"}
+          {/* Received x/y: the card's POs' line counts added up, the same figure as its % bar (2026-11-18, by request). */}
+          {subtitle} · {counts.received}/{counts.lines} {counts.lines === 1 ? "item" : "items"} received
           {!amountInHeader && ` · ${usd(money[metric.metric])} ${METRIC_PHRASE[metric.metric]}`}
         </span>
       }
@@ -859,7 +809,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   // closed ones included: parts on the shelf whether or not the PO is done). Advanced: checkboxes
   // by category (open-pos-filters.ts), over open POs only, as the page's name says. Each keeps its own picks; only the one showing applies. (2026-11-16: Open /
   // Here was a separate Show switch above them; it is a filter like the rest.)
-  const [tile, setTile] = useState<TileId | "here">("all");
+  const [tile, setTile] = useState<TileId | "here">(DEFAULT_TILE);
   const [filterMode, setFilterMode] = useState<FilterMode>("basic");
   const [adv, setAdv] = useState<AdvFilters>(NO_ADV_FILTERS);
   // "here": Basic's Here pick, which lists the Here POs (no timeline; amounts are value received).
@@ -882,7 +832,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   // the current cards each render, so it follows the filters. Hidden while a PO panel is open
   // on top of it (two drawers would both close on Escape), and back when that one closes.
   const [openCard, setOpenCard] = useState<{ kind: GroupBy; key: string } | null>(null);
-  const [sort, setSort] = useState<CardSort>("next");
+  const [sort, setSort] = useState<CardSort>("name");
   // One PO order for every card: clicking a column header in any card sorts them all.
   const [poSort, setPoSort] = useState<ListCardSort | null>(DEFAULT_PO_SORT);
   // Card size (Cards view), this browser's own: lib/open-pos-card-size.ts.
@@ -1101,11 +1051,11 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   }
 
   const searching = query.trim() !== "";
-  const filtered = searching || (filterMode === "basic" ? tile !== "all" : advActive(adv));
+  const filtered = searching || (filterMode === "basic" ? tile !== DEFAULT_TILE : advActive(adv));
   const total = mode === "here" ? data.here.length : data.rows.length;
   const shownJobs = new Set(shown.flatMap((r) => r.jobIds)).size;
   const clearFilters = () => {
-    setTile("all");
+    setTile(DEFAULT_TILE);
     setAdv(NO_ADV_FILTERS);
     setQuery("");
   };
@@ -1139,7 +1089,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     id === "expected"
       ? "Inside each card, the PO whose undelivered line was due longest ago first, then the soonest still to come. POs with everything here go last"
       : id === "needed"
-        ? "The PO that arrives latest against the BOM's required date first (the Vs required column, most late first). POs with no required date go last"
+        ? "The PO that arrives latest against the BOM's required date first (most days after its Required date first). POs with no required date go last"
         : id === "amount"
           ? `Largest ${amountName} first`
           : "In PO number order";
@@ -1235,9 +1185,8 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
   return (
     <div className="flex flex-col gap-5">
-      {/* The chart leads in Open: when the value still to arrive lands, by week. */}
-      {mode === "open" && <WeekChart weeks={data.weeks} />}
-
+      {/* The "Value not yet received, by week expected" chart that led here was removed
+          (2026-11-18, by request). Its data (OpenPosResult.weeks) is still built server-side. */}
       {/* ── View: HOW the POs below are drawn, right above them ─────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         <span className={CONTROL_LABEL}>View</span>
@@ -1340,7 +1289,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 {total > shown.length ? ` · ${total - shown.length} hidden` : ""}
               </span>
               {filtered && (
-                <button type="button" onClick={clearFilters} title="Nothing filtered and the search emptied" className="text-note font-semibold text-sdc-blue hover:underline">
+                <button type="button" onClick={clearFilters} title="Back to the starting view: Basic's Not yet received, no Advanced checkboxes, the search emptied" className="text-note font-semibold text-sdc-blue hover:underline">
                   Clear filters
                 </button>
               )}
@@ -1404,13 +1353,13 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
           <div aria-hidden className="h-px shrink-0 bg-sdc-border" />
 
-          <SideGroup title="Filters" tip="Basic: one pick, by what the POs still owe, or Here. Advanced: any mix of received, still to come, invoiced, required date and job checkboxes, over open POs">
+          <SideGroup title="Filters" tip="Basic: one pick, by deliveries still owed, or Here. Advanced: any mix of received, still to come, invoiced, required date and job checkboxes, over open POs">
             <Segmented
               label="Filters"
               value={filterMode}
               onChange={setFilterMode}
               options={[
-                { value: "basic", label: "Basic", title: "One pick: by what the POs still owe, or Here (parts that have arrived)" },
+                { value: "basic", label: "Basic", title: "One pick: by deliveries still owed, or Here (parts that have arrived)" },
                 { value: "advanced", label: "Advanced", title: "Checkboxes by category: received, still to come, invoiced, required date, job. Open POs only" },
               ]}
             />
@@ -1419,27 +1368,33 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           {filterMode === "basic" && (
             <SideGroup
               title="Show"
-              tip="One at a time. All open is every PO still owing a delivery or an invoice; the amounts below it narrow that by what is owed, and are also what the cards show and Biggest amount first sorts by. Here is POs with parts that have arrived, closed ones included"
+              tip="One at a time, starting on Not yet received. All open is every PO still owing a delivery or an invoice; Late and Not yet received narrow that to deliveries still owed. Each shows how many POs it lists; hover for the value, which is also what the cards show and Biggest amount first sorts by. Here is POs with parts that have arrived, closed ones included. To filter by invoice, use Advanced"
             >
               <OptionList
                 label="Show"
                 value={tile}
                 onChange={setTile}
-                options={[
-                  ...tiles.map((t) => ({
+                options={(() => {
+                  // A count of POs on every pick (2026-11-18, by request: "late POs, # of POs, not
+                  // dollar amount"). The dollars stay in the hover text.
+                  const tileOption = (t: (typeof tiles)[number]) => ({
                     value: t.id as TileId | "here",
                     label: t.label,
-                    detail: t.id === "all" ? `${t.pos} POs` : usd(t.value),
+                    detail: `${t.pos} ${t.pos === 1 ? "PO" : "POs"}`,
                     tone: t.id === "late" ? ("danger" as const) : undefined,
                     title: `${t.hint}. ${t.id === "all" ? `${t.pos} POs` : `${usdExact(t.value)} on ${t.pos} POs`}, ${t.jobs} jobs`,
-                  })),
-                  {
+                  });
+                  const here = {
                     value: "here" as const,
                     label: "Here",
-                    detail: `${data.here.length} POs`,
+                    detail: `${data.here.length} ${data.here.length === 1 ? "PO" : "POs"}`,
                     title: `POs with parts that have arrived, open or closed (received and invoiced). ${data.here.length} POs. Cards and the table only: there is nothing to place on the timeline`,
-                  },
-                ]}
+                  };
+                  // Most used first (2026-11-18, by request): Not yet received | Late | Here | All open.
+                  // Only the list's order: TILES keeps All open first, as Advanced's amount reads TILES[0].
+                  const byId = (id: TileId) => tileOption(tiles.find((t) => t.id === id)!);
+                  return [byId("notReceived"), byId("late"), here, byId("all")];
+                })()}
               />
             </SideGroup>
           )}
