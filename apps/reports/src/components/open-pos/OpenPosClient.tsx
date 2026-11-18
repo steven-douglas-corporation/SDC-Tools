@@ -346,7 +346,13 @@ function PoParts({ po, today, requiredByLine }: { po: CardPo; today: string; req
               {l.quantity <= 0 ? "Credit" : isChargeLine(l) ? "Charge" : `${l.receivedQty == null ? "?" : Math.min(l.receivedQty, l.quantity)}/${l.quantity}`}
             </span>
             <span
-              className={`whitespace-nowrap font-mono ${s === "outstanding" ? "font-semibold text-sdc-red-text" : "text-sdc-gray-600"}`}
+              className={`whitespace-nowrap font-mono ${
+                s === "outstanding"
+                  ? "font-semibold text-sdc-red-text"
+                  : s === "coming" && vsRequired(l.expected, required)?.onTime
+                    ? "text-sdc-green-text"
+                    : "text-sdc-gray-600"
+              }`}
               title={repromised ? TIP.revised(l.original as string) : s === "outstanding" ? "Past its expected date and not all here" : undefined}
             >
               {!s ? "–" : s === "here" ? "Here" : l.expected ? fmtDate(l.expected) : "No date"}
@@ -591,9 +597,17 @@ function OpenPoCard({
       align: "right",
       // The card's own lines (poDates): on a project card, this job's share of a split PO.
       sortValue: ({ dates }) => (dates.outstanding ? dates.expected : null),
+      // Red when overdue; green when it arrives on or before the Required date (2026-11-18, by
+      // request); gray otherwise, or while the required dates are still loading.
       render: ({ row, money: m, dates }) => (
         <span
-          className={`whitespace-nowrap font-mono text-label ${m.late > 0 ? "text-sdc-red-text" : "text-sdc-gray-600"}`}
+          className={`whitespace-nowrap font-mono text-label ${
+            m.late > 0
+              ? "text-sdc-red-text"
+              : dates.outstanding && requiredState === "ok" && vsRequired(dates.expected, dates.required)?.onTime
+                ? "text-sdc-green-text"
+                : "text-sdc-gray-600"
+          }`}
           title={dates.revised && dates.original ? TIP.revised(dates.original) : expectedTip(row, m.notReceived)}
         >
           {dates.expected ? fmtDate(dates.expected) : dates.outstanding ? "No date" : "Here"}
