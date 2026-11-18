@@ -1849,7 +1849,14 @@ function PartsListTab({
   // in those columns already renders "—" when null (PartRowCells), which is
   // self-evident on its own — the title still explains why.
   const windowedRangeLabel = windowStatus.active ? `${from || "…"} – ${to || "…"}` : "";
-  const visibleCols = ALL_COLS.filter((c) => !hidden.has(c.key)).map((c) => {
+  // While a date range is applied: Purchase filter hides Invoiced $, Invoiced filter hides Total $.
+  const dateRangeActive = Boolean(from || to);
+  const visibleCols = ALL_COLS.filter((c) => {
+    if (hidden.has(c.key)) return false;
+    if (dateRangeActive && dateType === "purchase" && c.key === "invoiced") return false;
+    if (dateRangeActive && dateType === "invoice" && c.key === "total") return false;
+    return true;
+  }).map((c) => {
     if (!windowStatus.active) return c;
     // The header stays "Invoiced $" — the window is explained in the tooltip and,
     // permanently visible, in the footer's scope line. "(window)" inside a 96px
