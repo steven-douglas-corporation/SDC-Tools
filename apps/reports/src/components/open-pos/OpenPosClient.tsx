@@ -37,19 +37,21 @@ import { ADV_OPTIONS, advActive, advCounts, advMatch, NO_ADV_FILTERS, type AdvCa
 
 // For managers first (the Scheduler's Vendor POs page is the buyers' worklist).
 //
-// Six tiles, one question each. "All open" is the default and the "show all" state: a PO is
-// open while it owes a delivery or an invoice (open-pos-rules.ts). Then the delivery side
-// (Late, Not yet received), the two mirrors side by side (Invoiced, not received / Received,
-// not invoiced), and the invoice side (Not yet invoiced). Each tile but All open shows the
-// money behind it and lists the POs that carry that money; All open shows its PO count, and
-// its cards are ordered by Left to invoice. All client-side: the server sent every open PO.
+// Three tiles, one question each. "All open" is the "show all" state: a PO is open while it
+// owes a delivery or an invoice (open-pos-rules.ts). "Not yet received" is the default
+// (DEFAULT_TILE). Then the delivery side
+// (Late, Not yet received). Each tile but All open shows the money behind it and lists the POs
+// that carry that money; All open shows its PO count, and its cards are ordered by Left to
+// invoice. All client-side: the server sent every open PO.
+// (2026-11-18, by request: the invoice tiles, Invoiced not received / Received not invoiced /
+// Not yet invoiced, left Basic. Advanced's Invoiced checkboxes still filter by invoice.)
 
 /** The money measures a tile can be about (keys of OpenPoMoney). `received` is the Here list's. */
 type MetricId = "late" | "notReceived" | "invoicedNotReceived" | "receivedNotInvoiced" | "leftToInvoice" | "received";
 type TileId = "all" | MetricId;
 // Four separate choices, each with its own control, so no button does two jobs:
 //   Show     WHAT the page is about: what is still open, or what is here (received).
-//   Filter   WHICH POs: the six tiles (one at a time), Deliveries (coming / outstanding)
+//   Filter   WHICH POs: the tiles (one at a time), Deliveries (coming / outstanding)
 //            and "Only partially received". Open only.
 //   View     HOW they are drawn: cards, the timeline (Open only), or one table.
 //   Group by WHAT a card or timeline group is: a project or a supplier. Not for the table,
@@ -73,25 +75,15 @@ const TILES: { id: TileId; metric: MetricId; label: string; short: string; hint:
   { id: "all", metric: "leftToInvoice", label: "All open", short: "Left to invoice", hint: "Every PO still owing a delivery or an invoice" },
   { id: "late", metric: "late", label: "Late", short: "Late", hint: "Not yet received, on lines past their expected date" },
   { id: "notReceived", metric: "notReceived", label: "Not yet received", short: "Not yet received", hint: "Ordered quantity not yet received, at PO price" },
-  {
-    id: "invoicedNotReceived",
-    metric: "invoicedNotReceived",
-    label: "Invoiced, not received",
-    short: "Invoiced, not received",
-    hint: "Invoiced beyond what has arrived, on part lines still to come: paid for, not here yet",
-  },
-  { id: "receivedNotInvoiced", metric: "receivedNotInvoiced", label: "Received, not invoiced", short: "Received, not invoiced", hint: "Received at PO price, less what has been invoiced on that line" },
-  {
-    id: "leftToInvoice",
-    metric: "leftToInvoice",
-    label: "Not yet invoiced",
-    short: "Left to invoice",
-    hint: "Left to invoice is not $0.00, including any invoiced more than ordered. Same figure as Job Details' Left to Invoice",
-  },
 ];
 
 /** Show: Here. Not a tile: it stands in for one, so the cards and the status line read the same way. */
 const HERE_TILE = { id: "received" as TileId, metric: "received" as MetricId, label: "Here", short: "Received", hint: "POs with parts that have arrived, open or closed" };
+
+// Basic's starting pick, and where Clear filters goes back to (2026-11-18, by request: the page
+// is about parts still to arrive, so a PO that is all here but not yet invoiced is not listed
+// until All open or Here is picked).
+const DEFAULT_TILE: TileId = "notReceived";
 
 const inTile = (r: OpenPoRow, id: TileId) => (id === "all" ? true : id === "leftToInvoice" ? hasInvoiceBalance(r.leftToInvoice) : r.money[id] > 0);
 const sumMoney = (ms: OpenPoMoney[], id: MetricId) => Math.round(ms.reduce((s, m) => s + m[id], 0) * 100) / 100;
@@ -859,7 +851,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   // closed ones included: parts on the shelf whether or not the PO is done). Advanced: checkboxes
   // by category (open-pos-filters.ts), over open POs only, as the page's name says. Each keeps its own picks; only the one showing applies. (2026-11-16: Open /
   // Here was a separate Show switch above them; it is a filter like the rest.)
-  const [tile, setTile] = useState<TileId | "here">("all");
+  const [tile, setTile] = useState<TileId | "here">(DEFAULT_TILE);
   const [filterMode, setFilterMode] = useState<FilterMode>("basic");
   const [adv, setAdv] = useState<AdvFilters>(NO_ADV_FILTERS);
   // "here": Basic's Here pick, which lists the Here POs (no timeline; amounts are value received).
@@ -1101,11 +1093,11 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   }
 
   const searching = query.trim() !== "";
-  const filtered = searching || (filterMode === "basic" ? tile !== "all" : advActive(adv));
+  const filtered = searching || (filterMode === "basic" ? tile !== DEFAULT_TILE : advActive(adv));
   const total = mode === "here" ? data.here.length : data.rows.length;
   const shownJobs = new Set(shown.flatMap((r) => r.jobIds)).size;
   const clearFilters = () => {
-    setTile("all");
+    setTile(DEFAULT_TILE);
     setAdv(NO_ADV_FILTERS);
     setQuery("");
   };
@@ -1340,7 +1332,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 {total > shown.length ? ` · ${total - shown.length} hidden` : ""}
               </span>
               {filtered && (
-                <button type="button" onClick={clearFilters} title="Nothing filtered and the search emptied" className="text-note font-semibold text-sdc-blue hover:underline">
+                <button type="button" onClick={clearFilters} title="Back to the starting view: Basic's Not yet received, no Advanced checkboxes, the search emptied" className="text-note font-semibold text-sdc-blue hover:underline">
                   Clear filters
                 </button>
               )}
@@ -1404,13 +1396,13 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
 
           <div aria-hidden className="h-px shrink-0 bg-sdc-border" />
 
-          <SideGroup title="Filters" tip="Basic: one pick, by what the POs still owe, or Here. Advanced: any mix of received, still to come, invoiced, required date and job checkboxes, over open POs">
+          <SideGroup title="Filters" tip="Basic: one pick, by deliveries still owed, or Here. Advanced: any mix of received, still to come, invoiced, required date and job checkboxes, over open POs">
             <Segmented
               label="Filters"
               value={filterMode}
               onChange={setFilterMode}
               options={[
-                { value: "basic", label: "Basic", title: "One pick: by what the POs still owe, or Here (parts that have arrived)" },
+                { value: "basic", label: "Basic", title: "One pick: by deliveries still owed, or Here (parts that have arrived)" },
                 { value: "advanced", label: "Advanced", title: "Checkboxes by category: received, still to come, invoiced, required date, job. Open POs only" },
               ]}
             />
@@ -1419,27 +1411,33 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           {filterMode === "basic" && (
             <SideGroup
               title="Show"
-              tip="One at a time. All open is every PO still owing a delivery or an invoice; the amounts below it narrow that by what is owed, and are also what the cards show and Biggest amount first sorts by. Here is POs with parts that have arrived, closed ones included"
+              tip="One at a time, starting on Not yet received. All open is every PO still owing a delivery or an invoice; Late and Not yet received narrow that to deliveries still owed. Each shows how many POs it lists; hover for the value, which is also what the cards show and Biggest amount first sorts by. Here is POs with parts that have arrived, closed ones included. To filter by invoice, use Advanced"
             >
               <OptionList
                 label="Show"
                 value={tile}
                 onChange={setTile}
-                options={[
-                  ...tiles.map((t) => ({
+                options={(() => {
+                  // A count of POs on every pick (2026-11-18, by request: "late POs, # of POs, not
+                  // dollar amount"). The dollars stay in the hover text.
+                  const tileOption = (t: (typeof tiles)[number]) => ({
                     value: t.id as TileId | "here",
                     label: t.label,
-                    detail: t.id === "all" ? `${t.pos} POs` : usd(t.value),
+                    detail: `${t.pos} ${t.pos === 1 ? "PO" : "POs"}`,
                     tone: t.id === "late" ? ("danger" as const) : undefined,
                     title: `${t.hint}. ${t.id === "all" ? `${t.pos} POs` : `${usdExact(t.value)} on ${t.pos} POs`}, ${t.jobs} jobs`,
-                  })),
-                  {
+                  });
+                  const here = {
                     value: "here" as const,
                     label: "Here",
-                    detail: `${data.here.length} POs`,
+                    detail: `${data.here.length} ${data.here.length === 1 ? "PO" : "POs"}`,
                     title: `POs with parts that have arrived, open or closed (received and invoiced). ${data.here.length} POs. Cards and the table only: there is nothing to place on the timeline`,
-                  },
-                ]}
+                  };
+                  // Most used first (2026-11-18, by request): Not yet received | Late | Here | All open.
+                  // Only the list's order: TILES keeps All open first, as Advanced's amount reads TILES[0].
+                  const byId = (id: TileId) => tileOption(tiles.find((t) => t.id === id)!);
+                  return [byId("notReceived"), byId("late"), here, byId("all")];
+                })()}
               />
             </SideGroup>
           )}
