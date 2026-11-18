@@ -171,33 +171,23 @@ function JobLinks({ jobIds }: { jobIds: string[] }) {
   );
 }
 
-// When the BOM needs the PO's next part to arrive, against when it is expected: green on or
-// before, red after with "+Nd". The same line as the Expected column (poDates), so the two agree.
+// The table's Required column: when the BOM needs the PO's next part to arrive, the same line as
+// the Expected column (poDates), so the two agree. Drawn by RequiredCell, like the cards.
 function NeededCell({ dates, state }: { dates: PoDates; state: RequiredState }) {
-  const muted = "font-mono text-label text-sdc-gray-400";
-  if (!dates.outstanding) return <span className={muted} title="Nothing still to arrive">–</span>;
-  if (state === "loading") return <span className={muted} title="Reading required dates from the BOM">…</span>;
-  if (state === "failed") return <span className={muted} title="Required dates couldn't be read from the BOM">?</span>;
-  if (!dates.required) return <span className={muted} title="Not on the job's BOM, so there is no required date">–</span>;
-  const v = vsRequired(dates.expected, dates.required);
-  const tip = !v
-    ? `Required ${fmtDate(dates.required)}. No expected date to compare it with`
-    : v.days === 0
-      ? `Required ${fmtDate(dates.required)}: arrives the day it's required`
-      : `Required ${fmtDate(dates.required)}: arrives ${days(v.days)} ${v.onTime ? "before" : "after"} it's required`;
-  return (
-    <span className={`whitespace-nowrap font-mono text-label ${!v ? "text-sdc-gray-600" : v.onTime ? "text-green-700" : "font-semibold text-red-700"}`} title={tip}>
-      {fmtDate(dates.required)}
-      {v && !v.onTime && v.days > 0 && <span> +{v.days}d</span>}
-    </span>
-  );
+  if (!dates.outstanding)
+    return (
+      <span className="font-mono text-label text-sdc-gray-400" title="Nothing still to arrive">
+        –
+      </span>
+    );
+  return <RequiredCell expected={dates.expected} required={dates.required} state={state} />;
 }
 
-// ── Expected against needed, as one figure (2026-11-16) ─────────────────────────────────
-// On the cards and in their part lists the two dates sat side by side and read as one blur.
-// There the row shows only the expected date, and this says how it compares with when the
-// BOM needs the part: "4d early" (green), "on the day" (green), "12d late" (red). The needed
-// date itself is on hover, and in full in the table and the card's details panel.
+// ── Expected against needed (2026-11-16; dates back on the cards 2026-11-18) ────────────
+// On the cards and in their part lists the two dates once sat side by side and read as one
+// blur, so the cards showed only this comparison: "4d early" (green), "on the day" (green),
+// "12d late" (red). By request the cards show the required date again (RequiredCell). gapOf
+// still supplies the hover text and the sort.
 type Gap = { text: string; cls: string; tip: string; sort: number | null };
 function gapOf(expected: string | null, required: string | null, state: RequiredState = "ok"): Gap {
   const muted = "text-sdc-gray-400";
@@ -217,6 +207,22 @@ function GapCell({ gap }: { gap: Gap }) {
   return (
     <span className={`whitespace-nowrap font-mono text-label ${gap.cls}`} title={gap.tip}>
       {gap.text}
+    </span>
+  );
+}
+
+// The required date itself, on the cards, their part lists and the table (2026-11-18, by
+// request: "show the required date"). Just the date, in gray. Tried 2026-11-18 and dropped the
+// same day: colouring it (two red dates beside an overdue Expected read as one phrase) and a
+// "+Nd" suffix (it shifted the right-aligned dates so the column no longer lined up). How it
+// compares with Expected is on hover (gapOf) and in "Furthest past required first".
+// Loading / failed / not on the BOM: gapOf's mark.
+function RequiredCell({ expected, required, state = "ok" }: { expected: string | null; required: string | null; state?: RequiredState }) {
+  const gap = gapOf(expected, required, state);
+  if (!required || state !== "ok") return <GapCell gap={gap} />;
+  return (
+    <span className="whitespace-nowrap font-mono text-label text-sdc-gray-600" title={gap.tip}>
+      {fmtDate(required)}
     </span>
   );
 }
@@ -346,8 +352,8 @@ function PoParts({ po, today, requiredByLine }: { po: CardPo; today: string; req
               {!s ? "–" : s === "here" ? "Here" : l.expected ? fmtDate(l.expected) : "No date"}
               {repromised && <span className="text-sdc-blue"> ↻</span>}
             </span>
-            {/* How it compares with when it is needed, not a second date beside the first. */}
-            {s && s !== "here" ? <GapCell gap={gapOf(l.expected, required)} /> : <span className="text-sdc-gray-400">–</span>}
+            {/* When the BOM needs it; how Expected compares is on hover. */}
+            {s && s !== "here" ? <RequiredCell expected={l.expected} required={required} /> : <span className="text-sdc-gray-400">–</span>}
             {s ? (
               <span title={STATE_TIP[s]} className={`rounded-full px-1.5 text-micro font-bold ${STATE_CLS[s]}`}>
                 {STATE_LABEL[s]}
@@ -597,13 +603,14 @@ function OpenPoCard({
     },
     {
       id: "needed",
-      header: "Vs required",
+      header: "Required",
       headerTitle:
-        "How the expected date compares with the BOM's required date for that same part: days early (green) or late (red). Hover for the required date",
+        "The BOM's required date for the part in the Expected column. Hover a date to see how Expected compares with it. Sorts most late against it first",
       align: "right",
       // Days late (negative when early), so the latest against the BOM can lead.
       sortValue: ({ dates }) => (dates.outstanding ? gapOf(dates.expected, dates.required).sort : null),
-      render: ({ dates }) => (dates.outstanding ? <GapCell gap={gapOf(dates.expected, dates.required, requiredState)} /> : <span className="text-sdc-gray-400">–</span>),
+      render: ({ dates }) =>
+        dates.outstanding ? <RequiredCell expected={dates.expected} required={dates.required} state={requiredState} /> : <span className="text-sdc-gray-400">–</span>,
     },
     // The amount the POs are ordered by, shown only while they are (by the left column's
     // "Biggest amount first", this header, or the cards' own order when nothing is picked).
@@ -1068,7 +1075,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     id === "expected"
       ? "Inside each card, the PO whose undelivered line was due longest ago first, then the soonest still to come. POs with everything here go last"
       : id === "needed"
-        ? "The PO that arrives latest against the BOM's required date first (the Vs required column, most late first). POs with no required date go last"
+        ? "The PO that arrives latest against the BOM's required date first (most days after its Required date first). POs with no required date go last"
         : id === "amount"
           ? `Largest ${amountName} first`
           : "In PO number order";

@@ -11,7 +11,7 @@ import { poDates, stateCounts, vsRequired, type OpenPoRow } from "@/lib/open-pos
 // Every test is on the whole PO, with the same figures the rest of the page uses: the line
 // states (lineState via stateCounts), the money measures (moneyOf), and for "Vs required" the
 // PO's next line still to arrive against its BOM required date (poDates + vsRequired), the same
-// line as the cards' Expected and Vs required columns. Pure, no React: tested on its own.
+// line as the cards' Expected and Required columns. Pure, no React: tested on its own.
 
 // Received and invoiced are separate groups, each one question with answers that do not overlap
 // (2026-11-16: the mixed options "Received, not invoiced" / "Invoiced, not received" became a
