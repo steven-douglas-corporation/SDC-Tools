@@ -81,9 +81,22 @@ test("Profit and Margin hovers say why they are blank when there is no Sales Pri
   assert.match(explainJobCell("margin", c, DEFAULT_RATES, {}, undefined)!, /no Sales Price/);
 });
 
+test("Sales Price hover splits Projects Sales Price + Change Quote and explains the fallbacks", () => {
+  const proj = computeJobCost(row({ salesPrice: 650_300, salesPriceDetail: { source: "projects", projectsSalesPrice: 495_000, changeQuote: 155_300, asOf: null } }), RATES, {}, undefined);
+  assert.match(explainJobCell("salesPrice", proj, RATES, {}, undefined)!, /\$495,000\.00 \+ \$155,300\.00 = \$650,300\.00/);
+  const asOf = computeJobCost(row({ salesPrice: 495_000, salesPriceDetail: { source: "inventory", projectsSalesPrice: 495_000, changeQuote: 155_300, asOf: "2026-09-30" } }), RATES, {}, undefined);
+  const asOfText = explainJobCell("salesPrice", asOf, RATES, {}, undefined)!;
+  assert.match(asOfText, /As-of view \(2026-09-30\)/);
+  assert.match(asOfText, /Change Quote \(\$155,300\.00\) is not added/);
+  const none = computeJobCost(row({ salesPrice: null, salesPriceDetail: { source: null, projectsSalesPrice: null, changeQuote: null, asOf: null } }), RATES, {}, undefined);
+  assert.match(explainJobCell("salesPrice", none, RATES, {}, undefined)!, /No Sales Price on file/);
+  // A row with no detail (older callers) has no hover rather than a wrong one.
+  assert.equal(explainJobCell("salesPrice", computeJobCost(row(), RATES, {}, undefined), RATES, {}, undefined), undefined);
+});
+
 test("columns without a per-job hover return undefined", () => {
   const c = computeJobCost(row(), DEFAULT_RATES, {}, undefined);
-  assert.equal(explainJobCell("salesPrice", c, DEFAULT_RATES, {}, undefined), undefined);
+  assert.equal(explainJobCell("jobName", c, DEFAULT_RATES, {}, undefined), undefined);
 });
 
 test("Total Cost hover splits labor by year, with no-year hours at the default rate, and sums to the grid's labor", () => {

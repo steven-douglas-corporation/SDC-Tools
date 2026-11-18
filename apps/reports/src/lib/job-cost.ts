@@ -31,6 +31,18 @@ export type JobHourAllocation = { eng: HourAllocationEntry[]; shop: HourAllocati
 /** Per-year rate overrides. A missing field on a year falls back to the default, not to zero. */
 export type YearRateOverrides = Record<string, Partial<CostRates>>;
 
+/**
+ * Where a row's Sales Price came from, for its hover: the raw facts only (the grid's number is
+ * still `salesPrice`). `projectsSalesPrice` / `changeQuote` are the Projects tab's Job fields,
+ * whether or not they were used.
+ */
+export type SalesPriceDetail = {
+  source: "projects" | "inventory" | "powerbi" | null;
+  projectsSalesPrice: number | null;
+  changeQuote: number | null;
+  asOf: string | null;
+};
+
 export type JobCostRow = {
   jobId: string;
   jobName: string;
@@ -54,6 +66,8 @@ export type JobCostRow = {
   startDate: string | null;
   completeDate: string | null;
   percentComplete: number | null;
+  /** Optional so older callers and fixtures need not supply it; only the hover reads it. */
+  salesPriceDetail?: SalesPriceDetail;
   hoursByYear: HoursByYear;
   etcEngHours: number | null;
   etcShopHours: number | null;

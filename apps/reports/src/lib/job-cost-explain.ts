@@ -166,6 +166,32 @@ export function explainTotalCost(
   ].join("\n");
 }
 
+export function explainSalesPrice(row: JobCostComputed): string | undefined {
+  const d = row.salesPriceDetail;
+  if (!d) return undefined;
+  const cq = d.changeQuote ?? 0;
+  const cqNote = cq !== 0 ? `\nThe Projects tab's Change Quote (${money(cq)}) is not added to this figure.` : "";
+  if (d.source === "projects") {
+    const base = d.projectsSalesPrice ?? 0;
+    return [
+      "Sales Price = Projects Sales Price + Change Quote",
+      `Projects Sales Price: ${money(base)}`,
+      `Change Quote: ${money(cq)}${d.changeQuote == null ? " (none)" : ""}`,
+      `${money(base)} + ${money(cq)} = ${money(row.salesPrice ?? 0)}`,
+    ].join("\n");
+  }
+  if (d.source === "inventory") {
+    const why = d.asOf
+      ? `As-of view (${d.asOf}): that month's inventory-workbook figure is used, not today's Projects price.`
+      : "The Projects tab has no Sales Price for this job, so the inventory-workbook figure is used.";
+    return `Sales Price from the inventory workbook: ${money(row.salesPrice ?? 0)}\n${why}${cqNote}\n(The workbook figure may already include change orders.)`;
+  }
+  if (d.source === "powerbi") {
+    return `Sales Price from Power BI: ${money(row.salesPrice ?? 0)}\nThe Projects tab has no Sales Price for this job and the inventory workbook has none either.${cqNote}`;
+  }
+  return "No Sales Price on file: not on the Projects tab, the inventory workbook or Power BI.";
+}
+
 export function explainProfit(row: JobCostComputed): string {
   if (row.salesPrice == null) return "Profit = Sales Price − Total Cost\nBlank: this job has no Sales Price on file.";
   return [
@@ -201,6 +227,7 @@ export function explainJobCell(
     case "pmCost": return explainPm(row, def, overrides);
     case "mfgCost": return explainMfg(row, def, overrides);
     case "totalCost": return explainTotalCost(row, def, overrides, allocation);
+    case "salesPrice": return explainSalesPrice(row);
     case "profit": return explainProfit(row);
     case "margin": return explainMargin(row);
     default: return undefined;

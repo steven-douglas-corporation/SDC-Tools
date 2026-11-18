@@ -1353,7 +1353,7 @@ export function JobCostExplorer({
                     {!hiddenCols.has("pmCost") && <td title={cellTip("pmCost", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("pmCost")} ${zebra}`}>{fmtMoney(r.pmCost)}</td>}
                     {!hiddenCols.has("mfgCost") && <td title={cellTip("mfgCost", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("mfgCost")} ${zebra}`}>{fmtMoney(r.mfgCost)}</td>}
                     {!hiddenCols.has("percentComplete") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("percentComplete")} ${zebra}`}>{fmtPct(r.percentComplete)}</td>}
-                    {!hiddenCols.has("salesPrice") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("salesPrice")} ${zebra}`}>{fmtMoney(r.salesPrice)}</td>}
+                    {!hiddenCols.has("salesPrice") && <td title={cellTip("salesPrice", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("salesPrice")} ${zebra}`}>{fmtMoney(r.salesPrice)}</td>}
                     {!hiddenCols.has("totalCost") && <td title={cellTip("totalCost", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("totalCost")} ${zebra}`}>{fmtMoney(r.totalCost)}</td>}
                     {!hiddenCols.has("profit") && (
                       <td
