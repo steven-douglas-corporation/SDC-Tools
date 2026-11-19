@@ -26,14 +26,20 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 // of a drag (~10s of raster work in a 120-move drag, frames to 66ms). Now:
 //   - The view lives in a ref and is written straight to the DOM once per
 //     animation frame; React does not render at all during a gesture.
-//   - While a gesture runs the content is its own GPU layer (will-change), so a
-//     pan or zoom moves pixels already drawn instead of drawing them again. A
-//     moment after it stops the layer is dropped, so the text re-rasterises
-//     crisply at the new zoom (a kept layer would stay at its old resolution).
+//   - The content is its own GPU layer (will-change) the whole time it is shown,
+//     so a pan or zoom moves pixels already drawn instead of drawing them again.
+//     (2026-11-19) It used to be a layer only during a gesture, which cost a full
+//     redraw of the chart at the start AND the end of every gesture — and a mouse
+//     wheel's notches, further apart than the settle delay, each counted as one.
+//   - A layer keeps the resolution it was drawn at, so after the zoom changes
+//     and settles, the layer is dropped for one frame and re-made: one redraw,
+//     while the viewer is still, and the text is crisp at the new zoom. A pan
+//     never changes the zoom, so it never redraws.
 //   - The dot grid is its own layer that slides by transform (modulo one dot
 //     step); its spacing follows the zoom once a gesture settles, never mid-way.
-//   - The content ignores the pointer while dragging, so the rows passing under
-//     it don't re-style for hover.
+//   - While dragging, a clear overlay sits over the content, so the rows passing
+//     under the pointer don't re-style for hover — without restyling the chart
+//     itself (a pointer-events class on the content touched every card twice a drag).
 
 const MIN_SCALE = 0.2;
 const MAX_SCALE = 1.5;
@@ -46,8 +52,9 @@ const FIT_PADDING = 24;
 // viewport by the largest step so sliding it never shows an edge.
 const GRID_STEP = 20;
 const GRID_OVERHANG = Math.ceil(GRID_STEP * MAX_SCALE);
-// How long after the last wheel event a gesture counts as over.
-const SETTLE_MS = 150;
+// How long after the last wheel event a gesture counts as over. Long enough that
+// a mouse wheel's separate notches read as one zoom, not a redraw between each.
+const SETTLE_MS = 300;
 
 type View = { x: number; y: number; scale: number };
 
@@ -68,6 +75,9 @@ export function PanZoomCanvas({ children, className = "" }: { children: React.Re
   const frame = useRef(0);
   const gesture = useRef(false);
   const gridStep = useRef(GRID_STEP);
+  // The zoom the content's layer was last drawn at, and the frame re-making it.
+  const rasterScale = useRef(1);
+  const redrawFrame = useRef(0);
   const draw = useCallback(() => {
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
@@ -76,6 +86,17 @@ export function PanZoomCanvas({ children, className = "" }: { children: React.Re
       const content = contentRef.current;
       const grid = gridRef.current;
       if (content) content.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+      // Zoom settled at a new scale: drop the layer this frame (drawn at the true
+      // size) and re-make it the next, so it is crisp and still a layer.
+      if (content && !gesture.current && scale !== rasterScale.current) {
+        rasterScale.current = scale;
+        content.style.willChange = "auto";
+        cancelAnimationFrame(redrawFrame.current);
+        redrawFrame.current = requestAnimationFrame(() => {
+          redrawFrame.current = 0;
+          content.style.willChange = "transform";
+        });
+      }
       if (grid) {
         if (!gesture.current && gridStep.current !== GRID_STEP * scale) {
           gridStep.current = GRID_STEP * scale;
@@ -91,20 +112,26 @@ export function PanZoomCanvas({ children, className = "" }: { children: React.Re
       if (labelRef.current && labelRef.current.textContent !== label) labelRef.current.textContent = label;
     });
   }, []);
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  // The content is a layer from the start (see "Keeping it smooth").
+  useEffect(() => {
+    if (contentRef.current) contentRef.current.style.willChange = "transform";
+    return () => {
+      cancelAnimationFrame(frame.current);
+      cancelAnimationFrame(redrawFrame.current);
+    };
+  }, []);
 
-  // A gesture under way: the content gets its own layer until it settles.
+  // A gesture under way: hold back the grid's spacing and the crisp redraw
+  // until it settles.
   const settleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const settle = useCallback(() => {
     clearTimeout(settleTimer.current);
     gesture.current = false;
-    if (contentRef.current) contentRef.current.style.willChange = "";
     draw();
   }, [draw]);
   const moving = useCallback(
     (settleAfter: number | null) => {
       gesture.current = true;
-      if (contentRef.current) contentRef.current.style.willChange = "transform";
       clearTimeout(settleTimer.current);
       if (settleAfter != null) settleTimer.current = setTimeout(settle, settleAfter);
     },
@@ -240,7 +267,7 @@ export function PanZoomCanvas({ children, className = "" }: { children: React.Re
     e.preventDefault();
   };
 
-  // (A button zoom is one step, not a gesture: no layer, so it lands crisp.)
+  // (A button zoom is one step, not a gesture: draw() redraws it crisp at once.)
   const btn =
     "flex h-8 min-w-8 items-center justify-center px-2 text-sm font-semibold text-sdc-gray-600 motion-interactive hover:bg-sdc-gray-50 hover:text-sdc-navy not-first:border-l not-first:border-sdc-border";
 
@@ -267,11 +294,13 @@ export function PanZoomCanvas({ children, className = "" }: { children: React.Re
       />
       <div
         ref={contentRef}
-        className={`absolute left-0 top-0 w-max origin-top-left ${dragging ? "pointer-events-none" : ""}`}
+        className="absolute left-0 top-0 w-max origin-top-left"
         style={{ visibility: fitted ? undefined : "hidden" }}
       >
         {children}
       </div>
+      {/* Over the content while dragging, so nothing under the pointer hovers. */}
+      {dragging && <div aria-hidden className="absolute inset-0" />}
 
       <div className="absolute bottom-3 right-3 flex items-center gap-2" data-no-pan onPointerDown={(e) => e.stopPropagation()}>
         <span className="hidden rounded-md bg-white/80 px-2 py-1 text-note text-sdc-muted sm:inline">Drag or scroll to move · Ctrl + scroll to zoom</span>
