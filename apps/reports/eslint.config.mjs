@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import moduleBoundaries from "./eslint.modules.mjs";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -9,12 +10,11 @@ const eslintConfig = defineConfig([
     rules: {
       // Server actions receive FormData they don't always need; the `_` prefix
       // marks those as deliberately unused.
-      "@typescript-eslint/no-unused-vars": [
-        "warn",
-        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
-      ],
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
+  // What a module under src/modules may import; nothing until that folder exists.
+  ...moduleBoundaries,
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
