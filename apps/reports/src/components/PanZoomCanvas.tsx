@@ -8,20 +8,38 @@ import { createContext, use, useCallback, useEffect, useLayoutEffect, useRef, us
 // instead of wrapping to the page.
 //
 //   Drag              pan (a drag that moves never clicks what it started on)
-//   Wheel / trackpad  pan (Shift+wheel sideways)
+//   Wheel / trackpad  pan — the browser's own scrolling (Shift+wheel sideways)
 //   Ctrl/⌘ + wheel    zoom around the pointer (a trackpad pinch sends this too)
 //   Click / dbl-click a [data-canvas-zoom-on-click] element / any [data-canvas-item]: zoom to it
-//   Keys              arrows pan, + / − zoom, 0 fits, Esc leaves full screen
+//   Keys              arrows / Page keys scroll, + / − zoom, 0 fits, Esc leaves full screen
 //   Buttons           zoom out / in, Fit, 100%, Full screen, Save as PDF
 //   Overview map      bottom left: where you are; click or drag in it to move
 //
-// It is a CSS transform on the content, not a <canvas>: the cards stay real DOM,
-// so clicks, hover notes and dropdowns work as they do anywhere else.
+// It is real DOM, not a <canvas>: the cards' clicks, hover notes and dropdowns
+// work as they do anywhere else.
 //
 // Pointer maths use the measured ratio of screen px to layout px rather than the
 // app's zoom (html { zoom }): getBoundingClientRect and clientX are screen px,
-// offsetWidth and the transform are layout px, and the ratio converts whatever
-// set it.
+// offsetWidth, scroll offsets and the transform are layout px, and the ratio
+// converts whatever set it.
+//
+// ── Panning is native scrolling (2026-11-19) ────────────────────────────────
+//
+// The viewport is a scroll box. Inside it a "sizer" is as big as the chart at the
+// current zoom plus one viewport of margin on every side (so the chart can be
+// pushed to any edge), and the chart sits in it at (margin, margin), scaled by a
+// CSS transform. A pan is a scroll: the browser runs it on its compositor thread,
+// with the system's momentum, and a busy main thread (React, the dev server) can't
+// stutter it. Firefox especially: it refuses will-change layers past a size
+// budget, so it re-drew the whole chart on every frame of a transform pan.
+//
+// A zoom can't be a scroll, so it works like a touchpad pinch: during the gesture
+// the chart's layer is stretched by its transform (plus a "glide" translation,
+// so the point under the pointer stays put) and nothing is laid out or redrawn.
+// When the gesture settles, the zoom is committed — the sizer takes the new size,
+// the glide moves into the scroll position — and the chart is redrawn sharp once.
+//
+//   view.x = margin.x − scrollLeft + glide.x   (the chart's left edge on screen)
 //
 // ── What the content can mark (data attributes) ─────────────────────────────
 //
@@ -41,35 +59,23 @@ import { createContext, use, useCallback, useEffect, useLayoutEffect, useRef, us
 // where it was on screen, so the chart doesn't jump. A search turns it off
 // (allowCompact): the matches are people, and summaries have none.
 //
-// ── Keeping it smooth (measured 2026-11-16) ─────────────────────────────────
+// ── Keeping it smooth ───────────────────────────────────────────────────────
 //
-// The first version re-painted and re-rasterised the whole chart on every frame
-// of a drag (~10s of raster work in a 120-move drag, frames to 66ms). Now:
-//   - The view lives in a ref and is written straight to the DOM once per
-//     animation frame; React does not render at all during a gesture.
-//   - The content is its own GPU layer (will-change) the whole time it is shown,
-//     so a pan or zoom moves pixels already drawn instead of drawing them again.
-//     (2026-11-19) It used to be a layer only during a gesture, which cost a full
-//     redraw of the chart at the start AND the end of every gesture — and a mouse
-//     wheel's notches, further apart than the settle delay, each counted as one.
-//   - A layer keeps the resolution it was drawn at, so after the zoom changes
-//     and settles, the layer is dropped for one frame and re-made: one redraw,
-//     while the viewer is still, and the text is crisp at the new zoom. A pan
-//     never changes the zoom, so it never redraws.
-//   - The dot grid is its own layer that slides by transform (modulo one dot
-//     step); its spacing follows the zoom once a gesture settles, never mid-way.
-//   - While dragging, a clear overlay sits over the content, so the rows passing
-//     under the pointer don't re-style for hover — without restyling the chart
-//     itself (a pointer-events class on the content touched every card twice a drag).
-//     The grabbing cursor is on that overlay too: `cursor` is inherited, so
-//     switching it on the viewport restyled every card as well.
-//
-// ── Focus ───────────────────────────────────────────────────────────────────
-//
-// The viewport is overflow: clip, not hidden. A hidden box can still be scrolled
-// by the browser (tabbing to an off-screen row scrolls it into view), which would
-// shift the content behind the transform's back. Clip can't be scrolled; instead,
-// keyboard focus landing off-screen pans the canvas to it.
+//   - The chart is its own GPU layer (will-change) the whole time, so a zoom
+//     gesture stretches pixels already drawn. A layer keeps the resolution it was
+//     drawn at, so once a zoom settles at a new scale the layer is dropped for one
+//     frame and re-made: one redraw, while the viewer is still. (2026-11-19: a
+//     layer only during gestures cost a redraw at the start AND end of each one.)
+//   - No React render during a gesture: the view is written straight to the DOM,
+//     at most once a frame. Scrolling doesn't go through our code at all.
+//   - The dot grid is the sizer's background, so it scrolls with the chart; its
+//     spacing follows the zoom when a zoom is committed.
+//   - While dragging, a clear overlay sits over the chart, so the rows passing
+//     under the pointer don't re-style for hover; the grabbing cursor is on it too
+//     (`cursor` is inherited: switching it on the viewport restyled every card).
+//   - overflow-anchor: none — the browser's scroll anchoring would otherwise
+//     "correct" the scroll when the detail level resizes the cards, on top of the
+//     correction done here.
 
 const MIN_SCALE = 0.2;
 const MAX_SCALE = 1.5;
@@ -78,28 +84,28 @@ const BUTTON_STEP = 1.2;
 const DRAG_THRESHOLD = 4;
 // Breathing room around the content when fitting (layout px).
 const FIT_PADDING = 24;
-// The dot grid's spacing at 100% (layout px); the grid layer overhangs the
-// viewport by the largest step so sliding it never shows an edge.
+// The dot grid's spacing at 100% (layout px).
 const GRID_STEP = 20;
-const GRID_OVERHANG = Math.ceil(GRID_STEP * MAX_SCALE);
-// How long after the last wheel event a gesture counts as over. Long enough that
+// How long after the last wheel event a zoom counts as over. Long enough that
 // a mouse wheel's separate notches read as one zoom, not a redraw between each.
 const SETTLE_MS = 300;
 // Below this zoom the content draws summaries (see "Detail by zoom").
 const COMPACT_BELOW = 0.6;
 const ANIMATE_MS = 280;
-// An arrow key's pan (layout px).
-const KEY_PAN = 120;
 // A search jump lands at least this close in, so the names are readable.
 const MATCH_SCALE = 0.9;
 // The overview map's largest size (px).
 const MAP_W = 180;
 const MAP_MAX_H = 140;
+// The view is saved this long after the last move.
+const SAVE_MS = 250;
 
 type View = { x: number; y: number; scale: number };
 type Box = { x: number; y: number; w: number; h: number };
+type PlaceOpts = { hold?: boolean; refit?: boolean };
 
 const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 // Screen px per layout px inside an element (the app's zoom, and the browser's).
 const layoutRatio = (el: HTMLElement) => (el.offsetWidth ? el.getBoundingClientRect().width / el.offsetWidth : 1);
@@ -155,12 +161,12 @@ export function PanZoomCanvas({
   /** The saved PDF's title. */
   exportTitle?: string;
 }) {
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const sizerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
   const labelRef = useRef<HTMLButtonElement>(null);
   const mapViewRef = useRef<SVGRectElement>(null);
-  const view = useRef<View>({ x: 0, y: 0, scale: 1 });
   const [fitted, setFitted] = useState(false);
   const fittedRef = useRef(false);
   const [dragging, setDragging] = useState(false);
@@ -183,20 +189,63 @@ export function PanZoomCanvas({
   // A Fit that changed the detail level fits again once the new layout is in.
   const refitPending = useRef(false);
 
-  // ── Drawing ────────────────────────────────────────────────────────────────
+  // ── Geometry (see "Panning is native scrolling") ───────────────────────────
 
-  const frame = useRef(0);
+  const scale = useRef(1);
+  const glide = useRef({ x: 0, y: 0 });
+  const margin = useRef({ x: 0, y: 0 });
+  // A zoom under way: the transform stretches, nothing is committed yet.
   const gesture = useRef(false);
-  const gridStep = useRef(GRID_STEP);
-  // The zoom the content's layer was last drawn at, and the frame re-making it.
+  // A view waiting for the next frame, and that frame.
+  const target = useRef<View | null>(null);
+  const frame = useRef(0);
+  // The zoom the chart's layer was last drawn at, and the frame re-making it.
   const rasterScale = useRef(1);
   const redrawFrame = useRef(0);
   const mapScale = useRef(0);
+  // What was last written, so an unchanged value isn't written (and laid out) again.
+  const written = useRef({ size: "", transform: "" });
 
-  // Out of a gesture: summaries or full detail, by the zoom. Returns whether it
-  // changed. `hold` keeps a card still on screen across the change.
-  const syncDetail = useCallback((hold: boolean) => {
-    const want = view.current.scale < COMPACT_BELOW;
+  // The view on screen now.
+  const readView = useCallback((): View => {
+    const sc = scrollerRef.current;
+    const g = glide.current;
+    if (!sc) return { x: 0, y: 0, scale: scale.current };
+    return { x: margin.current.x - sc.scrollLeft + g.x, y: margin.current.y - sc.scrollTop + g.y, scale: scale.current };
+  }, []);
+  // …or the one about to be drawn.
+  const latest = useCallback(() => target.current ?? readView(), [readView]);
+
+  // The overview map's "you are here" box.
+  const updateMap = useCallback(() => {
+    const mv = mapViewRef.current;
+    const sc = scrollerRef.current;
+    const m = mapScale.current;
+    if (!mv || !sc || !m) return;
+    const { x, y, scale: s } = readView();
+    mv.setAttribute("x", String((-x / s) * m));
+    mv.setAttribute("y", String((-y / s) * m));
+    mv.setAttribute("width", String((sc.clientWidth / s) * m));
+    mv.setAttribute("height", String((sc.clientHeight / s) * m));
+  }, [readView]);
+
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const saveSoon = useCallback(() => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      try {
+        if (storageKeyRef.current && fittedRef.current) sessionStorage.setItem(storageKeyRef.current, JSON.stringify(readView()));
+      } catch {
+        // Storage off (private window, blocked): the view just isn't remembered.
+      }
+    }, SAVE_MS);
+  }, [readView]);
+  useEffect(() => () => clearTimeout(saveTimer.current), []);
+
+  // Summaries or full detail, by the zoom of `v`. Returns whether it changed.
+  // `hold` keeps a card still on screen across the change.
+  const syncDetail = useCallback((hold: boolean, v: View) => {
+    const want = v.scale < COMPACT_BELOW;
     if (want === compactRef.current) {
       // A zoom-to that didn't change the detail: its hint is spent either way.
       anchorHint.current = null;
@@ -204,10 +253,9 @@ export function PanZoomCanvas({
     }
     compactRef.current = want;
     const content = contentRef.current;
-    const vp = viewportRef.current;
+    const sc = scrollerRef.current;
     anchor.current = null;
-    if (hold && allowCompactRef.current && content && vp) {
-      const { x, y, scale } = view.current;
+    if (hold && allowCompactRef.current && content && sc) {
       const hinted = anchorHint.current
         ? content.querySelector(`[data-canvas-key="${CSS.escape(anchorHint.current)}"]`)
         : null;
@@ -216,13 +264,13 @@ export function PanZoomCanvas({
         let bestD = Infinity;
         for (const el of content.querySelectorAll('[data-canvas-item="card"][data-canvas-key]')) {
           const b = boxIn(content, el);
-          const d = Math.hypot(x + (b.x + b.w / 2) * scale - vp.clientWidth / 2, y + b.y * scale - vp.clientHeight / 2);
+          const d = Math.hypot(v.x + (b.x + b.w / 2) * v.scale - sc.clientWidth / 2, v.y + b.y * v.scale - sc.clientHeight / 2);
           if (d < bestD) [best, bestD] = [el, d];
         }
       }
       if (best) {
         const b = boxIn(content, best);
-        anchor.current = { key: best.getAttribute("data-canvas-key")!, px: x + b.x * scale, py: y + b.y * scale };
+        anchor.current = { key: best.getAttribute("data-canvas-key")!, px: v.x + b.x * v.scale, py: v.y + b.y * v.scale };
       }
     }
     anchorHint.current = null;
@@ -230,66 +278,88 @@ export function PanZoomCanvas({
     return true;
   }, []);
 
-  // Writes the view to the DOM now. Use draw() for anything frequent.
-  const apply = useCallback(() => {
-    const { x, y, scale } = view.current;
-    const content = contentRef.current;
-    const grid = gridRef.current;
-    const vp = viewportRef.current;
-    if (content) content.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
-    // Zoom settled at a new scale: drop the layer this frame (drawn at the true
-    // size) and re-make it the next, so it is crisp and still a layer.
-    if (content && !gesture.current && scale !== rasterScale.current) {
-      rasterScale.current = scale;
-      content.style.willChange = "auto";
-      cancelAnimationFrame(redrawFrame.current);
-      redrawFrame.current = requestAnimationFrame(() => {
-        redrawFrame.current = 0;
-        content.style.willChange = "transform";
-      });
-    }
-    if (grid) {
-      if (!gesture.current && gridStep.current !== GRID_STEP * scale) {
-        gridStep.current = GRID_STEP * scale;
-        grid.style.backgroundSize = `${gridStep.current}px ${gridStep.current}px`;
+  // Puts the view on screen, now. In a zoom gesture only the transform moves;
+  // otherwise the sizer, the chart's place in it and the scroll are committed.
+  const place = useCallback(
+    (v: View, { hold = true, refit = false }: PlaceOpts = {}) => {
+      const sc = scrollerRef.current;
+      const sizer = sizerRef.current;
+      const content = contentRef.current;
+      if (!sc || !sizer || !content) return;
+      const s = clampScale(v.scale);
+      scale.current = s;
+      if (gesture.current) {
+        glide.current = { x: v.x - (margin.current.x - sc.scrollLeft), y: v.y - (margin.current.y - sc.scrollTop) };
+      } else {
+        const [vw, vh] = [sc.clientWidth, sc.clientHeight];
+        const [cw, ch] = [content.offsetWidth, content.offsetHeight];
+        const [sw, sh] = [cw * s + 2 * vw, ch * s + 2 * vh];
+        margin.current = { x: vw, y: vh };
+        glide.current = { x: 0, y: 0 };
+        const size = `${sw} ${sh} ${vw} ${vh}`;
+        if (written.current.size !== size) {
+          written.current.size = size;
+          sizer.style.width = `${sw}px`;
+          sizer.style.height = `${sh}px`;
+          content.style.left = `${vw}px`;
+          content.style.top = `${vh}px`;
+          const step = GRID_STEP * s;
+          sizer.style.backgroundSize = `${step}px ${step}px`;
+          sizer.style.backgroundPosition = `${vw}px ${vh}px`;
+        }
+        // The chart can go right up to any edge, no further (see the margins).
+        sc.scrollLeft = clamp(vw - v.x, 0, sw - vw);
+        sc.scrollTop = clamp(vh - v.y, 0, sh - vh);
       }
-      const step = gridStep.current;
-      const mod = (v: number) => (((v % step) + step) % step) - step;
-      grid.style.transform = `translate3d(${mod(x)}px, ${mod(y)}px, 0)`;
-    }
-    // Straight to the DOM: a React render per zoom step is work for nothing.
-    // Only when it changes: new text means a layout, and a pan doesn't need one.
-    const label = `${Math.round(scale * 100)}%`;
-    if (labelRef.current && labelRef.current.textContent !== label) labelRef.current.textContent = label;
-    // The overview map's "you are here" box.
-    const mv = mapViewRef.current;
-    const m = mapScale.current;
-    if (mv && vp && m) {
-      mv.setAttribute("x", String((-x / scale) * m));
-      mv.setAttribute("y", String((-y / scale) * m));
-      mv.setAttribute("width", String((vp.clientWidth / scale) * m));
-      mv.setAttribute("height", String((vp.clientHeight / scale) * m));
-    }
-    if (!gesture.current && fittedRef.current) {
-      syncDetail(true);
-      try {
-        if (storageKeyRef.current) sessionStorage.setItem(storageKeyRef.current, JSON.stringify(view.current));
-      } catch {
-        // Storage off (private window, blocked): the view just isn't remembered.
+      const g = glide.current;
+      const transform = `translate3d(${g.x}px, ${g.y}px, 0) scale(${s})`;
+      if (written.current.transform !== transform) {
+        written.current.transform = transform;
+        content.style.transform = transform;
       }
-    }
-  }, [syncDetail]);
+      // Zoom committed at a new scale: drop the layer this frame (drawn at the true
+      // size) and re-make it the next, so it is sharp and still a layer.
+      if (!gesture.current && s !== rasterScale.current) {
+        rasterScale.current = s;
+        content.style.willChange = "auto";
+        cancelAnimationFrame(redrawFrame.current);
+        redrawFrame.current = requestAnimationFrame(() => {
+          redrawFrame.current = 0;
+          content.style.willChange = "transform";
+        });
+      }
+      // Only when it changes: new text means a layout.
+      const label = `${Math.round(s * 100)}%`;
+      if (labelRef.current && labelRef.current.textContent !== label) labelRef.current.textContent = label;
+      updateMap();
+      if (!gesture.current && fittedRef.current) {
+        if (syncDetail(hold, readView()) && refit) refitPending.current = allowCompactRef.current;
+        saveSoon();
+      }
+    },
+    [readView, syncDetail, saveSoon, updateMap],
+  );
 
   // At most once a frame.
   const draw = useCallback(() => {
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
-      apply();
+      const v = target.current;
+      target.current = null;
+      if (v) place(v);
     });
-  }, [apply]);
+  }, [place]);
 
-  // The content is a layer from the start (see "Keeping it smooth").
+  const setView = useCallback(
+    (next: View) => {
+      target.current = next;
+      draw();
+    },
+    [draw],
+  );
+
+  // The chart is a layer from the start (see "Keeping it smooth").
   useEffect(() => {
     if (contentRef.current) contentRef.current.style.willChange = "transform";
     return () => {
@@ -298,33 +368,30 @@ export function PanZoomCanvas({
     };
   }, []);
 
-  const setView = useCallback(
-    (next: View) => {
-      view.current = next;
-      draw();
-    },
-    [draw],
-  );
-
-  // A gesture under way: hold back the grid's spacing, the crisp redraw and the
-  // detail level until it settles.
+  // End of a zoom: commit it, now.
   const settleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const settle = useCallback(() => {
     clearTimeout(settleTimer.current);
+    const v = latest();
+    cancelAnimationFrame(frame.current);
+    frame.current = 0;
+    target.current = null;
     gesture.current = false;
-    draw();
-  }, [draw]);
+    place(v);
+  }, [latest, place]);
   const moving = useCallback(
-    (settleAfter: number | null) => {
+    (settleAfter: number) => {
       gesture.current = true;
       clearTimeout(settleTimer.current);
-      if (settleAfter != null) settleTimer.current = setTimeout(settle, settleAfter);
+      settleTimer.current = setTimeout(settle, settleAfter);
     },
     [settle],
   );
   useEffect(() => () => clearTimeout(settleTimer.current), []);
 
   // ── Animated moves (zoom to a card, jump to a match) ──────────────────────
+  //
+  // As a gesture: the transform stretches and glides, committed at the end.
 
   const anim = useRef(0);
   const cancelAnim = useCallback(() => {
@@ -339,36 +406,38 @@ export function PanZoomCanvas({
     (to: View) => {
       cancelAnimationFrame(anim.current);
       anim.current = 0;
+      clearTimeout(settleTimer.current);
       if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-        clearTimeout(settleTimer.current);
         gesture.current = false;
         setView(to);
         return;
       }
-      const from = { ...view.current };
-      const t0 = performance.now();
+      const from = latest();
+      cancelAnimationFrame(frame.current);
+      frame.current = 0;
+      target.current = null;
       gesture.current = true;
-      clearTimeout(settleTimer.current);
+      const t0 = performance.now();
       const step = (t: number) => {
         const p = Math.min(1, (t - t0) / ANIMATE_MS);
         const e = 1 - (1 - p) ** 3;
-        view.current = {
-          // Zoom eased by ratio, so zooming in and out feel the same speed.
-          scale: from.scale * (to.scale / from.scale) ** e,
-          x: from.x + (to.x - from.x) * e,
-          y: from.y + (to.y - from.y) * e,
-        };
-        apply();
-        if (p < 1) anim.current = requestAnimationFrame(step);
-        else {
+        if (p < 1) {
+          place({
+            // Zoom eased by ratio, so zooming in and out feel the same speed.
+            scale: from.scale * (to.scale / from.scale) ** e,
+            x: from.x + (to.x - from.x) * e,
+            y: from.y + (to.y - from.y) * e,
+          });
+          anim.current = requestAnimationFrame(step);
+        } else {
           anim.current = 0;
-          view.current = to;
-          settle();
+          gesture.current = false;
+          place(to);
         }
       };
       anim.current = requestAnimationFrame(step);
     },
-    [apply, setView, settle],
+    [latest, place, setView],
   );
 
   // Zooms so an element fills the view: a card by its width (it may be taller
@@ -376,10 +445,10 @@ export function PanZoomCanvas({
   const zoomToElement = useCallback(
     (el: Element, how: "card" | "panel") => {
       const content = contentRef.current;
-      const vp = viewportRef.current;
-      if (!content || !vp) return;
+      const sc = scrollerRef.current;
+      if (!content || !sc) return;
       const b = boxIn(content, el);
-      const [vw, vh] = [vp.clientWidth, vp.clientHeight];
+      const [vw, vh] = [sc.clientWidth, sc.clientHeight];
       const pad = FIT_PADDING * 2;
       let s = Math.min(1, (vw - 2 * pad) / b.w);
       if (how === "panel") s = Math.min(s, (vh - 2 * pad) / b.h);
@@ -393,52 +462,53 @@ export function PanZoomCanvas({
   // ── Fit ────────────────────────────────────────────────────────────────────
 
   const fit = useCallback(() => {
-    const vp = viewportRef.current;
+    const sc = scrollerRef.current;
     const content = contentRef.current;
-    if (!vp || !content) return;
+    if (!sc || !content) return;
     cancelAnimationFrame(anim.current);
     anim.current = 0;
     clearTimeout(settleTimer.current);
+    cancelAnimationFrame(frame.current);
+    frame.current = 0;
+    target.current = null;
     gesture.current = false;
-    const [vw, vh] = [vp.clientWidth, vp.clientHeight];
+    const [vw, vh] = [sc.clientWidth, sc.clientHeight];
     const [cw, ch] = [content.offsetWidth, content.offsetHeight];
     if (!cw || !ch) return;
-    let scale = clampScale(Math.min(1, (vw - 2 * FIT_PADDING) / cw, (vh - 2 * FIT_PADDING) / ch));
+    let s = clampScale(Math.min(1, (vw - 2 * FIT_PADDING) / cw, (vh - 2 * FIT_PADDING) / ch));
     // Already summaries: stay summaries. They are shorter, so the fit can come
     // out above the switch, and full detail would then no longer fit.
-    if (compactRef.current && allowCompactRef.current) scale = Math.min(scale, COMPACT_BELOW - 0.01);
+    if (compactRef.current && allowCompactRef.current) s = Math.min(s, COMPACT_BELOW - 0.01);
     // Centred sideways; from the top, so the chart's head is where the eye lands.
-    view.current = { x: (vw - cw * scale) / 2, y: FIT_PADDING, scale };
-    // Fitting is a placement, not a move: no card to hold still, and if the
-    // detail changes, fit again to the new layout.
-    if (fittedRef.current && syncDetail(false)) refitPending.current = allowCompactRef.current;
-    apply();
-  }, [apply, syncDetail]);
+    // A placement, not a move: no card to hold still, and if the detail changes,
+    // fit again to the new layout.
+    place({ x: (vw - cw * s) / 2, y: FIT_PADDING, scale: s }, { hold: false, refit: true });
+  }, [place]);
 
-  // First placement, once the content has a size: where the viewer left it this
-  // session, else fitted.
+  // First placement, once there is a size — where the viewer left it this
+  // session, else fitted — and after that, a resize of the chart or the viewport
+  // keeps the view and re-sizes the scroll area.
   useLayoutEffect(() => {
-    if (fitted) return;
+    const sc = scrollerRef.current;
     const content = contentRef.current;
-    if (!content) return;
+    if (!sc || !content) return;
     const ro = new ResizeObserver(() => {
-      if (!content.offsetWidth || !content.offsetHeight || fittedRef.current) return;
-      const saved = readSavedView(storageKeyRef.current);
-      fittedRef.current = true;
-      if (saved) {
-        view.current = saved;
-        syncDetail(false);
-        apply();
-      } else {
-        // Fits, and if that changes the detail, fits again once it's drawn.
-        fit();
+      if (!content.offsetWidth || !content.offsetHeight || !sc.clientWidth) return;
+      if (!fittedRef.current) {
+        fittedRef.current = true;
+        const saved = readSavedView(storageKeyRef.current);
+        if (saved) place(saved, { hold: false });
+        else fit();
+        // After the placement is written, so the content is never shown unplaced.
+        requestAnimationFrame(() => setFitted(true));
+        return;
       }
-      // After the placement is written, so the content is never shown unplaced.
-      requestAnimationFrame(() => setFitted(true));
+      if (!gesture.current && !anim.current) place(latest(), { hold: false });
     });
     ro.observe(content);
+    ro.observe(sc);
     return () => ro.disconnect();
-  }, [fit, fitted, apply, syncDetail]);
+  }, [fit, place, latest]);
 
   // The detail level changed: hold the anchored card still, or re-fit.
   useLayoutEffect(() => {
@@ -454,123 +524,110 @@ export function PanZoomCanvas({
     const el = content.querySelector(`[data-canvas-key="${CSS.escape(a.key)}"]`);
     if (!el) return;
     const b = boxIn(content, el);
-    const v = view.current;
-    view.current = { ...v, x: v.x + a.px - (v.x + b.x * v.scale), y: v.y + a.py - (v.y + b.y * v.scale) };
-    apply();
-  }, [compact, fit, apply]);
+    const v = readView();
+    place({ ...v, x: a.px - b.x * v.scale, y: a.py - b.y * v.scale }, { hold: false });
+  }, [compact, fit, place, readView]);
 
   // ── Zoom ───────────────────────────────────────────────────────────────────
 
   // Zoom keeping the layout point (px, py) in the viewport where it is.
   const zoomAt = useCallback(
     (factor: number, px: number, py: number) => {
-      const v = view.current;
-      const scale = clampScale(v.scale * factor);
-      const k = scale / v.scale;
-      setView({ scale, x: px - (px - v.x) * k, y: py - (py - v.y) * k });
+      const v = latest();
+      const s = clampScale(v.scale * factor);
+      const k = s / v.scale;
+      setView({ scale: s, x: px - (px - v.x) * k, y: py - (py - v.y) * k });
     },
-    [setView],
+    [latest, setView],
   );
 
   const zoomCentre = (factor: number) => {
-    const vp = viewportRef.current;
+    const sc = scrollerRef.current;
     cancelAnim();
-    if (vp) zoomAt(factor, vp.clientWidth / 2, vp.clientHeight / 2);
+    if (sc) zoomAt(factor, sc.clientWidth / 2, sc.clientHeight / 2);
   };
 
-  const panBy = (dx: number, dy: number) => {
-    cancelAnim();
-    moving(SETTLE_MS);
-    const v = view.current;
-    setView({ ...v, x: v.x + dx, y: v.y + dy });
-  };
-
-  // Wheel: a native, non-passive listener — React's onWheel is passive, so it
-  // can't stop the page scrolling (or Ctrl+wheel zooming the whole app).
-  // ScrollHandoff (the app's one document-level wheel listener) sees
-  // defaultPrevented and leaves these alone.
+  // Wheel: only Ctrl/⌘ (and a pinch) is ours — plain scrolling is the browser's,
+  // so it is left alone. Non-passive so a zoom can stop the whole app zooming;
+  // browsers block on such a listener only for the first event of a scroll, so
+  // plain scrolling still runs on their own thread. ScrollHandoff (the app's
+  // document-level wheel listener) sees defaultPrevented and leaves zooms alone.
   useEffect(() => {
-    const vp = viewportRef.current;
-    if (!vp) return;
+    const sc = scrollerRef.current;
+    if (!sc) return;
     const onWheel = (e: WheelEvent) => {
-      // The overview map and the controls aren't the chart.
-      if ((e.target as HTMLElement).closest("[data-no-pan]")) return;
+      if (!e.ctrlKey && !e.metaKey) {
+        if (anim.current) cancelAnim();
+        return;
+      }
       e.preventDefault();
       cancelAnim();
       moving(SETTLE_MS);
-      const r = layoutRatio(vp);
+      const r = layoutRatio(sc);
       // deltaMode 1 = lines (some mice): roughly 16px a line.
       const unit = e.deltaMode === 1 ? 16 : 1;
-      if (e.ctrlKey || e.metaKey) {
-        const rect = vp.getBoundingClientRect();
-        zoomAt(Math.exp(-e.deltaY * unit * 0.0015), (e.clientX - rect.left) / r, (e.clientY - rect.top) / r);
-        return;
-      }
-      const [dx, dy] = e.shiftKey && !e.deltaX ? [e.deltaY, 0] : [e.deltaX, e.deltaY];
-      const v = view.current;
-      setView({ ...v, x: v.x - (dx * unit) / r, y: v.y - (dy * unit) / r });
+      const rect = sc.getBoundingClientRect();
+      zoomAt(Math.exp(-e.deltaY * unit * 0.0015), (e.clientX - rect.left) / r, (e.clientY - rect.top) / r);
     };
-    vp.addEventListener("wheel", onWheel, { passive: false });
-    return () => vp.removeEventListener("wheel", onWheel);
-  }, [zoomAt, setView, moving, cancelAnim]);
+    sc.addEventListener("wheel", onWheel, { passive: false });
+    return () => sc.removeEventListener("wheel", onWheel);
+  }, [zoomAt, moving, cancelAnim]);
+
+  // A scroll moves the map's box and is remembered; nothing else to do.
+  const scrollFrame = useRef(0);
+  const onScroll = () => {
+    if (!scrollFrame.current) {
+      scrollFrame.current = requestAnimationFrame(() => {
+        scrollFrame.current = 0;
+        updateMap();
+      });
+    }
+    if (!gesture.current) saveSoon();
+  };
+  useEffect(() => () => cancelAnimationFrame(scrollFrame.current), []);
 
   // ── Drag ───────────────────────────────────────────────────────────────────
 
-  // Drag to pan. The press only becomes a drag past DRAG_THRESHOLD, and only then
-  // is the pointer captured — capturing on press would send the release to the
-  // viewport and swallow every click on a card.
-  const press = useRef<{
-    id: number;
-    sx: number;
-    sy: number;
-    vx: number;
-    vy: number;
-    r: number;
-    moved: boolean;
-  } | null>(null);
+  // Drag to pan: the mouse moves the scroll. (Touch scrolls natively.) The press
+  // only becomes a drag past DRAG_THRESHOLD, and only then is the pointer
+  // captured — capturing on press would swallow every click on a card.
+  const press = useRef<{ id: number; sx: number; sy: number; sl: number; st: number; r: number; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || e.pointerType === "touch") return;
     // Leave form fields alone: selecting text in a search box is not a pan.
     if ((e.target as HTMLElement).closest("input, textarea, select, [data-no-pan]")) return;
+    const sc = scrollerRef.current;
+    if (!sc) return;
     cancelAnim();
-    const v = view.current;
-    press.current = {
-      id: e.pointerId,
-      sx: e.clientX,
-      sy: e.clientY,
-      vx: v.x,
-      vy: v.y,
-      r: layoutRatio(viewportRef.current!),
-      moved: false,
-    };
+    // A zoom still settling: commit it, so the drag starts from the real scroll.
+    if (gesture.current) settle();
+    press.current = { id: e.pointerId, sx: e.clientX, sy: e.clientY, sl: sc.scrollLeft, st: sc.scrollTop, r: layoutRatio(sc), moved: false };
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const p = press.current;
-    if (!p || p.id !== e.pointerId) return;
+    const sc = scrollerRef.current;
+    if (!p || !sc || p.id !== e.pointerId) return;
     const [dx, dy] = [e.clientX - p.sx, e.clientY - p.sy];
     if (!p.moved) {
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
       p.moved = true;
       setDragging(true);
-      moving(null);
-      viewportRef.current?.setPointerCapture(e.pointerId);
+      frameRef.current?.setPointerCapture(e.pointerId);
     }
     // A drag that started on text would otherwise select it as it goes. Cleared
     // here rather than with user-select on the viewport, which is inherited and
-    // would restyle every card (see "Keeping it smooth").
+    // would restyle every card.
     const sel = document.getSelection();
     if (sel && !sel.isCollapsed) sel.removeAllRanges();
-    setView({ ...view.current, x: p.vx + dx / p.r, y: p.vy + dy / p.r });
+    sc.scrollLeft = p.sl - dx / p.r;
+    sc.scrollTop = p.st - dy / p.r;
   };
   const endPress = (e: React.PointerEvent) => {
     const p = press.current;
     if (!p || p.id !== e.pointerId) return;
-    if (p.moved) {
-      suppressClick.current = true;
-      settle();
-    }
+    if (p.moved) suppressClick.current = true;
     press.current = null;
     setDragging(false);
   };
@@ -600,24 +657,15 @@ export function PanZoomCanvas({
     zoomToElement(el, el.getAttribute("data-canvas-item") === "panel" ? "panel" : "card");
   };
 
-  // ── Keyboard and focus ─────────────────────────────────────────────────────
+  // ── Keyboard ───────────────────────────────────────────────────────────────
+  //
+  // Arrows, Page Up/Down, Home/End and Space are the scroll box's own. Focus
+  // moving to an off-screen row scrolls it into view natively too.
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if ((e.target as HTMLElement).closest("input, textarea, select, [role=listbox], [role=menu]")) return;
     switch (e.key) {
-      case "ArrowLeft":
-        panBy(KEY_PAN, 0);
-        break;
-      case "ArrowRight":
-        panBy(-KEY_PAN, 0);
-        break;
-      case "ArrowUp":
-        panBy(0, KEY_PAN);
-        break;
-      case "ArrowDown":
-        panBy(0, -KEY_PAN);
-        break;
       case "+":
       case "=":
         zoomCentre(BUTTON_STEP);
@@ -639,32 +687,14 @@ export function PanZoomCanvas({
     e.preventDefault();
   };
 
-  // Keyboard focus landing off-screen: bring it on (the browser can't — clip).
-  // Keyboard only: a click focuses what is already under the pointer, and moving
-  // the chart mid-click would lose the click.
-  const onFocus = (e: React.FocusEvent) => {
-    const el = e.target as HTMLElement;
-    const content = contentRef.current;
-    const vp = viewportRef.current;
-    if (!content || !vp || !content.contains(el) || !el.matches(":focus-visible")) return;
-    const b = boxIn(content, el);
-    const { x, y, scale } = view.current;
-    const pad = 40;
-    const [left, top] = [x + b.x * scale, y + b.y * scale];
-    const [right, bottom] = [left + b.w * scale, top + b.h * scale];
-    const dx = left < pad ? pad - left : right > vp.clientWidth - pad ? vp.clientWidth - pad - right : 0;
-    const dy = top < pad ? pad - top : bottom > vp.clientHeight - pad ? vp.clientHeight - pad - bottom : 0;
-    if (dx || dy) animateTo({ scale, x: x + dx, y: y + dy });
-  };
-
   // ── Search ─────────────────────────────────────────────────────────────────
 
   const [found, setFound] = useState<{ key: string; count: number; index: number } | null>(null);
   const goToMatch = useCallback(
     (index: number) => {
       const content = contentRef.current;
-      const vp = viewportRef.current;
-      if (!content || !vp) return;
+      const sc = scrollerRef.current;
+      if (!content || !sc) return;
       content.querySelectorAll("[data-canvas-current]").forEach((el) => el.removeAttribute("data-canvas-current"));
       const els = [...content.querySelectorAll("[data-canvas-match]")];
       if (!els.length) return setFound({ key: matchKey, count: 0, index: 0 });
@@ -672,15 +702,11 @@ export function PanZoomCanvas({
       const el = els[i];
       el.setAttribute("data-canvas-current", "");
       const b = boxIn(content, el);
-      const s = clampScale(Math.max(view.current.scale, MATCH_SCALE));
-      animateTo({
-        scale: s,
-        x: vp.clientWidth / 2 - (b.x + b.w / 2) * s,
-        y: vp.clientHeight / 3 - (b.y + b.h / 2) * s,
-      });
+      const s = clampScale(Math.max(latest().scale, MATCH_SCALE));
+      animateTo({ scale: s, x: sc.clientWidth / 2 - (b.x + b.w / 2) * s, y: sc.clientHeight / 3 - (b.y + b.h / 2) * s });
       setFound({ key: matchKey, count: els.length, index: i });
     },
-    [animateTo, matchKey],
+    [animateTo, latest, matchKey],
   );
   // A new search: to its first match, once the rows carrying it are drawn.
   useEffect(() => {
@@ -711,22 +737,22 @@ export function PanZoomCanvas({
         kind: el.getAttribute("data-canvas-item") ?? "",
       }));
       setMap({ w, h, m, items });
-      draw();
+      requestAnimationFrame(updateMap);
     };
     const ro = new ResizeObserver(measure);
     ro.observe(content);
     return () => ro.disconnect();
-  }, [fitted, draw]);
+  }, [fitted, updateMap]);
 
   const mapPress = useRef<number | null>(null);
   const mapMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    const vp = viewportRef.current;
-    if (!map || !vp || mapPress.current !== e.pointerId) return;
+    const sc = scrollerRef.current;
+    if (!map || !sc || mapPress.current !== e.pointerId) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const k = rect.width / (map.w * map.m);
     const [cx, cy] = [(e.clientX - rect.left) / k / map.m, (e.clientY - rect.top) / k / map.m];
-    const s = view.current.scale;
-    setView({ scale: s, x: vp.clientWidth / 2 - cx * s, y: vp.clientHeight / 2 - cy * s });
+    const s = latest().scale;
+    setView({ scale: s, x: sc.clientWidth / 2 - cx * s, y: sc.clientHeight / 2 - cy * s });
   };
 
   // ── Save as PDF ────────────────────────────────────────────────────────────
@@ -787,17 +813,15 @@ export function PanZoomCanvas({
     win.print();
   };
 
-  // (A button zoom is one step, not a gesture: draw() redraws it crisp at once.)
+  // (A button zoom is one step, not a gesture: committed and redrawn sharp at once.)
   const btn =
     "flex h-8 min-w-8 items-center justify-center px-2 text-sm font-semibold text-sdc-gray-600 motion-interactive hover:bg-sdc-gray-50 hover:text-sdc-navy not-first:border-l not-first:border-sdc-border";
   const group = "flex overflow-hidden rounded-lg border border-sdc-border bg-white shadow-sm";
 
   return (
     <div
-      ref={viewportRef}
-      tabIndex={0}
-      aria-label="Chart canvas: arrow keys move, plus and minus zoom, 0 fits"
-      className={`isolate cursor-grab overflow-clip rounded-xl border border-sdc-border bg-sdc-gray-50 touch-none outline-none focus-visible:ring-2 focus-visible:ring-sdc-blue ${
+      ref={frameRef}
+      className={`isolate overflow-clip rounded-xl border border-sdc-border bg-sdc-gray-50 ${
         expanded ? "fixed inset-4 z-40 shadow-2xl" : `relative ${className}`
       }`}
       onPointerDown={onPointerDown}
@@ -808,25 +832,30 @@ export function PanZoomCanvas({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
-      onFocus={onFocus}
     >
-      {/* The dot grid: its own layer, slid by draw() so a pan reads as a pan. */}
+      {/* The scroll box. Scrollbars hidden: the map, drag and wheel do their job. */}
       <div
-        ref={gridRef}
-        aria-hidden
-        className="pointer-events-none absolute -z-10 will-change-transform"
-        style={{
-          inset: -GRID_OVERHANG,
-          backgroundImage: "radial-gradient(circle, var(--color-sdc-border) 1px, transparent 1px)",
-          backgroundSize: `${GRID_STEP}px ${GRID_STEP}px`,
-        }}
-      />
-      <div
-        ref={contentRef}
-        className="absolute left-0 top-0 w-max origin-top-left"
-        style={{ visibility: fitted ? undefined : "hidden" }}
+        ref={scrollerRef}
+        tabIndex={0}
+        aria-label="Chart canvas: scroll or drag to move, plus and minus zoom, 0 fits"
+        className="absolute inset-0 cursor-grab touch-pan-x touch-pan-y overflow-auto outline-none [overflow-anchor:none] [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-sdc-blue focus-visible:ring-inset [&::-webkit-scrollbar]:hidden"
+        onScroll={onScroll}
       >
-        <CompactContext value={compact}>{children}</CompactContext>
+        {/* The sizer: the chart at this zoom plus a viewport of margin all round.
+            Clips, so a zoom gesture's stretched chart can't grow the scroll area. */}
+        <div
+          ref={sizerRef}
+          className="relative overflow-clip bg-sdc-gray-50"
+          style={{ backgroundImage: "radial-gradient(circle, var(--color-sdc-border) 1px, transparent 1px)" }}
+        >
+          <div
+            ref={contentRef}
+            className="absolute left-0 top-0 w-max origin-top-left"
+            style={{ visibility: fitted ? undefined : "hidden" }}
+          >
+            <CompactContext value={compact}>{children}</CompactContext>
+          </div>
+        </div>
       </div>
       {/* Over the content while dragging, so nothing under the pointer hovers. */}
       {dragging && <div aria-hidden className="absolute inset-0 cursor-grabbing" />}
@@ -924,7 +953,7 @@ export function PanZoomCanvas({
             ref={labelRef}
             type="button"
             className={`${btn} w-14 text-xs tabular-nums`}
-            onClick={() => zoomCentre(1 / view.current.scale)}
+            onClick={() => zoomCentre(1 / latest().scale)}
             title="Zoom to 100%"
           >
             100%

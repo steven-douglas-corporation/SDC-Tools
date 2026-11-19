@@ -229,10 +229,11 @@ test("there is exactly one wheel listener in the app, and it is the shared one",
   walk(SRC);
   const offenders = files.filter((f) => {
     if (f.endsWith(join("components", "ScrollHandoff.tsx"))) return false;
-    // The one exception (2026-11-16): the pan-and-zoom canvas owns every wheel event
-    // over it (scroll pans, Ctrl+scroll zooms) — there is no nested scroll to hand
-    // off. It preventDefault()s on its own element, below document, so ScrollHandoff
-    // sees `defaultPrevented` and steps aside instead of fighting it.
+    // The one exception (2026-11-16): the pan-and-zoom canvas's Ctrl+scroll (and
+    // pinch) zoom. Plain scrolling over it is left to the browser (2026-11-19: its
+    // pan is a native scroll), so this hands off like any scroll box. A zoom is
+    // preventDefault()ed on the canvas's own element, below document, so
+    // ScrollHandoff sees `defaultPrevented` and steps aside instead of fighting it.
     if (f.endsWith(join("components", "PanZoomCanvas.tsx"))) return false;
     const code = readFileSync(f, "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
