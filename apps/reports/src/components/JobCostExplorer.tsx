@@ -368,7 +368,13 @@ export function JobCostExplorer({
   // filter-and-rebuild on every click, on every one of them.
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [yearFilter, setYearFilter] = useState<Set<string>>(new Set());
-  const [customerFilter, setCustomerFilter] = useState<Set<string>>(new Set());
+  // customerFilter is special: null means "no narrowing" (every job matches), same
+  // as the other three filters' empty Set — but an explicit EMPTY Set here means
+  // "narrowed to nothing", which is what the Customer group's own "Clear" (deselect
+  // all) sets it to. With 100+ customers, starting from none-checked and picking a
+  // handful is the real workflow; Status/Year/Type stay on the plain empty-Set-means-
+  // all convention since picking a few of four items from "all" is no hardship.
+  const [customerFilter, setCustomerFilter] = useState<Set<string> | null>(null);
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
   const [hideUtility, setHideUtility] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("jobId");
@@ -595,13 +601,13 @@ export function JobCostExplorer({
   // filter reporting its own count independently the way it did as three
   // separate buttons.
   const statusNarrowing = statusFilter.size > 0 && statusFilter.size < allStatuses.length;
-  const customerNarrowing = customerFilter.size > 0 && customerFilter.size < customers.length;
+  const customerNarrowing = customerFilter != null && customerFilter.size < customers.length;
   const yearNarrowing = yearFilter.size > 0 && yearFilter.size < years.length;
   const typeNarrowing = typeFilter.size > 0 && typeFilter.size < allTypes.length;
   const activeFilterCount = (statusNarrowing ? 1 : 0) + (customerNarrowing ? 1 : 0) + (yearNarrowing ? 1 : 0) + (typeNarrowing ? 1 : 0);
   function clearAllFilters() {
     setStatusFilter(new Set());
-    setCustomerFilter(new Set());
+    setCustomerFilter(null);
     setTypeFilter(new Set());
     setYearFilter(new Set());
   }
@@ -612,7 +618,7 @@ export function JobCostExplorer({
       .filter((r) => !(hideUtility && isUtilityJob(r.jobId)))
       .filter((r) => statusFilter.size === 0 || statusFilter.has(r.status))
       .filter((r) => yearFilter.size === 0 || (r.completeDate != null && yearFilter.has(r.completeDate.slice(0, 4))))
-      .filter((r) => customerFilter.size === 0 || (r.customerName != null && customerFilter.has(r.customerName)))
+      .filter((r) => customerFilter == null || (r.customerName != null && customerFilter.has(r.customerName)))
       .filter((r) => typeFilter.size === 0 || (r.jobType != null && typeFilter.has(r.jobType)))
       .filter((r) => !terms.length || terms.some((t) => `${r.jobId} ${r.jobName} ${r.customerName ?? ""} ${r.status}`.toLowerCase().includes(t)));
     out = [...out].sort((a, b) => {
@@ -866,7 +872,12 @@ export function JobCostExplorer({
             Customer and Completion Year could become Sets without changing
             what "combines with Status" means — every one of these three
             filters was already ANDed together; only what was inside each
-            slot changed, from one string to a Set of them. */}
+            slot changed, from one string to a Set of them.
+
+            Customer diverged from that on 2026-11-19 (see the customerFilter
+            declaration above): it needed a real "deselect all" so picking a
+            handful out of 100+ customers doesn't mean unchecking the rest one
+            at a time, which plain empty-Set-means-all can't represent. */}
         <div className="flex items-center gap-1 border-l border-sdc-border-soft pl-1.5">
           <details ref={filtersRef} className="group relative inline-block">
             <summary className={`${TOOLBAR_BTN_COMPACT} ${activeFilterCount > 0 ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}>
@@ -910,21 +921,22 @@ export function JobCostExplorer({
                   ))}
                 </div>
               </MenuGroup>
-              <MenuGroup label={customerNarrowing ? `Customer (${customerFilter.size})` : "Customer"}>
+              <MenuGroup label={customerNarrowing ? `Customer (${customerFilter?.size ?? 0})` : "Customer"}>
                 <MenuBulkActions onAll={() => setCustomerFilter(new Set(customers))} onNone={() => setCustomerFilter(new Set())} />
                 <div className="max-h-40 overflow-y-auto styled-scrollbar">
                   {customers.map((c) => (
                     <MenuCheckbox
                       key={c}
                       label={c}
-                      checked={customerFilter.size === 0 || customerFilter.has(c)}
+                      checked={customerFilter == null || customerFilter.has(c)}
                       onChange={() =>
                         setCustomerFilter((prev) => {
-                          // Same "seed the full set on first uncheck" rule as
-                          // Status — an empty Set is implicitly every customer,
-                          // so unchecking one from THAT state has to become
-                          // "every customer except this one", not a set of one.
-                          const next = prev.size === 0 ? new Set(customers) : new Set(prev);
+                          // null (no narrowing) seeds the full set on first uncheck, same
+                          // as Status — unchecking one from THAT state has to become
+                          // "every customer except this one", not a set of one. An
+                          // explicit empty Set (deselect all) is left alone: checking one
+                          // from there correctly becomes a set of exactly that one.
+                          const next = prev == null ? new Set(customers) : new Set(prev);
                           if (next.has(c)) next.delete(c);
                           else next.add(c);
                           return next;
