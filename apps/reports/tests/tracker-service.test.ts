@@ -1624,3 +1624,61 @@ test("schema status: the code's list of migrations is the folder's, and a databa
   await pg.exec(`DROP TABLE public.tracker_schema_migration`);
   assert.deepEqual(await S.getSchemaStatus(fresh), { current: true });
 });
+
+test("forecast: a simulation is worked out before the lock is taken, and redone when the plan changes under it", async () => {
+  const p = await createProject(db, ana, { key: "AHEAD", name: "Simulated ahead" });
+  await setPortfolioRanks(db, boss, [{ projectId: p.id, rank: 50 }]);
+  await updateProject(db, ana, p.id, { state: "active" });
+  const card = await createTask(db, ana, { projectId: p.id, title: "Work", assigneePersonId: ana.personId });
+  await updateTask(db, ana, card.id, { remainingEffortHours: 12 });
+
+  // What each transaction of a run did, in order, and a chance to change the plan between them.
+  const seen: string[] = [];
+  let between: (() => Promise<void>) | null = null;
+  const watched: Database = {
+    transaction: async (fn) => {
+      const result = await db.transaction((tx) =>
+        fn({
+          query: (sql, params) => {
+            if (/pg_advisory_xact_lock/.test(sql)) seen.push("lock");
+            if (/INSERT INTO tracker\.schedule_run/.test(sql)) seen.push("write");
+            return tx.query(sql, params);
+          },
+        }),
+      );
+      if (!seen.at(-1)?.startsWith("w")) seen.push(seen.at(-1) === "lock" ? "gave up" : "read");
+      const change = between;
+      between = null;
+      if (change) await change();
+      return result;
+    },
+  };
+  const safeDate = async () =>
+    (
+      await rows<{ d: string | null }>(`SELECT p80_finish::text AS d FROM tracker.task_forecast WHERE task_id = $1`, [
+        card.id,
+      ])
+    )[0]!.d;
+
+  // Nothing changes meanwhile: one read with no lock, then one locked write.
+  await runForecast(watched, { asOf: "2026-11-11", triggeredBy: "manual", simulations: 30 });
+  assert.deepEqual(seen, ["read", "lock", "write"]);
+  const short = await safeDate();
+  assert.ok(
+    short,
+    `the simulation stored a safe date: ${JSON.stringify(await rows(`SELECT * FROM tracker.task_forecast WHERE task_id = $1`, [card.id]))}`,
+  );
+
+  // The plan changes while the simulation runs: that answer is thrown away and worked out again.
+  seen.length = 0;
+  between = async () => void (await updateTask(db, ana, card.id, { remainingEffortHours: 120 }));
+  await runForecast(watched, { asOf: "2026-11-11", triggeredBy: "manual", simulations: 30 });
+  assert.deepEqual(seen, ["read", "lock", "gave up", "read", "lock", "write"]);
+  const long = await safeDate();
+  assert.ok(long && long > short, `the stored safe date is for the plan as it now is (${short} -> ${long})`);
+
+  // A quick run reads and writes once, under the lock, as before.
+  seen.length = 0;
+  await runForecast(watched, { asOf: "2026-11-11", triggeredBy: "change" });
+  assert.deepEqual(seen, ["lock", "write"]);
+});

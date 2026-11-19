@@ -7,6 +7,7 @@ import {
   type Allocation,
   type CapacityPeriod,
   type Inputs,
+  type SimulationOutput,
   type Resource,
   type Task,
   type TimeOff,
@@ -260,24 +261,66 @@ export interface ForecastRunResult {
 
 const idOrNull = (value: string | null | undefined): number | null => (value == null ? null : Number(value));
 
+/** A simulation worked out ahead of the write, and the plan it was worked out for. */
+interface SimulatedAhead {
+  plan: string;
+  sim: SimulationOutput;
+}
+
+/**
+ * Reads the plan and simulates it with no lock held. A simulation takes tens of seconds on a
+ * large plan; inside the write below it would hold the forecast lock all that time, and every
+ * save in the app waits for that lock to redo the forecast.
+ */
+async function simulateAhead(db: Database, asOf: string, runs: number): Promise<SimulatedAhead> {
+  const { inputs } = await db.transaction((tx) => loadForecastInputs(tx, asOf));
+  return { plan: JSON.stringify(inputs), sim: simulate(inputs, { runs }) };
+}
+
+/** How many times a simulation is redone because the plan changed under it, before it is done inside the lock. */
+const SIMULATE_AHEAD_ATTEMPTS = 2;
+
 /**
  * Runs the forecast and replaces the stored result, all in one transaction: readers see either
  * the previous forecast or the new one, never a mix.
+ *
+ * A simulation is worked out first, outside that transaction, and used only if the plan is
+ * still the one it was made for. If somebody changed the plan meanwhile it is redone; if the
+ * plan keeps changing, the last try simulates inside the lock, which is slow but always right.
  */
 export async function runForecast(db: Database, options: ForecastRunOptions): Promise<ForecastRunResult> {
   const simulations = options.simulations ?? 0;
+  if (simulations > 0) {
+    for (let attempt = 0; attempt < SIMULATE_AHEAD_ATTEMPTS; attempt++) {
+      const ahead = await simulateAhead(db, options.asOf, simulations);
+      const written = await writeForecast(db, options, simulations, ahead);
+      if (written) return written;
+    }
+  }
+  return (await writeForecast(db, options, simulations, null)) as ForecastRunResult;
+}
+
+/** Returns null, having written nothing, when `ahead` was made for a plan that has since changed. */
+async function writeForecast(
+  db: Database,
+  options: ForecastRunOptions,
+  simulations: number,
+  ahead: SimulatedAhead | null,
+): Promise<ForecastRunResult | null> {
   return db.transaction(async (tx) => {
     // One run at a time. Readers take the rows of the newest run, so a run that started first
     // and finished last would leave every row stamped with an older run and the screens empty.
     // The lock is taken before anything is read, so each run sees what the one before it wrote.
     await tx.query(`SELECT pg_advisory_xact_lock(hashtext('tracker.forecast'))`);
+    const { inputs, heldBack } = await loadForecastInputs(tx, options.asOf);
+    if (ahead && JSON.stringify(inputs) !== ahead.plan) return null;
+
     const run = await tx.query<{ id: number }>(
       `INSERT INTO tracker.schedule_run (triggered_by, as_of_date, simulations) VALUES ($1, $2::date, $3) RETURNING id`,
       [options.triggeredBy, options.asOf, simulations],
     );
     const runId = Number((run.rows[0] as { id: number }).id);
 
-    const { inputs, heldBack } = await loadForecastInputs(tx, options.asOf);
     const { results } = schedule(inputs);
 
     const taskRows = inputs.tasks.map((t) => {
@@ -354,7 +397,7 @@ export async function runForecast(db: Database, options: ForecastRunOptions): Pr
     );
 
     if (simulations > 0) {
-      const sim = simulate(inputs, { runs: simulations });
+      const sim = ahead ? ahead.sim : simulate(inputs, { runs: simulations });
       const taskPct = [...sim.tasks].map(([id, p]) => ({ task_id: Number(id), p50: p.p50, p80: p.p80 }));
       const projectPct = [...sim.projects].map(([id, p]) => ({ project_id: Number(id), p50: p.p50, p80: p.p80 }));
       await tx.query(
