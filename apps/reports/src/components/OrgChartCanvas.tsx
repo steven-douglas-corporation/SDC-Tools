@@ -135,13 +135,16 @@ function CanvasLayout({ leadership, functions, sections, teamCard, others, notPl
             {f.key === "execution" ? (
               <CanvasPanel id={f.key} title={f.title} blurb={f.blurb} active={f.active} accent>
                 {sections.pm.cards.length > 0 && (
-                  // Project management spans the panel. `w-0 min-w-full`: as wide as
-                  // the parts under it, without its own text widening the panel.
-                  <div className={`flex gap-3 ${parts.length ? "w-0 min-w-full" : ""}`}>
+                  // Project management sits across the top of the panel, centred,
+                  // at most two columns wide (2026-11-19: spanning all five, it was
+                  // ~1700px at 100%, and zooming to it left the names unreadable at
+                  // the far edge). `w-0 min-w-full` on the row: as wide as the parts
+                  // under it, without its own text widening the panel.
+                  <div className={`flex justify-center gap-3 ${parts.length ? "w-0 min-w-full" : ""}`}>
                     {sections.pm.cards.map((c) => (
                       <div
                         key={cardId(c.band.leader.id, c.item.card.team)}
-                        className={parts.length ? "min-w-0 flex-1" : "w-[20rem]"}
+                        className={parts.length ? "min-w-0 max-w-[40.75rem] flex-1" : "w-[20rem]"}
                       >
                         {card(c)}
                       </div>
