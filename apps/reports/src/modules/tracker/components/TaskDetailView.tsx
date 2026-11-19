@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { BUTTON_COMPACT, BUTTON_PRIMARY, CARD_BASE, INPUT, LABEL } from "@/components/ui/classnames";
 import {
   addCommentAction,
   addDependencyAction,
+  archiveTaskAction,
   clearOwnHoursAction,
   confirmRemainingAction,
   moveTaskAction,
@@ -125,6 +127,9 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
   const [pending, start] = useTransition();
+  const [archiving, setArchiving] = useState(false);
+  const router = useRouter();
+  const mayArchive = mayChange && task.myRole === "manager";
 
   function run(work: () => Promise<ActionResult>, done?: () => void) {
     setError("");
@@ -436,6 +441,54 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                   >
                     Hours left are still right
                   </button>
+                )}
+                {mayArchive && !archiving && (
+                  <button
+                    type="button"
+                    disabled={pending || task.children.length > 0}
+                    className={BUTTON_COMPACT}
+                    title={
+                      task.children.length > 0
+                        ? "Move or archive the cards under this one first"
+                        : "Takes the card off the board and out of the forecast. Its history is kept."
+                    }
+                    onClick={() => setArchiving(true)}
+                  >
+                    Archive card
+                  </button>
+                )}
+                {mayArchive && archiving && (
+                  <span
+                    role="group"
+                    aria-label="Archive this card"
+                    className="flex flex-wrap items-center gap-2 text-sm"
+                  >
+                    <span className="font-semibold text-sdc-navy">
+                      Archive {task.key}? It leaves the board and the forecast, and nothing waits on it any more. Its
+                      history is kept. This cannot be undone here.
+                    </span>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      className={BUTTON_COMPACT}
+                      onClick={() =>
+                        run(
+                          () => archiveTaskAction({ taskId: task.id, projectKey: task.projectKey, taskKey: task.key }),
+                          () => router.push(`/tracker/${task.projectKey}`),
+                        )
+                      }
+                    >
+                      Yes, archive
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      className={BUTTON_COMPACT}
+                      onClick={() => setArchiving(false)}
+                    >
+                      Keep it
+                    </button>
+                  </span>
                 )}
               </div>
             )}

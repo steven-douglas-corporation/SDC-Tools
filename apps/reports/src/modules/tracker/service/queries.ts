@@ -14,6 +14,7 @@ export interface ProjectListItem {
   state: string;
   portfolioRank: number | null;
   ownerName: string;
+  ownerPersonId: number;
   targetDate: string | null;
   taskCount: number;
   doneCount: number;
@@ -37,6 +38,7 @@ interface ProjectRow {
   state: string;
   portfolio_rank: number | null;
   owner_name: string;
+  owner_person_id: number;
   target_date: string | null;
   task_count: string | number | null;
   done_count: string | number | null;
@@ -53,7 +55,7 @@ interface ProjectRow {
 }
 
 const PROJECT_COLUMNS = `
-  r.project_id, r.key, r.name, r.state, r.portfolio_rank, o.display_name AS owner_name,
+  r.project_id, r.key, r.name, r.state, r.portfolio_rank, o.display_name AS owner_name, r.owner_person_id,
   r.target_date::text, r.task_count, r.done_count, r.remaining_hours::float8,
   r.forecast_completion_date::text AS forecast_finish, r.p80_finish::text, r.at_risk, r.at_risk_basis,
   r.unscheduled_tasks, r.unestimated_tasks, r.stale_tasks, r.next_milestone, m.role AS my_role`;
@@ -66,6 +68,7 @@ function toProject(r: ProjectRow, admin: boolean): ProjectListItem {
     state: r.state,
     portfolioRank: r.portfolio_rank == null ? null : Number(r.portfolio_rank),
     ownerName: r.owner_name,
+    ownerPersonId: Number(r.owner_person_id),
     targetDate: r.target_date,
     taskCount: Number(r.task_count ?? 0),
     doneCount: Number(r.done_count ?? 0),

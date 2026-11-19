@@ -207,6 +207,14 @@ export async function updateProject(
       await logProjectChange(tx, projectId, "priority", cur.priority, changes.priority, actor, reason ?? null);
     }
     if (changes.ownerPersonId !== undefined && changes.ownerPersonId !== Number(cur.owner_person_id)) {
+      const person = await tx.query(`SELECT 1 FROM tracker.person WHERE id = $1`, [changes.ownerPersonId]);
+      if (!person.rows.length) throw new TrackerError("invalid", "That person is not in the tracker.");
+      // The owner can always manage the project; the previous owner keeps the role they had.
+      await tx.query(
+        `INSERT INTO tracker.project_member (project_id, person_id, role) VALUES ($1, $2, 'manager')
+         ON CONFLICT (project_id, person_id) DO UPDATE SET role = 'manager'`,
+        [projectId, changes.ownerPersonId],
+      );
       await tx.query(`UPDATE tracker.project SET owner_person_id = $2 WHERE id = $1`, [
         projectId,
         changes.ownerPersonId,

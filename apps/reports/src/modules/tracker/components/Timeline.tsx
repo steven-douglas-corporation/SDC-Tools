@@ -80,7 +80,7 @@ function Legend({ of, stale }: { of: "cards" | "projects"; stale: boolean }) {
       <Mark label={cards ? "Due date" : "Target date"}>
         <span className="h-4 w-1.5 border-y-2 border-r-2 border-sdc-gray-600" />
       </Mark>
-      <Mark label={cards ? "Due date the forecast misses" : "Target the forecast misses"}>
+      <Mark label={cards ? "Due date that will be missed" : "Target date that will be missed"}>
         <span className="h-4 w-1.5 border-y-2 border-r-2 border-sdc-red" />
       </Mark>
       <Mark

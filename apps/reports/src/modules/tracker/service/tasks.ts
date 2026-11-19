@@ -990,6 +990,30 @@ export async function archiveTask(db: Database, actor: Actor, taskId: number): P
   await db.transaction(async (tx) => {
     const cur = await lockTask(tx, taskId);
     await requireProjectRole(tx, cur.project_id, actor, "manager");
+    // A card's place in the tree is how the cards under it are found, so it cannot go first.
+    const under = await tx.query(`SELECT 1 FROM tracker.task WHERE parent_task_id = $1 AND archived_at IS NULL`, [
+      taskId,
+    ]);
+    if (under.rows.length > 0) {
+      const n = under.rows.length;
+      throw new TrackerError(
+        "invalid",
+        `This card has ${n} card${n === 1 ? "" : "s"} under it. Move or archive ${n === 1 ? "it" : "them"} first.`,
+      );
+    }
+    // Nothing should wait on a card nobody can see, so its links go with it, and each card that
+    // was waiting on it gets a line in its history saying why it no longer does.
+    const self = await taskKey(tx, taskId);
+    const links = await tx.query<{ predecessor_task_id: number; successor_task_id: number }>(
+      `DELETE FROM tracker.task_dependency WHERE predecessor_task_id = $1 OR successor_task_id = $1
+       RETURNING predecessor_task_id, successor_task_id`,
+      [taskId],
+    );
+    for (const l of links.rows) {
+      const waiter = Number(l.successor_task_id);
+      const on = Number(l.predecessor_task_id) === taskId ? self : await taskKey(tx, Number(l.predecessor_task_id));
+      await logTaskChange(tx, waiter, "dependency", `waits on ${on.key}`, null, actor, `${self.key} was archived`);
+    }
     await tx.query(`UPDATE tracker.task SET archived_at = now() WHERE id = $1`, [taskId]);
     await settleParents(tx, cur.project_id, cur.parent_task_id, actor);
   });

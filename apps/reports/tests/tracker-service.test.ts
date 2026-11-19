@@ -1682,3 +1682,63 @@ test("forecast: a simulation is worked out before the lock is taken, and redone 
   await runForecast(watched, { asOf: "2026-11-11", triggeredBy: "change" });
   assert.deepEqual(seen, ["lock", "write"]);
 });
+
+test("archive: a card with cards under it stays; archiving removes its links and says so on the cards that waited", async () => {
+  const p = await createProject(db, ana, { key: "ARCH", name: "Archiving" });
+  const story = await createTask(db, ana, { projectId: p.id, title: "Story", kind: "story" });
+  const child = await createTask(db, ana, { projectId: p.id, title: "Child", parentTaskId: story.id });
+  const first = await createTask(db, ana, { projectId: p.id, title: "First" });
+  const waiter = await createTask(db, ana, { projectId: p.id, title: "Waits" });
+  await addDependency(db, ana, first.id, waiter.id);
+  await addDependency(db, ana, child.id, first.id);
+
+  await refuses(() => archiveTask(db, ana, story.id), "invalid", /has 1 card under it\. Move or archive it first/);
+
+  await archiveTask(db, ana, first.id);
+  const links = await rows(
+    `SELECT 1 FROM tracker.task_dependency WHERE predecessor_task_id = $1 OR successor_task_id = $1`,
+    [first.id],
+  );
+  assert.equal(links.length, 0);
+  const said = await rows<{ old_value: string; reason: string }>(
+    `SELECT old_value, reason FROM tracker.task_change_log
+      WHERE task_id = $1 AND field = 'dependency' AND new_value IS NULL`,
+    [waiter.id],
+  );
+  assert.deepEqual(said, [{ old_value: "waits on ARCH-3", reason: "ARCH-3 was archived" }]);
+
+  // Once the card under it is gone, the story can go too.
+  await archiveTask(db, ana, child.id);
+  await archiveTask(db, ana, story.id);
+});
+
+test("project settings: a new owner becomes a manager, and a finished project leaves the forecast", async () => {
+  const p = await createProject(db, ana, { key: "SETUP", name: "Settings" });
+  await setProjectMember(db, ana, p.id, ben.personId, "viewer");
+  await updateProject(db, ana, p.id, { ownerPersonId: ben.personId, targetDate: "2027-01-15" }, "handover");
+  const [row] = await rows<{ owner: number; target: string; role: string }>(
+    `SELECT p.owner_person_id AS owner, p.target_date::text AS target, m.role
+       FROM tracker.project p JOIN tracker.project_member m ON m.project_id = p.id AND m.person_id = p.owner_person_id
+      WHERE p.id = $1`,
+    [p.id],
+  );
+  assert.deepEqual([Number(row!.owner), row!.target, row!.role], [ben.personId, "2027-01-15", "manager"]);
+  await refuses(() => updateProject(db, ana, p.id, { ownerPersonId: 999999 }), "invalid", /not in the tracker/);
+
+  await setPortfolioRanks(db, boss, [{ projectId: p.id, rank: 61 }]);
+  await updateProject(db, ben, p.id, { state: "active" });
+  const card = await createTask(db, ben, { projectId: p.id, title: "Open work", assigneePersonId: ben.personId });
+  await updateTask(db, ben, card.id, { remainingEffortHours: 6 });
+  await runForecast(db, { asOf: "2026-11-11", triggeredBy: "manual" });
+  const forecast = () => rows(`SELECT 1 FROM tracker.task_forecast WHERE task_id = $1`, [card.id]);
+  assert.equal((await forecast()).length, 1);
+
+  await updateProject(db, ben, p.id, { state: "completed" });
+  await runForecast(db, { asOf: "2026-11-11", triggeredBy: "manual" });
+  assert.equal((await forecast()).length, 0, "a finished project's open card is no longer forecast");
+  const [done] = await rows<{ d: string | null }>(
+    `SELECT actual_completion_date::text AS d FROM tracker.project WHERE id = $1`,
+    [p.id],
+  );
+  assert.ok(done!.d, "the day it was finished is recorded");
+});

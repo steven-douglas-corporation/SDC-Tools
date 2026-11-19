@@ -11,6 +11,8 @@ import { getBoard, type Board as BoardData } from "@/modules/tracker/service/que
 import { listMembers } from "@/modules/tracker/service/people";
 import { Board } from "@/modules/tracker/components/Board";
 import { Members } from "@/modules/tracker/components/Members";
+import { ProjectSettings } from "@/modules/tracker/components/ProjectSettings";
+import type { ProjectState } from "@/modules/tracker/service/projects";
 import { ProjectViews } from "@/modules/tracker/components/ProjectViews";
 import { SafeDateHelp } from "@/modules/tracker/components/HelpTip";
 import { hours, shortDate } from "@/modules/tracker/components/format";
@@ -43,7 +45,8 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
 
   const state = p.state.replace("_", " ");
   const facts: [string, string][] = [
-    ["State", state.charAt(0).toUpperCase() + state.slice(1)],
+    ["State", p.state === "completed" ? "Finished" : state.charAt(0).toUpperCase() + state.slice(1)],
+    ["Owner", p.ownerName],
     ["Stack rank", p.portfolioRank?.toString() ?? "none"],
     ["Target", shortDate(p.targetDate)],
     ["Forecast", shortDate(p.forecastFinish)],
@@ -95,7 +98,9 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
         <p className="mb-4 rounded-lg border border-sdc-border bg-sdc-yellow-bg px-3 py-2 text-sm text-sdc-yellow-text">
           {p.portfolioRank == null
             ? "This project has no stack rank yet, so its work is not forecast. The portfolio owner sets the rank on the Project Tracker page."
-            : `This project is ${p.state.replace("_", " ")}. Make it active on the Project Tracker page when work starts.`}
+            : p.state === "completed" || p.state === "cancelled"
+              ? `This project is ${p.state === "completed" ? "finished" : "cancelled"}, so its work is not forecast.`
+              : `This project is ${p.state.replace("_", " ")}. Make it active in Project settings below when work starts.`}
         </p>
       ) : (
         (p.unscheduledTasks > 0 || p.staleTasks > 0) && (
@@ -112,6 +117,20 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
 
       <ProjectViews projectKey={p.key} current="board" />
       <Board board={board} canEdit={canEdit} />
+
+      {canEdit && p.myRole === "manager" && (
+        <div className="mt-4">
+          <ProjectSettings
+            projectId={p.id}
+            projectKey={p.key}
+            targetDate={p.targetDate}
+            ownerPersonId={p.ownerPersonId}
+            state={p.state as ProjectState}
+            openCards={p.taskCount - p.doneCount}
+            people={board.people}
+          />
+        </div>
+      )}
 
       <div className="mt-4">
         <Members

@@ -12,12 +12,14 @@ import {
   rankClash,
   setProjectMember,
   updateProject,
+  type ProjectChanges,
   type ProjectState,
   type RankClash,
 } from "./service/projects";
 import {
   addComment,
   addDependency,
+  archiveTask,
   changeStatus,
   clearOwnHours,
   confirmRemainingEffort,
@@ -153,6 +155,44 @@ export async function setProjectStateAction(
       return {};
     },
     { paths: ["/tracker", boardPath(projectKey)] },
+  );
+}
+
+/** A manager's changes to a project: its target date, its owner, its state (finishing it included). */
+export async function updateProjectAction(input: {
+  projectId: number;
+  projectKey: string;
+  changes: Pick<ProjectChanges, "targetDate" | "ownerPersonId" | "state">;
+  reason?: string;
+}): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      const { targetDate, ownerPersonId, state } = input.changes;
+      await updateProject(
+        trackerDb,
+        actor,
+        input.projectId,
+        { targetDate, ownerPersonId, state },
+        input.reason?.trim() || null,
+      );
+      return {};
+    },
+    { paths: ["/tracker", "/tracker/timeline", boardPath(input.projectKey)] },
+  );
+}
+
+/** Takes a card off the board and out of the forecast. Its history is kept. */
+export async function archiveTaskAction(input: {
+  taskId: number;
+  projectKey: string;
+  taskKey: string;
+}): Promise<ActionResult> {
+  return act(
+    async (actor) => {
+      await archiveTask(trackerDb, actor, input.taskId);
+      return {};
+    },
+    { paths: ["/tracker", "/tracker/timeline", boardPath(input.projectKey), taskPath(input.taskKey)] },
   );
 }
 
