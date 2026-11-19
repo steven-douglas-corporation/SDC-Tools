@@ -205,6 +205,14 @@ export function PanZoomCanvas({
   const mapScale = useRef(0);
   // What was last written, so an unchanged value isn't written (and laid out) again.
   const written = useRef({ size: "", transform: "" });
+  // The last view on screen, and whether the canvas is hidden (a workspace tab
+  // in the background is display: none). A hidden scroll box loses its offset —
+  // the browser keeps none for a box it isn't laying out — so on coming back the
+  // view is put back from here, not read from the zeroed scroll. (The app's
+  // TabScrollMemory would restore the offset but not the zoom it belongs to, so
+  // the scroller opts out of it: data-scroll-own.)
+  const committed = useRef<View | null>(null);
+  const hidden = useRef(false);
 
   // The view on screen now.
   const readView = useCallback((): View => {
@@ -332,6 +340,7 @@ export function PanZoomCanvas({
       const label = `${Math.round(s * 100)}%`;
       if (labelRef.current && labelRef.current.textContent !== label) labelRef.current.textContent = label;
       updateMap();
+      if (!gesture.current) committed.current = readView();
       if (!gesture.current && fittedRef.current) {
         if (syncDetail(hold, readView()) && refit) refitPending.current = allowCompactRef.current;
         saveSoon();
@@ -493,7 +502,11 @@ export function PanZoomCanvas({
     const content = contentRef.current;
     if (!sc || !content) return;
     const ro = new ResizeObserver(() => {
-      if (!content.offsetWidth || !content.offsetHeight || !sc.clientWidth) return;
+      if (!content.offsetWidth || !content.offsetHeight || !sc.clientWidth) {
+        // No box: hidden (see `committed`). Keep the last view for the return.
+        if (fittedRef.current) hidden.current = true;
+        return;
+      }
       if (!fittedRef.current) {
         fittedRef.current = true;
         const saved = readSavedView(storageKeyRef.current);
@@ -503,7 +516,9 @@ export function PanZoomCanvas({
         requestAnimationFrame(() => setFitted(true));
         return;
       }
-      if (!gesture.current && !anim.current) place(latest(), { hold: false });
+      const back = hidden.current;
+      hidden.current = false;
+      if (!gesture.current && !anim.current) place(back && committed.current ? committed.current : latest(), { hold: false });
     });
     ro.observe(content);
     ro.observe(sc);
@@ -576,6 +591,7 @@ export function PanZoomCanvas({
   // A scroll moves the map's box and is remembered; nothing else to do.
   const scrollFrame = useRef(0);
   const onScroll = () => {
+    if (!hidden.current && !gesture.current && scrollerRef.current?.clientWidth) committed.current = readView();
     if (!scrollFrame.current) {
       scrollFrame.current = requestAnimationFrame(() => {
         scrollFrame.current = 0;
@@ -836,6 +852,7 @@ export function PanZoomCanvas({
       {/* The scroll box. Scrollbars hidden: the map, drag and wheel do their job. */}
       <div
         ref={scrollerRef}
+        data-scroll-own=""
         tabIndex={0}
         aria-label="Chart canvas: scroll or drag to move, plus and minus zoom, 0 fits"
         className="absolute inset-0 cursor-grab touch-pan-x touch-pan-y overflow-auto outline-none [overflow-anchor:none] [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-sdc-blue focus-visible:ring-inset [&::-webkit-scrollbar]:hidden"
