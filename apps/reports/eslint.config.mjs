@@ -10,7 +10,10 @@ const eslintConfig = defineConfig([
     rules: {
       // Server actions receive FormData they don't always need; the `_` prefix
       // marks those as deliberately unused.
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
     },
   },
   // What a module under src/modules may import; nothing until that folder exists.
