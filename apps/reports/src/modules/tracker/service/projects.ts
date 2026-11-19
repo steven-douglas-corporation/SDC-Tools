@@ -13,7 +13,6 @@ export interface NewProject {
   description?: string | null;
   objective?: string | null;
   definitionOfDone?: string | null;
-  priority?: number;
   targetDate?: string | null;
   teamId?: number | null;
   jobNumber?: string | null;
@@ -22,7 +21,6 @@ export interface NewProject {
 export interface ProjectChanges {
   targetDate?: string | null;
   state?: ProjectState;
-  priority?: number;
   ownerPersonId?: number;
 }
 
@@ -97,8 +95,8 @@ export async function createProject(
       tx,
       `INSERT INTO tracker.project
          (key, name, description, objective, definition_of_done, owner_person_id, created_by,
-          priority, target_date, team_id, job_number)
-       VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10)
+          target_date, team_id, job_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9)
        RETURNING id`,
       [
         key,
@@ -107,7 +105,6 @@ export async function createProject(
         input.objective ?? null,
         input.definitionOfDone ?? null,
         actor.personId,
-        input.priority ?? 3,
         input.targetDate ?? null,
         input.teamId ?? null,
         input.jobNumber ?? null,
@@ -171,7 +168,7 @@ async function logProjectChange(
   );
 }
 
-/** Changes a project's target date, state, priority or owner. Each change is logged. */
+/** Changes a project's target date, state or owner. Each change is logged. */
 export async function updateProject(
   db: Database,
   actor: Actor,
@@ -185,12 +182,11 @@ export async function updateProject(
     const cur = await one<{
       target_date: string | null;
       state: ProjectState;
-      priority: number;
       owner_person_id: number;
       portfolio_rank: number | null;
     }>(
       tx,
-      `SELECT target_date::text, state, priority, owner_person_id, portfolio_rank FROM tracker.project WHERE id = $1 FOR UPDATE`,
+      `SELECT target_date::text, state, owner_person_id, portfolio_rank FROM tracker.project WHERE id = $1 FOR UPDATE`,
       [projectId],
       "Project",
     );
@@ -198,13 +194,6 @@ export async function updateProject(
     if (changes.targetDate !== undefined && changes.targetDate !== cur.target_date) {
       await tx.query(`UPDATE tracker.project SET target_date = $2 WHERE id = $1`, [projectId, changes.targetDate]);
       await logProjectChange(tx, projectId, "target_date", cur.target_date, changes.targetDate, actor, reason ?? null);
-    }
-    if (changes.priority !== undefined && changes.priority !== cur.priority) {
-      if (!Number.isInteger(changes.priority) || changes.priority < 1 || changes.priority > 5) {
-        throw new TrackerError("invalid", "Priority is a whole number from 1 (highest) to 5.");
-      }
-      await tx.query(`UPDATE tracker.project SET priority = $2 WHERE id = $1`, [projectId, changes.priority]);
-      await logProjectChange(tx, projectId, "priority", cur.priority, changes.priority, actor, reason ?? null);
     }
     if (changes.ownerPersonId !== undefined && changes.ownerPersonId !== Number(cur.owner_person_id)) {
       const person = await tx.query(`SELECT 1 FROM tracker.person WHERE id = $1`, [changes.ownerPersonId]);

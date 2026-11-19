@@ -63,6 +63,7 @@ before(async () => {
   await pg.exec(migration("0006_requested_by.sql"));
   await pg.exec(migration("0007_checklist.sql"));
   await pg.exec(migration("0008_migration_record_readable.sql"));
+  await pg.exec(migration("0009_project_priority_dropped.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
 
@@ -1614,7 +1615,9 @@ test("schema status: the code's list of migrations is the folder's, and a databa
   }
   const behind = await S.getSchemaStatus(fresh);
   assert.deepEqual(behind, { current: false, missing: S.MIGRATIONS.slice(-2) });
-  assert.match(S.schemaBehindDetail(behind as { missing: string[] }), /Missing: 0007_checklist\.sql, 0008_/);
+  assert.ok(
+    S.schemaBehindDetail(behind as { missing: string[] }).startsWith(`Missing: ${S.MIGRATIONS.slice(-2).join(", ")}.`),
+  );
 
   for (const name of S.MIGRATIONS.slice(-2)) {
     await pg.query(`INSERT INTO public.tracker_schema_migration (name) VALUES ($1)`, [name]);

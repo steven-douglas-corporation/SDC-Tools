@@ -234,8 +234,9 @@ that enforce the one write path.
   unscheduled, unestimated and stale tasks. A parent's hours are not counted on top of its subtasks.
 - Only finish-to-start dependencies; the other three types were removed until the engine supports them.
 - Later migrations: `0004` counts only cards that carry work, `0005` makes a kind required,
-  `0006` records who asked for a card, `0007` adds a card's checklist, and `0008` lets the app
-  read the record of applied migrations.
+  `0006` records who asked for a card, `0007` adds a card's checklist, `0008` lets the app
+  read the record of applied migrations, and `0009` drops the project's own priority, which
+  nothing used: projects are ordered by stack rank.
 
 ### Forecast engine
 
@@ -260,7 +261,7 @@ one transaction.
 
 - People: a tracker person is created the first time an email is seen, which is how a
   signed-in user is matched to their work.
-- Projects: create (default columns, creator as manager), change target date, state, priority or
+- Projects: create (default columns, creator as manager), change target date, state or
   owner with a change-log row each, manage members, and set stack ranks, several at once so two
   projects can swap.
 - Tasks: create with a number from the project's counter and the first status-log row; edit with
