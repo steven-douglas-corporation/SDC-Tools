@@ -7,9 +7,9 @@ import type { Database } from "./service/database";
 // docs/MODULES.md): pages, actions and route handlers call service functions instead.
 //
 // TRACKER_DATABASE_URL is a postgres:// connection string for a login that holds the
-// tracker_service role (db/tracker/migrations/0002_roles.sql). The forecast job uses
+// tracker_service role (db/tracker/migrations/0002_roles.sql). Forecasts are written through
 // TRACKER_ENGINE_DATABASE_URL, a login holding tracker_engine, which can write only the
-// forecast tables.
+// forecast tables. The app uses it after every change (actions.ts) and so does the nightly job.
 
 export function trackerConfigured(): boolean {
   return !!process.env.TRACKER_DATABASE_URL?.trim();
@@ -55,7 +55,7 @@ function databaseFor(envName: string): Database {
 /** For everything people do: projects, tasks, statuses, history. */
 export const trackerDb: Database = databaseFor("TRACKER_DATABASE_URL");
 
-/** For the forecast job only. */
+/** For writing forecasts only: after a change in the app, and from the nightly job. */
 export const trackerEngineDb: Database = databaseFor("TRACKER_ENGINE_DATABASE_URL");
 
 export async function closeTrackerPools(): Promise<void> {

@@ -6,7 +6,7 @@
 //
 // Needs TRACKER_ADMIN_DATABASE_URL: a postgres:// connection string for a login that may
 // create schemas and roles. That is NOT the login the app runs as. The app uses
-// TRACKER_DATABASE_URL (tracker_service) and the forecast job uses
+// TRACKER_DATABASE_URL (tracker_service) and writes forecasts through
 // TRACKER_ENGINE_DATABASE_URL (tracker_engine), neither of which can change the schema.
 //
 // What has been applied is recorded in public.tracker_schema_migration. An applied file is

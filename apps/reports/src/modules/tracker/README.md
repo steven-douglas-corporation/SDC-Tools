@@ -47,10 +47,12 @@ tests use PGlite, which is Postgres compiled to WebAssembly and runs inside the 
 
 ## Settings
 
-| Variable                      | Used by                           | Database role     |
-| ----------------------------- | --------------------------------- | ----------------- |
-| `TRACKER_DATABASE_URL`        | the app, for everything people do | `tracker_service` |
-| `TRACKER_ENGINE_DATABASE_URL` | the forecast job only             | `tracker_engine`  |
+| Variable                      | Used by                                                          | Database role     |
+| ----------------------------- | ---------------------------------------------------------------- | ----------------- |
+| `TRACKER_DATABASE_URL`        | the app, for everything people do                                | `tracker_service` |
+| `TRACKER_ENGINE_DATABASE_URL` | the app, to redo the forecast after each change; the nightly job | `tracker_engine`  |
+
+The app needs both. With only the first, cards still save, but the dates on screen are not worked out again after a change and go stale without saying so.
 
 Neither is set on the server yet. Until `TRACKER_DATABASE_URL` is set the module is off. On the server the schema and the two logins (`tracker_app`, `tracker_forecast`) come from `scripts/tracker/migrate-server.ps1`, which an administrator runs by hand; it creates the logins without passwords, so one has to be set for each before these two settings can be filled in. Run it again before deploying code that needs a new migration. For local development both are in `.env.dev.example`, along with `TRACKER_ADMIN_DATABASE_URL`, which only `npm run db:tracker-migrate` uses; see docs/DEV-ENVIRONMENT.md at the repo root.
 
