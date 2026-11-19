@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, use, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createContext, use, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 
 // A pan-and-zoom viewport (2026-11-16, experimental): whatever is inside is laid
 // out once at its natural size, and the viewer drags, scrolls and zooms around
@@ -11,8 +11,8 @@ import { createContext, use, useCallback, useEffect, useLayoutEffect, useRef, us
 //   Wheel / trackpad  pan — the browser's own scrolling (Shift+wheel sideways)
 //   Ctrl/⌘ + wheel    zoom around the pointer (a trackpad pinch sends this too)
 //   Click / dbl-click a [data-canvas-zoom-on-click] element / any [data-canvas-item]: zoom to it
-//   Keys              arrows / Page keys scroll, + / − zoom, 0 fits, Esc leaves full screen
-//   Buttons           zoom out / in, Fit, 100%, Full screen, Save as PDF
+//   Keys              arrows / Page keys scroll, + / − zoom, 0 goes home (fits), Esc leaves full screen
+//   Buttons           (along the top) zoom out / in, 100%, Home (fits), Full screen, Save as PDF
 //   Overview map      bottom left: where you are; click or drag in it to move
 //
 // It is real DOM, not a <canvas>: the cards' clicks, hover notes and dropdowns
@@ -25,10 +25,9 @@ import { createContext, use, useCallback, useEffect, useLayoutEffect, useRef, us
 //
 // ── Panning is native scrolling (2026-11-19) ────────────────────────────────
 //
-// The viewport is a scroll box. Inside it a "sizer" is as big as the chart at the
-// current zoom plus one viewport of margin on every side (so the chart can be
-// pushed to any edge), and the chart sits in it at (margin, margin), scaled by a
-// CSS transform. A pan is a scroll: the browser runs it on its compositor thread,
+// The viewport is a scroll box. Inside it a "sizer" is exactly as big as the
+// scroll range the chart is allowed (see "Clamped"), and the chart sits in it at
+// (margin, margin), scaled by a CSS transform. A pan is a scroll: the browser runs it on its compositor thread,
 // with the system's momentum, and a busy main thread (React, the dev server) can't
 // stutter it. Firefox especially: it refuses will-change layers past a size
 // budget, so it re-drew the whole chart on every frame of a transform pan.
@@ -40,6 +39,23 @@ import { createContext, use, useCallback, useEffect, useLayoutEffect, useRef, us
 // the glide moves into the scroll position — and the chart is redrawn sharp once.
 //
 //   view.x = margin.x − scrollLeft + glide.x   (the chart's left edge on screen)
+//
+// ── Clamped (2026-11-19) ────────────────────────────────────────────────────
+//
+// The chart can't be moved off into empty space. Per axis, its edge may travel
+// between EDGE_ROOM inside the viewport and flush-plus-EDGE_ROOM at the far side:
+//
+//   bigger than the view:   x ∈ [view − chart − EDGE_ROOM, EDGE_ROOM]  (scroll to each end)
+//   smaller than the view:  x ∈ [EDGE_ROOM, view − chart − EDGE_ROOM] (stays wholly in view)
+//
+// Vertically the top end is TOP_ROOM instead, so the chart's top stops below the
+// controls along the top rather than under them.
+//
+// The sizer is that range plus one viewport, the chart sits in it at the range's
+// high end (margin = hi), so the browser's own scroll limits ARE the clamp — a
+// fling stops at the edge with no code running. Zooms and jumps are clamped the
+// same way before they are drawn, so a zoom out near an edge eases the chart back
+// into view rather than snapping when it settles.
 //
 // ── What the content can mark (data attributes) ─────────────────────────────
 //
@@ -84,6 +100,12 @@ const BUTTON_STEP = 1.2;
 const DRAG_THRESHOLD = 4;
 // Breathing room around the content when fitting (layout px).
 const FIT_PADDING = 24;
+// How far past its edge the chart can be moved, or how close to the viewport's
+// edge a small one can go (layout px; see "Clamped").
+const EDGE_ROOM = FIT_PADDING;
+// The controls run along the top: the chart's top edge stops below them, and
+// Home and zoom-to put the top there (layout px: the bar is 12 + 32, plus room).
+const TOP_ROOM = 56;
 // The dot grid's spacing at 100% (layout px).
 const GRID_STEP = 20;
 // How long after the last wheel event a zoom counts as over. Long enough that
@@ -131,6 +153,11 @@ function readSavedView(key: string | undefined): View | null {
   }
 }
 
+export type PanZoomHandle = {
+  /** Jumps to the first element matching `selector` (brings full detail back first if needed). False if there is none. */
+  focus: (selector: string) => boolean;
+};
+
 const CompactContext = createContext(false);
 /** True while the canvas is zoomed out far enough that the content should draw summaries. */
 export const useCanvasCompact = () => use(CompactContext);
@@ -146,8 +173,14 @@ export function PanZoomCanvas({
   matchKey = "",
   toolbar,
   exportTitle = "Chart",
+  sidebar,
+  ref,
 }: {
   children: React.ReactNode;
+  /** A column down the right of the frame (it stays in full screen); the chart's view is what is left. */
+  sidebar?: React.ReactNode;
+  /** focus(selector): jump to the first element matching it, marked data-canvas-current. */
+  ref?: React.Ref<PanZoomHandle>;
   /** The viewport's size when not full screen. */
   className?: string;
   /** Remembers the view in sessionStorage under this key, so leaving and coming back lands where you were. */
@@ -286,38 +319,66 @@ export function PanZoomCanvas({
     return true;
   }, []);
 
+  // Where the chart's top-left may go at zoom `s` (see "Clamped"); null with no
+  // size to go by (hidden, or not laid out yet).
+  const bounds = useCallback((s: number) => {
+    const sc = scrollerRef.current;
+    const content = contentRef.current;
+    if (!sc || !content || !sc.clientWidth || !content.offsetWidth) return null;
+    // `near`: the room at the top/left end (the top keeps clear of the controls).
+    const axis = (view: number, size: number, near: number) => {
+      const [a, b] = [near, view - size - EDGE_ROOM];
+      return { lo: Math.min(a, b), hi: Math.max(a, b) };
+    };
+    return {
+      x: axis(sc.clientWidth, content.offsetWidth * s, EDGE_ROOM),
+      y: axis(sc.clientHeight, content.offsetHeight * s, TOP_ROOM),
+    };
+  }, []);
+  const clampView = useCallback(
+    (v: View): View => {
+      const s = clampScale(v.scale);
+      const b = bounds(s);
+      return b ? { scale: s, x: clamp(v.x, b.x.lo, b.x.hi), y: clamp(v.y, b.y.lo, b.y.hi) } : { ...v, scale: s };
+    },
+    [bounds],
+  );
+
   // Puts the view on screen, now. In a zoom gesture only the transform moves;
   // otherwise the sizer, the chart's place in it and the scroll are committed.
   const place = useCallback(
-    (v: View, { hold = true, refit = false }: PlaceOpts = {}) => {
+    (raw: View, { hold = true, refit = false }: PlaceOpts = {}) => {
       const sc = scrollerRef.current;
       const sizer = sizerRef.current;
       const content = contentRef.current;
       if (!sc || !sizer || !content) return;
-      const s = clampScale(v.scale);
+      const v = clampView(raw);
+      const s = v.scale;
+      const b = bounds(s);
+      if (!gesture.current && !b) return;
       scale.current = s;
       if (gesture.current) {
         glide.current = { x: v.x - (margin.current.x - sc.scrollLeft), y: v.y - (margin.current.y - sc.scrollTop) };
-      } else {
+      } else if (b) {
         const [vw, vh] = [sc.clientWidth, sc.clientHeight];
-        const [cw, ch] = [content.offsetWidth, content.offsetHeight];
-        const [sw, sh] = [cw * s + 2 * vw, ch * s + 2 * vh];
-        margin.current = { x: vw, y: vh };
+        // The allowed range plus a viewport, the chart at its high end: the
+        // browser's scroll limits are then the clamp.
+        const [sw, sh] = [b.x.hi - b.x.lo + vw, b.y.hi - b.y.lo + vh];
+        margin.current = { x: b.x.hi, y: b.y.hi };
         glide.current = { x: 0, y: 0 };
-        const size = `${sw} ${sh} ${vw} ${vh}`;
+        const size = `${sw} ${sh} ${b.x.hi} ${b.y.hi} ${s}`;
         if (written.current.size !== size) {
           written.current.size = size;
           sizer.style.width = `${sw}px`;
           sizer.style.height = `${sh}px`;
-          content.style.left = `${vw}px`;
-          content.style.top = `${vh}px`;
+          content.style.left = `${b.x.hi}px`;
+          content.style.top = `${b.y.hi}px`;
           const step = GRID_STEP * s;
           sizer.style.backgroundSize = `${step}px ${step}px`;
-          sizer.style.backgroundPosition = `${vw}px ${vh}px`;
+          sizer.style.backgroundPosition = `${b.x.hi}px ${b.y.hi}px`;
         }
-        // The chart can go right up to any edge, no further (see the margins).
-        sc.scrollLeft = clamp(vw - v.x, 0, sw - vw);
-        sc.scrollTop = clamp(vh - v.y, 0, sh - vh);
+        sc.scrollLeft = b.x.hi - v.x;
+        sc.scrollTop = b.y.hi - v.y;
       }
       const g = glide.current;
       const transform = `translate3d(${g.x}px, ${g.y}px, 0) scale(${s})`;
@@ -346,7 +407,7 @@ export function PanZoomCanvas({
         saveSoon();
       }
     },
-    [readView, syncDetail, saveSoon, updateMap],
+    [readView, syncDetail, saveSoon, updateMap, clampView, bounds],
   );
 
   // At most once a frame.
@@ -362,10 +423,11 @@ export function PanZoomCanvas({
 
   const setView = useCallback(
     (next: View) => {
-      target.current = next;
+      // Clamped now, so the next wheel step zooms from where the chart really is.
+      target.current = clampView(next);
       draw();
     },
-    [draw],
+    [draw, clampView],
   );
 
   // The chart is a layer from the start (see "Keeping it smooth").
@@ -412,7 +474,9 @@ export function PanZoomCanvas({
   useEffect(() => () => cancelAnimationFrame(anim.current), []);
 
   const animateTo = useCallback(
-    (to: View) => {
+    (wanted: View) => {
+      // Ends where it will be drawn, so there is no snap when it lands.
+      const to = clampView(wanted);
       cancelAnimationFrame(anim.current);
       anim.current = 0;
       clearTimeout(settleTimer.current);
@@ -446,7 +510,7 @@ export function PanZoomCanvas({
       };
       anim.current = requestAnimationFrame(step);
     },
-    [latest, place, setView],
+    [latest, place, setView, clampView],
   );
 
   // Zooms so an element fills the view: a card by its width (it may be taller
@@ -460,13 +524,53 @@ export function PanZoomCanvas({
       const [vw, vh] = [sc.clientWidth, sc.clientHeight];
       const pad = FIT_PADDING * 2;
       let s = Math.min(1, (vw - 2 * pad) / b.w);
-      if (how === "panel") s = Math.min(s, (vh - 2 * pad) / b.h);
+      if (how === "panel") s = Math.min(s, (vh - TOP_ROOM - pad) / b.h);
       s = clampScale(s);
       anchorHint.current = el.getAttribute("data-canvas-key");
-      animateTo({ scale: s, x: vw / 2 - (b.x + b.w / 2) * s, y: pad - b.y * s });
+      animateTo({ scale: s, x: vw / 2 - (b.x + b.w / 2) * s, y: TOP_ROOM - b.y * s });
     },
     [animateTo],
   );
+
+  // To one element (a search match, a person picked from a list): marked
+  // data-canvas-current, a third of the way down, close enough in to read.
+  const jumpTo = useCallback(
+    (el: Element) => {
+      const content = contentRef.current;
+      const sc = scrollerRef.current;
+      if (!content || !sc) return;
+      content.querySelectorAll("[data-canvas-current]").forEach((x) => x.removeAttribute("data-canvas-current"));
+      el.setAttribute("data-canvas-current", "");
+      const b = boxIn(content, el);
+      const s = clampScale(Math.max(latest().scale, MATCH_SCALE));
+      animateTo({ scale: s, x: sc.clientWidth / 2 - (b.x + b.w / 2) * s, y: sc.clientHeight / 3 - (b.y + b.h / 2) * s });
+    },
+    [animateTo, latest],
+  );
+
+  // focus() from outside (the handle): summaries don't draw people, so when
+  // they are showing, full detail comes back first and the jump waits for it
+  // (the detail effect below picks it up).
+  const pendingFocus = useRef<string | null>(null);
+  const focus = useCallback(
+    (selector: string) => {
+      const content = contentRef.current;
+      if (!content) return false;
+      if (compactRef.current && allowCompactRef.current) {
+        pendingFocus.current = selector;
+        compactRef.current = false;
+        anchor.current = null;
+        anchorHint.current = null;
+        setZoomCompact(false);
+        return true;
+      }
+      const el = content.querySelector(selector);
+      if (el) jumpTo(el);
+      return !!el;
+    },
+    [jumpTo],
+  );
+  useImperativeHandle(ref, () => ({ focus }), [focus]);
 
   // ── Fit ────────────────────────────────────────────────────────────────────
 
@@ -484,14 +588,14 @@ export function PanZoomCanvas({
     const [vw, vh] = [sc.clientWidth, sc.clientHeight];
     const [cw, ch] = [content.offsetWidth, content.offsetHeight];
     if (!cw || !ch) return;
-    let s = clampScale(Math.min(1, (vw - 2 * FIT_PADDING) / cw, (vh - 2 * FIT_PADDING) / ch));
+    let s = clampScale(Math.min(1, (vw - 2 * FIT_PADDING) / cw, (vh - TOP_ROOM - FIT_PADDING) / ch));
     // Already summaries: stay summaries. They are shorter, so the fit can come
     // out above the switch, and full detail would then no longer fit.
     if (compactRef.current && allowCompactRef.current) s = Math.min(s, COMPACT_BELOW - 0.01);
     // Centred sideways; from the top, so the chart's head is where the eye lands.
     // A placement, not a move: no card to hold still, and if the detail changes,
     // fit again to the new layout.
-    place({ x: (vw - cw * s) / 2, y: FIT_PADDING, scale: s }, { hold: false, refit: true });
+    place({ x: (vw - cw * s) / 2, y: TOP_ROOM, scale: s }, { hold: false, refit: true });
   }, [place]);
 
   // First placement, once there is a size — where the viewer left it this
@@ -528,6 +632,15 @@ export function PanZoomCanvas({
   // The detail level changed: hold the anchored card still, or re-fit.
   useLayoutEffect(() => {
     const content = contentRef.current;
+    // A focus() that needed full detail: it is drawn now.
+    if (pendingFocus.current) {
+      const el = content?.querySelector(pendingFocus.current);
+      pendingFocus.current = null;
+      refitPending.current = false;
+      anchor.current = null;
+      if (el) jumpTo(el);
+      return;
+    }
     if (refitPending.current) {
       refitPending.current = false;
       fit();
@@ -541,7 +654,7 @@ export function PanZoomCanvas({
     const b = boxIn(content, el);
     const v = readView();
     place({ ...v, x: a.px - b.x * v.scale, y: a.py - b.y * v.scale }, { hold: false });
-  }, [compact, fit, place, readView]);
+  }, [compact, fit, place, readView, jumpTo]);
 
   // ── Zoom ───────────────────────────────────────────────────────────────────
 
@@ -567,6 +680,12 @@ export function PanZoomCanvas({
   // browsers block on such a listener only for the first event of a scroll, so
   // plain scrolling still runs on their own thread. ScrollHandoff (the app's
   // document-level wheel listener) sees defaultPrevented and leaves zooms alone.
+  //
+  // (2026-11-19: tried every wheel as a zoom, drag-only panning, and undid it the
+  // same day. A trackpad's two-finger scroll then zoomed too, and no browser API
+  // says whether a wheel event came from a trackpad or a mouse. As it is, a
+  // trackpad pans with two fingers and zooms with a pinch, which the browser
+  // sends as Ctrl+wheel; a mouse zooms with Ctrl held. Figma's default too.)
   useEffect(() => {
     const sc = scrollerRef.current;
     if (!sc) return;
@@ -610,6 +729,13 @@ export function PanZoomCanvas({
   const press = useRef<{ id: number; sx: number; sy: number; sl: number; st: number; r: number; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
 
+  // A drag released where no click follows (outside the window) would leave
+  // suppressClick armed, and the next real click — on a card, the toolbar, the
+  // people list — would be swallowed. Every click starts with a press, so a
+  // press disarms it. Capture phase: the toolbars stop their presses bubbling.
+  const onPointerDownCapture = () => {
+    suppressClick.current = false;
+  };
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || e.pointerType === "touch") return;
     // Leave form fields alone: selecting text in a search box is not a pan.
@@ -632,13 +758,21 @@ export function PanZoomCanvas({
       setDragging(true);
       frameRef.current?.setPointerCapture(e.pointerId);
     }
-    // A drag that started on text would otherwise select it as it goes. Cleared
-    // here rather than with user-select on the viewport, which is inherited and
-    // would restyle every card.
-    const sel = document.getSelection();
-    if (sel && !sel.isCollapsed) sel.removeAllRanges();
     sc.scrollLeft = p.sl - dx / p.r;
     sc.scrollTop = p.st - dy / p.r;
+  };
+  // A mouse press on the chart starts no text selection (2026-11-19). A
+  // selection drag that leaves the box makes the browser auto-scroll toward the
+  // pointer, which pulled the chart the opposite way to the drag, to the far end
+  // of the scroll. (Clearing the selection on each move wasn't enough: the
+  // auto-scroll belongs to the press, not to the selection.) Not user-select on
+  // the viewport, which is inherited and would restyle every card. The press
+  // still focuses the scroll box, so the keys work; clicks are unaffected.
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest("input, textarea, select, [data-no-pan]")) return;
+    e.preventDefault();
+    scrollerRef.current?.focus({ preventScroll: true });
   };
   const endPress = (e: React.PointerEvent) => {
     const p = press.current;
@@ -711,18 +845,16 @@ export function PanZoomCanvas({
       const content = contentRef.current;
       const sc = scrollerRef.current;
       if (!content || !sc) return;
-      content.querySelectorAll("[data-canvas-current]").forEach((el) => el.removeAttribute("data-canvas-current"));
       const els = [...content.querySelectorAll("[data-canvas-match]")];
-      if (!els.length) return setFound({ key: matchKey, count: 0, index: 0 });
+      if (!els.length) {
+        content.querySelectorAll("[data-canvas-current]").forEach((el) => el.removeAttribute("data-canvas-current"));
+        return setFound({ key: matchKey, count: 0, index: 0 });
+      }
       const i = ((index % els.length) + els.length) % els.length;
-      const el = els[i];
-      el.setAttribute("data-canvas-current", "");
-      const b = boxIn(content, el);
-      const s = clampScale(Math.max(latest().scale, MATCH_SCALE));
-      animateTo({ scale: s, x: sc.clientWidth / 2 - (b.x + b.w / 2) * s, y: sc.clientHeight / 3 - (b.y + b.h / 2) * s });
+      jumpTo(els[i]);
       setFound({ key: matchKey, count: els.length, index: i });
     },
-    [animateTo, latest, matchKey],
+    [jumpTo, matchKey],
   );
   // A new search: to its first match, once the rows carrying it are drawn.
   useEffect(() => {
@@ -837,10 +969,12 @@ export function PanZoomCanvas({
   return (
     <div
       ref={frameRef}
-      className={`isolate overflow-clip rounded-xl border border-sdc-border bg-sdc-gray-50 ${
+      className={`isolate flex overflow-clip rounded-xl border border-sdc-border bg-sdc-gray-50 ${
         expanded ? "fixed inset-4 z-40 shadow-2xl" : `relative ${className}`
       }`}
+      onPointerDownCapture={onPointerDownCapture}
       onPointerDown={onPointerDown}
+      onMouseDown={onMouseDown}
       onPointerMove={onPointerMove}
       onPointerUp={endPress}
       onPointerCancel={endPress}
@@ -849,140 +983,145 @@ export function PanZoomCanvas({
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
     >
-      {/* The scroll box. Scrollbars hidden: the map, drag and wheel do their job. */}
-      <div
-        ref={scrollerRef}
-        data-scroll-own=""
-        tabIndex={0}
-        aria-label="Chart canvas: scroll or drag to move, plus and minus zoom, 0 fits"
-        className="absolute inset-0 cursor-grab touch-pan-x touch-pan-y overflow-auto outline-none [overflow-anchor:none] [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-sdc-blue focus-visible:ring-inset [&::-webkit-scrollbar]:hidden"
-        onScroll={onScroll}
-      >
-        {/* The sizer: the chart at this zoom plus a viewport of margin all round.
-            Clips, so a zoom gesture's stretched chart can't grow the scroll area. */}
+      {/* The chart's own area: the scroll box and everything floating over it. */}
+      <div className="relative min-w-0 flex-1">
+        {/* The scroll box. Scrollbars hidden: the map, drag and wheel do their job. */}
         <div
-          ref={sizerRef}
-          className="relative overflow-clip bg-sdc-gray-50"
-          style={{ backgroundImage: "radial-gradient(circle, var(--color-sdc-border) 1px, transparent 1px)" }}
+          ref={scrollerRef}
+          data-scroll-own=""
+          tabIndex={0}
+          aria-label="Chart canvas: scroll or drag to move, plus and minus zoom, 0 goes home"
+          className="absolute inset-0 cursor-grab touch-pan-x touch-pan-y overflow-auto outline-none [overflow-anchor:none] [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-sdc-blue focus-visible:ring-inset [&::-webkit-scrollbar]:hidden"
+          onScroll={onScroll}
         >
+          {/* The sizer: the scroll range the chart is allowed (see "Clamped").
+              Doesn't clip: it is only a little bigger than the chart, so a zoom-in
+              gesture stretches past it, and clipping would cut the chart off. The
+              stretch only grows the (hidden) scroll range until the zoom commits. */}
           <div
-            ref={contentRef}
-            className="absolute left-0 top-0 w-max origin-top-left"
-            style={{ visibility: fitted ? undefined : "hidden" }}
+            ref={sizerRef}
+            className="relative bg-sdc-gray-50"
+            style={{ backgroundImage: "radial-gradient(circle, var(--color-sdc-border) 1px, transparent 1px)" }}
           >
-            <CompactContext value={compact}>{children}</CompactContext>
+            <div
+              ref={contentRef}
+              className="absolute left-0 top-0 w-max origin-top-left"
+              style={{ visibility: fitted ? undefined : "hidden" }}
+            >
+              <CompactContext value={compact}>{children}</CompactContext>
+            </div>
           </div>
         </div>
-      </div>
-      {/* Over the content while dragging, so nothing under the pointer hovers. */}
-      {dragging && <div aria-hidden className="absolute inset-0 cursor-grabbing" />}
+        {/* Over the content while dragging, so nothing under the pointer hovers. */}
+        {dragging && <div aria-hidden className="absolute inset-0 cursor-grabbing" />}
 
-      {matchKey && (
+        {/* The controls, along the top (2026-11-19; were along the bottom). The row
+            itself lets presses through, so its empty stretch still drags the chart. */}
         <div
-          className="absolute right-3 top-3 flex items-center gap-2"
+          className="pointer-events-none absolute left-3 right-3 top-3 flex flex-wrap items-center justify-end gap-2 *:pointer-events-auto"
           data-no-pan
           onPointerDown={(e) => e.stopPropagation()}
         >
+          <span className="hidden rounded-md bg-white/80 px-2 py-1 text-note text-sdc-muted xl:inline">
+            Drag or scroll to move · Ctrl + scroll or pinch to zoom · Double-click a card to zoom to it
+          </span>
+          {matchKey && (
+            <div className={group}>
+              <span className="flex h-8 items-center px-3 text-xs font-medium text-sdc-gray-600 tabular-nums">
+                {!shownFound
+                  ? "Searching…"
+                  : shownFound.count === 0
+                    ? "No one matches"
+                    : `${shownFound.index + 1} of ${shownFound.count} matches`}
+              </span>
+              {shownFound && shownFound.count > 1 && (
+                <>
+                  <button type="button" className={`${btn} text-xs`} onClick={() => goToMatch(shownFound.index - 1)}>
+                    Previous
+                  </button>
+                  <button type="button" className={`${btn} text-xs`} onClick={() => goToMatch(shownFound.index + 1)}>
+                    Next
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {toolbar}
           <div className={group}>
-            <span className="flex h-8 items-center px-3 text-xs font-medium text-sdc-gray-600 tabular-nums">
-              {!shownFound
-                ? "Searching…"
-                : shownFound.count === 0
-                  ? "No one matches"
-                  : `${shownFound.index + 1} of ${shownFound.count} matches`}
-            </span>
-            {shownFound && shownFound.count > 1 && (
-              <>
-                <button type="button" className={`${btn} text-xs`} onClick={() => goToMatch(shownFound.index - 1)}>
-                  Previous
-                </button>
-                <button type="button" className={`${btn} text-xs`} onClick={() => goToMatch(shownFound.index + 1)}>
-                  Next
-                </button>
-              </>
-            )}
+            <button type="button" className={`${btn} text-xs`} onClick={saveAsPdf}>
+              Save as PDF
+            </button>
+            <button type="button" className={`${btn} text-xs`} onClick={() => setExpanded((x) => !x)}>
+              {expanded ? "Exit full screen" : "Full screen"}
+            </button>
+          </div>
+          <div className={group}>
+            <button type="button" className={btn} onClick={() => zoomCentre(1 / BUTTON_STEP)} aria-label="Zoom out">
+              −
+            </button>
+            <button
+              ref={labelRef}
+              type="button"
+              className={`${btn} w-14 text-xs tabular-nums`}
+              onClick={() => zoomCentre(1 / latest().scale)}
+              title="Zoom to 100%"
+            >
+              100%
+            </button>
+            <button type="button" className={btn} onClick={() => zoomCentre(BUTTON_STEP)} aria-label="Zoom in">
+              +
+            </button>
+            {/* Home: the whole chart in view, from the top (what Fit did; the 0 key too). */}
+            <button type="button" className={`${btn} gap-1 text-xs`} onClick={fit} title="Back to the whole chart (0)">
+              <svg aria-hidden viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round">
+                <path d="M2.5 7.5 8 3l5.5 4.5M4 6.5V13h3V9.5h2V13h3V6.5" />
+              </svg>
+              Home
+            </button>
           </div>
         </div>
-      )}
 
-      {map && (
-        <div
-          className="absolute bottom-3 left-3 hidden cursor-pointer rounded-lg border border-sdc-border bg-white/90 p-1.5 shadow-sm sm:block"
-          data-no-pan
-          title="Overview: click or drag to move"
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <svg
-            width={map.w * map.m}
-            height={map.h * map.m}
-            className="block"
-            onPointerDown={(e) => {
-              cancelAnim();
-              mapPress.current = e.pointerId;
-              e.currentTarget.setPointerCapture(e.pointerId);
-              mapMove(e);
-            }}
-            onPointerMove={mapMove}
-            onPointerUp={() => (mapPress.current = null)}
-            onPointerCancel={() => (mapPress.current = null)}
+        {map && (
+          <div
+            className="absolute bottom-3 left-3 hidden cursor-pointer rounded-lg border border-sdc-border bg-white/90 p-1.5 shadow-sm sm:block"
+            data-no-pan
+            title="Overview: click or drag to move"
+            onPointerDown={(e) => e.stopPropagation()}
           >
-            {map.items.map((r, i) => (
-              <rect
-                key={i}
-                x={r.x * map.m}
-                y={r.y * map.m}
-                width={r.w * map.m}
-                height={r.h * map.m}
-                rx={r.kind === "panel" ? 3 : 1.5}
-                strokeWidth={0.75}
-                className={
-                  r.kind === "panel" ? "fill-sdc-gray-50 stroke-sdc-border" : "fill-sdc-blue-light stroke-sdc-gray-400"
-                }
-              />
-            ))}
-            <rect ref={mapViewRef} rx={2} strokeWidth={1.25} className="fill-sdc-blue/10 stroke-sdc-blue" />
-          </svg>
-        </div>
-      )}
-
-      <div
-        className="absolute bottom-3 right-3 flex items-center gap-2"
-        data-no-pan
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <span className="hidden rounded-md bg-white/80 px-2 py-1 text-note text-sdc-muted xl:inline">
-          Drag or scroll to move · Ctrl + scroll to zoom · Double-click a card to zoom to it
-        </span>
-        {toolbar}
-        <div className={group}>
-          <button type="button" className={`${btn} text-xs`} onClick={saveAsPdf}>
-            Save as PDF
-          </button>
-          <button type="button" className={`${btn} text-xs`} onClick={() => setExpanded((x) => !x)}>
-            {expanded ? "Exit full screen" : "Full screen"}
-          </button>
-        </div>
-        <div className={group}>
-          <button type="button" className={btn} onClick={() => zoomCentre(1 / BUTTON_STEP)} aria-label="Zoom out">
-            −
-          </button>
-          <button
-            ref={labelRef}
-            type="button"
-            className={`${btn} w-14 text-xs tabular-nums`}
-            onClick={() => zoomCentre(1 / latest().scale)}
-            title="Zoom to 100%"
-          >
-            100%
-          </button>
-          <button type="button" className={btn} onClick={() => zoomCentre(BUTTON_STEP)} aria-label="Zoom in">
-            +
-          </button>
-          <button type="button" className={`${btn} text-xs`} onClick={fit}>
-            Fit
-          </button>
-        </div>
+            <svg
+              width={map.w * map.m}
+              height={map.h * map.m}
+              className="block"
+              onPointerDown={(e) => {
+                cancelAnim();
+                mapPress.current = e.pointerId;
+                e.currentTarget.setPointerCapture(e.pointerId);
+                mapMove(e);
+              }}
+              onPointerMove={mapMove}
+              onPointerUp={() => (mapPress.current = null)}
+              onPointerCancel={() => (mapPress.current = null)}
+            >
+              {map.items.map((r, i) => (
+                <rect
+                  key={i}
+                  x={r.x * map.m}
+                  y={r.y * map.m}
+                  width={r.w * map.m}
+                  height={r.h * map.m}
+                  rx={r.kind === "panel" ? 3 : 1.5}
+                  strokeWidth={0.75}
+                  className={
+                    r.kind === "panel" ? "fill-sdc-gray-50 stroke-sdc-border" : "fill-sdc-blue-light stroke-sdc-gray-400"
+                  }
+                />
+              ))}
+              <rect ref={mapViewRef} rx={2} strokeWidth={1.25} className="fill-sdc-blue/10 stroke-sdc-blue" />
+            </svg>
+          </div>
+        )}
       </div>
+      {sidebar}
     </div>
   );
 }
