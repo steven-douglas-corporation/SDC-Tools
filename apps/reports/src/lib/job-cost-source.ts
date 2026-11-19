@@ -10,7 +10,7 @@ import { runDax } from "@/lib/powerbi-client";
 import { withTimeoutOrNull } from "@/lib/with-timeout";
 import { getInventorySnapshotForDate, listInventorySnapshotDates } from "@/lib/job-cost-inventory-snapshot";
 import { drawDownEtc, NO_ETC_ACTIVITY, type EtcActivity } from "@/lib/job-cost-etc-drawdown";
-import { WARRANTY_BUCKET_OVERRIDES, type HoursByYear, type JobCostRow, type SalesPriceDetail } from "@/lib/job-cost";
+import { MANUFACTURING_CODE, WARRANTY_BUCKET_OVERRIDES, type HoursByYear, type JobCostRow, type SalesPriceDetail } from "@/lib/job-cost";
 
 // ── Job Cost Explorer data assembly ─────────────────────────────────────────
 //
@@ -44,6 +44,8 @@ for (const s of SECTIONS) {
 }
 // Warranty codes with no column of their own: costed as Shop / Eng here (see job-cost.ts).
 Object.assign(SECTION_BUCKET, WARRANTY_BUCKET_OVERRIDES);
+// Manufacturing (10-413, which 10-414 punches fold onto) is not Shop Hrs here: it lands in Other Hrs.
+SECTION_BUCKET[MANUFACTURING_CODE] = "other";
 
 // The 1990–2100 "lifetime" window these constants supplied is gone: the Parts
 // Actual column now calls getPartsActualByJob(), which is unwindowed by
@@ -67,6 +69,8 @@ type JobHoursTotals = {
   otherHours: number;
   /** Service (80-*) and Spare Parts (90-*): kept out of actualHours and otherHours. */
   serviceHours: number;
+  /** The part of otherHours that is Manufacturing (10-413 / 10-414), for the Other Hrs hover. */
+  manufacturingHours: number;
   hoursByYear: HoursByYear;
 };
 
@@ -120,10 +124,10 @@ async function loadJobHoursAndYears(jobPks: number[], throughMonth: string | nul
 
   function entry(jobPk: number): JobHoursTotals {
     let e = out.get(jobPk);
-    if (!e) out.set(jobPk, (e = { actualHours: 0, engineeringHours: 0, shopHours: 0, otherHours: 0, serviceHours: 0, hoursByYear: {} }));
+    if (!e) out.set(jobPk, (e = { actualHours: 0, engineeringHours: 0, shopHours: 0, otherHours: 0, serviceHours: 0, manufacturingHours: 0, hoursByYear: {} }));
     return e;
   }
-  function addTotal(jobPk: number, section: string, hrs: number) {
+  function addTotal(jobPk: number, section: string, hrs: number, bucketOverride?: "eng" | "shop" | "other") {
     if (!hrs) return;
     const e = entry(jobPk);
     // The Projects grid's "Service & Spare Parts" column, by the same test it uses
@@ -134,10 +138,13 @@ async function loadJobHoursAndYears(jobPks: number[], throughMonth: string | nul
       return;
     }
     e.actualHours += hrs;
-    const bucket = SECTION_BUCKET[section] ?? "other";
+    const bucket = bucketOverride ?? SECTION_BUCKET[section] ?? "other";
     if (bucket === "eng") e.engineeringHours += hrs;
     else if (bucket === "shop") e.shopHours += hrs;
-    else e.otherHours += hrs;
+    else {
+      e.otherHours += hrs;
+      if (section === MANUFACTURING_CODE && !bucketOverride) e.manufacturingHours += hrs;
+    }
   }
   // hoursByYear only ever tracks Eng/Shop, matching the original's
   // HOURS_BY_YEAR_DAX — "other" hours have no per-year rate to apply anyway.
@@ -175,9 +182,15 @@ async function loadJobHoursAndYears(jobPks: number[], throughMonth: string | nul
     addYear(f.jobId, f.section, f.month, hrs);
   }
   for (const p of punches) {
+    // 11-414 also folds onto 10-413 but is NOT the manufacturing code being separated out, so it
+    // stays Shop. Only raw 10-413 / 10-414 punches go to Other (via SECTION_BUCKET).
+    const keepShop = p.section === "11-414";
     for (const col of mapPunchToColumns(p.section, Number(p._sum.hours ?? 0))) {
-      addTotal(p.jobId, col.section, col.hours);
-      addYear(p.jobId, col.section, p.month, col.hours);
+      addTotal(p.jobId, col.section, col.hours, keepShop ? "shop" : undefined);
+      if (keepShop) {
+        const y = (entry(p.jobId).hoursByYear[p.month.slice(0, 4)] ??= { eng: 0, shop: 0 });
+        y.shop += col.hours;
+      } else addYear(p.jobId, col.section, p.month, col.hours);
     }
   }
   return out;
@@ -461,6 +474,7 @@ export async function loadJobCostRows(asOf: string | null = null): Promise<JobCo
       shopHours: h?.shopHours || null,
       otherHours: h?.otherHours || null,
       serviceHours: h?.serviceHours || null,
+      manufacturingHours: h?.manufacturingHours || null,
       partCost: partsPurchasedMap.get(j.jobId) ?? null,
       // A job below the cutoff is closed and carries a final Parts Cost Actual imported from the Sage job
       // ledger (lib/parts-actual-final.ts) — the Projects tab's figure, so the two cannot disagree. From

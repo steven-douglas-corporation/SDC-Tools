@@ -170,7 +170,7 @@ function buildColTips(etcMonth: string | null, inventoryAsOf: string | null, rat
     engineeringHours:
       "Eng Hrs — all-time actual hours on Engineering-group sections, including Warranty engineering (70-211, plus punches 70-311 / 70-312 / 70-313 / 70-516 / 70-517). Adds the pre-tracking migration snapshot, the frozen Monthly ETC hours for months the punch import doesn't cover, and Paylocity punches folded onto the job's sections. Runs through the latest synced day (through the picked month on an As-of view). Service & Spares (80-/90-) are excluded. Costed in Total Cost at the Eng rate for the year the hours were worked.",
     shopHours:
-      "Shop Hrs — same sources and cut-off as Eng Hrs, for Shop-group sections: build / test / install and Warranty shop (70-411, plus punches 70-412 / 70-413 / 70-414). Costed in Total Cost at the Shop rate for the year worked.",
+      "Shop Hrs — same sources and cut-off as Eng Hrs, for Shop-group sections: build / test / install and Warranty shop (70-411, plus punches 70-412 / 70-413 / 70-414). Manufacturing hours (10-413, including punches 10-414) are NOT included — they are shown under Other Hrs. Costed in Total Cost at the Shop rate for the year worked.",
     partInvoiced:
       "Parts Invoiced — GL-posted parts spend from Total ETO (the Projects tab's Parts Actual). For closed jobs below the final-parts cutoff it is the final Parts Cost Actual imported from the Sage job ledger. Always current: the As-of picker does not move it. Profit adds still-to-come parts on top (see Profit).",
     etcEngHours: `ETC Eng — Engineering hours still to do. ${etcSrc} Each section is reduced by its own hours worked after that month and floored at 0, so an overrun on one section never shrinks another. — means the job had no row in that submission; Complete jobs show 0. Added to Total Cost at the default Eng rate (${rates.engRate}/hr).`,
@@ -187,7 +187,7 @@ function buildColTips(etcMonth: string | null, inventoryAsOf: string | null, rat
       "Profit = Sales Price − Total Cost, where Total Cost = Labor Cost + PM $ + Mfg $ + projected parts (Parts Invoiced + the larger of the open PO balance and ETC Parts; Complete jobs use Parts Invoiced only). Blank when the job has no Sales Price.",
     margin: "Margin = Profit ÷ Sales Price × 100. Blank when the job has no Sales Price.",
     otherHours:
-      "Other Hrs — hours on sections that are neither Engineering nor Shop (e.g. PM / Management 10-111). Same sources and cut-off as Eng Hrs; Service & Spares (80-/90-) excluded. Counted in a job's actual hours but costed at $0 in Total Cost — PM and Mfg cost are modelled as a % of sales instead.",
+      "Other Hrs — hours on sections that are neither Engineering nor Shop (e.g. PM / Management 10-111, and Manufacturing 10-413 / 10-414). Same sources and cut-off as Eng Hrs; Service & Spares (80-/90-) excluded. Counted in a job's actual hours but costed at $0 in Total Cost — PM and Mfg cost are modelled as a % of sales instead.",
   };
 }
 
@@ -1120,6 +1120,9 @@ export function JobCostExplorer({
         {inventoryAsOf && ` · Sales/% complete as of ${inventoryAsOf}`}
         {etcRefreshedThru && ` · Submitted ETC for ${etcRefreshedThru}, less work and parts invoiced since`}
       </p>
+      <p className="text-note text-sdc-gray-400">
+        Manufacturing hours (code 10-413, including punches booked to 10-414) are not included in Shop Hrs. They are counted under Other Hrs and are not costed at the Shop rate.
+      </p>
       {!partsCostAvailable && (
         <p className="rounded border border-sdc-yellow bg-sdc-yellow-bg px-2 py-1 text-note text-sdc-yellow-text">
           Total ETO didn&apos;t respond in time for parts cost data — Parts Invoiced below shows &ldquo;—&rdquo;, and Profit/Margin may be affected since they depend on parts cost too; try again shortly.
@@ -1375,7 +1378,7 @@ export function JobCostExplorer({
                         {fmtPct(r.margin)}
                       </td>
                     )}
-                    {!hiddenCols.has("otherHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("otherHours")} ${zebra}`}>{r.otherHours ? fmtNum(r.otherHours) : "—"}</td>}
+                    {!hiddenCols.has("otherHours") && <td title={cellTip("otherHours", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("otherHours")} ${zebra}`}>{r.otherHours ? fmtNum(r.otherHours) : "—"}</td>}
                   </tr>
                 );
               })}

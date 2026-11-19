@@ -390,3 +390,10 @@ test("Warranty codes without their own column are costed: 70-413/70-414 as Shop,
   const src = readFileSync(join(__dirname, "..", "src", "lib", "job-cost-source.ts"), "utf8");
   assert.match(src, /Object\.assign\(SECTION_BUCKET, WARRANTY_BUCKET_OVERRIDES\)/);
 });
+
+test("Manufacturing (10-413, incl. 10-414 punches) is kept out of Shop Hrs and bucketed as Other", async () => {
+  const { MANUFACTURING_CODE } = await import("../src/lib/job-cost");
+  assert.equal(MANUFACTURING_CODE, "10-413");
+  const src = readFileSync(join(__dirname, "..", "src", "lib", "job-cost-source.ts"), "utf8");
+  assert.match(src, /SECTION_BUCKET\[MANUFACTURING_CODE\] = "other"/);
+});

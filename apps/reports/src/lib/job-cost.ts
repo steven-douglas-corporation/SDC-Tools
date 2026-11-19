@@ -60,6 +60,11 @@ export type JobCostRow = {
    * column. Shown for reference and EXCLUDED from actualHours and from every calculation.
    */
   serviceHours: number | null;
+  /**
+   * Manufacturing hours (10-413, incl. 10-414 punches): the part of otherHours kept out of Shop Hrs.
+   * Display only (Other Hrs hover). Optional so older callers and fixtures need not supply it.
+   */
+  manufacturingHours?: number | null;
   partCost: number | null;
   partInvoiced: number | null;
   salesPrice: number | null;
@@ -146,6 +151,16 @@ export const WARRANTY_BUCKET_OVERRIDES: Readonly<Record<string, "eng" | "shop">>
   "70-312": "eng",
   "70-517": "eng",
 };
+
+/**
+ * Manufacturing (2026-11-19): the phase-10 manufacturing column, 10-413. Paylocity punches 10-414
+ * fold onto it (SECTION_ALIASES). 11-414 folds there too but is deliberately kept as Shop. Kept OUT of
+ * Shop Hrs on Profitability and reported under Other Hrs instead, so it is not costed at the Shop
+ * rate. Local to the Job Cost Explorer: the Projects grid and the ETC/Job Hours pages still treat
+ * 10-413 as a Shop section. Warranty manufacturing (70-413 / 70-414) is a different code and
+ * stays Shop via WARRANTY_BUCKET_OVERRIDES.
+ */
+export const MANUFACTURING_CODE = "10-413";
 
 /**
  * Real jobs only — matches the original's UTILITY_IDS. These are Total ETO
