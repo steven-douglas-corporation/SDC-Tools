@@ -16,6 +16,7 @@ import type { HiringPosition } from "@/lib/hiring-positions";
 import { countOpenings } from "@/lib/hiring-openings";
 import { cardId, LEADERS_CARD, placeHiringOnChart } from "@/lib/org-chart-hiring";
 import { OrgChartCanvas } from "@/components/OrgChartCanvas";
+import { buildRoster } from "@/lib/org-chart-roster";
 
 // The Employees page's Org chart view (2026-10-02): the same department cards
 // as the Cards view — same header, same "N active" line, same person rows
@@ -55,6 +56,10 @@ function rowsIn(nodes: OrgNode[], people: Map<number, EmployeeRow>): EmployeeRow
     return [...(row && row.active ? [row] : []), ...rowsIn(n.reports, people)];
   });
 }
+
+// A card's title and header colours, as its header shows them.
+const teamTitle = (team: string | null) => (team ? resolveEmployeeGroup({ team })?.title : null) ?? "No team";
+const teamColors = (team: string | null) => (team ? resolveEmployeeGroup({ team })?.colors : null) ?? null;
 
 // Everyone in a tree, top down (the Leadership summary's names).
 const flattenNodes = (nodes: OrgNode[]): OrgNode[] => nodes.flatMap((n) => [n, ...flattenNodes(n.reports)]);
@@ -177,7 +182,7 @@ function TeamCard({
   children: (title: string) => React.ReactNode;
 }) {
   const group = team ? resolveEmployeeGroup({ team }) : null;
-  const title = group?.title ?? "No team";
+  const title = teamTitle(team);
   // The same "current hrs/yr" line a Cards card carries: active people × the
   // year's hours per person, and a click opens the breakdown by employee.
   const hasCapacityPolicy = ctx.year != null && hasYearPolicy(ctx.year);
@@ -505,7 +510,7 @@ export function OrgChart({
           {unplaced.map((u) => {
             const row = people.get(u.id);
             return row ? (
-              <li key={u.id}>
+              <li key={u.id} data-canvas-person={u.id} className={PERSON_MARK}>
                 <EmployeePersonRow p={row} cardTitle="" onSelect={onSelectPerson} note={u.detail} />
               </li>
             ) : null;
@@ -516,8 +521,42 @@ export function OrgChart({
     ) : null;
 
   if (groupBy === "canvas") {
+    // The sidebar's list: the same groups and cards as the canvas, whole cards
+    // (the canvas doesn't narrow), and a search leaves only its matches.
+    // A card's people in the card's own order and parts (CardBody): the tree,
+    // then team set by hand, then contractors. Those two are rows, not subtrees
+    // (their reports moved up into the tree), so they go without their reports.
+    const cardSections = (heads: OrgNode[]) => {
+      const { tree, hand, temps } = splitSections(heads, ctx);
+      const rowsOnly = (list: OrgNode[]) => list.map((n) => ({ ...n, reports: [] }));
+      return [
+        { label: null, nodes: tree },
+        { label: "Team set by hand", nodes: rowsOnly(hand) },
+        { label: "Contractors", nodes: rowsOnly(temps) },
+      ];
+    };
+    const rosterTeam = (c: OrgTeamCard) => ({ title: teamTitle(c.team), colors: teamColors(c.team), sections: cardSections(c.heads) });
+    const roster = buildRoster(
+      [
+        // The Leadership card draws its tree whole (no hand/contractor parts).
+        { key: "leadership", title: "Leadership", teams: [{ title: "Leadership", sections: [{ label: null, nodes: chart.leaders }] }] },
+        ...functions.map((f) => ({ key: f.key, title: f.title, teams: f.cards.map((c) => rosterTeam(c.item.card)) })),
+        ...other.map(({ band: b, cards }) => ({
+          key: `leader:${b.leader.id}`,
+          title: `Reporting to ${b.leader.name}`,
+          teams: cards.map(({ card: c }) => rosterTeam(c)),
+        })),
+        {
+          key: "not-placed",
+          title: "Not placed",
+          teams: [{ title: "Not placed", sections: [{ label: null, nodes: chart.unplaced.map((u) => ({ ...u, reports: [] })) }] }],
+        },
+      ],
+      match,
+    );
     return (
       <OrgChartCanvas
+        roster={roster}
         query={query}
         leadership={leadershipCard}
         functions={functions}

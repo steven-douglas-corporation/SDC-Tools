@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { PanZoomCanvas, useCanvasCompact } from "@/components/PanZoomCanvas";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { PanZoomCanvas, useCanvasCompact, type PanZoomHandle } from "@/components/PanZoomCanvas";
+import type { RosterGroup } from "@/lib/org-chart-roster";
 import type { OrgBand, OrgNode, OrgTeamCard } from "@/lib/org-chart";
 import { sectionActive, type FunctionGroups } from "@/lib/org-chart-groups";
 import { cardId } from "@/lib/org-chart-hiring";
@@ -300,6 +301,158 @@ function ReportingLines({ showAll, children }: { showAll: boolean; children: Rea
   );
 }
 
+// ── People list (2026-11-19) ────────────────────────────────────────────────
+//
+// A sidebar down the canvas's right: everyone by group, then team, in each
+// card's own order (lib/org-chart-roster.ts). A click jumps the canvas to the person and
+// rings their row. Hidden or shown per browser, like other display preferences.
+
+const PEOPLE_OPEN_KEY = "sdc-org-canvas-people-open";
+const PEOPLE_OPEN_EVENT = "sdc-org-canvas-people-change";
+function readPeopleOpen(): boolean {
+  try {
+    return window.localStorage.getItem(PEOPLE_OPEN_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+function writePeopleOpen(open: boolean) {
+  try {
+    window.localStorage.setItem(PEOPLE_OPEN_KEY, open ? "1" : "0");
+  } catch {
+    // Storage off: the choice just isn't remembered.
+  }
+  window.dispatchEvent(new Event(PEOPLE_OPEN_EVENT));
+}
+function subscribePeopleOpen(onChange: () => void) {
+  window.addEventListener(PEOPLE_OPEN_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(PEOPLE_OPEN_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+function PeopleSidebar({
+  roster,
+  open,
+  searching,
+  selected,
+  onPick,
+}: {
+  roster: RosterGroup[];
+  open: boolean;
+  searching: boolean;
+  selected: number | null;
+  onPick: (id: number) => void;
+}) {
+  // data-no-pan: presses in here aren't the canvas's drags.
+  if (!open) {
+    return (
+      <div data-no-pan className="hidden w-9 shrink-0 flex-col items-center border-l border-sdc-border bg-white py-2 sm:flex">
+        <button
+          type="button"
+          onClick={() => writePeopleOpen(true)}
+          title="Show the list of everyone, by team"
+          className="rounded px-1 py-2 text-xs font-semibold text-sdc-gray-600 [writing-mode:vertical-rl] motion-interactive hover:bg-sdc-gray-50 hover:text-sdc-navy"
+        >
+          Show people
+        </button>
+      </div>
+    );
+  }
+  const total = roster.reduce((n, g) => n + g.count, 0);
+  return (
+    <aside data-no-pan className="hidden w-64 shrink-0 flex-col border-l border-sdc-border bg-white sm:flex">
+      <header className="flex items-center justify-between gap-2 border-b border-sdc-border px-3 py-2">
+        <h3 className="text-sm font-semibold text-sdc-navy">
+          People <span className="font-normal text-sdc-muted">{total}</span>
+        </h3>
+        <button
+          type="button"
+          onClick={() => writePeopleOpen(false)}
+          className="rounded px-1.5 py-0.5 text-xs font-semibold text-sdc-gray-600 motion-interactive hover:bg-sdc-gray-50 hover:text-sdc-navy"
+        >
+          Hide
+        </button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
+        <p className="px-1.5 pt-2 text-note text-sdc-muted">
+          {searching ? "Matches only. " : ""}By team, in the same order as the cards. Click a name to find them.
+        </p>
+        {roster.length === 0 && <p className="px-1.5 pt-3 text-xs text-sdc-muted">No one matches.</p>}
+        {roster.map((g) => (
+          <details key={g.key} open className="group/people mt-2">
+            {/* Three tiers, three looks: a group is a shaded band (Execution green,
+                as its panel), a team its card's own header colours, a person plain. */}
+            <summary
+              className={`flex cursor-pointer list-none items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-bold motion-interactive [&::-webkit-details-marker]:hidden ${
+                g.key === "execution"
+                  ? "bg-sdc-green-bg text-sdc-green-text hover:bg-sdc-green-bg/70"
+                  : "bg-sdc-gray-100 text-sdc-navy hover:bg-sdc-gray-50"
+              }`}
+            >
+              <span aria-hidden className="opacity-60 motion-interactive group-open/people:rotate-90">
+                ›
+              </span>
+              {g.title}
+              <span className="ml-auto font-normal opacity-70">{g.count}</span>
+            </summary>
+            {g.teams.map((t) => (
+              <div key={t.key} className="mt-1">
+                {/* A group of one team named the same (Leadership, Not placed) needs no second heading. */}
+                {t.title !== g.title && (
+                  <h4
+                    className="mx-1 mb-0.5 mt-1.5 flex items-center rounded px-1.5 py-0.5 text-note font-semibold"
+                    style={t.colors ? { background: t.colors.bg, color: t.colors.text } : undefined}
+                  >
+                    {t.title}
+                    <span className="ml-auto font-normal opacity-70">{t.count}</span>
+                  </h4>
+                )}
+                {t.sections.map((sec) => (
+                  <div key={sec.label ?? "tree"}>
+                    {/* The card's own parts, labelled as the card labels them. */}
+                    {sec.label && (
+                      <p className="px-1.5 pt-1.5 text-label font-semibold uppercase tracking-wider text-sdc-muted">
+                        {sec.label}
+                      </p>
+                    )}
+                    <ul>
+                      {sec.people.map((p) => (
+                        <li key={p.id}>
+                          <button
+                            type="button"
+                            aria-current={selected === p.id ? "true" : undefined}
+                            onClick={() => onPick(p.id)}
+                            // Indented by depth in the card's tree, as the card draws it.
+                            style={{ paddingLeft: `${0.375 + Math.min(p.level, 4) * 0.75}rem` }}
+                            className={`flex w-full flex-col rounded py-1 pr-1.5 text-left motion-interactive hover:bg-sdc-gray-50 ${
+                              selected === p.id ? "bg-sdc-blue-light" : ""
+                            } ${p.active ? "" : "opacity-60"}`}
+                          >
+                            <span
+                              className={`truncate text-sm text-sdc-navy ${p.level === 0 && !sec.label ? "font-semibold" : ""}`}
+                            >
+                              {p.name}
+                              {!p.active && <span className="ml-1 text-note font-normal text-sdc-muted">inactive</span>}
+                            </span>
+                            {p.title && <span className="truncate text-note text-sdc-muted">{p.title}</span>}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </details>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
 export type OrgChartCanvasProps = {
   /** The Leadership card, as a summary or in full; null when a search leaves no one on it. */
   leadership: (compact: boolean) => React.ReactNode;
@@ -311,11 +464,29 @@ export type OrgChartCanvasProps = {
   notPlaced: React.ReactNode;
 };
 
-export function OrgChartCanvas({ query, ...layout }: OrgChartCanvasProps & { query: string }) {
+export function OrgChartCanvas({
+  query,
+  roster,
+  ...layout
+}: OrgChartCanvasProps & { query: string; roster: RosterGroup[] }) {
   const [showAll, setShowAll] = useState(false);
   const needle = query.trim();
+  const canvas = useRef<PanZoomHandle>(null);
+  const peopleOpen = useSyncExternalStore(subscribePeopleOpen, readPeopleOpen, () => true);
+  // Who was picked from the list, under which search: a new search moves the
+  // ring to its own matches, so the pick no longer stands.
+  const [picked, setPicked] = useState<{ id: number; needle: string } | null>(null);
+  const selected = picked && picked.needle === needle ? picked.id : null;
+  const onPick = (id: number) => {
+    setPicked({ id, needle });
+    canvas.current?.focus(`[data-canvas-person="${id}"]`);
+  };
   return (
     <PanZoomCanvas
+      ref={canvas}
+      sidebar={
+        <PeopleSidebar roster={roster} open={peopleOpen} searching={!!needle} selected={selected} onPick={onPick} />
+      }
       className="h-[max(30rem,calc(var(--app-vh)-16rem))]"
       storageKey="sdc-org-canvas-view-v1"
       allowCompact={!needle}
