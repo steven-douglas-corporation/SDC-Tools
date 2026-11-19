@@ -88,7 +88,10 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
             <dt className="text-xs uppercase tracking-wider text-sdc-gray-600">Against target</dt>
             <dd className={`font-semibold ${p.atRisk ? "text-sdc-red-text" : "text-sdc-green-text"}`}>
               {p.atRisk ? "At risk" : "On track"}
-              <span className="font-normal text-sdc-gray-600"> (by {p.atRiskBasis})</span>
+              <span className="font-normal text-sdc-gray-600">
+                {" "}
+                {p.atRiskBasis === "p80" ? "(judged on the safe date)" : "(judged on the forecast; no safe date yet)"}
+              </span>
             </dd>
           </div>
         )}
