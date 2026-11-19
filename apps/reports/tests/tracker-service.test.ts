@@ -62,6 +62,7 @@ before(async () => {
   await pg.exec(migration("0005_kind_required.sql"));
   await pg.exec(migration("0006_requested_by.sql"));
   await pg.exec(migration("0007_checklist.sql"));
+  await pg.exec(migration("0008_migration_record_readable.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
 
@@ -1588,4 +1589,38 @@ test("size: hours left follow a new size until somebody changes them, and cleari
   assert.deepEqual(await hoursOf(bare.id), [null, null, null]);
   await updateTask(db, ana, worked.id, { effortBucketId: null });
   assert.deepEqual(await hoursOf(worked.id), [null, null, 4]);
+});
+
+test("schema status: the code's list of migrations is the folder's, and a database behind it is named", async () => {
+  const S = await import("../src/modules/tracker/service/schema-status");
+  const { readdirSync } = await import("node:fs");
+  const folder = readdirSync(fileURLToPath(new URL("../db/tracker/migrations/", import.meta.url)))
+    .filter((f) => /^\d{4}_.+\.sql$/.test(f))
+    .sort();
+  assert.deepEqual([...S.MIGRATIONS], folder, "add each new migration file to MIGRATIONS in schema-status.ts");
+
+  // No record at all: what a database older than 0008 looks like to the app.
+  const fresh: Database = {
+    transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never,
+  };
+  assert.deepEqual(await S.getSchemaStatus(fresh), { current: false, missing: null });
+  assert.match(S.schemaBehindDetail({ missing: null }), /at least 0008_migration_record_readable\.sql is missing/);
+
+  await pg.exec(
+    `CREATE TABLE public.tracker_schema_migration (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
+  );
+  for (const name of S.MIGRATIONS.slice(0, -2)) {
+    await pg.query(`INSERT INTO public.tracker_schema_migration (name) VALUES ($1)`, [name]);
+  }
+  const behind = await S.getSchemaStatus(fresh);
+  assert.deepEqual(behind, { current: false, missing: S.MIGRATIONS.slice(-2) });
+  assert.match(S.schemaBehindDetail(behind as { missing: string[] }), /Missing: 0007_checklist\.sql, 0008_/);
+
+  for (const name of S.MIGRATIONS.slice(-2)) {
+    await pg.query(`INSERT INTO public.tracker_schema_migration (name) VALUES ($1)`, [name]);
+  }
+  assert.deepEqual(await S.getSchemaStatus(fresh), { current: true });
+  // A yes is remembered: the record is not read again for this connection.
+  await pg.exec(`DROP TABLE public.tracker_schema_migration`);
+  assert.deepEqual(await S.getSchemaStatus(fresh), { current: true });
 });

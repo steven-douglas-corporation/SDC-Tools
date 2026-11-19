@@ -3,9 +3,10 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireApiPermission } from "@/lib/require-permission";
-import { trackerConfigured } from "./db";
+import { trackerConfigured, trackerDb } from "./db";
 import { trackerActor } from "./current-actor";
 import { TrackerError, type Actor } from "./service/database";
+import { getSchemaStatus, schemaBehindDetail } from "./service/schema-status";
 
 // Shared by the tracker's route handlers (src/app/api/tracker). This is the second "door" in
 // docs/MODULES.md: the same service functions the screens call, answered as JSON, under the
@@ -23,6 +24,13 @@ export async function trackerApi<T>(read: (actor: Actor) => Promise<T>): Promise
   if (denied) return denied;
   if (!trackerConfigured()) {
     return NextResponse.json({ error: "The Project Tracker is not set up on this server." }, { status: 503 });
+  }
+  const schema = await getSchemaStatus(trackerDb);
+  if (!schema.current) {
+    return NextResponse.json(
+      { error: `The Project Tracker is waiting on a database update. ${schemaBehindDetail(schema)}` },
+      { status: 503 },
+    );
   }
   try {
     // requireApiPermission returned nothing, so there is a signed-in user.
