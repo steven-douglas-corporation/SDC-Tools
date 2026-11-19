@@ -1121,7 +1121,7 @@ export function JobCostExplorer({
         {etcRefreshedThru && ` · Submitted ETC for ${etcRefreshedThru}, less work and parts invoiced since`}
       </p>
       <p className="text-note text-sdc-gray-400">
-        Manufacturing hours (code 10-413, including punches booked to 10-414) are not included in Shop Hrs. They are counted under Other Hrs and are not costed at the Shop rate.
+        Manufacturing (10-413, 10-414) and PM hours are reflected in the other hours below. Spares and Service hours are not reflected on this page.
       </p>
       {!partsCostAvailable && (
         <p className="rounded border border-sdc-yellow bg-sdc-yellow-bg px-2 py-1 text-note text-sdc-yellow-text">
