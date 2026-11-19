@@ -29,6 +29,11 @@ const BAR_TONE: Record<TimelineRow["category"], string> = {
   cancelled: "bg-sdc-gray-400",
 };
 
+// Blocked is told apart by its stripes as well as its colour, for anyone who cannot rely on red.
+const BLOCKED_STRIPES = {
+  backgroundImage: "repeating-linear-gradient(135deg, transparent 0 4px, rgba(255,255,255,0.6) 4px 6px)",
+} as const;
+
 const taskHref = (key: string) => {
   const cut = key.lastIndexOf("-");
   return `/tracker/${key.slice(0, cut)}/${key.slice(cut + 1)}`;
@@ -56,7 +61,7 @@ function Legend({ of, stale }: { of: "cards" | "projects"; stale: boolean }) {
       </Mark>
       {cards && (
         <Mark label="Blocked">
-          <span className="h-3.5 w-full rounded bg-sdc-red" />
+          <span className="h-3.5 w-full rounded bg-sdc-red" style={BLOCKED_STRIPES} />
         </Mark>
       )}
       <Mark label="Out to the safe date">
@@ -82,6 +87,7 @@ function Legend({ of, stale }: { of: "cards" | "projects"; stale: boolean }) {
       </Mark>
       <Mark label={cards ? "Due date that will be missed" : "Target date that will be missed"}>
         <span className="h-4 w-1.5 border-y-2 border-r-2 border-sdc-red" />
+        <span className="ml-0.5 text-xs font-bold leading-none text-sdc-red-text">!</span>
       </Mark>
       <Mark
         label={cards ? "Waits on (arrow points at the card that waits)" : "Has a card waiting on the other project"}
@@ -109,6 +115,8 @@ export function Timeline({
   emptyText = "This project has no cards yet.",
   targetDate = null,
   of = "cards",
+  closed = [],
+  toggleHref,
 }: {
   timeline: Pick<TimelineData, "rows" | "links" | "forecastAsOf">;
   /** Where a row's key leads. A card's own page unless told otherwise. */
@@ -118,11 +126,40 @@ export function Timeline({
   targetDate?: string | null;
   /** What a row is, which decides the words in the key under the chart. */
   of?: "cards" | "projects";
+  /** Ids of the rows whose cards under them are hidden. */
+  closed?: number[];
+  /**
+   * The address of this timeline with those rows closed. Given, each row with cards under it
+   * gets an arrow to hide or show them; the page is drawn again on the server, so the bars and
+   * the dependency arrows always match the rows on screen.
+   */
+  toggleHref?: (closed: number[]) => string;
 }) {
-  const { rows, links } = timeline;
-  if (rows.length === 0) {
+  const { rows: allRows, links } = timeline;
+  if (allRows.length === 0) {
     return <p className={`${CARD_BASE} p-4 text-sm text-sdc-gray-600`}>{emptyText}</p>;
   }
+
+  // ---- which rows are drawn ----
+  // Rows arrive parent first, so everything under a closed row is the run of deeper rows after it.
+  const shut = new Set(closed);
+  const rows: TimelineRow[] = [];
+  /** Every row -> the row drawn for it: itself, or the closed row it is hidden under. */
+  const shownAs = new Map<number, number>();
+  const hiddenUnder = new Map<number, number>();
+  let hiding: { id: number; depth: number } | null = null;
+  for (const r of allRows) {
+    if (hiding && r.depth > hiding.depth) {
+      shownAs.set(r.id, hiding.id);
+      hiddenUnder.set(hiding.id, (hiddenUnder.get(hiding.id) ?? 0) + 1);
+      continue;
+    }
+    hiding = r.isParent && shut.has(r.id) ? { id: r.id, depth: r.depth } : null;
+    rows.push(r);
+    shownAs.set(r.id, r.id);
+  }
+  const parents = allRows.filter((r) => r.isParent).map((r) => r.id);
+  const keyOf = new Map(allRows.map((r) => [r.id, r.key]));
 
   // ---- the span of days to draw ----
   // Every bar was worked out for the day of the last forecast run, so that is the day the line
@@ -132,7 +169,7 @@ export function Timeline({
   const stale = today !== realToday;
   const todayN = dayNumber(today);
   const dated: number[] = [todayN];
-  for (const r of rows) {
+  for (const r of allRows) {
     if (r.start) dated.push(dayNumber(r.start));
     if (r.finish) dated.push(dayNumber(r.finish));
     if (r.p80Finish) dated.push(dayNumber(r.p80Finish));
@@ -144,8 +181,9 @@ export function Timeline({
   const first = Math.min(...dated) - 2;
   const last = Math.max(...dated) + 4;
   const days = last - first + 1;
-  // Wide enough to read a short plan, narrow enough that a long one still fits a few screens.
-  const dayWidth = Math.max(4, Math.min(22, Math.floor(2400 / days)));
+  // Sized so a plan of up to about eight months fits beside the card column without scrolling
+  // sideways; a longer one scrolls, because a day narrower than 4px cannot be read.
+  const dayWidth = Math.max(4, Math.min(22, Math.floor(960 / days)));
   const width = days * dayWidth;
   const x = (day: number) => (day - first) * dayWidth;
 
@@ -166,10 +204,13 @@ export function Timeline({
   const index = new Map(rows.map((r, i) => [r.id, i]));
   const box = (r: TimelineRow): { from: number; to: number } | null =>
     r.start && r.finish ? { from: x(dayNumber(r.start)), to: x(dayNumber(r.finish) + 1) } : null;
+  const drawn = new Set<string>();
   const arrows = links.flatMap((l) => {
-    const a = rows[index.get(l.fromId) ?? -1];
-    const b = rows[index.get(l.toId) ?? -1];
-    if (!a || !b) return [];
+    // A link to or from a hidden card is drawn on the closed row it sits under.
+    const a = rows[index.get(shownAs.get(l.fromId) ?? -1) ?? -1];
+    const b = rows[index.get(shownAs.get(l.toId) ?? -1) ?? -1];
+    if (!a || !b || a.id === b.id || drawn.has(`${a.id}-${b.id}`)) return [];
+    drawn.add(`${a.id}-${b.id}`);
     const from = box(a);
     const to = box(b);
     if (!from || !to) return [];
@@ -182,13 +223,23 @@ export function Timeline({
       into >= out
         ? `M ${from.to} ${y1} H ${out} V ${y2} H ${to.from - 1}`
         : `M ${from.to} ${y1} H ${out} V ${y2 > y1 ? y2 - ROW / 2 : y2 + ROW / 2} H ${into} V ${y2} H ${to.from - 1}`;
-    return [{ key: `${l.fromId}-${l.toId}`, path, label: `${b.key} waits on ${a.key}` }];
+    return [{ key: `${a.id}-${b.id}`, path, label: `${keyOf.get(l.toId)} waits on ${keyOf.get(l.fromId)}` }];
   });
 
-  const notDrawn = rows.filter((r) => !r.isParent && r.category !== "done" && !r.finish).length;
+  const notDrawn = allRows.filter((r) => !r.isParent && r.category !== "done" && !r.finish).length;
 
   return (
     <div className="space-y-3">
+      {toggleHref && parents.length > 0 && (
+        <p className="flex gap-4 text-xs">
+          <Link href={toggleHref(parents)} scroll={false} className="font-semibold text-sdc-blue hover:underline">
+            Collapse all
+          </Link>
+          <Link href={toggleHref([])} scroll={false} className="font-semibold text-sdc-blue hover:underline">
+            Expand all
+          </Link>
+        </p>
+      )}
       <div className={`${CARD_BASE} flex overflow-hidden`}>
         {/* The cards, as a fixed column that stays put while the dates scroll. */}
         <div className="w-80 shrink-0 border-r border-sdc-border">
@@ -197,8 +248,32 @@ export function Timeline({
             <div
               key={r.id}
               style={{ height: ROW, paddingLeft: 8 + r.depth * 16 }}
-              className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap border-b border-sdc-border-soft pr-2 text-xs"
+              className="relative flex items-center gap-1.5 overflow-hidden whitespace-nowrap border-b border-sdc-border-soft pr-2 text-xs"
             >
+              {/* One line per level above this row, under the arrow of the card it belongs to. */}
+              {Array.from({ length: r.depth }, (_, level) => (
+                <span
+                  key={level}
+                  aria-hidden="true"
+                  style={{ left: 16 + level * 16 }}
+                  className="absolute inset-y-0 w-px bg-sdc-border"
+                />
+              ))}
+              {toggleHref &&
+                (r.isParent ? (
+                  <Link
+                    href={toggleHref(shut.has(r.id) ? closed.filter((id) => id !== r.id) : [...closed, r.id])}
+                    scroll={false}
+                    aria-expanded={!shut.has(r.id)}
+                    aria-label={`${shut.has(r.id) ? "Show" : "Hide"} the cards under ${r.key}`}
+                    title={`${shut.has(r.id) ? "Show" : "Hide"} the cards under ${r.key}`}
+                    className="relative flex h-4 w-4 shrink-0 items-center justify-center rounded bg-white text-sdc-gray-600 hover:bg-sdc-gray-100 hover:text-sdc-navy"
+                  >
+                    {shut.has(r.id) ? "\u25B8" : "\u25BE"}
+                  </Link>
+                ) : (
+                  <span className="w-4 shrink-0" />
+                ))}
               <Link href={hrefFor(r)} className="font-mono font-semibold text-sdc-blue hover:underline">
                 {r.key}
               </Link>
@@ -210,6 +285,9 @@ export function Timeline({
               >
                 {r.title}
               </span>
+              {hiddenUnder.has(r.id) && (
+                <span className="shrink-0 text-micro text-sdc-gray-600">{hiddenUnder.get(r.id)} hidden</span>
+              )}
               {r.uncountedHours != null && (
                 <span
                   title={`${hours(r.uncountedHours)} entered on ${r.key} are not counted, because cards sit under it. Open it to clear them.`}
@@ -329,7 +407,12 @@ export function Timeline({
                         )}
                         <div
                           title={said}
-                          style={{ left: b.from, width: Math.max(4, b.to - b.from), top: ROW / 2 - 7 }}
+                          style={{
+                            left: b.from,
+                            width: Math.max(4, b.to - b.from),
+                            top: ROW / 2 - 7,
+                            ...(r.category === "blocked" ? BLOCKED_STRIPES : {}),
+                          }}
                           className={`absolute h-3.5 rounded ${BAR_TONE[r.category]}`}
                         />
                       </>
@@ -348,6 +431,16 @@ export function Timeline({
                       style={{ left: x(dayNumber(r.dueDate) + 1) - 5, top: 4, bottom: 4 }}
                       className={`absolute w-1.5 border-y-2 border-r-2 ${late ? "border-sdc-red" : "border-sdc-gray-600"}`}
                     />
+                  )}
+                  {r.dueDate && r.category !== "done" && late && (
+                    // Said with a mark as well as with red.
+                    <span
+                      aria-hidden="true"
+                      style={{ left: x(dayNumber(r.dueDate) + 1) + 3 }}
+                      className="absolute top-1/2 -translate-y-1/2 text-xs font-bold leading-none text-sdc-red-text"
+                    >
+                      !
+                    </span>
                   )}
                   {!b && !r.isParent && r.category !== "done" && (
                     <span

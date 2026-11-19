@@ -12,7 +12,13 @@ import { ProjectViews } from "@/modules/tracker/components/ProjectViews";
 
 // One project's timeline, at /tracker/BIN/timeline. Read-only: cards are changed on the board
 // or on their own page. Thin, like the other tracker pages.
-export default async function TrackerTimelinePage({ params }: { params: Promise<{ key: string }> }) {
+export default async function TrackerTimelinePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ key: string }>;
+  searchParams: Promise<{ closed?: string | string[] }>;
+}) {
   const session = await requirePagePermission("tracker:view");
   if (!trackerConfigured()) notFound();
   const { key } = await params;
@@ -26,6 +32,13 @@ export default async function TrackerTimelinePage({ params }: { params: Promise<
     throw e;
   }
   const p = timeline.project;
+  // ?closed=12,40: the rows whose cards under them are hidden. In the address, so a collapsed
+  // view can be bookmarked or sent to someone.
+  const asked = (await searchParams).closed;
+  const closed = (Array.isArray(asked) ? asked.join(",") : (asked ?? ""))
+    .split(",")
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0);
 
   return (
     <div className={PAGE_SHELL}>
@@ -42,7 +55,12 @@ export default async function TrackerTimelinePage({ params }: { params: Promise<
       </p>
       <PageTitle className="mb-3">{p.name}</PageTitle>
       <ProjectViews projectKey={p.key} current="timeline" />
-      <Timeline timeline={timeline} targetDate={p.targetDate} />
+      <Timeline
+        timeline={timeline}
+        targetDate={p.targetDate}
+        closed={closed}
+        toggleHref={(ids) => `/tracker/${p.key}/timeline${ids.length ? `?closed=${ids.join(",")}` : ""}`}
+      />
     </div>
   );
 }
