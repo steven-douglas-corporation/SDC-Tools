@@ -57,12 +57,13 @@ function code(path: string): string {
 
 // ── The step list (§45: "consistent increments", "safe minimum and maximum") ─
 
-test("the offered levels are an even 10% grid from 50% to 100%, in order", () => {
-  // Changed 2026-09-02 from 75/80/90/100/110/125/150. Pinned as a literal list
-  // because it IS the spec: exactly six levels, nothing above 100%, nothing below
-  // 50%, and one uniform step so the − and + buttons travel the same distance
-  // wherever you are on the list.
-  assert.deepEqual([...ZOOM_STEPS], [0.5, 0.6, 0.7, 0.8, 0.9, 1]);
+test("the offered levels are an even 10% grid from 50% to 150%, in order", () => {
+  // Changed 2026-09-02 from 75/80/90/100/110/125/150 to 50-100, then changed
+  // 2026-11-19 to extend the ceiling back to 150%. Pinned as a literal list
+  // because it IS the spec: exactly eleven levels, nothing below 50%, nothing
+  // above 150%, and one uniform step so the − and + buttons travel the same
+  // distance wherever you are on the list.
+  assert.deepEqual([...ZOOM_STEPS], [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5]);
   for (let i = 1; i < ZOOM_STEPS.length; i++) {
     assert.equal(Math.round((ZOOM_STEPS[i] - ZOOM_STEPS[i - 1]) * 100), 10, "every gap is exactly 10%");
   }
@@ -79,7 +80,7 @@ test("the default is 80% and it is one of the offered levels", () => {
 
 test("the limits are the ends of the list, so there is no second source of bounds", () => {
   assert.equal(MIN_ZOOM, 0.5);
-  assert.equal(MAX_ZOOM, 1);
+  assert.equal(MAX_ZOOM, 1.5);
   assert.equal(MIN_ZOOM, Math.min(...ZOOM_STEPS));
   assert.equal(MAX_ZOOM, Math.max(...ZOOM_STEPS));
 });
@@ -97,7 +98,7 @@ test("anything unusable lands on the default rather than on screen", () => {
 test("out-of-range values clamp to the limits instead of applying", () => {
   // 0.02 would make the app unreadable; 8 would show four cells. Neither is reachable —
   // and note these clamp rather than falling back to the default: a hand-edited 8 means
-  // "as large as possible", and 100% is that.
+  // "as large as possible", and 150% is that.
   assert.equal(snapZoom(0.02), MIN_ZOOM);
   assert.equal(snapZoom("1e-9"), MIN_ZOOM);
   assert.equal(snapZoom(-3), MIN_ZOOM);
@@ -107,15 +108,15 @@ test("out-of-range values clamp to the limits instead of applying", () => {
 test("a level retired in a later release snaps to its nearest survivor", () => {
   // The upgrade path, and the whole reason snapZoom compares in whole percent: every
   // one of these was a real saved value under the old 75/80/90/100/110/125/150 list,
-  // and 0.75 and 0.85 sit at the EXACT midpoint of two surviving levels. The float
+  // and 0.75, 0.85 and 1.25 sit at the EXACT midpoint of two surviving levels. The float
   // distances there are unequal in binary (0.049999999999999996 vs 0.05000000000000004),
   // so comparing the raw factors would resolve both downward. Ties go up.
+  // (1.1 and 1.5 are no longer retired — the 2026-11-19 ceiling change put them
+  // back on the list; see "every offered level snaps to itself" below.)
   assert.equal(snapZoom(0.75), 0.8);
   assert.equal(snapZoom(0.85), 0.9);
   assert.equal(snapZoom(0.95), 1);
-  assert.equal(snapZoom(1.1), 1);
-  assert.equal(snapZoom(1.25), 1);
-  assert.equal(snapZoom(1.5), 1);
+  assert.equal(snapZoom(1.25), 1.3);
   assert.equal(snapZoom(0.4), 0.5);
   assert.equal(snapZoom(1.02), 1);
 });
@@ -163,7 +164,7 @@ test("stepping from an off-list value joins the list rather than compounding the
   // offered level and stays on the list from then on.
   assert.equal(stepZoom(0.86, 1), 1); // 0.86 -> 0.9 -> up one
   assert.equal(stepZoom(0.86, -1), 0.8);
-  assert.equal(stepZoom(0.97, 1), 1); // 0.97 -> 1, already at the ceiling
+  assert.equal(stepZoom(0.97, 1), 1.1); // 0.97 -> 1 -> up one (no longer the ceiling)
 });
 
 test("every level reads as a whole percentage", () => {
@@ -176,7 +177,7 @@ test("every level reads as a whole percentage", () => {
     // point, which is why zoomLabel rounds rather than interpolating the raw product.
     assert.equal(label, `${Math.round(step * 100)}%`);
   }
-  assert.deepEqual(ZOOM_STEPS.map(zoomLabel), ["50%", "60%", "70%", "80%", "90%", "100%"]);
+  assert.deepEqual(ZOOM_STEPS.map(zoomLabel), ["50%", "60%", "70%", "80%", "90%", "100%", "110%", "120%", "130%", "140%", "150%"]);
   assert.equal(zoomLabel(DEFAULT_ZOOM), "80%");
 });
 
