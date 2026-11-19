@@ -72,6 +72,22 @@ export function explainHours(
 }
 
 /**
+ * Other Hrs hover: how much of the job's Other Hrs is Manufacturing (10-413 / 10-414), which is kept
+ * out of Shop Hrs, and how much is everything else (PM 10-111, unmapped codes). Costed at $0.
+ */
+export function explainOtherHours(row: Pick<JobCostComputed, "otherHours" | "manufacturingHours">): string {
+  const total = row.otherHours ?? 0;
+  const mfg = Math.min(row.manufacturingHours ?? 0, total);
+  if (!total) return "Other Hrs\nNo hours on this job outside Engineering, Shop and Service & Spares.";
+  return [
+    "Other Hrs (costed at $0)",
+    `Manufacturing (10-413 / 10-414, not in Shop Hrs): ${hrs(mfg)} hrs`,
+    `PM 10-111 and other unmapped codes: ${hrs(total - mfg)} hrs`,
+    `Total: ${hrs(total)} hrs`,
+  ].join("\n");
+}
+
+/**
  * One hour type's labor, split the way laborForType costs it: each year's hours at that
  * year's Rate Matrix rate, hours with no year at the default rate. Sums to laborForType.
  */
@@ -222,6 +238,7 @@ export function explainJobCell(
   switch (key) {
     case "engineeringHours": return explainHours(row, allocation, "eng");
     case "shopHours": return explainHours(row, allocation, "shop");
+    case "otherHours": return explainOtherHours(row);
     case "pmCost": return explainPm(row, def, overrides);
     case "mfgCost": return explainMfg(row, def, overrides);
     case "totalCost": return explainTotalCost(row, def, overrides, allocation);

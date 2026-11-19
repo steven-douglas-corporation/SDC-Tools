@@ -113,3 +113,12 @@ test("Total Cost hover splits labor by year, with no-year hours at the default r
   assert.match(text, /Eng labor .*: \$11,000\.00/);
   assert.equal(c.laborCost, 11_000);
 });
+
+test("Other Hrs hover splits Manufacturing (10-413/10-414) from the rest", async () => {
+  const { explainOtherHours } = await import("../src/lib/job-cost-explain");
+  assert.equal(
+    explainOtherHours({ otherHours: 100, manufacturingHours: 60 }),
+    ["Other Hrs (costed at $0)", "Manufacturing (10-413 / 10-414, not in Shop Hrs): 60.0 hrs", "PM 10-111 and other unmapped codes: 40.0 hrs", "Total: 100.0 hrs"].join("\n"),
+  );
+  assert.match(explainOtherHours({ otherHours: null, manufacturingHours: null }), /No hours/);
+});
