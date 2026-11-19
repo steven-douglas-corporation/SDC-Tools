@@ -1,5 +1,6 @@
 import { TrackerError, one, type Actor, type Database } from "./database";
 import { projectRole, type ProjectRole } from "./access";
+import { kindTakesChecklist } from "./checklist";
 import {
   rollUp,
   uncountedHours,
@@ -143,6 +144,8 @@ export interface TaskDetail {
   buckets: { id: number; label: string; hours: number }[];
   /** In the order the card shows them. */
   checklist: ChecklistItem[];
+  /** False for an Epic, Feature or Story: items it already has stay, but none can be added. */
+  checklistAllowed: boolean;
   comments: TaskComment[];
   history: HistoryEntry[];
 }
@@ -609,6 +612,7 @@ export async function getTaskDetail(
         doneBy: i.done_by,
         doneAt: i.done_at,
       })),
+      checklistAllowed: kindTakesChecklist(t.kind),
       comments: comments.rows.map((c) => ({ id: Number(c.id), author: c.author, body: c.body, at: c.at })),
       history: history.map(({ at, who, what, why }) => ({ at, who, what, why })),
     };

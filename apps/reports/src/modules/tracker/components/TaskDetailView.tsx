@@ -466,15 +466,20 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
           </Section>
         )}
 
-        <Section title="Checklist">
-          <Checklist
-            taskId={task.id}
-            taskKey={task.key}
-            projectKey={task.projectKey}
-            items={task.checklist}
-            mayChange={mayChange}
-          />
-        </Section>
+        {/* An Epic, Feature or Story has no checklist; one that already holds items still shows them. */}
+        {(task.checklistAllowed || task.checklist.length > 0) && (
+          <Section title="Checklist">
+            <Checklist
+              taskId={task.id}
+              taskKey={task.key}
+              projectKey={task.projectKey}
+              items={task.checklist}
+              mayChange={mayChange}
+              mayAdd={task.checklistAllowed}
+              kindLabel={task.kindLabel}
+            />
+          </Section>
+        )}
 
         <Section title="Comments">
           {task.comments.length === 0 ? (

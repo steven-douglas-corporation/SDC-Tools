@@ -26,12 +26,17 @@ export function Checklist({
   projectKey,
   items,
   mayChange,
+  mayAdd,
+  kindLabel,
 }: {
   taskId: number;
   taskKey: string;
   projectKey: string;
   items: ChecklistItem[];
   mayChange: boolean;
+  /** False when the card's kind takes no checklist: the items it has stay, but none can be added. */
+  mayAdd: boolean;
+  kindLabel: string;
 }) {
   const [text, setText] = useState("");
   const [editing, setEditing] = useState<{ id: number; body: string } | null>(null);
@@ -174,7 +179,13 @@ export function Checklist({
         </>
       )}
 
-      {mayChange && (
+      {!mayAdd && (
+        <p className="mt-3 text-xs text-sdc-gray-600">
+          This card&apos;s kind ({kindLabel}) takes no checklist. The items it already had can still be ticked or
+          removed; new steps go in as cards under it.
+        </p>
+      )}
+      {mayChange && mayAdd && (
         <form
           className="mt-3 flex gap-2"
           onSubmit={(e) => {

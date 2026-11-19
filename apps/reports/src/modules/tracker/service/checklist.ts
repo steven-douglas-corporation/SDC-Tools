@@ -7,6 +7,19 @@ import { lockTask } from "./tasks";
 // reruns the forecast or writes to the card's history. Anyone who can change the project's
 // cards (a contributor) can change a checklist; an archived card's checklist is frozen.
 
+//
+// Epics, Features and Stories take no checklist: their steps are the cards under them, which
+// carry hours and show in the forecast. A card that had items before its kind was changed to
+// one of those keeps them, and they can still be ticked, reworded, moved and removed; only
+// adding is refused.
+
+const NO_CHECKLIST: Record<string, string> = { epic: "An Epic", feature: "A Feature", story: "A Story" };
+
+/** Whether a card of this kind may be given checklist items. */
+export function kindTakesChecklist(kind: string): boolean {
+  return !(kind in NO_CHECKLIST);
+}
+
 const MAX_ITEMS = 50;
 const MAX_LENGTH = 500;
 
@@ -44,6 +57,11 @@ export async function addChecklistItem(db: Database, actor: Actor, taskId: numbe
   return db.transaction(async (tx) => {
     const task = await lockTask(tx, taskId);
     await requireProjectRole(tx, task.project_id, actor, "contributor");
+    if (!kindTakesChecklist(task.kind))
+      throw new TrackerError(
+        "invalid",
+        `${NO_CHECKLIST[task.kind]} has no checklist. Its steps are the cards under it, so add a card there instead.`,
+      );
     const have = await one<{ n: number; last: number | null }>(
       tx,
       `SELECT count(*)::int AS n, max(position) AS last FROM tracker.task_checklist_item WHERE task_id = $1`,

@@ -1463,3 +1463,36 @@ test("checklist: a card holds 50 items at most", async () => {
   for (let i = 1; i <= 50; i++) await addChecklistItem(db, ana, card.id, `Step ${i}`);
   await refuses(() => addChecklistItem(db, ana, card.id, "Step 51"), "invalid", /50 items/);
 });
+
+test("checklist: an Epic, Feature or Story takes none; items a card already has survive a change of kind", async () => {
+  const { addChecklistItem, removeChecklistItem, setChecklistItemDone } =
+    await import("../src/modules/tracker/service/checklist");
+  const [p] = await rows<{ id: number }>(`SELECT id FROM tracker.project WHERE key = 'PPL'`);
+  const projectId = Number(p!.id);
+  const make = (title: string, kind: string) => createTask(db, ana, { projectId, title, kind });
+
+  const { getTaskDetail } = await import("../src/modules/tracker/service/task-detail");
+  const epic = await make("An epic", "epic");
+  const feature = await make("A feature", "feature");
+  const story = await make("A story", "story");
+  await refuses(() => addChecklistItem(db, ana, epic.id, "x"), "invalid", /An Epic has no checklist/);
+  await refuses(() => addChecklistItem(db, ana, feature.id, "x"), "invalid", /A Feature has no checklist/);
+  await refuses(() => addChecklistItem(db, ana, story.id, "x"), "invalid", /A Story has no checklist/);
+  for (const kind of ["task", "bug", "issue", "milestone"])
+    await addChecklistItem(db, ana, (await make(`A ${kind}`, kind)).id, "allowed here");
+
+  // A task with a checklist that turns out to be a story keeps what it had.
+  const card = await make("Grew into a story", "task");
+  const kept = await addChecklistItem(db, ana, card.id, "Written while it was a task");
+  assert.equal((await getTaskDetail(db, ana, "PPL", card.number)).checklistAllowed, true);
+  await updateTask(db, ana, card.id, { kind: "story" }, "it was bigger than it looked");
+  const d = await getTaskDetail(db, ana, "PPL", card.number);
+  assert.equal(d.checklistAllowed, false);
+  assert.deepEqual(
+    d.checklist.map((i) => i.body),
+    ["Written while it was a task"],
+  );
+  await refuses(() => addChecklistItem(db, ana, card.id, "one more"), "invalid", /A Story has no checklist/);
+  await setChecklistItemDone(db, ana, kept, true);
+  await removeChecklistItem(db, ana, kept);
+});
