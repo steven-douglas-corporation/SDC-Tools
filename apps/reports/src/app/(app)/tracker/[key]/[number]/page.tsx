@@ -59,9 +59,23 @@ export default async function TrackerTaskPage({ params }: { params: Promise<{ ke
         </span>
         {task.archived && <span className="ml-2 text-sm font-normal text-sdc-gray-600">(archived)</span>}
       </PageTitle>
-      {/* Keyed on the forecast and history so the form picks up fresh values after each save. */}
+      {/* Keyed on the saved field values, so the form picks up what a save changed. A comment, a
+          status move or a dependency changes none of them and leaves half-typed fields alone. */}
       <TaskDetailView
-        key={`${task.history.length}:${task.comments.length}:${task.statusId}:${task.waitsOn.length}:${task.children.length}`}
+        key={JSON.stringify([
+          task.title,
+          task.description,
+          task.kind,
+          task.parentTaskId,
+          task.assigneePersonId,
+          task.requestedByPersonId,
+          task.bucketId,
+          task.remainingHours,
+          task.priority,
+          task.dueDate,
+          task.estimatedCompletionDate,
+          task.archived,
+        ])}
         task={task}
         canEdit={hasPermission(session.user.role, "tracker:edit")}
       />

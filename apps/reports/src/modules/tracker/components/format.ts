@@ -6,6 +6,12 @@ import type { BoardTask } from "../service/queries";
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** Today on this machine's calendar, not UTC: late in the evening UTC is already tomorrow. */
+export function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /** "2026-11-23" -> "Mon Nov 23". Parsed as a calendar date, never through a time zone. */
 export function shortDate(iso: string | null | undefined): string {
   if (!iso) return "—";

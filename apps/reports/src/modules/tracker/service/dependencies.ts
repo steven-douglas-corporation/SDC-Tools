@@ -76,6 +76,27 @@ export function inSameLine(a: number, b: number, children: Map<number, number[]>
   return under(a, b) || under(b, a);
 }
 
+/** True when the links already form a loop among the cards that carry work. */
+export function hasLoop(links: DependencyLink[], children: Map<number, number[]>): boolean {
+  const waitsOn = new Map<number, number[]>();
+  for (const l of expandDependencies(links, children)) {
+    const list = waitsOn.get(l.successorId);
+    if (list) list.push(l.predecessorId);
+    else waitsOn.set(l.successorId, [l.predecessorId]);
+  }
+  const state = new Map<number, 1 | 2>(); // 1 = on the current path, 2 = finished
+  const visit = (id: number): boolean => {
+    const seen = state.get(id);
+    if (seen === 1) return true;
+    if (seen === 2) return false;
+    state.set(id, 1);
+    for (const next of waitsOn.get(id) ?? []) if (visit(next)) return true;
+    state.set(id, 2);
+    return false;
+  };
+  return [...waitsOn.keys()].some(visit);
+}
+
 /**
  * Would adding `candidate` to `existing` make a loop among the cards that carry work? A loop
  * can hide in the hierarchy: "B waits on A" plus "a card under A waits on a card under B".

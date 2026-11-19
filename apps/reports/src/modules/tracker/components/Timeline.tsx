@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CARD_BASE } from "@/components/ui/classnames";
 import type { Timeline as TimelineData, TimelineRow } from "../service/timeline";
-import { forecastReason, hours, shortDate } from "./format";
+import { forecastReason, hours, localToday, shortDate } from "./format";
 
 // One project as a timeline: a row per card, grouped under the card it sits under, a bar from
 // the forecast's start to its finish, and an arrow for each dependency. Nothing here is typed
@@ -44,7 +44,7 @@ function Mark({ children, label }: { children: React.ReactNode; label: string })
   );
 }
 
-function Legend({ of }: { of: "cards" | "projects" }) {
+function Legend({ of, stale }: { of: "cards" | "projects"; stale: boolean }) {
   const cards = of === "cards";
   return (
     <ul aria-label="What the marks mean" className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-sdc-gray-600">
@@ -91,7 +91,7 @@ function Legend({ of }: { of: "cards" | "projects" }) {
           <path d="M20 9 L26 12 L20 15 Z" className="fill-sdc-gray-600" />
         </svg>
       </Mark>
-      <Mark label="Today">
+      <Mark label={stale ? "The day the forecast was made for" : "Today"}>
         <span className="h-4 w-px bg-sdc-navy" />
       </Mark>
       {cards && (
@@ -125,7 +125,11 @@ export function Timeline({
   }
 
   // ---- the span of days to draw ----
-  const today = timeline.forecastAsOf ?? new Date().toISOString().slice(0, 10);
+  // Every bar was worked out for the day of the last forecast run, so that is the day the line
+  // marks. It is called Today only when it is today; otherwise it is named by its date.
+  const realToday = localToday();
+  const today = timeline.forecastAsOf ?? realToday;
+  const stale = today !== realToday;
   const todayN = dayNumber(today);
   const dated: number[] = [todayN];
   for (const r of rows) {
@@ -261,7 +265,7 @@ export function Timeline({
               title={`Forecast made for ${shortDate(today)}`}
             >
               <span className="absolute -top-0.5 left-1 whitespace-nowrap bg-white px-0.5 text-micro font-semibold text-sdc-navy">
-                Today
+                {stale ? `As of ${shortDate(today)}` : "Today"}
               </span>
             </div>
             {targetDate && (
@@ -395,7 +399,13 @@ export function Timeline({
         </div>
       </div>
 
-      <Legend of={of} />
+      <Legend of={of} stale={stale} />
+      {stale && (
+        <p role="status" className="text-xs font-semibold text-sdc-yellow-text">
+          This forecast was made for {shortDate(today)}, not today, so its dates may be out of date. It is redone
+          whenever a card or the plan changes.
+        </p>
+      )}
       {notDrawn > 0 && (
         <p className="text-xs text-sdc-gray-600">
           {notDrawn} open {of === "projects" ? "project" : "card"}

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { assertActionPermission } from "@/lib/require-permission";
 import { trackerDb, trackerEngineDb } from "./db";
 import { trackerActor } from "./current-actor";
+import { localToday } from "./components/format";
 import { TrackerError, type Actor } from "./service/database";
 import {
   createProject,
@@ -45,12 +46,6 @@ import { runForecast } from "./service/forecast";
 
 export type ActionResult<T = unknown> = ({ ok: true } & T) | { ok: false; error: string };
 
-/** Today on the server's calendar, not UTC: late in the evening UTC is already tomorrow. */
-function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 /**
  * Recomputes the stored forecast after a change, so the dates on screen are never older than
  * the last edit. This is the quick single schedule (milliseconds), never the simulation, which
@@ -60,7 +55,7 @@ function today(): string {
 async function reforecast(): Promise<void> {
   if (!process.env.TRACKER_ENGINE_DATABASE_URL?.trim()) return;
   try {
-    await runForecast(trackerEngineDb, { asOf: today(), triggeredBy: "change" });
+    await runForecast(trackerEngineDb, { asOf: localToday(), triggeredBy: "change" });
   } catch (e) {
     console.error("[tracker] forecast after a change failed:", e instanceof Error ? e.message : e);
   }

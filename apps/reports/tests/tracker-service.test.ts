@@ -726,7 +726,10 @@ test("capacity: the default, a person's own figure, time off and holidays all mo
   await runForecast(db, { asOf: "2026-11-16", triggeredBy: "manual" });
   assert.equal(await finish(), "2026-11-16");
   const after = (await P.getCapacityOverview(db, cal)).people.find((x) => x.id === cal.personId)!;
-  assert.deepEqual([after.ownHoursPerDay, after.hoursPerDay, after.timeOff.length], [null, 6, 0]);
+  assert.deepEqual([after.ownHoursPerDay, after.hoursPerDay], [null, 6]);
+  // Counted in the table: the screen lists only time off still to come, and this week is fixed.
+  const left = await rows(`SELECT 1 FROM tracker.time_off WHERE person_id = $1`, [cal.personId]);
+  assert.equal(left.length, 0);
 
   await P.setGlobalHours(db, admin, 5);
   assert.equal((await P.getCapacityOverview(db, cal)).globalHoursPerDay, 5);
@@ -734,7 +737,11 @@ test("capacity: the default, a person's own figure, time off and holidays all mo
 });
 
 test("forecast run: a missing global capacity default is an error, not a silent zero", async () => {
-  // Last on purpose: it removes the row every other forecast test relies on.
+  // It removes the row every other forecast test relies on, and puts it back at the end.
+  const kept = await rows<{ hours: string; days: string; note: string | null }>(
+    `SELECT project_hours_per_day::text AS hours, working_weekdays::text AS days, note
+       FROM tracker.capacity_setting WHERE scope = 'global'`,
+  );
   await pg.exec(`DELETE FROM tracker.capacity_setting WHERE scope = 'global'`);
   await refuses(
     () => runForecast(db, { asOf: "2026-11-11", triggeredBy: "manual" }),
@@ -743,6 +750,14 @@ test("forecast run: a missing global capacity default is an error, not a silent 
   );
   const runs = await rows(`SELECT 1 FROM tracker.schedule_run WHERE status = 'running'`);
   assert.equal(runs.length, 0, "the refused run leaves nothing behind");
+  for (const k of kept) {
+    await pg.query(
+      `INSERT INTO tracker.capacity_setting (scope, project_hours_per_day, working_weekdays, note)
+       VALUES ('global', $1::numeric, $2::int[], $3)`,
+      [k.hours, k.days, k.note],
+    );
+  }
+  await runForecast(db, { asOf: "2026-11-11", triggeredBy: "manual" });
 });
 
 test("kinds: a card sits only under a higher kind, changes are logged, and a parent shows what is under it", async () => {
@@ -1054,6 +1069,27 @@ test("dependencies on a parent stand for the work cards under it", async () => {
   await addDependency(db, ana, fa.id, fb.id);
   await refuses(() => addDependency(db, ana, b1.id, a1.id), "invalid", /through the cards under them/);
   await addDependency(db, ana, a1.id, b1.id); // the same direction as the features: allowed
+
+  // A loop that is already there, with no candidate link: what a move is checked against.
+  assert.equal(D.hasLoop(stored, children), false);
+  assert.equal(D.hasLoop([...stored, { predecessorId: 221, successorId: 11, lagDays: 0 }], children), true);
+
+  // Moving a card under another is checked the same way as adding a link.
+  const story = await make("Story", { kind: "story" });
+  const waiter = await make("waits on the story");
+  await addDependency(db, ana, story.id, waiter.id);
+  await refuses(
+    () => updateTask(db, ana, waiter.id, { parentTaskId: story.id }),
+    "invalid",
+    /UNDER-6 waits on UNDER-5, and this move would put one under the other/,
+  );
+  // x waits on b1, and b1 waits on everything under Feature A, so x cannot go under Feature A.
+  const x = await make("x");
+  await addDependency(db, ana, b1.id, x.id);
+  await refuses(() => updateTask(db, ana, x.id, { parentTaskId: fa.id }), "invalid", /wait on each other in a loop/);
+  await updateTask(db, ana, x.id, { parentTaskId: fb.id }); // beside b1: no loop
+  const free = await make("free");
+  await updateTask(db, ana, free.id, { parentTaskId: fa.id }); // no links at all: always allowed
 });
 
 test("timeline: cards run by start date under their parent, and a parent spans the open cards under it", async () => {
@@ -1502,4 +1538,54 @@ test("checklist: an Epic, Feature or Story takes none; items a card already has 
   await refuses(() => addChecklistItem(db, ana, card.id, "one more"), "invalid", /A Story has no checklist/);
   await setChecklistItemDone(db, ana, kept, true);
   await removeChecklistItem(db, ana, kept);
+});
+
+test("size: hours left follow a new size until somebody changes them, and clearing the size clears the estimate", async () => {
+  const p = await createProject(db, ana, { key: "RESIZE", name: "Resizing" });
+  const bucket = async (label: string) =>
+    Number((await rows<{ id: number }>(`SELECT id FROM tracker.effort_bucket WHERE label = $1`, [label]))[0]!.id);
+  const day = await bucket("1 Day");
+  const week = await bucket("1 Week");
+  const hoursOf = async (id: number) => {
+    const [r] = await rows<{ b: number | null; e: string | null; l: string | null }>(
+      `SELECT effort_bucket_id AS b, effort_estimate_hours::float8 AS e, remaining_effort_hours::float8 AS l
+         FROM tracker.task WHERE id = $1`,
+      [id],
+    );
+    return [r!.b == null ? null : Number(r!.b), r!.e == null ? null : Number(r!.e), r!.l == null ? null : Number(r!.l)];
+  };
+
+  // Hours left never typed: there is nothing to keep in step, the forecast reads the estimate.
+  const bare = await createTask(db, ana, { projectId: p.id, title: "Bare", effortBucketId: day });
+  await updateTask(db, ana, bare.id, { effortBucketId: week });
+  assert.deepEqual(await hoursOf(bare.id), [week, 30, null]);
+
+  // Hours left equal to the estimate were never worked down, so they follow the new size.
+  const fresh = await createTask(db, ana, {
+    projectId: p.id,
+    title: "Fresh",
+    effortBucketId: day,
+    remainingEffortHours: 6,
+  });
+  await updateTask(db, ana, fresh.id, { effortBucketId: week });
+  assert.deepEqual(await hoursOf(fresh.id), [week, 30, 30]);
+
+  // Hours somebody has changed stay theirs.
+  const worked = await createTask(db, ana, {
+    projectId: p.id,
+    title: "Worked",
+    effortBucketId: day,
+    remainingEffortHours: 4,
+  });
+  await updateTask(db, ana, worked.id, { effortBucketId: week });
+  assert.deepEqual(await hoursOf(worked.id), [week, 30, 4]);
+  // And typing hours left in the same save wins over following the size.
+  await updateTask(db, ana, fresh.id, { effortBucketId: day, remainingEffortHours: 2 });
+  assert.deepEqual(await hoursOf(fresh.id), [day, 6, 2]);
+
+  // "No estimate yet" clears the size and the hours it stood for.
+  await updateTask(db, ana, bare.id, { effortBucketId: null });
+  assert.deepEqual(await hoursOf(bare.id), [null, null, null]);
+  await updateTask(db, ana, worked.id, { effortBucketId: null });
+  assert.deepEqual(await hoursOf(worked.id), [null, null, 4]);
 });

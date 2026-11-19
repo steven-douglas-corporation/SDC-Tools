@@ -144,7 +144,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
     if (nextAssignee !== task.assigneePersonId) changes.assigneePersonId = nextAssignee;
     if (Number(requestedById) !== task.requestedByPersonId) changes.requestedByPersonId = Number(requestedById);
     const nextBucket = bucketId ? Number(bucketId) : null;
-    if (isTask && nextBucket !== task.bucketId && nextBucket !== null) changes.effortBucketId = nextBucket;
+    if (isTask && nextBucket !== task.bucketId) changes.effortBucketId = nextBucket;
     const nextRemaining = remaining.trim() === "" ? null : Number(remaining);
     if (isTask && nextRemaining !== task.remainingHours) {
       if (nextRemaining !== null && !Number.isFinite(nextRemaining)) return setError("Hours left must be a number.");
@@ -311,7 +311,10 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                     className={INPUT}
                   >
                     <option value="">
-                      {task.estimateHours != null ? `${task.estimateHours} hours (typed)` : "No estimate yet"}
+                      {/* With a size chosen, the blank choice clears it. With none, it is what the card has. */}
+                      {task.bucketId == null && task.estimateHours != null
+                        ? `${task.estimateHours} hours (typed)`
+                        : "No estimate yet"}
                     </option>
                     {task.buckets.map((b) => (
                       <option key={b.id} value={b.id}>

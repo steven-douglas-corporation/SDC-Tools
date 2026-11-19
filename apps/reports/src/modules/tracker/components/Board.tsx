@@ -230,11 +230,6 @@ function Card({
               {task.kindLabel}
             </span>
           )}
-          {task.type === "milestone" && (
-            <span className="rounded-full bg-sdc-blue-light px-2 py-0.5 text-micro font-bold uppercase text-sdc-blue-dark">
-              Milestone
-            </span>
-          )}
           {task.priority <= 2 && (
             <span className="rounded-full bg-sdc-yellow-bg px-2 py-0.5 text-micro font-bold text-sdc-yellow-text">
               P{task.priority}

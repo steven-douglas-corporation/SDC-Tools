@@ -1,6 +1,6 @@
 import { TrackerError, assertIsoDate, one, type Actor, type Database, type Tx } from "./database";
 import { projectRole, requireProjectRole } from "./access";
-import { childrenByParent, inSameLine, wouldLoop } from "./dependencies";
+import { childrenByParent, hasLoop, inSameLine, wouldLoop } from "./dependencies";
 
 // Everything that changes a task goes through this file, so the status log, the change log and
 // the completion dates are always written in the same transaction as the change itself.
@@ -448,6 +448,7 @@ export async function updateTask(
                   "Parent card",
                 )
               ).key;
+        await checkMoveKeepsLinksSound(tx, taskId, nextParent);
         assign("parent_task_id", nextParent);
         await logTaskChange(tx, taskId, "parent", oldKey, parentKey, actor, why);
       }
@@ -462,12 +463,24 @@ export async function updateTask(
       newEstimate = changes.effortEstimateHours;
       assign("effort_bucket_id", null);
     } else if (changes.effortBucketId === null) {
+      // Clearing the size clears the hours it stood for: "No estimate yet" means exactly that.
       assign("effort_bucket_id", null);
+      if (cur.effort_bucket_id != null) newEstimate = null;
     }
     if (newEstimate !== undefined && !sameHours(cur.effort_estimate_hours, newEstimate)) {
       if (milestone && (newEstimate ?? 0) > 0) throw new TrackerError("invalid", "A milestone carries no effort.");
       assign("effort_estimate_hours", newEstimate);
       await logTaskChange(tx, taskId, "effort_estimate_hours", cur.effort_estimate_hours, newEstimate, actor, why);
+      // Hours left that still equal the old estimate were never worked down, so they follow the
+      // new one. Hours somebody has since changed are theirs and stay.
+      if (
+        changes.remainingEffortHours === undefined &&
+        cur.remaining_effort_hours != null &&
+        sameHours(cur.remaining_effort_hours, cur.effort_estimate_hours)
+      ) {
+        assign("remaining_effort_hours", newEstimate);
+        await logTaskChange(tx, taskId, "remaining_effort_hours", cur.remaining_effort_hours, newEstimate, actor, why);
+      }
     }
 
     if (
@@ -814,6 +827,48 @@ async function taskKey(tx: Tx, taskId: number): Promise<{ key: string; projectId
     "Task",
   );
   return { key: r.key, projectId: Number(r.project_id) };
+}
+
+/**
+ * Refuses to move a card under another when that would break a dependency: leave two linked
+ * cards one under the other, or make cards wait on each other in a loop. `addDependency` makes
+ * the same two checks when a link is added. A link that was already broken before the move is
+ * not blamed on it.
+ */
+async function checkMoveKeepsLinksSound(tx: Tx, taskId: number, nextParent: number | null): Promise<void> {
+  const stored = await tx.query<{ predecessor_task_id: number; successor_task_id: number; lag_days: number }>(
+    `SELECT predecessor_task_id, successor_task_id, lag_days FROM tracker.task_dependency`,
+  );
+  if (!stored.rows.length) return;
+  const links = stored.rows.map((d) => ({
+    predecessorId: Number(d.predecessor_task_id),
+    successorId: Number(d.successor_task_id),
+    lagDays: Number(d.lag_days),
+  }));
+  const placed = await tx.query<{ id: number; parent_task_id: number }>(
+    `SELECT id, parent_task_id FROM tracker.task WHERE archived_at IS NULL AND parent_task_id IS NOT NULL`,
+  );
+  const now = placed.rows.map((r) => ({ id: Number(r.id), parentId: Number(r.parent_task_id) as number | null }));
+  const before = childrenByParent(now);
+  const after = childrenByParent([...now.filter((r) => r.id !== taskId), { id: taskId, parentId: nextParent }]);
+
+  const crossed = links.find(
+    (l) => inSameLine(l.predecessorId, l.successorId, after) && !inSameLine(l.predecessorId, l.successorId, before),
+  );
+  if (crossed) {
+    const waits = await taskKey(tx, crossed.successorId);
+    const on = await taskKey(tx, crossed.predecessorId);
+    throw new TrackerError(
+      "invalid",
+      `${waits.key} waits on ${on.key}, and this move would put one under the other. Remove that link first.`,
+    );
+  }
+  if (hasLoop(links, after) && !hasLoop(links, before)) {
+    throw new TrackerError(
+      "invalid",
+      "Moving this card there would make cards wait on each other in a loop, through the cards under them. Remove one of the links first.",
+    );
+  }
 }
 
 /**

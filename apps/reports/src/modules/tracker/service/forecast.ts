@@ -267,6 +267,10 @@ const idOrNull = (value: string | null | undefined): number | null => (value == 
 export async function runForecast(db: Database, options: ForecastRunOptions): Promise<ForecastRunResult> {
   const simulations = options.simulations ?? 0;
   return db.transaction(async (tx) => {
+    // One run at a time. Readers take the rows of the newest run, so a run that started first
+    // and finished last would leave every row stamped with an older run and the screens empty.
+    // The lock is taken before anything is read, so each run sees what the one before it wrote.
+    await tx.query(`SELECT pg_advisory_xact_lock(hashtext('tracker.forecast'))`);
     const run = await tx.query<{ id: number }>(
       `INSERT INTO tracker.schedule_run (triggered_by, as_of_date, simulations) VALUES ($1, $2::date, $3) RETURNING id`,
       [options.triggeredBy, options.asOf, simulations],
