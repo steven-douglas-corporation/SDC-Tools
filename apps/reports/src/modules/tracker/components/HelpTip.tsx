@@ -118,18 +118,21 @@ export function HelpTip({ label, children }: { label: string; children: React.Re
   );
 }
 
-/** What P80 means, wherever a P80 date is shown. */
-export function P80Help() {
+/** What the safe date means, wherever one is shown. The screens say "Safe date"; the data calls it P80. */
+export function SafeDateHelp() {
   return (
-    <HelpTip label="What P80 means">
-      <span className="mb-1 block font-semibold">P80: the date to promise</span>
+    <HelpTip label="What the safe date means">
+      <span className="mb-1 block font-semibold">Safe date: the date to promise</span>
       <span className="block">
-        The 80th percentile. The forecast is run thousands of times, each time letting every estimate come in a little
-        under or over. P80 is the date the work is finished by in 4 runs out of 5.
+        There are 4 chances in 5 that the work is finished by this date. The Forecast date is what happens if every
+        estimate is exactly right, so it is the earlier of the two; the safe date allows for work running over.
+      </span>
+      <span className="mt-2 block">
+        It is blank until the simulation has run, and again after a change to the plan until it next runs.
       </span>
       <span className="mt-2 block text-sdc-gray-600">
-        The Forecast date is what happens if every estimate is exactly right, so it is the earlier of the two. P80 is
-        blank until the simulation has run, and again after a change until it next runs.
+        How it is worked out: the forecast is run thousands of times, each time letting every estimate come in a little
+        under or over. The safe date is the one that 80% of those runs finish by, also called P80.
       </span>
     </HelpTip>
   );

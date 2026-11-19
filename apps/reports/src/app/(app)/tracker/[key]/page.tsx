@@ -12,7 +12,7 @@ import { listMembers } from "@/modules/tracker/service/people";
 import { Board } from "@/modules/tracker/components/Board";
 import { Members } from "@/modules/tracker/components/Members";
 import { ProjectViews } from "@/modules/tracker/components/ProjectViews";
-import { P80Help } from "@/modules/tracker/components/HelpTip";
+import { SafeDateHelp } from "@/modules/tracker/components/HelpTip";
 import { hours, shortDate } from "@/modules/tracker/components/format";
 
 const plural = (label: string) => (label.endsWith("y") ? `${label.slice(0, -1)}ies` : `${label}s`);
@@ -47,7 +47,7 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
     ["Stack rank", p.portfolioRank?.toString() ?? "none"],
     ["Target", shortDate(p.targetDate)],
     ["Forecast", shortDate(p.forecastFinish)],
-    ["P80", shortDate(p.p80Finish)],
+    ["Safe date", shortDate(p.p80Finish)],
     ["Hours left", hours(p.remainingHours)],
     // Cards that carry work: a card with cards under it is not counted on top of them.
     ["Done", `${p.doneCount} of ${p.taskCount}`],
@@ -75,7 +75,7 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
           <div key={label}>
             <dt className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-sdc-gray-600">
               {label}
-              {label === "P80" && <P80Help />}
+              {label === "Safe date" && <SafeDateHelp />}
             </dt>
             <dd className="font-semibold text-sdc-navy">{value}</dd>
           </div>

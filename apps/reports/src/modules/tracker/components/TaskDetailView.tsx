@@ -18,7 +18,7 @@ import type { LinkedTask, TaskDetail } from "../service/task-detail";
 import type { OpenCard } from "../service/tasks";
 import { Checklist } from "./Checklist";
 import { CloseUnderPrompt } from "./CloseUnderPrompt";
-import { P80Help } from "./HelpTip";
+import { SafeDateHelp } from "./HelpTip";
 import { KindHelp } from "./KindHelp";
 import { forecastReason, hours, shortDate, uncountedComparison } from "./format";
 
@@ -654,7 +654,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
               <dt className="text-sdc-gray-600">Finishes</dt>
               <dd className="font-semibold text-sdc-navy">{shortDate(task.forecast.forecastFinish)}</dd>
               <dt className="flex items-center gap-1.5 text-sdc-gray-600">
-                P80 <P80Help />
+                Safe date <SafeDateHelp />
               </dt>
               <dd className="text-sdc-navy">{shortDate(task.forecast.p80Finish)}</dd>
               {task.dueDate && (

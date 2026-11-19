@@ -59,7 +59,7 @@ function Legend({ of }: { of: "cards" | "projects" }) {
           <span className="h-3.5 w-full rounded bg-sdc-red" />
         </Mark>
       )}
-      <Mark label="Out to P80">
+      <Mark label="Out to the safe date">
         <span className="h-3.5 w-full rounded-r bg-sdc-blue/20" />
       </Mark>
       {cards && (
@@ -283,7 +283,7 @@ export function Timeline({
               const said = [
                 `${r.key} ${r.title}`,
                 b ? `${shortDate(r.start)} to ${shortDate(r.finish)}` : null,
-                r.p80Finish ? `P80 ${shortDate(r.p80Finish)}` : null,
+                r.p80Finish ? `safe date ${shortDate(r.p80Finish)}` : null,
                 r.dueDate ? `due ${shortDate(r.dueDate)}` : null,
                 r.isParent ? "spans the cards under it" : r.assigneeName,
                 r.statusName,
@@ -314,7 +314,7 @@ export function Timeline({
                       <>
                         {r.p80Finish && (
                           <div
-                            title={`${r.key}: four times in five it is finished by ${shortDate(r.p80Finish)}`}
+                            title={`${r.key}: safe date ${shortDate(r.p80Finish)}, 4 chances in 5 it is finished by then`}
                             style={{
                               left: b.to,
                               width: x(dayNumber(r.p80Finish) + 1) - b.to,

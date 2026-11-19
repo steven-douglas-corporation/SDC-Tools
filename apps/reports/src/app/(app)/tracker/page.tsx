@@ -38,7 +38,8 @@ export default async function TrackerPage() {
       <p className="mb-4 max-w-3xl text-sm text-sdc-gray-600">
         Projects in company priority order. <strong>Forecast</strong> is when the work is expected to finish, worked out
         from the hours left, who is assigned and what waits on what. It is shown beside the target, with the work it
-        leaves out, so a date is never better than it looks.{" "}
+        leaves out, so a date is never better than it looks. <strong>Safe date</strong> is later: it allows for work
+        running over, and is the one to promise.{" "}
         <Link href="/tracker/people" className="font-semibold text-sdc-blue hover:underline">
           People and time
         </Link>{" "}

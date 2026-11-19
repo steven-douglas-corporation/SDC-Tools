@@ -338,7 +338,9 @@ function Card({
                 <>
                   {task.forecastStart !== task.forecastFinish && `${shortDate(task.forecastStart)} → `}
                   <strong>{shortDate(task.forecastFinish)}</strong>
-                  {task.p80Finish && task.p80Finish !== task.forecastFinish && ` (P80 ${shortDate(task.p80Finish)})`}
+                  {task.p80Finish &&
+                    task.p80Finish !== task.forecastFinish &&
+                    ` (safe date ${shortDate(task.p80Finish)})`}
                 </>
               ) : (
                 "—"

@@ -17,7 +17,7 @@ import { createProjectAction, moveProjectRankAction, setProjectRankAction, setPr
 import type { RankClash } from "../service/projects";
 import type { ProjectListItem } from "../service/queries";
 import { hours, leftOutOfForecast, rankClashEffect, shortDate } from "./format";
-import { P80Help } from "./HelpTip";
+import { SafeDateHelp } from "./HelpTip";
 
 // The tracker's front page: every project the person can see, in stack-rank order, with the
 // forecast beside the target and the work the forecast leaves out beside both.
@@ -294,7 +294,7 @@ export function ProjectList({
                 <th className="px-3 py-2.5">Forecast</th>
                 <th className="px-3 py-2.5">
                   <span className="inline-flex items-center gap-1.5">
-                    P80 <P80Help />
+                    Safe date <SafeDateHelp />
                   </span>
                 </th>
                 <th className="px-3 py-2.5">Against target</th>
