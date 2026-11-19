@@ -78,10 +78,10 @@ function Legend({ of }: { of: "cards" | "projects" }) {
         </Mark>
       )}
       <Mark label={cards ? "Due date" : "Target date"}>
-        <span className="h-4 w-0.5 bg-sdc-gray-600" />
+        <span className="h-4 w-1.5 border-y-2 border-r-2 border-sdc-gray-600" />
       </Mark>
       <Mark label={cards ? "Due date the forecast misses" : "Target the forecast misses"}>
-        <span className="h-4 w-0.5 bg-sdc-red" />
+        <span className="h-4 w-1.5 border-y-2 border-r-2 border-sdc-red" />
       </Mark>
       <Mark
         label={cards ? "Waits on (arrow points at the card that waits)" : "Has a card waiting on the other project"}
@@ -340,8 +340,9 @@ export function Timeline({
                   {r.dueDate && r.category !== "done" && (
                     <div
                       title={`${r.key} is due ${shortDate(r.dueDate)}${late ? ", and the forecast is later" : ""}`}
-                      style={{ left: x(dayNumber(r.dueDate) + 1) - 1, top: 4, bottom: 4 }}
-                      className={`absolute w-0.5 ${late ? "bg-sdc-red" : "bg-sdc-gray-600"}`}
+                      // A closing bracket, so a due date never reads as the plain Today line.
+                      style={{ left: x(dayNumber(r.dueDate) + 1) - 5, top: 4, bottom: 4 }}
+                      className={`absolute w-1.5 border-y-2 border-r-2 ${late ? "border-sdc-red" : "border-sdc-gray-600"}`}
                     />
                   )}
                   {!b && !r.isParent && r.category !== "done" && (
