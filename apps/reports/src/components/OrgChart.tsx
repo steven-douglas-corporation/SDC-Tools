@@ -3,7 +3,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { card } from "@/components/ui/classnames";
 import { resolveEmployeeGroup } from "@/lib/employee-card-theme";
 import type { OrgBand, OrgChart as OrgChartData, OrgNode, OrgTeamCard } from "@/lib/org-chart";
-import { groupByFunction, sectionActive, type FunctionGroups, type SectionKey } from "@/lib/org-chart-groups";
+import { groupByFunction, sectionActive, type SectionKey } from "@/lib/org-chart-groups";
 import { DepartmentCardHeader, EmployeePersonRow, HandPlacedSection, TempsSection } from "@/components/EmployeePersonRow";
 import { isPaylocityId, comparePositionCode, rowMatchesSearch, type EmployeeRow } from "@/lib/employee-row";
 import { filterOrgNodes, countOrgNodes } from "@/lib/org-chart-search";
@@ -15,7 +15,7 @@ import { OpenPositionsDropdown } from "@/components/OpenPositionsDropdown";
 import type { HiringPosition } from "@/lib/hiring-positions";
 import { countOpenings } from "@/lib/hiring-openings";
 import { cardId, LEADERS_CARD, placeHiringOnChart } from "@/lib/org-chart-hiring";
-import { PanZoomCanvas } from "@/components/PanZoomCanvas";
+import { OrgChartCanvas } from "@/components/OrgChartCanvas";
 
 // The Employees page's Org chart view (2026-10-02): the same department cards
 // as the Cards view — same header, same "N active" line, same person rows
@@ -56,6 +56,9 @@ function rowsIn(nodes: OrgNode[], people: Map<number, EmployeeRow>): EmployeeRow
   });
 }
 
+// Everyone in a tree, top down (the Leadership summary's names).
+const flattenNodes = (nodes: OrgNode[]): OrgNode[] => nodes.flatMap((n) => [n, ...flattenNodes(n.reports)]);
+
 // A card has up to three parts, top to bottom, as on Cards: the Paylocity roster
 // as a tree, then people whose team was set by hand, then contractors (not in
 // Paylocity). The last two leave the tree for their own section; anyone who
@@ -82,6 +85,21 @@ function splitSections(nodes: OrgNode[], ctx: Ctx): { tree: OrgNode[]; hand: Org
   return { tree, hand: hand.sort(byCode), temps: temps.sort(byCode) };
 }
 
+// A person's row, wrapped so the Canvas view can find it (PanZoomCanvas.tsx,
+// OrgChartCanvas.tsx): by person for the reporting lines, as a search match to
+// jump to, and lit/current for the highlight. On the row alone, not the <li>,
+// whose box takes in everyone under them. The attributes cost nothing elsewhere.
+const PERSON_MARK =
+  "rounded-md data-canvas-lit:bg-sdc-blue-light data-canvas-current:ring-2 data-canvas-current:ring-sdc-blue data-canvas-current:ring-offset-1";
+function PersonRow({ n, row, cardTitle, ctx }: { n: OrgNode; row: EmployeeRow; cardTitle: string; ctx: Ctx }) {
+  const matched = !!ctx.match && ctx.match(n.id);
+  return (
+    <div data-canvas-person={n.id} data-canvas-match={matched ? "" : undefined} className={PERSON_MARK}>
+      <EmployeePersonRow p={row} cardTitle={cardTitle} onSelect={ctx.onSelect} note={n.note} hideLeadershipBadge={ctx.leadershipCard} dimmed={!!ctx.match && !matched} />
+    </div>
+  );
+}
+
 function CardBody({ nodes, cardTitle, ctx }: { nodes: OrgNode[]; cardTitle: string; ctx: Ctx }) {
   const { tree, hand, temps } = splitSections(nodes, ctx);
   const rows = (list: OrgNode[]) =>
@@ -89,7 +107,7 @@ function CardBody({ nodes, cardTitle, ctx }: { nodes: OrgNode[]; cardTitle: stri
       const row = ctx.people.get(n.id);
       return row ? (
         <li key={n.id}>
-          <EmployeePersonRow p={row} cardTitle={cardTitle} onSelect={ctx.onSelect} note={n.note} dimmed={!!ctx.match && !ctx.match(n.id)} />
+          <PersonRow n={n} row={row} cardTitle={cardTitle} ctx={ctx} />
         </li>
       ) : null;
     });
@@ -110,7 +128,7 @@ function Tree({ nodes, cardTitle, ctx, nested }: { nodes: OrgNode[]; cardTitle: 
         if (!row) return null;
         return (
           <li key={n.id} className={nested ? TREE_LI : ""}>
-            <EmployeePersonRow p={row} cardTitle={cardTitle} onSelect={ctx.onSelect} note={n.note} hideLeadershipBadge={ctx.leadershipCard} dimmed={!!ctx.match && !ctx.match(n.id)} />
+            <PersonRow n={n} row={row} cardTitle={cardTitle} ctx={ctx} />
             {n.reports.length > 0 && <Tree nodes={n.reports} cardTitle={cardTitle} ctx={ctx} nested />}
           </li>
         );
@@ -131,10 +149,19 @@ function TeamCard({
   nodes,
   ctx,
   reportsTo = null,
+  leaderId,
+  compact = false,
+  compactPeople,
   children,
 }: {
   /** Who the card's people report to (the function groups; a "Reporting to X" heading already says). */
   reportsTo?: string | null;
+  /** The band's leader: the Canvas view draws the reporting line from them. */
+  leaderId?: number;
+  /** The Canvas view zoomed out: a summary in large type, and a click zooms in. */
+  compact?: boolean;
+  /** People a summary still names (the Leadership card's few). */
+  compactPeople?: OrgNode[];
   /** cardId() — which positions are placed here. */
   id: string;
   team: string | null;
@@ -164,15 +191,60 @@ function TeamCard({
   const hiringOpenings = countOpenings(cardHiring);
   const hiringHours = hasCapacityPolicy ? hiringCapacityHours(cardHiring, ctx.year!) : 0;
   const currentHours = hasCapacityPolicy ? employeeCapacityHours(count, ctx.year!) : 0;
+  const colors = group?.colors ?? { bg: "#e2e8f0", text: "#1e293b" };
+  // Marks for the Canvas view (PanZoomCanvas.tsx): on its overview map, held
+  // still across a change of detail, and the far end of a reporting line.
+  const canvasMarks = { "data-canvas-item": "card", "data-canvas-key": id, "data-canvas-card-leader": leaderId };
+  if (compact) {
+    // Read at under half size (59% canvas x the app's 80%), so large type; the
+    // people come back on zooming in.
+    return (
+      <section
+        {...canvasMarks}
+        data-canvas-zoom-on-click=""
+        title="Click to zoom in"
+        className="flex cursor-zoom-in flex-col overflow-hidden rounded-xl border border-sdc-border bg-white shadow-sm data-canvas-lit:ring-4 data-canvas-lit:ring-sdc-blue"
+      >
+        <h3 className="px-4 py-3 font-heading text-3xl font-bold" style={{ background: colors.bg, color: colors.text }}>
+          {title}
+        </h3>
+        <div className="flex flex-col gap-1 px-4 py-3">
+          {reportsTo && (
+            <p data-canvas-reports-to="" className="text-2xl text-sdc-muted">
+              Reports to {reportsTo}
+            </p>
+          )}
+          <p className="text-3xl font-bold text-sdc-navy">
+            {count} <span className="text-2xl font-normal text-sdc-muted">active</span>
+            {hiringOpenings > 0 && <span className="ml-3 text-2xl font-semibold text-sdc-green-text">+{hiringOpenings} hiring</span>}
+          </p>
+          {compactPeople && compactPeople.length > 0 && (
+            <ul className="mt-1 flex flex-col gap-0.5">
+              {compactPeople.map((n) => (
+                <li key={n.id} data-canvas-person={n.id} className={`px-1 text-2xl text-sdc-navy ${PERSON_MARK}`}>
+                  {n.name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+    );
+  }
   return (
-    <section className="flex flex-col rounded-xl border border-sdc-border bg-white shadow-sm">
+    <section {...canvasMarks} className="flex flex-col rounded-xl border border-sdc-border bg-white shadow-sm data-canvas-lit:ring-2 data-canvas-lit:ring-sdc-blue">
       <DepartmentCardHeader
         title={title}
-        colors={group?.colors ?? { bg: "#e2e8f0", text: "#1e293b" }}
+        colors={colors}
         isAi={group?.key === "ai"}
         className="rounded-t-[11px]"
       />
-      {reportsTo && <p className="px-3.5 pt-1.5 text-xs text-sdc-muted">Reports to {reportsTo}</p>}
+      {/* data-canvas-reports-to: on the Canvas view, pointing here draws the line to them. */}
+      {reportsTo && (
+        <p data-canvas-reports-to="" className="px-3.5 pt-1.5 text-xs text-sdc-muted">
+          Reports to {reportsTo}
+        </p>
+      )}
       <CardStats
         stats={{ active: count, inactive, hiringOpenings, currentHours: canOpenCapacity ? currentHours : null, hiringHours }}
         shown={shown}
@@ -275,7 +347,7 @@ function Part({ label, active, className, children }: { label: string | null; ac
 }
 
 // "canvas" (2026-11-16, experimental): the function groups drawn as a tree on a
-// pan-and-zoom canvas (see CanvasLayout) instead of flowing to the page width.
+// pan-and-zoom canvas (OrgChartCanvas.tsx) instead of flowing to the page width.
 export type OrgChartGrouping = "function" | "leader" | "canvas";
 
 // The function groups, in page order, and which sections of
@@ -286,170 +358,10 @@ const FUNCTIONS: { key: "growth" | "execution" | "support"; title: string; blurb
   { key: "support", title: "Support", blurb: "Run the business", sections: ["support"] },
 ];
 
-// ── The Canvas view (2026-11-16, experimental) ──────────────────────────────
-//
-// The function groups as a tree, laid out at a fixed width on a pan-and-zoom
-// canvas (PanZoomCanvas.tsx), so nothing has to wrap to the page:
-//
-//                       [ Leadership ]
-//                             │
-//        ┌────────────────────┼────────────────────┐
-//    [ Growth ]       [ Execution            ]   [ Support ]
-//     stacked         [ Project management   ]    stacked
-//                     [ Engineering│Operations]
-//                        stacked     stacked
-//
-// Teams no function takes ("Reporting to X") and Not placed sit in a row under
-// the tree. Same cards, same search and same hiring placement as the other views.
-const CANVAS_COL = "flex w-[20rem] flex-col gap-3";
-// Connectors, the classic CSS tree: each branch draws its share of the bar
-// across the top (half of it at the two ends) and a drop to its own centre.
-// The bar runs into the gap between branches (-left/-right = half of gap-10).
-// (Written out in full: Tailwind only generates what it finds literally.)
-const CANVAS_STEM = "h-8 border-l-[1.5px] border-sdc-gray-400";
-const CANVAS_BRANCHES = "flex items-start justify-center gap-10";
-const CANVAS_BRANCH =
-  "relative pt-8 before:absolute before:-left-5 before:-right-5 before:top-0 before:border-t-[1.5px] before:border-sdc-gray-400 before:content-[''] first:before:left-1/2 last:before:right-1/2 after:absolute after:left-1/2 after:top-0 after:h-8 after:border-l-[1.5px] after:border-sdc-gray-400 after:content-['']";
+// The Canvas view's layout lives in OrgChartCanvas.tsx (2026-11-19): it is a
+// client component (hooks for the detail level and the reporting lines), and
+// this file stays hook-free.
 
-// How many columns each part of Execution spreads its cards over on the canvas.
-const CANVAS_PART_COLUMNS: Record<"engineering" | "operations", number> = { engineering: 2, operations: 3 };
-
-// Deals cards into `n` columns, each to the shortest so far, so the columns end
-// up about even. A card's height is guessed from what it draws: a header's worth
-// plus a row per person shown. In order, so teams still read left to right.
-function balanceColumns<T extends { item: { heads: OrgNode[] } }>(cards: T[], n: number): T[][] {
-  const cols = Array.from({ length: Math.max(1, Math.min(n, cards.length)) }, () => ({ height: 0, cards: [] as T[] }));
-  for (const c of cards) {
-    const shortest = cols.reduce((a, b) => (b.height < a.height ? b : a));
-    shortest.cards.push(c);
-    shortest.height += 4 + countOrgNodes(c.item.heads);
-  }
-  return cols.map((c) => c.cards);
-}
-
-function CanvasPanel({
-  title,
-  blurb,
-  active,
-  accent = false,
-  dashed = false,
-  children,
-}: {
-  title: string;
-  blurb?: string;
-  active?: number;
-  /** Execution: tinted, the way the eye should be drawn. */
-  accent?: boolean;
-  dashed?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <section
-      className={`rounded-2xl border p-4 shadow-sm ${dashed ? "border-dashed" : ""} ${
-        accent ? "border-sdc-green/50 bg-sdc-green-bg/70" : "border-sdc-border bg-white/80"
-      }`}
-    >
-      <header className="mb-3 text-center">
-        <h3 className="font-heading text-base font-bold text-sdc-navy">{title}</h3>
-        <p className="text-xs text-sdc-muted">
-          {blurb}
-          {blurb && active != null && " · "}
-          {active != null && `${active} active`}
-        </p>
-      </header>
-      {children}
-    </section>
-  );
-}
-
-function CanvasLayout({
-  leadership,
-  functions,
-  sections,
-  teamCard,
-  others,
-  notPlaced,
-}: {
-  leadership: React.ReactNode;
-  functions: { key: string; title: string; blurb: string; active: number; cards: { band: OrgBand; item: { card: OrgTeamCard; heads: OrgNode[] } }[] }[];
-  sections: FunctionGroups<{ card: OrgTeamCard; heads: OrgNode[] }>["sections"];
-  teamCard: (b: OrgBand, c: OrgTeamCard, heads: OrgNode[], reportsTo: string | null) => React.ReactNode;
-  others: { title: string; active: number; cards: React.ReactNode[] }[];
-  notPlaced: React.ReactNode;
-}) {
-  const card = ({ band: b, item }: { band: OrgBand; item: { card: OrgTeamCard; heads: OrgNode[] } }) => teamCard(b, item.card, item.heads, b.leader.name);
-  const parts = (["engineering", "operations"] as const).filter((k) => sections[k].cards.length > 0);
-  return (
-    <div className="p-6">
-      {leadership && (
-        <div className="flex flex-col items-center">
-          <div className="w-[20rem]">{leadership}</div>
-          {functions.length > 0 && <div className={CANVAS_STEM} />}
-        </div>
-      )}
-
-      <div className={CANVAS_BRANCHES}>
-        {functions.map((f) => (
-          <div key={f.key} className={leadership ? CANVAS_BRANCH : ""}>
-            {f.key === "execution" ? (
-              <CanvasPanel title={f.title} blurb={f.blurb} active={f.active} accent>
-                {sections.pm.cards.length > 0 && (
-                  // Project management spans the panel. `w-0 min-w-full`: as wide as
-                  // the parts under it, without its own text widening the panel.
-                  <div className={`flex gap-3 ${parts.length ? "w-0 min-w-full" : ""}`}>
-                    {sections.pm.cards.map((c) => (
-                      <div key={cardId(c.band.leader.id, c.item.card.team)} className={parts.length ? "min-w-0 flex-1" : "w-[20rem]"}>
-                        {card(c)}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {parts.length > 0 && (
-                  <div className={`flex items-start gap-4 ${sections.pm.cards.length ? "mt-4" : ""}`}>
-                    {parts.map((k) => (
-                      <div key={k}>
-                        <h4 className="mb-2 text-center text-xs font-semibold text-sdc-navy">
-                          {PART_LABEL[k]}
-                          <span className="ml-2 font-normal text-sdc-gray-400">{sectionActive(sections[k])} active</span>
-                        </h4>
-                        <div className="flex items-start gap-3">
-                          {balanceColumns(sections[k].cards, CANVAS_PART_COLUMNS[k]).map((col, i) => (
-                            <div key={i} className={CANVAS_COL}>
-                              {col.map(card)}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CanvasPanel>
-            ) : (
-              <CanvasPanel title={f.title} blurb={f.blurb} active={f.active}>
-                <div className={CANVAS_COL}>{f.cards.map(card)}</div>
-              </CanvasPanel>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {(others.length > 0 || notPlaced) && (
-        <div className="mt-12 flex items-start justify-center gap-10">
-          {others.map((o) => (
-            <CanvasPanel key={o.title} title={o.title} active={o.active}>
-              <div className={CANVAS_COL}>{o.cards}</div>
-            </CanvasPanel>
-          ))}
-          {notPlaced && (
-            <CanvasPanel title="Not placed" dashed>
-              <div className="w-[20rem]">{notPlaced}</div>
-            </CanvasPanel>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 // Execution's part headers. Project management has none: its one card already says it.
 const PART_LABEL: Partial<Record<SectionKey, string>> = { engineering: "Engineering", operations: "Operations" };
 
@@ -509,19 +421,22 @@ export function OrgChart({
     onSelectHiring: onSelectHiringPosition,
     match,
   };
-  const narrow = (nodes: OrgNode[]) => (match ? filterOrgNodes(nodes, match) : nodes);
+  // The Canvas view doesn't narrow: removing people would move every card under
+  // the viewer. It dims the non-matches (ctx.match) and jumps between matches.
+  const narrowing = !!match && groupBy !== "canvas";
+  const narrow = (nodes: OrgNode[]) => (narrowing ? filterOrgNodes(nodes, match!) : nodes);
   const shownOf = (drawn: OrgNode[], whole: OrgNode[]) => {
     const [d, w] = [countOrgNodes(drawn), countOrgNodes(whole)];
-    return match && d !== w ? { shown: d, of: w } : null;
+    return narrowing && d !== w ? { shown: d, of: w } : null;
   };
   const leaders = narrow(chart.leaders);
   const bands = chart.bands
-    .map((band) => ({ band, cards: band.cards.map((card) => ({ card, heads: narrow(card.heads) })).filter((x) => !match || x.heads.length > 0) }))
+    .map((band) => ({ band, cards: band.cards.map((card) => ({ card, heads: narrow(card.heads) })).filter((x) => !narrowing || x.heads.length > 0) }))
     .filter((x) => x.cards.length > 0);
-  const unplaced = match ? chart.unplaced.filter((u) => match(u.id)) : chart.unplaced;
+  const unplaced = narrowing ? chart.unplaced.filter((u) => match!(u.id)) : chart.unplaced;
   // Open positions aren't searched, so a search hides the ones that have no card.
-  const unplacedHiring = match ? [] : placement.unplaced;
-  if (match && leaders.length === 0 && bands.length === 0 && unplaced.length === 0) {
+  const unplacedHiring = narrowing ? [] : placement.unplaced;
+  if (narrowing && leaders.length === 0 && bands.length === 0 && unplaced.length === 0) {
     return <EmptyState title="No one matches" message={`Nothing on the chart matches “${needle}”. Inactive people only show with Show inactive.`} />;
   }
   // The groups by function instead of a band per leader: the same cards, in the
@@ -534,7 +449,7 @@ export function OrgChart({
     cards: f.sections.flatMap((k) => sections[k].cards),
     active: f.sections.reduce((n, k) => n + sectionActive(sections[k]), 0),
   })).filter((f) => f.cards.length > 0);
-  const teamCard = (b: OrgBand, c: OrgTeamCard, heads: OrgNode[], reportsTo: string | null) => (
+  const teamCard = (b: OrgBand, c: OrgTeamCard, heads: OrgNode[], reportsTo: string | null, compact = false) => (
     <TeamCard
       key={cardId(b.leader.id, c.team)}
       id={cardId(b.leader.id, c.team)}
@@ -545,6 +460,8 @@ export function OrgChart({
       nodes={c.heads}
       ctx={ctx}
       reportsTo={reportsTo}
+      leaderId={b.leader.id}
+      compact={compact}
     >
       {(title) => <CardBody nodes={heads} cardTitle={title} ctx={ctx} />}
     </TeamCard>
@@ -559,9 +476,12 @@ export function OrgChart({
   const pmActive = sectionActive(sections.pm);
 
   // The Leadership card and the Not placed card, shared by both layouts.
-  const showLeaders = !match || leaders.length > 0;
-  const leadershipCard = showLeaders ? (
+  const showLeaders = !narrowing || leaders.length > 0;
+  const leadershipCard = (compact = false) =>
+    showLeaders ? (
     <TeamCard
+      compact={compact}
+      compactPeople={flattenNodes(chart.leaders)}
       id={LEADERS_CARD}
       team="exec"
       count={chart.leaderActive}
@@ -572,7 +492,7 @@ export function OrgChart({
     >
       {(title) => <Tree nodes={leaders} cardTitle={title} ctx={{ ...ctx, leadershipCard: true }} />}
     </TeamCard>
-  ) : null;
+    ) : null;
   const notPlacedCard =
     unplaced.length > 0 || unplacedHiring.length > 0 ? (
       <section className="flex flex-col rounded-xl border border-dashed border-sdc-border bg-white">
@@ -597,20 +517,15 @@ export function OrgChart({
 
   if (groupBy === "canvas") {
     return (
-      <PanZoomCanvas className="h-[max(30rem,calc(var(--app-vh)-16rem))]">
-        <CanvasLayout
-          leadership={leadershipCard}
-          functions={functions}
-          sections={sections}
-          teamCard={teamCard}
-          others={other.map(({ band: b, cards }) => ({
-            title: `Reporting to ${b.leader.name}`,
-            active: cards.reduce((n, x) => n + x.card.active, 0),
-            cards: cards.map(({ card: c, heads }) => teamCard(b, c, heads, null)),
-          }))}
-          notPlaced={notPlacedCard}
-        />
-      </PanZoomCanvas>
+      <OrgChartCanvas
+        query={query}
+        leadership={leadershipCard}
+        functions={functions}
+        sections={sections}
+        teamCard={teamCard}
+        others={other}
+        notPlaced={notPlacedCard}
+      />
     );
   }
 
@@ -618,9 +533,9 @@ export function OrgChart({
     // Groups share a line when they fit, the same flow the Cards view uses. A
     // size container, so Execution can give way by the chart's width (see Part).
     <div className="@container flex flex-wrap items-start gap-x-5 gap-y-4">
-      {leadershipCard && (
+      {showLeaders && (
         <Group title="Leadership" active={chart.leaderActive} cardCount={1}>
-          {leadershipCard}
+          {leadershipCard()}
         </Group>
       )}
 
