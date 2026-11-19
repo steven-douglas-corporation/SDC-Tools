@@ -17,6 +17,7 @@ service/              the only code that touches the tracker's tables
   checklist.ts          a card's checklist: small steps to tick off, with no hours and no effect on the forecast
   people.ts             project members, capacity, time off, holidays
   forecast.ts           load inputs from the tables, run the engine, store the result
+  schema-status.ts      whether the database has every migration this code needs
   queries.ts            what the project list and the board read
   timeline.ts           what the timelines read: one project's cards, or all projects as rows
   dependencies.ts       what a dependency means when cards sit under cards (no SQL)
@@ -33,7 +34,7 @@ Elsewhere in the app:
 ```
 src/app/(app)/tracker/          the pages: project list, board, timeline, task, people and time
 src/app/api/tracker/            read-only JSON routes for the same data
-db/tracker/migrations/          0001 schema, 0002 roles, 0003 work kinds, 0004 done count, 0005 kind required, 0006 requested by, 0007 checklist (PostgreSQL 15+)
+db/tracker/migrations/          0001 schema, 0002 roles, 0003 work kinds, 0004 done count, 0005 kind required, 0006 requested by, 0007 checklist, 0008 migration record readable (PostgreSQL 15+)
 scripts/tracker/migrate.ts      applies the migrations (npm run db:tracker-migrate)
 scripts/tracker/migrate-server.ps1  applies them to the company server, and creates the two logins
 scripts/tracker/run-forecast.ts the forecast as its own process, for the nightly job
@@ -62,7 +63,7 @@ Neither is set on the server yet. Until `TRACKER_DATABASE_URL` is set the module
 - People type planned start, estimated completion and due dates. The forecast writes its own
   dates to `task_forecast` and never touches the typed ones.
 - The first estimated completion date typed becomes the baseline and is never replaced.
-- Tasks are archived, never deleted.
+- Tasks are archived, never deleted. The screens call P80 the Safe date; the data and the code say P80.
 - Every card has a kind (Epic, Feature, Story, Task, Bug, Issue, Milestone; Task by default). A card sits only under a
   card of a higher kind; the service says why not in words and a database trigger enforces it.
   A card with cards under it carries no hours in the forecast: `rollUp()` in `service/queries.ts`

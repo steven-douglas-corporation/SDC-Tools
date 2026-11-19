@@ -6,8 +6,12 @@ and what is still open. Uncertain items are tracked in the SDC IT RAID Log workb
 (`SDC_IT_RAID_Log.xlsx`, kept outside this repo), under Scope = "Project Tracker". IDs below
 such as D-08 or R-06 refer to rows in that workbook.
 
-Status: draft, updated 2026-11-15. The schema, the forecast engine, the service layer and a first
-set of screens are built and tested as a module of SDC Reports (`apps/reports/src/modules/tracker`). Nothing is deployed. In a running copy the screens are visible only to the ELT role.
+Status: draft, updated 2026-11-19. The schema, the forecast engine, the service layer and the
+screens are built and tested as a module of SDC Reports (`apps/reports/src/modules/tracker`). Nothing is deployed. In a running copy the screens are visible only to the ELT role.
+
+A word on names: the screens call the simulation's 80% date the **Safe date** (the date to
+promise). The database, the API and the engine still call it P80, and so does this document
+where it describes them.
 
 ## Decided
 
@@ -191,7 +195,7 @@ R-13, assumptions A-04 to A-09 and dependencies DEP-03 to DEP-07.
 ## What is built
 
 The tracker is a module of SDC Reports, laid out as [apps/reports/docs/MODULES.md](../../apps/reports/docs/MODULES.md)
-describes. Its 60 tests run with Reports' own `npm test` and need no database server: they load
+describes. Its tests run with Reports' own `npm test` and need no database server: they load
 the schema into a real Postgres engine that runs inside the test.
 
 | Piece                     | Where, under `apps/reports`                                                 |
@@ -229,6 +233,9 @@ that enforce the one write path.
 - Roll-up view: forecast dates from one place, current run only, at-risk on P80, with counts of
   unscheduled, unestimated and stale tasks. A parent's hours are not counted on top of its subtasks.
 - Only finish-to-start dependencies; the other three types were removed until the engine supports them.
+- Later migrations: `0004` counts only cards that carry work, `0005` makes a kind required,
+  `0006` records who asked for a card, `0007` adds a card's checklist, and `0008` lets the app
+  read the record of applied migrations.
 
 ### Forecast engine
 
@@ -258,17 +265,28 @@ one transaction.
   projects can swap.
 - Tasks: create with a number from the project's counter and the first status-log row; edit with
   a change-log row per tracked field; the first estimated completion date becomes the baseline
-  and is never replaced; confirm remaining effort without changing it; archive.
+  and is never replaced; confirm remaining effort without changing it. Hours left that were
+  never worked down follow a new size; clearing the size clears the estimate.
+- Archiving: refused while cards sit under the card; its dependency links go with it, and each
+  card that waited on it gets a history line saying so.
+- Checklist: small steps on a Task, Bug, Issue or Milestone, with no hours and no effect on the
+  forecast. An Epic, Feature or Story takes none: its steps are the cards under it.
 - Status changes: the status-log row, the actual completion date set on entering done and
   cleared on leaving it, and a required reason for a blocked status.
-- Dependencies: a link that would create a loop is refused; adding and removing are logged on
-  the waiting task.
+- Dependencies: a link that would create a loop is refused, and so is moving a card under
+  another when that would make a loop or put two linked cards one under the other. Adding and
+  removing are logged on the waiting task. A link to or from a card with cards under it
+  stands for the work cards beneath it.
 - Access: a project role (viewer, contributor, manager) is checked on every change; ranking is
   for the portfolio owner; an admin can do anything.
 - Forecast run: loads tasks, people, capacity, time off, allocations, pools and holidays from
-  the tables, runs the engine, and replaces the stored forecast in one transaction. Work in a
-  project that is on hold or has no stack rank is reported with that reason. A quick run leaves
-  the last simulation's P50 and P80 in place.
+  the tables, runs the engine, and replaces the stored forecast in one transaction, one run at
+  a time. Work in a project that is on hold or has no stack rank is reported with that reason.
+  A quick run leaves the last simulation's P50 and P80 in place while they can still be true.
+  A simulation is worked out before the lock is taken, so saves do not wait on it, and is
+  redone if the plan changed meanwhile.
+- Schema status: the pages and the API compare the migrations the code needs with the ones
+  recorded as applied, and say what is missing instead of failing on a missing column.
 
 ### Screens
 
@@ -277,17 +295,20 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
 
 - **Project list** (`/tracker`): projects in stack-rank order with the target, the forecast, P80,
   whether it is at risk, and the work the forecast leaves out. New projects are created here;
-  ELT sets the stack rank and a manager makes a ranked project active.
+  ELT sets the stack rank, by typing it or with the arrows, and a manager makes a ranked
+  project active.
 - **Board** (`/tracker/KEY`): one column per status. A card shows who has it, the hours left, the
   due date, the forecast dates and one sentence on why it starts when it does, or why it is not
   forecast. Tasks are added at the top, moved by dragging or with a status menu on the card, and
   edited in place. Moving a card to a blocked status, either way, asks what is blocking it and
   when it is expected to clear. A panel under the board lists the people on the project; a
-  manager adds people, changes their role or removes them there.
+  manager adds people, changes their role or removes them there. A second panel, Project
+  settings, is where a manager changes the target date, the owner and the state, which is how
+  a project is finished or cancelled.
 - **Task page** (`/tracker/KEY/42`): every field, with an optional reason for a change; the
   forecast and its reason; what the task waits on (add and remove, with lag) and what waits on
-  it; comments; and the history, which is the status log and the change log read back together
-  in plain words, newest first.
+  it; a checklist; comments; and the history, which is the status log and the change log read
+  back together in plain words, newest first. A manager archives a card here.
 - **Kinds and hierarchy**: the new-card form and the task page have a kind, Task by default, with a "?" that explains the kinds. The task
   page has a "Sits under" menu that lists only cards of a higher kind, and the service refuses
   anything else in a sentence that names the cards involved. A card shows its kind and the card
@@ -298,7 +319,8 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
   card it sits under and ordered by start date; a bar from the forecast's start to its finish,
   with a paler tail to P80; a thin dark bar for a parent, spanning the cards under it; an arrow
   for each dependency; marks for today, the project target, due dates, milestones and finished
-  cards. Read-only. Every date on it is the stored forecast, the same one the board shows.
+  cards. A row with cards under it can be closed, and what is closed is kept in the address.
+  Read-only. Every date on it is the stored forecast, the same one the board shows.
 - **Timeline of all projects** (`/tracker/timeline`, a tab beside the project list): a row for each
   open project in stack-rank order, a bar from the first forecast start of its work to its
   forecast finish with a tail to P80, its target date, and an arrow where one project has a card
@@ -323,22 +345,23 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
   and nothing can be changed through it.
 - Dragging was checked by sending the browser's drag events to the page, not with a real mouse
   drag; the testing tool could not perform one. It needs a try by hand.
-- No screens yet for sprints, role pools, teams and team capacity, date-ranged capacity, a
-  not-before date, archiving a task, or dependencies on a task in another project. The schema
-  supports all of them.
+- No screens yet for sprints, role pools, teams and team capacity, date-ranged capacity or a
+  not-before date. The schema supports all of them. An archived card cannot be brought back
+  from a screen.
+- Going live: the server's tracker schema has no backup yet and no restore has been tried.
+  Migrations are applied by hand with `migrate-server.ps1`; the Reports updater does not run
+  them. Server actions are not stopped by the schema check, only the pages and the API are.
 - The P50/P80 simulation is not scheduled anywhere. It runs only when someone runs
-  `npm run tracker:forecast`, so P80 is blank after any edit until it is run again.
+  `npm run tracker:forecast`, so the safe date goes blank once an edit makes it untrue and
+  stays blank until it is run again.
 - Someone with `tracker:view` but not `tracker:edit` cannot enter their own time off.
 - Timeline: there is one for each project and one across all projects, but none by person. It cannot
-  be zoomed or filtered, cards cannot be dragged on it, and a long project scrolls sideways. It
-  was checked by eye in a local copy with a handful of cards, not with a large project.
-- Dependencies and parents: moving a card under a different parent is not checked against the
-  dependencies already there. If that makes a loop, the forecast reports the cards as "its
-  dependencies form a loop" instead of the move being refused.
+  be zoomed or filtered, cards cannot be dragged on it, and a plan longer than about eight
+  months scrolls sideways. It was checked by eye in a local copy with a handful of cards, not
+  with a large project.
 - Kinds: the board has no view grouped by Epic or Feature and no filter by kind. A
   parent's P80 is not shown, only the latest plain forecast finish under it. The list of kinds
-  is fixed in a migration; there is no screen to change it. A parent card can only be chosen on
-  the task page, not when a card is first added.
+  is fixed in a migration; there is no screen to change it.
 - Time off is typed in by hand. Approved time off is already in Paylocity, and the plan is to
   import it from there daily (backlog M-15). Not started, and nothing at SDC receives time off
   from Paylocity today: Reports gets worked hours, the roster and position families as report
@@ -356,8 +379,8 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
 - The forecast refuses to run if the global capacity default is missing. That run against a real
   server is what showed the need: without the row every person had zero hours and all work was
   reported as "no capacity".
-- A dependency on a parent task is ignored by the forecast. Only tasks that carry effort
-  themselves are scheduled.
+- Only tasks that carry effort themselves are scheduled; a dependency on a parent is applied
+  to the work cards beneath it.
 - A failed forecast run leaves no record: the run row is rolled back with everything else.
 - Dependency lag is in calendar days. Whether it should be working days is undecided.
 - The simulation's range (0.8 to 1.5, or a bucket's low and high hours) and its shared-error

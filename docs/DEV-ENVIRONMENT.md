@@ -131,13 +131,15 @@ three connection strings, and they are deliberately different logins:
 |---|---|---|
 | `TRACKER_ADMIN_DATABASE_URL` | `postgres` | Everything. Used only by `npm run db:tracker-migrate` |
 | `TRACKER_DATABASE_URL` | `tracker_app` | What the app does: read everything, write everything except forecasts |
-| `TRACKER_ENGINE_DATABASE_URL` | `tracker_forecast` | What the forecast job does: read everything, write only forecasts |
+| `TRACKER_ENGINE_DATABASE_URL` | `tracker_forecast` | Writing forecasts, which the app does after every change and the forecast job does nightly: read everything, write only forecasts |
 
 After pulling changes that add a file to `apps/reports/db/tracker/migrations`, run
 `npm run db:tracker-migrate` again. A migration that has been applied is never re-run, so a
-schema change is always a new numbered file.
+schema change is always a new numbered file. Until you do, the tracker's pages say the database
+needs an update and name the missing files.
 
-The tracker has no screens yet and no seed data. Its automated tests do not use this database:
+The tracker's screens are at `/tracker`. It has no seed data: the list is empty until you add a
+project. Its automated tests do not use this database:
 they run PostgreSQL inside the test process and need neither Docker nor these settings.
 
 **Why port 5437.** Clear of a PostgreSQL already on 5432.
