@@ -690,7 +690,14 @@ test("capacity: the default, a person's own figure, time off and holidays all mo
   const now = await P.getCapacityOverview(db, cal);
   const mine = now.people.find((x) => x.id === cal.personId)!;
   assert.deepEqual([mine.ownHoursPerDay, mine.hoursPerDay], [2, 2]);
-  assert.deepEqual(now.holidays.map((h) => h.date).includes("2026-11-18"), true);
+  // The screen lists only holidays still to come, so that is checked with a date counted from
+  // today. The fixed week below is forecast as of its own Monday and never goes stale.
+  const stored = await rows(`SELECT 1 FROM tracker.company_holiday WHERE holiday_date = '2026-11-18'`);
+  assert.equal(stored.length, 1);
+  const soon = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+  await P.addHoliday(db, admin, { date: soon, name: "Still to come" });
+  assert.ok((await P.getCapacityOverview(db, cal)).holidays.some((h) => h.date === soon));
+  await P.removeHoliday(db, admin, soon);
 
   // A 6-hour task for Cal from Monday Nov 16: 2 h Mon, off Tue, holiday Wed, 2 h Thu, 2 h Fri.
   await setPortfolioRanks(db, admin, [{ projectId, rank: 90 }]);
