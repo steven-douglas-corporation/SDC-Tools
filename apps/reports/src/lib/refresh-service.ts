@@ -360,6 +360,11 @@ export async function refreshAllData(input: {
   userId?: number | null;
   // Present for a manual refresh, so the notification can say who (§25.9).
   userName?: string | null;
+  // False = do not start the warehouse's Paylocity load first. Passed by the load
+  // itself when it calls POST /api/integration/refresh?pull=0 after copying new
+  // files: the files are already in, and starting the load again from inside its
+  // own notification would have the two trigger each other.
+  pullFiles?: boolean;
 }): Promise<RefreshOutcome> {
   const refreshId = randomUUID();
   // Local dev switch — see instrumentation.ts. Covers the Refresh Data button too:
@@ -442,6 +447,34 @@ export async function refreshAllData(input: {
     }
   }
 
+  // ── Pull Paylocity's files first, when somebody ASKED for this refresh ─────
+  //
+  // Every Paylocity step below reads the DataWarehouse, and the warehouse only
+  // holds what its own load copied from the SFTP server. That load runs on its own
+  // schedule (hourly at :30), so Refresh Data could re-read the last run's files and
+  // nothing newer. A refresh somebody asked for (the button, or POST
+  // /api/integration/refresh) now runs the load first, so the steps after it read
+  // what is on the SFTP server right now. See lib/warehouse-ingest.ts.
+  //
+  // Not on this app's own hourly or startup pass: the load's own schedule already
+  // covers the unattended case, and a second hourly trigger would only double it. And
+  // before runAllSyncs rather than a step inside it, because BOTH of its lanes read
+  // the warehouse (hours in one, the roster and position families in the other).
+  //
+  // A load that fails does not stop the refresh. It is reported as a failed source,
+  // so the pass is "partial" and the button says why.
+  let ingest: SyncRunResult["steps"][number] | null = null;
+  if ((input.trigger === "manual" || input.trigger === "api") && input.pullFiles !== false) {
+    const { ingestConfigured, runWarehouseIngest } = await import("@/lib/warehouse-ingest");
+    if (ingestConfigured()) {
+      const { INGEST_SOURCE, INGEST_LABEL } = await import("@/lib/warehouse-ingest-outcome");
+      await recordProgress(refreshId, INGEST_LABEL, []);
+      const t0 = Date.now();
+      const r = await runWarehouseIngest();
+      if (r) ingest = { source: INGEST_SOURCE, label: INGEST_LABEL, status: r.status, detail: r.detail, ms: Date.now() - t0 };
+    }
+  }
+
   let result: SyncRunResult;
   try {
     // Progress is streamed into the run record as each source starts (§30), so a tab
@@ -462,7 +495,7 @@ export async function refreshAllData(input: {
       completedAt,
       durationMs: completedAt.getTime() - startedAt.getTime(),
       status: "failed",
-      steps: [],
+      steps: ingest ? [ingest] : [],
       failureDetail: message,
     }).catch(() => {});
     // Before releaseLock, so the heartbeat cannot re-stamp a lock we are giving up.
@@ -480,7 +513,9 @@ export async function refreshAllData(input: {
 
   const completedAt = new Date();
   const durationMs = completedAt.getTime() - startedAt.getTime();
-  const failed = result.steps.filter((s) => s.status === "failed");
+  // The Paylocity load, when this pass ran one, leads the list: it happened first.
+  const allSteps = ingest ? [ingest, ...result.steps] : result.steps;
+  const failed = allSteps.filter((s) => s.status === "failed");
   // "partial", never "ok", when anything failed: §25.7 is explicit that a success
   // message must not appear if a required step failed, and the only way to keep that
   // promise is for the status itself to carry it.
@@ -491,7 +526,7 @@ export async function refreshAllData(input: {
     completedAt,
     durationMs,
     status,
-    steps: result.steps,
+    steps: allSteps,
     failureDetail: failed.length === 0 ? null : failed.map((f) => `${f.label}: ${f.detail}`).join(" | "),
   }).catch((err) => console.error("[refresh] could not close the run record:", err));
 
@@ -529,7 +564,7 @@ export async function refreshAllData(input: {
         entityId: refreshId,
       },
     ],
-    { action: input.trigger === "manual" ? "refresh.manual" : "refresh.scheduled" },
+    { action: input.trigger === "manual" ? "refresh.manual" : input.trigger === "api" ? "refresh.api" : "refresh.scheduled" },
   ).catch(() => {});
 
   await logAudit({
@@ -537,10 +572,10 @@ export async function refreshAllData(input: {
     entityType: "RefreshRun",
     entityId: refreshId,
     summary:
-      `${input.trigger === "manual" ? `${input.userName ?? "A user"} refreshed` : "Scheduled refresh of"} all application data ` +
+      `${input.trigger === "manual" ? `${input.userName ?? "A user"} refreshed` : input.trigger === "api" ? "An API request refreshed" : "Scheduled refresh of"} all application data ` +
       `in ${Math.round(durationMs / 100) / 10}s — ${result.steps.filter((s) => s.status === "ok").length}/${SYNC_SOURCES.length} sources ok` +
       (failed.length > 0 ? `, ${failed.length} FAILED (${failed.map((f) => f.label).join(", ")})` : ""),
-    metadata: { refreshId, trigger: input.trigger, month: result.month, seededMonth, seedingError, durationMs, steps: result.steps },
+    metadata: { refreshId, trigger: input.trigger, month: result.month, seededMonth, seedingError, durationMs, steps: allSteps },
   }).catch(() => {});
 
   // Read back rather than threaded through the sync steps: `hours_actual` is the one
@@ -565,7 +600,7 @@ export async function refreshAllData(input: {
     completedAt: completedAt.toISOString(),
     durationMs,
     status,
-    sources: result.steps.map((s) => ({ source: s.source, label: s.label, status: s.status, detail: s.detail, kind: s.kind, retryable: s.retryable })),
+    sources: allSteps.map((s) => ({ source: s.source, label: s.label, status: s.status, detail: s.detail, kind: s.kind, retryable: s.retryable })),
     failedLabels: failed.map((f) => f.label),
     month: result.month,
     seededMonth,

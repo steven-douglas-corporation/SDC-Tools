@@ -30,6 +30,52 @@ flowchart TD
     Done --> Broadcast["recordChanges() —<br/>realtime broadcast, no cellKey"]
 ```
 
+## The Paylocity SFTP pull (asked-for refreshes only)
+
+Every Paylocity step reads the DataWarehouse, and the warehouse holds only what its own
+load (`tools/data-warehouse/ingest/paylocity_ingest.py`) has copied from the SFTP server. That
+load is a scheduled task with its own schedule: hourly at :30 since 2026-11-16 (daily at
+5:30am before that), per `"Integration"."Batch"`.
+
+A refresh somebody asked for (the Refresh Data button, or `POST /api/integration/refresh`)
+starts that same task first and waits for it, then runs the sources below, so it reads what is
+on the SFTP server now instead of what the last scheduled run found. This app's own hourly and
+startup passes do not start it: the load's own schedule covers the unattended case. See `src/lib/warehouse-ingest.ts`.
+
+- **Setting:** `WAREHOUSE_INGEST_TASK` in `.env`, the task as Task Scheduler names it
+  (`\DataWarehouse\Paylocity ingest`). Unset, the pull is skipped.
+- **Permission:** the Windows account the app runs as must be allowed to start the task. The
+  task still runs as `svc-datawarehouse`, so no SFTP or database password moves.
+- **If it fails or is still running after 150s:** the refresh carries on with what the
+  warehouse holds, is recorded as partial, and the button says why. A load that is still
+  running is not stopped.
+- **It is not a row in `SYNC_SOURCES`:** it would show as stale on the Dashboard between
+  clicks. Its outcome is the first entry in the run's `steps` (source `warehouse_ingest`).
+
+## Starting a refresh over HTTP
+
+`/api/integration/refresh`, guarded by `Authorization: Bearer <REFRESH_API_TOKEN>` (its own
+token; unset means every request is refused).
+
+| Call | Answer |
+|---|---|
+| `POST /api/integration/refresh` | `202` at once; the refresh runs in the background. `409` if one is already running |
+| `POST /api/integration/refresh?wait=1` | The full outcome when the refresh has finished (`200`, or `409` / `500`) |
+| `POST /api/integration/refresh?pull=0` | The same refresh without the SFTP pull. Used by the load itself (below) |
+| `GET /api/integration/refresh` | Whether one is running and on which stage, and how the last one ended |
+
+It runs the same pass as the button, SFTP pull included, recorded with trigger `api`. It never
+starts a new ETC month; only a person's click does.
+
+### The load tells the app when it has new files
+
+The warehouse load and this app's hourly pass run on unrelated clocks, so a file could wait up
+to an hour for the load and most of another for the app. When a load run has loaded new files
+and rebuilt the warehouse from them, `paylocity_ingest.py` calls
+`POST /api/integration/refresh?pull=0` (`[reports_app]` in its `settings.toml`). `pull=0` is
+what stops the two starting each other. A run that finds nothing, which is most of them, makes
+no call. If the call fails, the load still succeeds and the hourly pass picks the rows up.
+
 ## Source order
 
 Fixed and sequential, defined once in `src/lib/auto-sync.ts`'s `SYNC_SOURCES`:

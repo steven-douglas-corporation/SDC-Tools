@@ -45,6 +45,7 @@ SOURCE = "paylocity"
 JOB_NAME = "paylocity_ingest"
 KEYRING_SERVICE = "datawarehouse-paylocity-sftp"
 DATABASE_KEYRING_SERVICE = "datawarehouse-postgres"
+REPORTS_KEYRING_SERVICE = "reports-refresh-api"
 SPREADSHEETS = {".xlsx", ".xlsm", ".xls"}
 DEFAULT_SETTINGS = Path(__file__).with_name("settings.toml")
 
@@ -455,6 +456,54 @@ def purge_archive(wh: Warehouse, retention: dict, counts: collections.Counter, e
             errors.append(f"purge {local_path}: {e}")
 
 
+# ── Telling the reports app ─────────────────────────────────────────────────
+#
+# The reports app copies the warehouse into its own database once an hour, on a
+# clock that has nothing to do with this job's. So a file loaded here could wait
+# most of another hour before anyone saw it. When a run has put new rows in the
+# warehouse, it asks the app to refresh now.
+#
+# pull=0 in the URL matters: the app's refresh endpoint normally starts THIS job
+# first, and without it the two would start each other.
+
+def should_notify(counts: dict, refreshed: bool) -> bool:
+    """Only when files were loaded AND the dimensions and facts were rebuilt from them."""
+    return refreshed and int(counts.get("loaded", 0)) > 0
+
+
+def reports_token() -> str | None:
+    if os.environ.get("REPORTS_REFRESH_TOKEN"):
+        return os.environ["REPORTS_REFRESH_TOKEN"]
+    import keyring
+    return keyring.get_password(REPORTS_KEYRING_SERVICE, JOB_NAME)
+
+
+def notify_reports_app(cfg: dict, token: str | None, opener=None) -> str:
+    """Ask the reports app to refresh. Returns what happened; never raises.
+
+    The files are loaded by the time this runs, so nothing here may fail the job:
+    the app's own hourly refresh still picks the rows up.
+    """
+    import urllib.error
+    import urllib.request
+    url = (cfg.get("refresh_url") or "").strip()
+    if not url:
+        return "off: no reports_app.refresh_url in settings"
+    if not token:
+        return (f"not sent: no token stored. As the account that runs the job, run "
+                f"cmdkey /generic:{REPORTS_KEYRING_SERVICE} /user:{JOB_NAME} /pass")
+    request = urllib.request.Request(url, data=b"", method="POST", headers={"Authorization": f"Bearer {token}"})
+    try:
+        with (opener or urllib.request.urlopen)(request, timeout=int(cfg.get("timeout_seconds", 15))) as response:
+            return f"started (HTTP {response.status})"
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            return "not needed: the app is already refreshing, and that refresh reads these files"
+        return f"failed: the app answered HTTP {e.code}"
+    except Exception as e:
+        return f"failed: {e}"
+
+
 def run(settings: dict, dry_run: bool = False) -> int:
     sftp_cfg = settings["sftp"]
     root = Path(settings["paths"]["root"])
@@ -490,11 +539,13 @@ def run(settings: dict, dry_run: bool = False) -> int:
         sftp.close()
         transport.close()
 
+    refreshed = False
     try:
         load_incoming(wh, counts, errors)
         archive_done(wh, archive, counts, errors)
         try:
             counts["warehouse"] = wh.refresh_warehouse()
+            refreshed = True
             log.info("warehouse refreshed: %s", json.dumps(counts["warehouse"]))
         except Exception as e:
             errors.append(f"refresh warehouse: {e}")
@@ -506,6 +557,13 @@ def run(settings: dict, dry_run: bool = False) -> int:
     finally:
         wh.finish_batch(batch_id, dict(counts), errors)
     log.info("batch %d done: %s", batch_id, dict(counts))
+    # After the batch is closed, so the app never reads a run still marked "running".
+    if should_notify(counts, refreshed):
+        try:
+            outcome = notify_reports_app(settings.get("reports_app", {}), reports_token())
+        except Exception as e:  # the token lookup; the files are in either way
+            outcome = f"failed: {e}"
+        log.info("reports app refresh: %s", outcome)
     return 1 if errors else 0
 
 

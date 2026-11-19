@@ -54,7 +54,9 @@ function labelFor(source: string): string {
   return SYNC_SOURCES.find((s) => s.source === source)?.label ?? source;
 }
 
-export type SyncTrigger = "startup" | "interval" | "manual";
+// "api" is POST /api/integration/refresh: asked for like a click, but by a caller
+// with a token rather than a signed-in person.
+export type SyncTrigger = "startup" | "interval" | "manual" | "api";
 
 export type SyncStepResult = {
   // Matches the PowerBiFreshness.source row this step owns.
