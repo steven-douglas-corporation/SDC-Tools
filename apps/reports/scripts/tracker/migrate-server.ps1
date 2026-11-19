@@ -42,6 +42,9 @@ if ($files.Count -eq 0) { throw "No migrations found in $dir" }
 # One script for psql. Each migration is wrapped so that it is skipped when already applied.
 $sql = New-Object Text.StringBuilder
 [void]$sql.AppendLine('\set ON_ERROR_STOP on')
+# psql writes a NOTICE ("already exists, skipping") to its error stream. Only real problems should
+# come back, so notices are turned off for this session.
+[void]$sql.AppendLine('SET client_min_messages = warning;')
 [void]$sql.AppendLine(@'
 CREATE TABLE IF NOT EXISTS public.tracker_schema_migration (
     name       text PRIMARY KEY,
@@ -97,8 +100,13 @@ Invoke-Command -ComputerName $Server -ArgumentList $plain, $sql.ToString(), $Psq
     $env:PGPASSWORD = $password
     $env:PGCLIENTENCODING = 'UTF8'
     try {
-        & $psql -h 127.0.0.1 -U $login -d $database -X -q -f $file
-        if ($LASTEXITCODE -ne 0) { throw "psql ended with code $LASTEXITCODE. The migration that failed was rolled back and nothing after it ran." }
+        # Everything psql says comes back as plain text. Left alone, a line on its error stream
+        # arrives here as an error, and this script stops on the first error: that once cut a run
+        # off at a harmless notice. Whether it worked is decided by the exit code alone.
+        $said = & $psql -h 127.0.0.1 -U $login -d $database -X -q -f $file 2>&1 | ForEach-Object { "$_" }
+        $code = $LASTEXITCODE
+        $said
+        if ($code -ne 0) { throw "psql ended with code $code. The migration that failed was rolled back and nothing after it ran." }
     } finally {
         Remove-Item Env:PGPASSWORD, Env:PGCLIENTENCODING -ErrorAction SilentlyContinue
         Remove-Item $file -ErrorAction SilentlyContinue
