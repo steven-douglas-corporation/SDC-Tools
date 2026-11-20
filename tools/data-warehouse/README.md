@@ -225,6 +225,24 @@ file that fails to load stays in incoming and is retried next run, and the run
 exits non-zero so the scheduled task shows as failed. New reports need no code
 change: their first file adds a row to `"Integration"."SourceReport"`.
 
+### Telling the reports app (2026-11-19)
+
+When a run has loaded at least one file and step 5 succeeded, it asks the reports app to
+refresh straight away rather than wait for the app's own hourly pass:
+`POST http://localhost:4006/api/integration/refresh?pull=0` (`[reports_app]` in
+`settings.toml`; keep `pull=0`, or the app starts this job again). A run that loads nothing
+makes no call. The outcome is one log line, `reports app refresh: …`, and never fails the run.
+
+The token is the app's `REFRESH_API_TOKEN`. Store it for the account that runs the task, the
+same way as the other two passwords:
+
+```
+cmdkey /generic:reports-refresh-api /user:paylocity_ingest /pass
+```
+
+The app can also start this task itself (its Refresh Data button, when `WAREHOUSE_INGEST_TASK`
+is set in its `.env`); see `apps/reports/docs/REFRESH-PIPELINE.md`.
+
 ## This database is now the only home of the Paylocity data
 
 As of 2026-10-04 (Jon's decision):

@@ -19,7 +19,7 @@ import { WorkbookError, SHEET_NAME, type RejectedPunch } from "@/lib/paylocity-w
 // file was not actually processed, and the only way to keep that promise is for
 // something to know which version WAS processed. That is `sha256`.
 
-export type ImportTrigger = "startup" | "interval" | "manual";
+export type ImportTrigger = "startup" | "interval" | "manual" | "api";
 
 /**
  * The version of everything the feed read, for the "same file as last time?" test.
