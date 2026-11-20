@@ -166,7 +166,14 @@ their Windows account name as the login (e.g. `dbelliveau`). Who has access is
 | `mvest`, `sbemberkar`, `dbelliveau` | Moses Vest, Shashank Bemberkar, Dan Belliveau | Superuser | Windows |
 | `dw_loader` | The loader | Owns the database and its objects | Password |
 | `reports_app` | The reports app | Read-only | Password |
+| `reports_dev` | A developer laptop running the reports app | Read-only: a member of `reports_app`, so it has exactly its rights | Password |
 | `postgres` | Built-in admin | Superuser | Password, on the server only |
+
+`reports_dev` was added on 2026-11-15 so that a development copy of the reports app never needs the
+live app's password. It is defined in `sql/05_access.sql` with the other app logins. Its password
+lives only in the developer's own `apps/reports/.env`.
+A development copy has its scheduled refresh switched off (`SDC_DEV_DISABLE_SYNC=1`), so it reads
+the warehouse only when someone asks it to.
 
 ### Connecting from your PC
 
@@ -192,13 +199,22 @@ Remember the naming rule: PascalCase names need double quotes, e.g. `SELECT * FR
 How Windows sign-in is wired (server config files in `D:\DataWarehouse\pgdata`, not in git):
 - `pg_hba.conf`: `host all +windows_users 10.0.0.0/24 sspi map=windows`, ahead of the
   password rule, so members of `windows_users` use Windows sign-in from the network.
+- VPN clients (SonicWall NetExtender) get addresses outside the office range, for example
+  `10.0.1.2`. On 2026-11-15 the same three rules (refuse `postgres`, Windows sign-in, password)
+  were added to `pg_hba.conf` for `10.0.1.0/24`, with a backup beside it as
+  `pg_hba.conf.bak-2026-11-15`. Before that the database dropped VPN connections without a
+  message. The `/24` is an assumption from one client's address: the VPN's real address pool is
+  still to be confirmed with whoever runs the SonicWall, and the rule narrowed to match. The rule
+  is temporary: it only serves people connecting straight to the database from a laptop, and comes
+  out when nobody does (RAID R-15).
 - `pg_ident.conf`: `windows /^(.*)@STEVENDOUGLAS$ \1` turns `jdoe@STEVENDOUGLAS` into login `jdoe`.
 - Clients: pgAdmin and `psql` use it automatically. DBeaver needs the connection's driver
   property `gsslib` set to `sspi`. If sign-in fails from a PC (it works from the server), the
   likely fix is a one-time Kerberos registration by a domain admin:
   `setspn -S POSTGRES/SERVER-APP1.stevendouglas.local SERVER-APP1` (once Postgres runs as a service).
 
-**Network access in general:** password logins work from `10.0.0.0/24` too. The built-in
+**Network access in general:** password logins work from `10.0.0.0/24` too, and from the VPN
+range above. The built-in
 `postgres` admin is refused from the network and only works on the server itself.
 To make sure Windows Firewall lets the connections in, run in an admin PowerShell:
 

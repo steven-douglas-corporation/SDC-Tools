@@ -65,6 +65,10 @@ export const ROUTE_PERMISSIONS: readonly { path: string; permission: Permission 
   // be able to become a fallback destination. job-hour-details:view is matched first.
   { path: "/admin/data-management", permission: "data-management:view" },
   { path: "/admin/permissions", permission: "permissions:manage" },
+  // The Project Tracker module (2026-11-15). Last on purpose, like feedback and
+  // data-management above: tracker:view can be ticked for any role, so it must
+  // never be the first entry a role holds and become a fallback destination.
+  { path: "/tracker", permission: "tracker:view" },
 ];
 
 /** Longest-prefix match; "/" is only ever an exact match (everything is a prefix of it). */

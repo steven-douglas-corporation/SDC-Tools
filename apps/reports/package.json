@@ -12,6 +12,8 @@
     "deploy": "node scripts/deploy.mjs",
     "lint": "eslint",
     "db:seed-dev": "tsx prisma/seed-dev.ts",
+    "db:tracker-migrate": "tsx scripts/tracker/migrate.ts",
+    "tracker:forecast": "tsx -r ./scripts/shim-server-only.cjs scripts/tracker/run-forecast.ts",
     "test": "tsx -r ./scripts/shim-server-only.cjs --test tests/*.test.ts",
     "dev:verify": "set AUTH_URL=http://localhost:3021&& set NEXT_DIST_DIR=.next-verify&& next dev -p 3021"
   },
@@ -35,6 +37,7 @@
     "unpdf": "^1.6.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^3.0.0",
     "@types/mssql": "^12.3.0",

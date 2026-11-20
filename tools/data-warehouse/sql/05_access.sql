@@ -23,3 +23,17 @@ GRANT SELECT ON ALL TABLES IN SCHEMA "Integration", "RawPaylocity", "Paylocity",
 -- Tables and views dw_loader creates later are readable too, without re-running this.
 ALTER DEFAULT PRIVILEGES FOR ROLE dw_loader IN SCHEMA "Integration", "RawPaylocity", "Paylocity", "Dimension", "Fact"
     GRANT SELECT ON TABLES TO reports_app;
+
+-- reports_dev: a developer laptop running the reports app against the warehouse. Read-only.
+-- It is a member of reports_app, so it can read exactly what the live app can and nothing more,
+-- and its password can be changed or the login dropped without touching the live app.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'reports_dev') THEN
+        CREATE ROLE reports_dev LOGIN;
+    END IF;
+END
+$$;
+
+GRANT reports_app TO reports_dev;
+COMMENT ON ROLE reports_dev IS 'Read-only, for a developer laptop running Reports. Same rights as reports_app.';
