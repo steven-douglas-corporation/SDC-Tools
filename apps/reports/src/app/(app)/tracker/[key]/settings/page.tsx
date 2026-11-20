@@ -67,6 +67,7 @@ export default async function TrackerProjectSettingsPage({ params }: { params: P
         <ProjectSettings
           projectId={p.id}
           projectKey={p.key}
+          name={p.name}
           justification={p.justification}
           valueBucketId={p.valueBucketId}
           valueBuckets={valueBuckets}

@@ -217,18 +217,18 @@ export async function updateProjectAction(input: {
   projectKey: string;
   changes: Pick<
     ProjectChanges,
-    "justification" | "valueBucketId" | "forDepartmentId" | "targetDate" | "ownerPersonId" | "state"
+    "name" | "justification" | "valueBucketId" | "forDepartmentId" | "targetDate" | "ownerPersonId" | "state"
   >;
   reason?: string;
 }): Promise<ActionResult> {
   return act(
     async (actor) => {
-      const { justification, valueBucketId, forDepartmentId, targetDate, ownerPersonId, state } = input.changes;
+      const { name, justification, valueBucketId, forDepartmentId, targetDate, ownerPersonId, state } = input.changes;
       await updateProject(
         trackerDb,
         actor,
         input.projectId,
-        { justification, valueBucketId, forDepartmentId, targetDate, ownerPersonId, state },
+        { name, justification, valueBucketId, forDepartmentId, targetDate, ownerPersonId, state },
         input.reason?.trim() || null,
       );
       return {};

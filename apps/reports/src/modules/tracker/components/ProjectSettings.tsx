@@ -8,7 +8,7 @@ import type { ValueBucket } from "../service/queries";
 import type { Department } from "../service/departments";
 import { DepartmentOptions } from "./DepartmentPicker";
 
-// What a manager can change about a project after it is created: why it is being done and
+// What a manager can change about a project after it is created: its name, why it is being done and
 // what it is worth, when it is due, who owns it, and where it stands. Finishing or cancelling
 // a project is a change of state made here. It is the main part of the project's Settings tab.
 
@@ -27,6 +27,7 @@ const STATES: { value: ProjectState; label: string; note: string }[] = [
 export function ProjectSettings({
   projectId,
   projectKey,
+  name,
   justification,
   valueBucketId,
   valueBuckets,
@@ -41,6 +42,7 @@ export function ProjectSettings({
 }: {
   projectId: number;
   projectKey: string;
+  name: string;
   justification: string | null;
   valueBucketId: number | null;
   valueBuckets: ValueBucket[];
@@ -55,6 +57,7 @@ export function ProjectSettings({
   /** Shown, not changed: for someone on the project who is not a manager of it. */
   readOnly?: boolean;
 }) {
+  const [title, setTitle] = useState(name);
   const [why, setWhy] = useState(justification ?? "");
   const [value, setValue] = useState(valueBucketId?.toString() ?? "");
   const [forId, setForId] = useState(forDepartmentId?.toString() ?? "");
@@ -68,6 +71,7 @@ export function ProjectSettings({
 
   const closing = (next === "completed" || next === "cancelled") && next !== state;
   const changes: ProjectChanges = {};
+  if (title.trim() !== name) changes.name = title;
   if (why.trim() !== (justification ?? "")) changes.justification = why;
   if (value !== "" && value !== (valueBucketId?.toString() ?? "")) changes.valueBucketId = Number(value);
   if (forId !== "" && forId !== (forDepartmentId?.toString() ?? "")) changes.forDepartmentId = Number(forId);
@@ -93,6 +97,13 @@ export function ProjectSettings({
       {/* One switch for every field: someone who is not a manager reads the same form, locked. */}
       <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <label className="flex flex-col gap-1 sm:col-span-3">
+            <span className={LABEL}>Name</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} className={INPUT} />
+            <span className="text-xs text-sdc-gray-600">
+              The key ({projectKey}) and the project&apos;s address stay the same when the name changes.
+            </span>
+          </label>
           <label className="flex flex-col gap-1 sm:col-span-2">
             <span className={LABEL}>Justification</span>
             <textarea

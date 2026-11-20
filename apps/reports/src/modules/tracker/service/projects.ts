@@ -25,6 +25,8 @@ export interface NewProject {
 }
 
 export interface ProjectChanges {
+  /** Can be reworded, never emptied. The key, and so the project's address, stays as it is. */
+  name?: string;
   /** Can be reworded, never emptied. */
   justification?: string;
   valueBucketId?: number;
@@ -220,7 +222,10 @@ async function departmentName(tx: Tx, id: number): Promise<string> {
   return rows[0]!.name;
 }
 
-/** Changes a project's justification, value, department, target date, state or owner. Each change is logged. */
+/**
+ * Changes a project's name, justification, value, department, target date, state or owner. Each
+ * change is logged, except a new name: like a card's title, it is wording, not a decision.
+ */
 export async function updateProject(
   db: Database,
   actor: Actor,
@@ -248,6 +253,12 @@ export async function updateProject(
     );
 
     // What the project will hold once this call is done, for the rule on making it active.
+    if (changes.name !== undefined) {
+      const name = changes.name.trim();
+      if (!name) throw new TrackerError("invalid", "A project needs a name.");
+      if (name.length > 200) throw new TrackerError("invalid", "Keep the name under 200 characters.");
+      await tx.query(`UPDATE tracker.project SET name = $2 WHERE id = $1 AND name <> $2`, [projectId, name]);
+    }
     let justification = cur.justification;
     let valueBucketId = cur.value_bucket_id == null ? null : Number(cur.value_bucket_id);
     let forDepartmentId = cur.for_team_id == null ? null : Number(cur.for_team_id);

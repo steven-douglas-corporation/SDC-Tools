@@ -351,6 +351,21 @@ test("who may do what: members only, managers for archiving, the portfolio owner
   await refuses(() => updateTask(db, ana, t.id, { priority: 2 }), "invalid", /archived/);
 });
 
+test("a project can be renamed by a manager: the key stays, an empty name is refused, nothing is logged", async () => {
+  const p = await createProject(db, ana, { key: "RENAME", name: "Old name" });
+  await setProjectMember(db, ana, p.id, ben.personId, "contributor");
+  await refuses(() => updateProject(db, ben, p.id, { name: "Mine now" }), "forbidden");
+  await refuses(() => updateProject(db, ana, p.id, { name: "   " }), "invalid", /needs a name/);
+  await updateProject(db, ana, p.id, { name: "  New name  " });
+
+  const [row] = await rows<{ key: string; name: string }>(`SELECT key, name FROM tracker.project WHERE id = $1`, [
+    p.id,
+  ]);
+  assert.deepEqual(row, { key: "RENAME", name: "New name" });
+  const log = await rows(`SELECT 1 FROM tracker.project_change_log WHERE project_id = $1`, [p.id]);
+  assert.equal(log.length, 0);
+});
+
 test("stack ranks can be swapped in one step; a clash changes nothing", async () => {
   const a = await createProject(db, ana, { key: "RANKA", name: "A" });
   const b = await createProject(db, ana, { key: "RANKB", name: "B" });
