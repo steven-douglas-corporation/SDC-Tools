@@ -572,10 +572,23 @@ export async function refreshAllData(input: {
     entityType: "RefreshRun",
     entityId: refreshId,
     summary:
-      `${input.trigger === "manual" ? `${input.userName ?? "A user"} refreshed` : input.trigger === "api" ? "An API request refreshed" : "Scheduled refresh of"} all application data ` +
+      `${input.trigger === "manual" ? `${input.userName ?? "A user"} refreshed` : input.trigger === "api" ? `${input.userName ?? "An API request"} refreshed` : "Scheduled refresh of"} all application data ` +
+      // An API refresh the warehouse load asked for skips the SFTP pull; say so, or
+      // the two kinds of API refresh read the same in the log.
+      (input.trigger === "api" && input.pullFiles === false ? "(no SFTP pull) " : "") +
       `in ${Math.round(durationMs / 100) / 10}s — ${result.steps.filter((s) => s.status === "ok").length}/${SYNC_SOURCES.length} sources ok` +
       (failed.length > 0 ? `, ${failed.length} FAILED (${failed.map((f) => f.label).join(", ")})` : ""),
-    metadata: { refreshId, trigger: input.trigger, month: result.month, seededMonth, seedingError, durationMs, steps: allSteps },
+    metadata: {
+      refreshId,
+      trigger: input.trigger,
+      caller: input.userName ?? null,
+      pulledFiles: ingest != null,
+      month: result.month,
+      seededMonth,
+      seedingError,
+      durationMs,
+      steps: allSteps,
+    },
   }).catch(() => {});
 
   // Read back rather than threaded through the sync steps: `hours_actual` is the one

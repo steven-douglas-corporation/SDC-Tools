@@ -83,6 +83,12 @@ class NotifyReportsAppTest(unittest.TestCase):
     class _Response:
         status = 202
 
+        def __init__(self, body=b'{"started": true}'):
+            self._body = body
+
+        def read(self):
+            return self._body
+
         def __enter__(self):
             return self
 
@@ -107,12 +113,23 @@ class NotifyReportsAppTest(unittest.TestCase):
 
         def opener(request, timeout):
             seen.update(url=request.full_url, method=request.get_method(),
-                        auth=request.get_header("Authorization"), timeout=timeout)
+                        auth=request.get_header("Authorization"), caller=request.get_header("X-refresh-caller"),
+                        timeout=timeout)
             return self._Response()
 
         out = notify_reports_app({"refresh_url": self.URL, "timeout_seconds": 5}, "secret", opener)
         self.assertEqual(out, "started (HTTP 202)")
-        self.assertEqual(seen, {"url": self.URL, "method": "POST", "auth": "Bearer secret", "timeout": 5})
+        self.assertEqual(seen, {"url": self.URL, "method": "POST", "auth": "Bearer secret",
+                                "caller": "paylocity_ingest", "timeout": 5})
+
+    def test_a_refresh_queued_behind_a_running_one_is_said_so(self):
+        queued = lambda request, timeout: self._Response(b'{"started": false, "queued": true}')
+        out = notify_reports_app({"refresh_url": self.URL}, "t", queued)
+        self.assertEqual(out, "queued behind the refresh already running (HTTP 202)")
+
+    def test_an_answer_that_is_not_json_still_counts_as_started(self):
+        odd = lambda request, timeout: self._Response(b"OK")
+        self.assertEqual(notify_reports_app({"refresh_url": self.URL}, "t", odd), "started (HTTP 202)")
 
     def test_a_refresh_already_running_is_not_a_failure(self):
         import urllib.error

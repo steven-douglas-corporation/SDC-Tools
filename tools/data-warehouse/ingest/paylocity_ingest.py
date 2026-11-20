@@ -492,13 +492,25 @@ def notify_reports_app(cfg: dict, token: str | None, opener=None) -> str:
     if not token:
         return (f"not sent: no token stored. As the account that runs the job, run "
                 f"cmdkey /generic:{REPORTS_KEYRING_SERVICE} /user:{JOB_NAME} /pass")
-    request = urllib.request.Request(url, data=b"", method="POST", headers={"Authorization": f"Bearer {token}"})
+    # X-Refresh-Caller names this job in the app's refresh record and audit log.
+    request = urllib.request.Request(url, data=b"", method="POST",
+                                     headers={"Authorization": f"Bearer {token}", "X-Refresh-Caller": JOB_NAME})
     try:
         with (opener or urllib.request.urlopen)(request, timeout=int(cfg.get("timeout_seconds", 15))) as response:
+            try:
+                answer = json.loads(response.read() or b"{}")
+            except ValueError:
+                answer = {}
+            if isinstance(answer, dict) and answer.get("queued"):
+                # A refresh was already running that may have read the warehouse before
+                # these files landed, so the app runs one more when it finishes.
+                return f"queued behind the refresh already running (HTTP {response.status})"
             return f"started (HTTP {response.status})"
     except urllib.error.HTTPError as e:
         if e.code == 409:
-            return "not needed: the app is already refreshing, and that refresh reads these files"
+            # Only when the running refresh is the one that started this load and is
+            # waiting for it: it has not read the warehouse yet.
+            return "not needed: the refresh that started this load is waiting for it and reads these files"
         return f"failed: the app answered HTTP {e.code}"
     except Exception as e:
         return f"failed: {e}"

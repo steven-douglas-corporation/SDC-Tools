@@ -2,7 +2,38 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describeIngestRun, parseTaskSetting, INGEST_LABEL, INGEST_SOURCE, type IngestBatch } from "../src/lib/warehouse-ingest-outcome";
+import {
+  apiCallerName,
+  busyAnswerForLoad,
+  describeIngestRun,
+  parseTaskSetting,
+  INGEST_LABEL,
+  INGEST_SOURCE,
+  type IngestBatch,
+} from "../src/lib/warehouse-ingest-outcome";
+
+// ── Review fixes (2026-11-20) ───────────────────────────────────────────────
+
+test("the load's call during a refresh that is waiting on that load needs nothing more", () => {
+  assert.equal(busyAnswerForLoad(INGEST_LABEL), "reads_these_files");
+});
+
+test("the load's call during any other refresh queues a follow-up: that pass may have read too early", () => {
+  // A startup or hourly pass that overlapped the load.
+  assert.equal(busyAnswerForLoad("Actual hours (Paylocity workbook)"), "queue_follow_up");
+  assert.equal(busyAnswerForLoad("Parts cost (TotalETO)"), "queue_follow_up");
+  // Running, but no stage recorded yet: not provably safe, so queue.
+  assert.equal(busyAnswerForLoad(null), "queue_follow_up");
+});
+
+test("the caller's name is kept for the audit log, cleaned, and never blank", () => {
+  assert.equal(apiCallerName("paylocity_ingest"), "API: paylocity_ingest");
+  assert.equal(apiCallerName("  nightly script v2.1 "), "API: nightly script v2.1");
+  assert.equal(apiCallerName("<b>x</b>;drop"), "API: bxbdrop");
+  assert.equal(apiCallerName("a".repeat(80)), `API: ${"a".repeat(40)}`);
+  assert.equal(apiCallerName(null), "API: unnamed caller");
+  assert.equal(apiCallerName("!!!"), "API: unnamed caller");
+});
 
 // The on-demand Paylocity load (lib/warehouse-ingest.ts): what the task setting
 // means, and what a person is told after each way a run can end.

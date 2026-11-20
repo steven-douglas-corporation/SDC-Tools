@@ -11,6 +11,33 @@ export const INGEST_JOB = "paylocity_ingest";
 
 export type IngestResult = { status: "ok" | "skipped" | "failed"; detail: string };
 
+/**
+ * The load has new files and asks for a refresh, but one is already running. Is
+ * that refresh going to read them?
+ *
+ * Only if it has not reached the warehouse yet, and the one case where that is
+ * certain is a refresh still on the stage that waits for this very load (the
+ * button, or the endpoint, started or joined it). Any other stage, or none, means
+ * a pass that may have read the hours BEFORE these files landed: a startup or
+ * hourly pass that happened to overlap the load. Answering "busy, not needed"
+ * there would leave the new files unread until the next hourly pass, which is the
+ * delay the load's call exists to remove. So that case queues one more refresh.
+ */
+export function busyAnswerForLoad(stage: string | null): "reads_these_files" | "queue_follow_up" {
+  return stage === INGEST_LABEL ? "reads_these_files" : "queue_follow_up";
+}
+
+/**
+ * Who called POST /api/integration/refresh, for the refresh record and the audit
+ * log: the X-Refresh-Caller header or ?caller=, reduced to plain characters. "API
+ * request refreshed all data" does not say whether it was the warehouse load, a
+ * script or a person with curl, which is the first question when one misbehaves.
+ */
+export function apiCallerName(raw: string | null | undefined): string {
+  const name = (raw ?? "").replace(/[^A-Za-z0-9 ._-]/g, "").trim().slice(0, 40);
+  return name ? `API: ${name}` : "API: unnamed caller";
+}
+
 export type IngestBatch = {
   batchId: number;
   status: string; // "running" | "succeeded" | "failed"

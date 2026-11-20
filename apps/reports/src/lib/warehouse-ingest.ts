@@ -35,8 +35,11 @@ export function ingestConfigured(): boolean {
 
 // Starts the task unless it is already running, waits until it stops, and prints
 // one line of JSON. LastRunTime is compared so a run too quick to be caught in the
-// Running state still counts as having run. The task is named through the
-// environment so nothing from .env is spliced into the script.
+// Running state still counts as having run. It gets 60 seconds to start: a busy
+// Task Scheduler can take a while to launch a task, and giving up early would
+// report "the task never ran" about one that was merely slow off the mark. The
+// task is named through the environment so nothing from .env is spliced into the
+// script.
 //
 // The try/catch writes the reason as plain text: left to itself, PowerShell run
 // with -EncodedCommand reports an error as CLIXML, and the person reading the
@@ -54,7 +57,7 @@ $before = ($t | Get-ScheduledTaskInfo).LastRunTime
 $joined = $t.State -eq 'Running'
 if (-not $joined) {
   Start-ScheduledTask -TaskPath $p -TaskName $n
-  $deadline = (Get-Date).AddSeconds(20)
+  $deadline = (Get-Date).AddSeconds(60)
   while ((Get-Date) -lt $deadline) {
     $now = Get-ScheduledTask -TaskPath $p -TaskName $n
     if ($now.State -eq 'Running' -or ($now | Get-ScheduledTaskInfo).LastRunTime -ne $before) { break }

@@ -67,6 +67,10 @@ token; unset means every request is refused).
 It runs the same pass as the button, SFTP pull included, recorded with trigger `api`. It never
 starts a new ETC month; only a person's click does.
 
+Send `X-Refresh-Caller: <name>` (or `?caller=<name>`) to say who is asking. The refresh record
+and the audit log then read "API: <name> refreshed…" and not just "an API request". The
+warehouse load sends `paylocity_ingest`.
+
 ### The load tells the app when it has new files
 
 The warehouse load and this app's hourly pass run on unrelated clocks, so a file could wait up
@@ -75,6 +79,14 @@ and rebuilt the warehouse from them, `paylocity_ingest.py` calls
 `POST /api/integration/refresh?pull=0` (`[reports_app]` in its `settings.toml`). `pull=0` is
 what stops the two starting each other. A run that finds nothing, which is most of them, makes
 no call. If the call fails, the load still succeeds and the hourly pass picks the rows up.
+
+If a refresh is already running when the load calls, the answer depends on which one:
+
+- **The refresh that started this load** (the button or the endpoint, still on the SFTP stage):
+  it has not read the warehouse yet, so nothing more is needed (`409`).
+- **Any other refresh** (a startup or hourly pass that overlapped the load): it may have read
+  the warehouse before the files landed, so one more refresh is queued behind it (`202`,
+  `queued: true`). One queued refresh covers any number of calls.
 
 ## Source order
 
