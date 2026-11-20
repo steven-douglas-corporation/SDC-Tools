@@ -727,12 +727,17 @@ export default function Sidebar({
           The wordmark is now `sr-only` when collapsed rather than unmounted: it is the
           application's name, and a screen reader should still be able to reach it from
           the landmark (§46.15). */}
+      {/* The header row: the way home, and the control that collapses the sidebar.
+          Expanded they share a row; in the rail the toggle sits directly under the logo. */}
+      <div className={collapsed ? `flex flex-col ${RAIL_PAD}` : "flex items-center pr-[12px]"}>
       {/* The logo and the name are the way home: the tools page, which sends someone with a
           single tool straight to it. */}
       <Link
         href="/"
         title="All tools"
-        className={`flex items-center gap-[11px] pt-5 pb-[18px] ${collapsed ? "justify-center px-0" : "px-[18px]"}`}
+        className={`flex min-w-0 items-center gap-[11px] pt-5 ${
+          collapsed ? "justify-center px-0 pb-2" : "flex-1 px-[18px] pb-[18px]"
+        }`}
       >
         {/* Slightly lifted tile so the white-on-navy SDC mark still reads as a
             distinct badge against the navy panel behind it. */}
@@ -744,6 +749,40 @@ export default function Sidebar({
           <p className="truncate text-note text-[#7E93AC]">Steven Douglas Corp.</p>
         </div>
       </Link>
+      {/* ── The collapse toggle, at the top (2026-11-20) ────────────────────────────
+          It was the last button of the footer (§46.4), in the same slot in both states.
+          It is at the top now, where most applications keep it and beside the other
+          controls that shape the sidebar (the way home, the tool launcher). The cost,
+          taken knowingly: it is no longer under the pointer after a click, because the
+          header is a row when expanded and a column in the rail.
+
+          `aria-expanded` describes the SIDEBAR, and `aria-controls` names it, so the
+          button reports the state it controls rather than relying on the label
+          swapping (§46.15). An icon alone in both states, so its name is always the
+          hidden label, never only the tooltip. */}
+      <button
+        onClick={toggleCollapsed}
+        aria-expanded={!collapsed}
+        aria-controls={SIDEBAR_ID}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        className={
+          collapsed
+            ? `${RAIL_ITEM} mb-1 text-[#A9BCD0] motion-interactive hover:bg-[#0E3157] hover:text-[#F3F6FA]`
+            : "flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-[#8FA6BE] motion-interactive hover:bg-[#0E3157] hover:text-[#F3F6FA]"
+        }
+      >
+        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+          <Icon>
+            {collapsed ? (
+              <path d="M6 3 L11 8 L6 13" strokeLinecap="round" strokeLinejoin="round" />
+            ) : (
+              <path d="M10 3 L5 8 L10 13" strokeLinecap="round" strokeLinejoin="round" />
+            )}
+          </Icon>
+        </span>
+        <span className="sr-only">{collapsed ? "Expand sidebar" : "Collapse sidebar"}</span>
+      </button>
+      </div>
 
       {/* Shown to anyone with somewhere else to go: a second tool, or Admin. */}
       {(tools.length > 1 || adminHref) && (
@@ -1122,7 +1161,7 @@ export default function Sidebar({
       </nav>
 
       {/* ── Footer block (§46.5, §46.11) ────────────────────────────────────────
-          One bordered group holding Refresh, the collapse toggle and the account row,
+          One bordered group holding the two refresh buttons and the account row,
           which ends in the gear for the person's own settings (Zoom among them).
 
           `shrink-0` is the fix for the reported clipping, and it is worth being precise
@@ -1220,8 +1259,8 @@ export default function Sidebar({
               point at it. */}
           <RefreshDataButton
             compact={collapsed}
-            // `dense` keeps its label to what fits beside Collapse at 128px (see the note
-            // on the prop). Irrelevant when compact, which shows no label at all.
+            // `dense` kept its label to what fit beside Collapse, which shared this row until
+            // it moved to the top of the sidebar. Left as it was: the short label still reads.
             dense
             // `flex-1` ONLY when expanded — see the footer's note. In the rail it made
             // this a 14px-tall sliver with a clipped label.
@@ -1230,37 +1269,6 @@ export default function Sidebar({
             }`}
           />
 
-          {/* ── One toggle, one position (§46.4) ──────────────────────────────────
-              It is the same button in both states, in the same slot, so it cannot "move
-              unexpectedly when the sidebar content changes". Collapsed it is a
-              full-rail-width chevron pointing right (expand); expanded it is the
-              labelled Collapse button.
-
-              `aria-expanded` describes the SIDEBAR, and `aria-controls` names it, so the
-              button reports the state it controls rather than relying on the label
-              swapping (§46.15). */}
-          <button
-            onClick={toggleCollapsed}
-            aria-expanded={!collapsed}
-            aria-controls={SIDEBAR_ID}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className={`flex h-[30px] items-center justify-center gap-[7px] rounded-[7px] bg-[#0B2846] text-xs text-[#C3D1E0] shadow-[inset_0_0_0_1px_#17395C] hover:bg-[#0E3157] ${
-              collapsed ? "w-full shrink-0" : "flex-1"
-            }`}
-          >
-            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-              <Icon>
-                {collapsed ? (
-                  <path d="M6 3 L11 8 L6 13" strokeLinecap="round" strokeLinejoin="round" />
-                ) : (
-                  <path d="M10 3 L5 8 L10 13" strokeLinecap="round" strokeLinejoin="round" />
-                )}
-              </Icon>
-            </span>
-            {/* Hidden, not removed: this is the button's accessible name, and it changes
-                with the state, which is exactly what a screen reader needs to hear. */}
-            <span className={collapsed ? "sr-only" : ""}>{collapsed ? "Expand sidebar" : "Collapse sidebar"}</span>
-          </button>
         </div>
 
         {/* ── The account row, and the control that was missing entirely (§46.5) ──

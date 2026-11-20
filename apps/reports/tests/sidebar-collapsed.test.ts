@@ -196,7 +196,9 @@ test("every collapsed label is hidden with sr-only rather than unmounted", () =>
   for (const label of [
     /collapsed \? "sr-only" : "truncate"\}>\{item\.label\}/, // nav links
     /collapsed \? "sr-only" : ""\}>Back</, // the Back button
-    /collapsed \? "sr-only" : ""\}>\{collapsed \? "Expand sidebar"/, // the toggle
+    // The toggle is an icon in both states since it moved to the top of the sidebar, so its
+    // label is always the hidden one.
+    /className="sr-only">\{collapsed \? "Expand sidebar"/,
     /collapsed \? "sr-only" : ""\}>Sign out</, // sign out
   ]) {
     assert.match(SIDEBAR_CODE, label, `a label still disappears instead of being hidden: ${label}`);
