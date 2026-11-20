@@ -7,6 +7,7 @@ import { CashFlowClient } from "@/components/CashFlowClient";
 import { CashFlowLeftToInvoiceSplit } from "@/components/CashFlowLeftToInvoiceSplit";
 import { isValidMonth } from "@/lib/etc";
 import { monthEndLabel } from "@/lib/left-to-invoice";
+import { getEtcSplitJobs, resolveSplitMonth } from "@/lib/etc-split-jobs";
 import { readPartsEtcBreakout } from "@/lib/parts-etc-breakout";
 import { buildOverview, pickBuckets, type JobBuckets, type LeftToInvoiceBuckets } from "@/lib/left-to-invoice-by-month";
 
@@ -36,15 +37,28 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
   // post), or through the month end picked with `lti` — then only POs purchased and invoices
   // posted on or before that day count, exactly as Monthly ETC computes a month. Never throws — a
   // Total ETO outage costs this table, not the forecast below it.
-  const splitPromise = estimatesPromise
-    .then((ests) => readPartsEtcBreakout(ests.map((e, i) => ({ pk: i, jobNumber: e.projectId })), ltiMonth).then((r) => ({ ests, r })))
-    .then(({ ests, r }) => {
+  //
+  // The JOBS are the Monthly ETC grid's own (lib/etc-split-jobs.ts), in the grid's order, so this
+  // table's Total ties to the Monthly ETC Parts Cost Left to Invoice column. They used to be every
+  // project in Total ETO, which added jobs the grid does not list (60 vs 42 on 2026-11-20).
+  const splitPromise = resolveSplitMonth(ltiMonth)
+    .then((month) => getEtcSplitJobs(month))
+    .then((etcJobs) => readPartsEtcBreakout(etcJobs.map((j) => ({ pk: j.pk, jobNumber: j.jobId })), ltiMonth).then((r) => ({ etcJobs, r })))
+    .then(({ etcJobs, r }) => {
       const jobs: (JobBuckets & { payBuckets: LeftToInvoiceBuckets })[] = [];
-      ests.forEach((e, i) => {
-        const b = r.byJobPk.get(i);
-        if (b?.byRequiredMonth) jobs.push({ jobId: e.projectId, jobName: e.jobName ?? "", buckets: b.byRequiredMonth, payBuckets: b.byPaymentMonth ?? b.byRequiredMonth });
-      });
-      return { overview: buildOverview(jobs), payOverview: buildOverview(pickBuckets(jobs, (j) => j.payBuckets)) };
+      let overrides = 0;
+      for (const j of etcJobs) {
+        const b = r.byJobPk.get(j.pk);
+        if (!b?.byRequiredMonth) continue;
+        jobs.push({ jobId: j.jobId, jobName: j.jobName, buckets: b.byRequiredMonth, payBuckets: b.byPaymentMonth ?? b.byRequiredMonth });
+        // A manager-typed figure replaces Total ETO's on the Monthly ETC cell; it cannot be split by
+        // date, so this table keeps Total ETO's and says how many rows differ.
+        if (j.override != null && b.rawLeftToInvoice != null && Math.abs(j.override - Math.round(b.rawLeftToInvoice * 100) / 100) > 0.004) overrides++;
+      }
+      return {
+        payOverview: buildOverview(pickBuckets(jobs, (j) => j.payBuckets), "given"),
+        overrides,
+      };
     })
     .catch((e) => {
       console.error("[cash-flow] left to invoice split failed:", e);
@@ -86,10 +100,10 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
       <SourceStaleBanner sources={["cash_flow_snapshot"]} what="This forecast" />
       {split && (
         <CashFlowLeftToInvoiceSplit
-          overview={split.overview}
           payOverview={split.payOverview}
           asOfLabel={ltiMonth ? monthEndLabel(ltiMonth) : `today, ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`}
           cutoffMonth={ltiMonth}
+          overrides={split.overrides}
         />
       )}
       <div className="mb-1">

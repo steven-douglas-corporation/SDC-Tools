@@ -173,3 +173,20 @@ test("net terms: not-yet-due months move +30 days, Overdue and No date do not, a
   assert.equal(pay.total, bill.total);
   assert.ok(Math.abs(sum(pay) - leftToInvoiceForLines(lines, {})) < 1e-9);
 });
+
+test("buildOverview order 'given': keeps the caller's jobs and order (empty jobs too) and the Total still sums the rows", () => {
+  const a = leftToInvoiceByMonth([line({ total: 100, requiredDate: "2026-03-01" })], {}, TODAY);
+  const b = leftToInvoiceByMonth([line({ total: 400, requiredDate: "2026-11-01" })], {}, TODAY);
+  const empty = leftToInvoiceByMonth([], {}, TODAY);
+  const o = buildOverview(
+    [
+      { jobId: "1001", jobName: "A", buckets: a },
+      { jobId: "1002", jobName: "Nothing", buckets: empty },
+      { jobId: "1003", jobName: "B", buckets: b },
+    ],
+    "given",
+  );
+  assert.deepEqual(o.rows.map((r) => r.jobId), ["1001", "1002", "1003"]);
+  assert.equal(o.totals.sum, 500);
+  assert.equal(o.totals.sum, o.rows.reduce((s, r) => s + r.sum, 0));
+});
