@@ -8,11 +8,12 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { TrackerError, type Actor, type Database } from "../src/modules/tracker/service/database";
 import {
-  createProject,
+  createProject as createProjectAsIs,
   ensurePerson,
   setPortfolioRanks,
   setProjectMember,
   updateProject,
+  type NewProject,
 } from "../src/modules/tracker/service/projects";
 import {
   addDependency,
@@ -31,6 +32,15 @@ const migration = (name: string) =>
 let pg: PGlite;
 let db: Database;
 let ana: Actor, ben: Actor, cal: Actor, boss: Actor;
+
+// Every project needs a justification and a yearly value. Tests that are about something
+// else get one of each from here; the test of that rule calls the service as it is.
+let someValue: number;
+const createProject = (
+  d: Database,
+  actor: Actor,
+  input: Omit<NewProject, "justification" | "valueBucketId"> & Partial<NewProject>,
+) => createProjectAsIs(d, actor, { justification: "Saves the team time.", valueBucketId: someValue, ...input });
 
 async function rows<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
   return (await pg.query<T>(sql, params)).rows;
@@ -64,8 +74,12 @@ before(async () => {
   await pg.exec(migration("0007_checklist.sql"));
   await pg.exec(migration("0008_migration_record_readable.sql"));
   await pg.exec(migration("0009_project_priority_dropped.sql"));
+  await pg.exec(migration("0010_project_justification.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
+  someValue = Number(
+    (await rows<{ id: number }>(`SELECT id FROM tracker.value_bucket ORDER BY sort_order LIMIT 1`))[0]!.id,
+  );
 
   ana = { personId: await ensurePerson(db, { email: "Ana@Example.test", displayName: "Ana" }) };
   ben = { personId: await ensurePerson(db, { email: "ben@example.test", displayName: "Ben" }) };
@@ -1744,4 +1758,102 @@ test("project settings: a new owner becomes a manager, and a finished project le
     [p.id],
   );
   assert.ok(done!.d, "the day it was finished is recorded");
+});
+
+test("justification: a project says why it is worth doing and what it is worth, before it exists and before it is active", async () => {
+  const Q = await import("../src/modules/tracker/service/queries");
+  const buckets = await Q.listValueBuckets(db);
+  assert.deepEqual(
+    buckets.map((b) => b.label),
+    ["Under $10k a year", "$10k to $50k a year", "$50k to $250k a year", "$250k to $1M a year", "Over $1M a year"],
+  );
+  const [small, , mid] = buckets;
+
+  // Neither can be left out when a project is created.
+  await refuses(
+    () => createProjectAsIs(db, ana, { key: "WHY1", name: "No reason", justification: "   ", valueBucketId: mid!.id }),
+    "invalid",
+    /needs a justification: what it saves, earns or prevents/,
+  );
+  await refuses(
+    () =>
+      createProjectAsIs(db, ana, {
+        key: "WHY1",
+        name: "No value",
+        justification: "Saves two days a month.",
+        valueBucketId: null as unknown as number,
+      }),
+    "invalid",
+    /worth to the bottom line in a year/,
+  );
+  await refuses(
+    () => createProjectAsIs(db, ana, { key: "WHY1", name: "Bad value", justification: "x", valueBucketId: 999999 }),
+    "invalid",
+    /worth to the bottom line/,
+  );
+  const none = await rows(`SELECT 1 FROM tracker.project WHERE key = 'WHY1'`);
+  assert.equal(none.length, 0, "a refused project is not created");
+
+  const p = await createProjectAsIs(db, ana, {
+    key: "WHY",
+    name: "Roll-up",
+    justification: "  Cuts the monthly roll-up from two days to two hours.  ",
+    valueBucketId: mid!.id,
+  });
+  const listed = (await Q.listProjects(db, ana)).find((x) => x.id === p.id)!;
+  assert.deepEqual(
+    [listed.justification, listed.valueBucketId, listed.valueLabel],
+    ["Cuts the monthly roll-up from two days to two hours.", mid!.id, "$50k to $250k a year"],
+  );
+  const board = await Q.getBoard(db, ana, "WHY");
+  assert.equal(board.project.valueLabel, "$50k to $250k a year", "the project page reads the same thing");
+
+  // Both can be changed, with the change kept in the history; the reason cannot be emptied.
+  await updateProject(
+    db,
+    ana,
+    p.id,
+    { justification: "Saves two days a month.", valueBucketId: small!.id },
+    "re-scoped",
+  );
+  await refuses(() => updateProject(db, ana, p.id, { justification: "" }), "invalid", /needs a justification/);
+  const log = await rows<{ field: string; old_value: string; new_value: string; reason: string }>(
+    `SELECT field::text, old_value, new_value, reason FROM tracker.project_change_log WHERE project_id = $1 ORDER BY id`,
+    [p.id],
+  );
+  assert.deepEqual(log, [
+    {
+      field: "justification",
+      old_value: "Cuts the monthly roll-up from two days to two hours.",
+      new_value: "Saves two days a month.",
+      reason: "re-scoped",
+    },
+    { field: "value", old_value: "$50k to $250k a year", new_value: "Under $10k a year", reason: "re-scoped" },
+  ]);
+  // Saying the same thing again changes nothing and logs nothing.
+  await updateProject(db, ana, p.id, { justification: "Saves two days a month.", valueBucketId: small!.id });
+  assert.equal((await rows(`SELECT 1 FROM tracker.project_change_log WHERE project_id = $1`, [p.id])).length, 2);
+
+  // A project made before this was asked for has neither, and cannot be made active until it does.
+  const old = await createProject(db, ana, { key: "OLDWHY", name: "From before" });
+  await pg.query(`UPDATE tracker.project SET justification = NULL, value_bucket_id = NULL WHERE id = $1`, [old.id]);
+  await setPortfolioRanks(db, boss, [{ projectId: old.id, rank: 71 }]);
+  await refuses(
+    () => updateProject(db, ana, old.id, { state: "active" }),
+    "invalid",
+    /needs a justification and a yearly value before it can be made active/,
+  );
+  await refuses(
+    () => updateProject(db, ana, old.id, { state: "active", justification: "Keeps the lights on." }),
+    "invalid",
+    /before it can be made active/,
+  );
+  // Given both in the same save, it goes active in one step.
+  await updateProject(db, ana, old.id, {
+    state: "active",
+    justification: "Keeps the lights on.",
+    valueBucketId: mid!.id,
+  });
+  const [now] = await rows<{ state: string }>(`SELECT state::text FROM tracker.project WHERE id = $1`, [old.id]);
+  assert.equal(now!.state, "active");
 });

@@ -15,7 +15,7 @@ import {
 import { EmptyState } from "@/components/ui/EmptyState";
 import { createProjectAction, moveProjectRankAction, setProjectRankAction, setProjectStateAction } from "../actions";
 import type { RankClash } from "../service/projects";
-import type { ProjectListItem } from "../service/queries";
+import type { ProjectListItem, ValueBucket } from "../service/queries";
 import { hours, leftOutOfForecast, rankClashEffect, shortDate } from "./format";
 import { SafeDateHelp } from "./HelpTip";
 
@@ -181,12 +181,14 @@ function StateCell({ p, canEdit }: { p: ProjectListItem; canEdit: boolean }) {
   );
 }
 
-function NewProject() {
+function NewProject({ valueBuckets }: { valueBuckets: ValueBucket[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
   const [targetDate, setTargetDate] = useState("");
+  const [justification, setJustification] = useState("");
+  const [valueBucketId, setValueBucketId] = useState("");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
 
@@ -205,7 +207,13 @@ function NewProject() {
         e.preventDefault();
         setError("");
         start(async () => {
-          const res = await createProjectAction({ key, name, targetDate: targetDate || null });
+          const res = await createProjectAction({
+            key,
+            name,
+            justification,
+            valueBucketId: valueBucketId ? Number(valueBucketId) : null,
+            targetDate: targetDate || null,
+          });
           if (!res.ok) return setError(res.error);
           router.push(`/tracker/${res.key}`);
         });
@@ -234,6 +242,34 @@ function NewProject() {
         <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} className={INPUT} />
         <span className="text-xs text-sdc-gray-600">Optional</span>
       </label>
+      <label className="flex w-full flex-col gap-1">
+        <span className={LABEL}>Justification</span>
+        <textarea
+          required
+          rows={2}
+          value={justification}
+          onChange={(e) => setJustification(e.target.value)}
+          className={INPUT}
+          placeholder="Cuts the monthly roll-up from two days to two hours"
+        />
+        <span className="text-xs text-sdc-gray-600">
+          Why this is worth doing: what it saves, earns or prevents. The stack rank is argued from it.
+        </span>
+      </label>
+      <label className="flex min-w-[16rem] flex-col gap-1">
+        <span className={LABEL}>Value to the bottom line</span>
+        <select required value={valueBucketId} onChange={(e) => setValueBucketId(e.target.value)} className={INPUT}>
+          <option value="">Choose a range</option>
+          {valueBuckets.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.label}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-sdc-gray-600">
+          The best honest range for a year: savings, added profit or cost avoided.
+        </span>
+      </label>
       <div className="flex gap-2 pb-6">
         <button type="submit" disabled={pending} className={BUTTON_PRIMARY}>
           {pending ? "Creating…" : "Create project"}
@@ -249,10 +285,13 @@ function NewProject() {
 
 export function ProjectList({
   projects,
+  valueBuckets,
   canEdit,
   canRank,
 }: {
   projects: ProjectListItem[];
+  /** The ranges a new project's yearly value is chosen from. */
+  valueBuckets: ValueBucket[];
   /** Holds tracker:edit. */
   canEdit: boolean;
   /** May set the company-wide stack rank (in this app: ELT). */
@@ -267,7 +306,7 @@ export function ProjectList({
     <div className="space-y-4">
       {canEdit && (
         <div className="flex justify-end">
-          <NewProject />
+          <NewProject valueBuckets={valueBuckets} />
         </div>
       )}
 
@@ -320,9 +359,12 @@ export function ProjectList({
                       <Link href={`/tracker/${p.key}`} className="font-semibold text-sdc-blue hover:underline">
                         {p.key}
                       </Link>
-                      <span className="ml-2 text-sdc-navy">{p.name}</span>
+                      {/* The reason is one hover away for whoever is setting the ranks. */}
+                      <span className="ml-2 text-sdc-navy" title={p.justification ?? undefined}>
+                        {p.name}
+                      </span>
                       <div className="text-xs text-sdc-gray-600">
-                        Owner: {p.ownerName}
+                        {p.valueLabel ?? "No value set"} · Owner: {p.ownerName}
                         {p.nextMilestone ? ` · Next milestone: ${p.nextMilestone}` : ""}
                       </div>
                     </td>

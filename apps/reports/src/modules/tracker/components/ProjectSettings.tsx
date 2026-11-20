@@ -4,13 +4,15 @@ import { useState, useTransition } from "react";
 import { BUTTON_PRIMARY, CARD_BASE, INPUT, LABEL } from "@/components/ui/classnames";
 import { updateProjectAction } from "../actions";
 import type { ProjectChanges, ProjectState } from "../service/projects";
+import type { ValueBucket } from "../service/queries";
 
-// What a manager can change about a project after it is created: when it is due, who owns it,
-// and where it stands. Finishing or cancelling a project is a change of state made here.
+// What a manager can change about a project after it is created: why it is being done and
+// what it is worth, when it is due, who owns it, and where it stands. Finishing or cancelling
+// a project is a change of state made here.
 
 const STATES: { value: ProjectState; label: string; note: string }[] = [
   { value: "planned", label: "Planned", note: "Not started. Its work is forecast once it has a stack rank." },
-  { value: "active", label: "Active", note: "Being worked on. Needs a stack rank." },
+  { value: "active", label: "Active", note: "Being worked on. Needs a stack rank, a justification and a value." },
   { value: "on_hold", label: "On hold", note: "Paused. Its cards stay, and are left out of the forecast." },
   { value: "completed", label: "Finished", note: "Done. It leaves the forecast and frees its people." },
   { value: "cancelled", label: "Cancelled", note: "Stopped for good. It leaves the forecast and frees its people." },
@@ -19,6 +21,9 @@ const STATES: { value: ProjectState; label: string; note: string }[] = [
 export function ProjectSettings({
   projectId,
   projectKey,
+  justification,
+  valueBucketId,
+  valueBuckets,
   targetDate,
   ownerPersonId,
   state,
@@ -27,6 +32,9 @@ export function ProjectSettings({
 }: {
   projectId: number;
   projectKey: string;
+  justification: string | null;
+  valueBucketId: number | null;
+  valueBuckets: ValueBucket[];
   targetDate: string | null;
   ownerPersonId: number;
   state: ProjectState;
@@ -34,6 +42,8 @@ export function ProjectSettings({
   openCards: number;
   people: { id: number; name: string }[];
 }) {
+  const [why, setWhy] = useState(justification ?? "");
+  const [value, setValue] = useState(valueBucketId?.toString() ?? "");
   const [target, setTarget] = useState(targetDate ?? "");
   const [owner, setOwner] = useState(ownerPersonId.toString());
   const [next, setNext] = useState<ProjectState>(state);
@@ -44,6 +54,8 @@ export function ProjectSettings({
 
   const closing = (next === "completed" || next === "cancelled") && next !== state;
   const changes: ProjectChanges = {};
+  if (why.trim() !== (justification ?? "")) changes.justification = why;
+  if (value !== "" && value !== (valueBucketId?.toString() ?? "")) changes.valueBucketId = Number(value);
   if ((target || null) !== targetDate) changes.targetDate = target || null;
   if (Number(owner) !== ownerPersonId) changes.ownerPersonId = Number(owner);
   if (next !== state) changes.state = next;
@@ -64,6 +76,33 @@ export function ProjectSettings({
     <details className={`${CARD_BASE} p-4`}>
       <summary className="cursor-pointer text-sm font-semibold text-sdc-navy">Project settings</summary>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <label className="flex flex-col gap-1 sm:col-span-2">
+          <span className={LABEL}>Justification</span>
+          <textarea
+            rows={3}
+            value={why}
+            onChange={(e) => setWhy(e.target.value)}
+            className={INPUT}
+            placeholder="Cuts the monthly roll-up from two days to two hours"
+          />
+          <span className="text-xs text-sdc-gray-600">
+            Why this is worth doing: what it saves, earns or prevents. The stack rank is argued from it.
+          </span>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={LABEL}>Value to the bottom line</span>
+          <select value={value} onChange={(e) => setValue(e.target.value)} className={INPUT}>
+            {valueBucketId == null && <option value="">Not set yet</option>}
+            {valueBuckets.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.label}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-sdc-gray-600">
+            The best honest range for a year: savings, added profit or cost avoided.
+          </span>
+        </label>
         <label className="flex flex-col gap-1">
           <span className={LABEL}>Target date</span>
           <input type="date" value={target} onChange={(e) => setTarget(e.target.value)} className={INPUT} />

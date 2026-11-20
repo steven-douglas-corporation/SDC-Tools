@@ -235,8 +235,10 @@ that enforce the one write path.
 - Only finish-to-start dependencies; the other three types were removed until the engine supports them.
 - Later migrations: `0004` counts only cards that carry work, `0005` makes a kind required,
   `0006` records who asked for a card, `0007` adds a card's checklist, `0008` lets the app
-  read the record of applied migrations, and `0009` drops the project's own priority, which
-  nothing used: projects are ordered by stack rank.
+  read the record of applied migrations, `0009` drops the project's own priority, which
+  nothing used: projects are ordered by stack rank, and `0010` gives a project a justification
+  and a yearly dollar value, chosen from a short table of ranges (`value_bucket`). Both are
+  asked for when a project is created and before it can be made active.
 
 ### Forecast engine
 

@@ -90,6 +90,8 @@ const boardPath = (projectKey: string) => `/tracker/${projectKey.toUpperCase()}`
 export async function createProjectAction(input: {
   key: string;
   name: string;
+  justification: string;
+  valueBucketId: number | null;
   targetDate?: string | null;
 }): Promise<ActionResult<{ key: string }>> {
   return act(
@@ -97,6 +99,9 @@ export async function createProjectAction(input: {
       const p = await createProject(trackerDb, actor, {
         key: input.key,
         name: input.name,
+        justification: input.justification,
+        // Null reaches the service as it is, which refuses it in words.
+        valueBucketId: input.valueBucketId as number,
         targetDate: input.targetDate || null,
       });
       return { key: p.key };
@@ -158,21 +163,21 @@ export async function setProjectStateAction(
   );
 }
 
-/** A manager's changes to a project: its target date, its owner, its state (finishing it included). */
+/** A manager's changes to a project: why and what it is worth, its target date, its owner, its state. */
 export async function updateProjectAction(input: {
   projectId: number;
   projectKey: string;
-  changes: Pick<ProjectChanges, "targetDate" | "ownerPersonId" | "state">;
+  changes: Pick<ProjectChanges, "justification" | "valueBucketId" | "targetDate" | "ownerPersonId" | "state">;
   reason?: string;
 }): Promise<ActionResult> {
   return act(
     async (actor) => {
-      const { targetDate, ownerPersonId, state } = input.changes;
+      const { justification, valueBucketId, targetDate, ownerPersonId, state } = input.changes;
       await updateProject(
         trackerDb,
         actor,
         input.projectId,
-        { targetDate, ownerPersonId, state },
+        { justification, valueBucketId, targetDate, ownerPersonId, state },
         input.reason?.trim() || null,
       );
       return {};

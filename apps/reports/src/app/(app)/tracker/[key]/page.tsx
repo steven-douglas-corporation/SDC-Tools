@@ -7,7 +7,7 @@ import { hasPermission } from "@/lib/permissions";
 import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
 import { syncPeopleFromUsers, trackerActor } from "@/modules/tracker/current-actor";
 import { TrackerError } from "@/modules/tracker/service/database";
-import { getBoard, type Board as BoardData } from "@/modules/tracker/service/queries";
+import { getBoard, listValueBuckets, type Board as BoardData } from "@/modules/tracker/service/queries";
 import { listMembers } from "@/modules/tracker/service/people";
 import { Board } from "@/modules/tracker/components/Board";
 import { Members } from "@/modules/tracker/components/Members";
@@ -41,12 +41,14 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
   }
   const p = board.project;
   const members = await listMembers(trackerDb, actor, p.id);
+  const valueBuckets = await listValueBuckets(trackerDb);
   const canEdit = hasPermission(session.user.role, "tracker:edit");
 
   const state = p.state.replace("_", " ");
   const facts: [string, string][] = [
     ["State", p.state === "completed" ? "Finished" : state.charAt(0).toUpperCase() + state.slice(1)],
     ["Owner", p.ownerName],
+    ["Value", p.valueLabel ?? "Not set"],
     ["Stack rank", p.portfolioRank?.toString() ?? "none"],
     ["Target", shortDate(p.targetDate)],
     ["Forecast", shortDate(p.forecastFinish)],
@@ -71,7 +73,15 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
         <span className="text-sdc-gray-400"> / </span>
         <span className="text-sdc-gray-600">{p.key}</span>
       </p>
-      <PageTitle className="mb-3">{p.name}</PageTitle>
+      <PageTitle className="mb-1">{p.name}</PageTitle>
+      {/* Why the project exists, straight under its name: it is what its rank is argued from. */}
+      <p className="mb-3 max-w-3xl text-sm text-sdc-gray-600">
+        {p.justification ?? (
+          <span className="italic">
+            No justification yet. A manager adds one, and what the project is worth, in Project settings below.
+          </span>
+        )}
+      </p>
 
       <dl className="mb-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
         {facts.map(([label, value]) => (
@@ -126,6 +136,9 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
           <ProjectSettings
             projectId={p.id}
             projectKey={p.key}
+            justification={p.justification}
+            valueBucketId={p.valueBucketId}
+            valueBuckets={valueBuckets}
             targetDate={p.targetDate}
             ownerPersonId={p.ownerPersonId}
             state={p.state as ProjectState}

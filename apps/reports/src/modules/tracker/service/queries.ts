@@ -15,6 +15,11 @@ export interface ProjectListItem {
   portfolioRank: number | null;
   ownerName: string;
   ownerPersonId: number;
+  /** Why it is worth doing. Null only on a project made before this was asked for. */
+  justification: string | null;
+  valueBucketId: number | null;
+  /** What it is worth in a year, as the range's own words, e.g. "$50k to $250k a year". */
+  valueLabel: string | null;
   targetDate: string | null;
   taskCount: number;
   doneCount: number;
@@ -39,6 +44,9 @@ interface ProjectRow {
   portfolio_rank: number | null;
   owner_name: string;
   owner_person_id: number;
+  justification: string | null;
+  value_bucket_id: number | null;
+  value_label: string | null;
   target_date: string | null;
   task_count: string | number | null;
   done_count: string | number | null;
@@ -56,6 +64,7 @@ interface ProjectRow {
 
 const PROJECT_COLUMNS = `
   r.project_id, r.key, r.name, r.state, r.portfolio_rank, o.display_name AS owner_name, r.owner_person_id,
+  pj.justification, pj.value_bucket_id, vb.label AS value_label,
   r.target_date::text, r.task_count, r.done_count, r.remaining_hours::float8,
   r.forecast_completion_date::text AS forecast_finish, r.p80_finish::text, r.at_risk, r.at_risk_basis,
   r.unscheduled_tasks, r.unestimated_tasks, r.stale_tasks, r.next_milestone, m.role AS my_role`;
@@ -69,6 +78,9 @@ function toProject(r: ProjectRow, admin: boolean): ProjectListItem {
     portfolioRank: r.portfolio_rank == null ? null : Number(r.portfolio_rank),
     ownerName: r.owner_name,
     ownerPersonId: Number(r.owner_person_id),
+    justification: r.justification,
+    valueBucketId: r.value_bucket_id == null ? null : Number(r.value_bucket_id),
+    valueLabel: r.value_label,
     targetDate: r.target_date,
     taskCount: Number(r.task_count ?? 0),
     doneCount: Number(r.done_count ?? 0),
@@ -96,6 +108,8 @@ export async function listProjects(db: Database, actor: Actor): Promise<ProjectL
       `SELECT ${PROJECT_COLUMNS}
          FROM tracker.project_rollup r
          JOIN tracker.person o ON o.id = r.owner_person_id
+         JOIN tracker.project pj ON pj.id = r.project_id
+    LEFT JOIN tracker.value_bucket vb ON vb.id = pj.value_bucket_id
     LEFT JOIN tracker.project_member m ON m.project_id = r.project_id AND m.person_id = $1
         WHERE $2::boolean OR m.role IS NOT NULL
         ORDER BY (r.state IN ('completed', 'cancelled')), r.portfolio_rank NULLS LAST, r.key`,
@@ -334,6 +348,8 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
       `SELECT ${PROJECT_COLUMNS}
          FROM tracker.project_rollup r
          JOIN tracker.person o ON o.id = r.owner_person_id
+         JOIN tracker.project pj ON pj.id = r.project_id
+    LEFT JOIN tracker.value_bucket vb ON vb.id = pj.value_bucket_id
     LEFT JOIN tracker.project_member m ON m.project_id = r.project_id AND m.person_id = $1
         WHERE r.key = $2`,
       [actor.personId, projectKey.toUpperCase()],
@@ -478,5 +494,21 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
         .filter((c) => c.total > 0),
       forecastAsOf: run.rows[0]?.as_of ?? null,
     };
+  });
+}
+
+/** One of the dollar ranges a project's yearly value is chosen from. */
+export interface ValueBucket {
+  id: number;
+  label: string;
+}
+
+/** The value ranges, smallest first, for the forms that ask what a project is worth. */
+export async function listValueBuckets(db: Database): Promise<ValueBucket[]> {
+  return db.transaction(async (tx) => {
+    const { rows } = await tx.query<{ id: number; label: string }>(
+      `SELECT id, label FROM tracker.value_bucket ORDER BY sort_order`,
+    );
+    return rows.map((r) => ({ id: Number(r.id), label: r.label }));
   });
 }

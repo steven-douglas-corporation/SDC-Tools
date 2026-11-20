@@ -13,12 +13,19 @@ export interface NewProject {
   description?: string | null;
   objective?: string | null;
   definitionOfDone?: string | null;
+  /** Why it is worth doing: what it saves, earns or prevents. Required. */
+  justification: string;
+  /** What it is worth to the bottom line in a year, as a tracker.value_bucket. Required. */
+  valueBucketId: number;
   targetDate?: string | null;
   teamId?: number | null;
   jobNumber?: string | null;
 }
 
 export interface ProjectChanges {
+  /** Can be reworded, never emptied. */
+  justification?: string;
+  valueBucketId?: number;
   targetDate?: string | null;
   state?: ProjectState;
   ownerPersonId?: number;
@@ -85,18 +92,21 @@ export async function createProject(
   // A project's board lives at /tracker/KEY, so a key cannot be the name of another tracker page.
   if (RESERVED_KEYS.has(key)) throw new TrackerError("invalid", `${key} is reserved. Choose a different key.`);
   if (!input.name.trim()) throw new TrackerError("invalid", "A project needs a name.");
+  const justification = cleanJustification(input.justification);
+  if (input.valueBucketId == null) throw new TrackerError("invalid", NO_VALUE);
   assertIsoDate(input.targetDate, "Target date");
 
   return db.transaction(async (tx) => {
     const taken = await tx.query(`SELECT 1 FROM tracker.project WHERE key = $1`, [key]);
     if (taken.rows.length) throw new TrackerError("conflict", `The key ${key} is already used by another project.`);
+    await valueBucketLabel(tx, input.valueBucketId);
 
     const row = await one<{ id: number }>(
       tx,
       `INSERT INTO tracker.project
          (key, name, description, objective, definition_of_done, owner_person_id, created_by,
-          target_date, team_id, job_number)
-       VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9)
+          target_date, team_id, job_number, justification, value_bucket_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11)
        RETURNING id`,
       [
         key,
@@ -108,6 +118,8 @@ export async function createProject(
         input.targetDate ?? null,
         input.teamId ?? null,
         input.jobNumber ?? null,
+        justification,
+        input.valueBucketId,
       ],
       "Project",
     );
@@ -168,7 +180,29 @@ async function logProjectChange(
   );
 }
 
-/** Changes a project's target date, state or owner. Each change is logged. */
+const NO_VALUE = "Choose what the project is worth to the bottom line in a year.";
+
+/** The reason in words, trimmed. A project without one is refused, here and on every later edit. */
+function cleanJustification(text: string | null | undefined): string {
+  const clean = (text ?? "").trim();
+  if (!clean) {
+    throw new TrackerError(
+      "invalid",
+      "A project needs a justification: what it saves, earns or prevents, and so why it is worth doing.",
+    );
+  }
+  if (clean.length > 2000) throw new TrackerError("invalid", "Keep the justification under 2,000 characters.");
+  return clean;
+}
+
+/** The label of a value bucket, or a refusal if there is no such bucket. */
+async function valueBucketLabel(tx: Tx, id: number): Promise<string> {
+  const { rows } = await tx.query<{ label: string }>(`SELECT label FROM tracker.value_bucket WHERE id = $1`, [id]);
+  if (!rows.length) throw new TrackerError("invalid", NO_VALUE);
+  return rows[0]!.label;
+}
+
+/** Changes a project's justification, value, target date, state or owner. Each change is logged. */
 export async function updateProject(
   db: Database,
   actor: Actor,
@@ -184,13 +218,37 @@ export async function updateProject(
       state: ProjectState;
       owner_person_id: number;
       portfolio_rank: number | null;
+      justification: string | null;
+      value_bucket_id: number | null;
     }>(
       tx,
-      `SELECT target_date::text, state, owner_person_id, portfolio_rank FROM tracker.project WHERE id = $1 FOR UPDATE`,
+      `SELECT target_date::text, state, owner_person_id, portfolio_rank, justification, value_bucket_id
+         FROM tracker.project WHERE id = $1 FOR UPDATE`,
       [projectId],
       "Project",
     );
 
+    // What the project will hold once this call is done, for the rule on making it active.
+    let justification = cur.justification;
+    let valueBucketId = cur.value_bucket_id == null ? null : Number(cur.value_bucket_id);
+    if (changes.justification !== undefined) {
+      const next = cleanJustification(changes.justification);
+      if (next !== cur.justification) {
+        await tx.query(`UPDATE tracker.project SET justification = $2 WHERE id = $1`, [projectId, next]);
+        await logProjectChange(tx, projectId, "justification", cur.justification, next, actor, reason ?? null);
+        justification = next;
+      }
+    }
+    if (changes.valueBucketId !== undefined && changes.valueBucketId !== valueBucketId) {
+      const label = await valueBucketLabel(tx, changes.valueBucketId);
+      const was = valueBucketId == null ? null : await valueBucketLabel(tx, valueBucketId);
+      await tx.query(`UPDATE tracker.project SET value_bucket_id = $2 WHERE id = $1`, [
+        projectId,
+        changes.valueBucketId,
+      ]);
+      await logProjectChange(tx, projectId, "value", was, label, actor, reason ?? null);
+      valueBucketId = changes.valueBucketId;
+    }
     if (changes.targetDate !== undefined && changes.targetDate !== cur.target_date) {
       await tx.query(`UPDATE tracker.project SET target_date = $2 WHERE id = $1`, [projectId, changes.targetDate]);
       await logProjectChange(tx, projectId, "target_date", cur.target_date, changes.targetDate, actor, reason ?? null);
@@ -213,6 +271,13 @@ export async function updateProject(
     if (changes.state !== undefined && changes.state !== cur.state) {
       if (changes.state === "active" && cur.portfolio_rank == null) {
         throw new TrackerError("invalid", "A project needs a stack rank before it can be made active.");
+      }
+      // Asked of every new project when it is created; this catches the ones made before that.
+      if (changes.state === "active" && (!justification || valueBucketId == null)) {
+        throw new TrackerError(
+          "invalid",
+          "A project needs a justification and a yearly value before it can be made active. Add them in Project settings.",
+        );
       }
       const done = changes.state === "completed";
       await tx.query(

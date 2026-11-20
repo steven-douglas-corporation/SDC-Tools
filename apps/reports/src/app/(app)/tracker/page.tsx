@@ -6,7 +6,7 @@ import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";
 import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
 import { trackerActor } from "@/modules/tracker/current-actor";
-import { listProjects } from "@/modules/tracker/service/queries";
+import { listProjects, listValueBuckets } from "@/modules/tracker/service/queries";
 import { ProjectList } from "@/modules/tracker/components/ProjectList";
 import { PortfolioSummary } from "@/modules/tracker/components/PortfolioSummary";
 
@@ -31,6 +31,7 @@ export default async function TrackerPage() {
 
   const actor = await trackerActor(session);
   const projects = await listProjects(trackerDb, actor);
+  const valueBuckets = await listValueBuckets(trackerDb);
 
   return (
     <div className={PAGE_SHELL}>
@@ -46,6 +47,7 @@ export default async function TrackerPage() {
       <PortfolioSummary projects={projects} />
       <ProjectList
         projects={projects}
+        valueBuckets={valueBuckets}
         canEdit={hasPermission(session.user.role, "tracker:edit")}
         canRank={actor.admin === true}
       />
