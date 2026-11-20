@@ -366,8 +366,8 @@ export function JobCostExplorer({
   // the same shape (2026-08-12, by request — "the same consistent multi-select
   // UX") and toggling one value is an O(1) add/delete rather than a
   // filter-and-rebuild on every click, on every one of them.
-  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
-  const [yearFilter, setYearFilter] = useState<Set<string>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<Set<string> | null>(null);
+  const [yearFilter, setYearFilter] = useState<Set<string> | null>(null);
   // customerFilter is special: null means "no narrowing" (every job matches), same
   // as the other three filters' empty Set — but an explicit EMPTY Set here means
   // "narrowed to nothing", which is what the Customer group's own "Clear" (deselect
@@ -375,7 +375,7 @@ export function JobCostExplorer({
   // handful is the real workflow; Status/Year/Type stay on the plain empty-Set-means-
   // all convention since picking a few of four items from "all" is no hardship.
   const [customerFilter, setCustomerFilter] = useState<Set<string> | null>(null);
-  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
+  const [typeFilter, setTypeFilter] = useState<Set<string> | null>(null);
   const [hideUtility, setHideUtility] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("jobId");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
@@ -600,14 +600,15 @@ export function JobCostExplorer({
   // one badge count the consolidated Filters button needs, rather than each
   // filter reporting its own count independently the way it did as three
   // separate buttons.
-  const statusNarrowing = statusFilter.size > 0 && statusFilter.size < allStatuses.length;
+  const statusNarrowing = statusFilter != null && statusFilter.size < allStatuses.length;
   const customerNarrowing = customerFilter != null && customerFilter.size < customers.length;
-  const yearNarrowing = yearFilter.size > 0 && yearFilter.size < years.length;
-  const typeNarrowing = typeFilter.size > 0 && typeFilter.size < allTypes.length;
+  const yearNarrowing = yearFilter != null && yearFilter.size < years.length;
+  const typeNarrowing = typeFilter != null && typeFilter.size < allTypes.length;
   const activeFilterCount = (statusNarrowing ? 1 : 0) + (customerNarrowing ? 1 : 0) + (yearNarrowing ? 1 : 0) + (typeNarrowing ? 1 : 0);
   function clearAllFilters() {
+    // Same effect as pressing Clear in every section: everything unchecked.
     setStatusFilter(new Set());
-    setCustomerFilter(null);
+    setCustomerFilter(new Set());
     setTypeFilter(new Set());
     setYearFilter(new Set());
   }
@@ -616,10 +617,10 @@ export function JobCostExplorer({
     const terms = search.toLowerCase().split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
     let out = computed
       .filter((r) => !(hideUtility && isUtilityJob(r.jobId)))
-      .filter((r) => statusFilter.size === 0 || statusFilter.has(r.status))
-      .filter((r) => yearFilter.size === 0 || (r.completeDate != null && yearFilter.has(r.completeDate.slice(0, 4))))
+      .filter((r) => statusFilter == null || statusFilter.has(r.status))
+      .filter((r) => yearFilter == null || (r.completeDate != null && yearFilter.has(r.completeDate.slice(0, 4))))
       .filter((r) => customerFilter == null || (r.customerName != null && customerFilter.has(r.customerName)))
-      .filter((r) => typeFilter.size === 0 || (r.jobType != null && typeFilter.has(r.jobType)))
+      .filter((r) => typeFilter == null || (r.jobType != null && typeFilter.has(r.jobType)))
       .filter((r) => !terms.length || terms.some((t) => `${r.jobId} ${r.jobName} ${r.customerName ?? ""} ${r.status}`.toLowerCase().includes(t)));
     out = [...out].sort((a, b) => {
       const av = a[sortKey as keyof JobCostComputed];
@@ -891,19 +892,18 @@ export function JobCostExplorer({
                   type="button"
                   className={BUTTON_MENU_LINK}
                   onClick={clearAllFilters}
-                  disabled={activeFilterCount === 0}
                 >
                   Clear all
                 </button>
               </div>
-              <MenuGroup label={statusNarrowing ? `Status (${statusFilter.size})` : "Status"}>
+              <MenuGroup label={statusNarrowing ? `Status (${statusFilter?.size ?? 0})` : "Status"}>
                 <MenuBulkActions onAll={() => setStatusFilter(new Set(allStatuses))} onNone={() => setStatusFilter(new Set())} />
                 <div className="max-h-40 overflow-y-auto styled-scrollbar">
                   {allStatuses.map((s) => (
                     <MenuCheckbox
                       key={s}
                       label={s}
-                      checked={statusFilter.size === 0 || statusFilter.has(s)}
+                      checked={statusFilter == null || statusFilter.has(s)}
                       onChange={() =>
                         setStatusFilter((prev) => {
                           // Unchecking one box while every status is implicitly
@@ -911,7 +911,7 @@ export function JobCostExplorer({
                           // "every status EXCEPT this one" — seed the full set
                           // first, so a single uncheck doesn't look like it
                           // selected two unrelated statuses out of nowhere.
-                          const next = prev.size === 0 ? new Set(allStatuses) : new Set(prev);
+                          const next = prev == null ? new Set(allStatuses) : new Set(prev);
                           if (next.has(s)) next.delete(s);
                           else next.add(s);
                           return next;
@@ -946,18 +946,18 @@ export function JobCostExplorer({
                   ))}
                 </div>
               </MenuGroup>
-              <MenuGroup label={typeNarrowing ? `Type (${typeFilter.size})` : "Type"}>
+              <MenuGroup label={typeNarrowing ? `Type (${typeFilter?.size ?? 0})` : "Type"}>
                 <MenuBulkActions onAll={() => setTypeFilter(new Set(allTypes))} onNone={() => setTypeFilter(new Set())} />
                 <div className="max-h-40 overflow-y-auto styled-scrollbar">
                   {allTypes.map((t) => (
                     <MenuCheckbox
                       key={t}
                       label={t}
-                      checked={typeFilter.size === 0 || typeFilter.has(t)}
+                      checked={typeFilter == null || typeFilter.has(t)}
                       onChange={() =>
                         setTypeFilter((prev) => {
                           // Same "seed the full set on first uncheck" rule as Status and Customer.
-                          const next = prev.size === 0 ? new Set(allTypes) : new Set(prev);
+                          const next = prev == null ? new Set(allTypes) : new Set(prev);
                           if (next.has(t)) next.delete(t);
                           else next.add(t);
                           return next;
@@ -968,17 +968,17 @@ export function JobCostExplorer({
                 </div>
               </MenuGroup>
               {years.length > 0 && (
-                <MenuGroup label={yearNarrowing ? `Completion Year (${yearFilter.size})` : "Completion Year"}>
+                <MenuGroup label={yearNarrowing ? `Completion Year (${yearFilter?.size ?? 0})` : "Completion Year"}>
                   <MenuBulkActions onAll={() => setYearFilter(new Set(years))} onNone={() => setYearFilter(new Set())} />
                   <div className="max-h-40 overflow-y-auto styled-scrollbar">
                     {years.map((y) => (
                       <MenuCheckbox
                         key={y}
                         label={y}
-                        checked={yearFilter.size === 0 || yearFilter.has(y)}
+                        checked={yearFilter == null || yearFilter.has(y)}
                         onChange={() =>
                           setYearFilter((prev) => {
-                            const next = prev.size === 0 ? new Set(years) : new Set(prev);
+                            const next = prev == null ? new Set(years) : new Set(prev);
                             if (next.has(y)) next.delete(y);
                             else next.add(y);
                             return next;

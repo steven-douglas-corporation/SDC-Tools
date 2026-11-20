@@ -356,7 +356,7 @@ test("Profitability Type: read from Job.type, drawn after Customer, filterable, 
   // Column order: Customer, then Type, then Status.
   assert.ok(explorer.indexOf('label="Customer"') < explorer.indexOf('label="Type"'));
   assert.ok(explorer.indexOf('label="Type"') < explorer.indexOf('label="Status"'));
-  assert.match(explorer, /typeFilter\.size === 0 \|\| \(r\.jobType != null && typeFilter\.has\(r\.jobType\)\)/);
+  assert.match(explorer, /typeFilter == null \|\| \(r\.jobType != null && typeFilter\.has\(r\.jobType\)\)/);
   assert.match(read("src/lib/export/job-cost-export.ts"), /jobType: \{ header: "Type", type: "text" \}/);
   assert.equal(jobCostTotals([], ["jobType"]).jobType, null);
 });
