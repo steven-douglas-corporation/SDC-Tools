@@ -9,6 +9,8 @@ import { TrackerError, type Actor } from "./service/database";
 import {
   createProject,
   moveProjectRank,
+  moveProjectRankInDepartment,
+  type DepartmentRankMove,
   rankClash,
   setProjectMember,
   updateProject,
@@ -141,6 +143,26 @@ export async function setProjectRankAction(
 }
 
 /** Moves a project one place up or down the stack rank, swapping it with its neighbour. */
+/**
+ * Moves a project one place among its own department's projects. A move that passes other
+ * departments' projects changes nothing unless `confirmed`, and says what it would do.
+ */
+export async function moveProjectRankInDepartmentAction(
+  projectId: number,
+  direction: "up" | "down",
+  confirmed: boolean,
+): Promise<ActionResult<{ move: DepartmentRankMove | null }>> {
+  let changed = false;
+  return act(
+    async (actor) => {
+      const move = await moveProjectRankInDepartment(trackerDb, actor, projectId, direction, confirmed);
+      changed = move?.done === true;
+      return { move };
+    },
+    { paths: ["/tracker", "/tracker/timeline"], unless: () => !changed },
+  );
+}
+
 export async function moveProjectRankAction(projectId: number, direction: "up" | "down"): Promise<ActionResult> {
   return act(
     async (actor) => {

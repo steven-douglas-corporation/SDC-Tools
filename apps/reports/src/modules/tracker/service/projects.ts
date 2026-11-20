@@ -468,3 +468,83 @@ export async function rankClash(
     return { holderKey: holder.key, holderName: holder.name, moved, direction: movingDown ? "up" : "down" };
   });
 }
+
+/** What a move inside a department does, or would do, to the company-wide ranks. */
+export interface DepartmentRankMove {
+  /** False when nothing was changed: the move passes other departments' projects and was not confirmed. */
+  done: boolean;
+  /** The project moved and the one it trades places with, each with its rank before and after. */
+  moved: { key: string; from: number; to: number };
+  other: { key: string; from: number; to: number };
+  /** How many projects of other departments sit between the two, and so are passed. */
+  passes: number;
+}
+
+/**
+ * Moves a project one place up or down among the projects of its own department, by trading
+ * company-wide ranks with the next one of that department. There is still one rank, the
+ * company's: a department holds certain places in it, and this changes which of its projects
+ * fills which. No other department's project changes rank.
+ *
+ * The moved project can still pass projects of other departments that sit between the two.
+ * That is the department's to decide, but not silently: unless `confirmed`, such a move
+ * changes nothing and comes back with `done: false` and what it would do, so the screen can
+ * ask first. Returns null when there is no neighbour that way (already first or last).
+ *
+ * "Department" is the group a project's department sits in, as lists are grouped by it:
+ * Engineering for a project that is for Controls. Projects with none form a group of their own.
+ */
+export async function moveProjectRankInDepartment(
+  db: Database,
+  actor: Actor,
+  projectId: number,
+  direction: "up" | "down",
+  confirmed = false,
+  reason?: string | null,
+): Promise<DepartmentRankMove | null> {
+  const plan = await db.transaction(async (tx) => {
+    await requireGlobalRole(tx, actor, "portfolio_owner");
+    const { rows } = await tx.query<{ id: number; key: string; rank: number; grp: number | null }>(
+      `SELECT p.id, p.key, p.portfolio_rank AS rank, coalesce(t.parent_team_id, t.id) AS grp
+         FROM tracker.project p
+    LEFT JOIN tracker.team t ON t.id = p.for_team_id
+        WHERE p.portfolio_rank IS NOT NULL AND p.state NOT IN ('completed', 'cancelled')
+        ORDER BY p.portfolio_rank, p.id`,
+    );
+    const ranked = rows.map((r) => ({
+      id: Number(r.id),
+      key: r.key,
+      rank: Number(r.rank),
+      grp: r.grp == null ? null : Number(r.grp),
+    }));
+    const me = ranked.find((r) => r.id === projectId);
+    if (!me)
+      throw new TrackerError("invalid", "This project has no stack rank yet. Give it one in the full list first.");
+    const mates = ranked.filter((r) => r.grp === me.grp);
+    const other = mates[mates.indexOf(me) + (direction === "up" ? -1 : 1)];
+    if (!other) return null;
+    const [low, high] = [Math.min(me.rank, other.rank), Math.max(me.rank, other.rank)];
+    return { me, other, passes: ranked.filter((r) => r.rank > low && r.rank < high).length };
+  });
+  if (!plan) return null;
+
+  const { me, other, passes } = plan;
+  const move: DepartmentRankMove = {
+    done: passes === 0 || confirmed,
+    moved: { key: me.key, from: me.rank, to: other.rank },
+    other: { key: other.key, from: other.rank, to: me.rank },
+    passes,
+  };
+  if (move.done) {
+    await setPortfolioRanks(
+      db,
+      actor,
+      [
+        { projectId: me.id, rank: other.rank },
+        { projectId: other.id, rank: me.rank },
+      ],
+      reason,
+    );
+  }
+  return move;
+}

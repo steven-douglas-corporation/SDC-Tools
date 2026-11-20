@@ -50,6 +50,7 @@ export default async function TrackerPage({
   const shown = projectsFor(everyProject, chosen ? departmentScope(departments, chosen.id) : null);
   const projects = view.grouped ? byDepartment(shown) : shown;
   const partial = chosen != null || view.grouped;
+  const withinDepartment = view.grouped && chosen == null;
 
   return (
     <div className={PAGE_SHELL}>
@@ -74,11 +75,17 @@ export default async function TrackerPage({
         canEdit={hasPermission(session.user.role, "tracker:edit")}
         // A rank is a place among every project, so it is only changed with all of them in
         // view and in rank order.
-        canRank={actor.admin === true && !partial}
+        //
+        // Grouped with every department in view, a project is moved among its own
+        // department's projects instead: they trade the ranks that department already holds.
+        canRank={actor.admin === true && (!partial || withinDepartment)}
+        rankWithinDepartment={withinDepartment}
         rankNote={
-          actor.admin === true && partial
-            ? "Ranks are shown, not changed, while the list is filtered or grouped. Show all departments, ungrouped, to change them."
-            : undefined
+          actor.admin !== true || !partial
+            ? undefined
+            : withinDepartment
+              ? "Grouped, the arrows move a project among its own department's projects. There is still one company rank: to set a project against another department's, ungroup the list."
+              : "Ranks are shown, not changed, while the list is filtered. Show all departments to change them."
         }
       />
     </div>

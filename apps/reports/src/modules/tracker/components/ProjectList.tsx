@@ -13,12 +13,18 @@ import {
   TABLE_ROW_HOVER,
 } from "@/components/ui/classnames";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { createProjectAction, moveProjectRankAction, setProjectRankAction, setProjectStateAction } from "../actions";
-import type { RankClash } from "../service/projects";
+import {
+  createProjectAction,
+  moveProjectRankAction,
+  moveProjectRankInDepartmentAction,
+  setProjectRankAction,
+  setProjectStateAction,
+} from "../actions";
+import type { DepartmentRankMove, RankClash } from "../service/projects";
 import type { ProjectListItem, ValueBucket } from "../service/queries";
 import type { Department } from "../service/departments";
 import { DepartmentOptions } from "./DepartmentPicker";
-import { hours, leftOutOfForecast, rankClashEffect, shortDate } from "./format";
+import { departmentMoveEffect, hours, leftOutOfForecast, rankClashEffect, shortDate } from "./format";
 import { SafeDateHelp } from "./HelpTip";
 
 // The tracker's front page: every project the person can see, in stack-rank order, with the
@@ -183,6 +189,101 @@ function StateCell({ p, canEdit }: { p: ProjectListItem; canEdit: boolean }) {
   );
 }
 
+/**
+ * The rank cell when the list is grouped by department: the project's place among its own
+ * department's projects, with arrows to change it, and its company-wide rank beside it. There
+ * is one rank, the company's; the arrows trade it with the next project of the same department.
+ */
+function DepartmentRankCell({
+  p,
+  place,
+  count,
+  canRank,
+}: {
+  p: ProjectListItem;
+  /** 1 for the department's highest-ranked project. Null when the project has no rank yet. */
+  place: number | null;
+  /** How many of the department's projects hold a rank. */
+  count: number;
+  canRank: boolean;
+}) {
+  const [error, setError] = useState("");
+  // Set while the person is being asked about a move that passes other departments' projects.
+  const [ask, setAsk] = useState<{ direction: "up" | "down"; move: DepartmentRankMove } | null>(null);
+  const [pending, start] = useTransition();
+
+  if (place == null) {
+    return (
+      <span className="text-xs text-sdc-gray-600" title="Give it a company rank in the full list, ungrouped, first.">
+        Not ranked
+      </span>
+    );
+  }
+
+  function move(direction: "up" | "down", confirmed: boolean) {
+    setError("");
+    start(async () => {
+      const res = await moveProjectRankInDepartmentAction(p.id, direction, confirmed);
+      if (!res.ok) return setError(res.error);
+      setAsk(res.move && !res.move.done ? { direction, move: res.move } : null);
+    });
+  }
+
+  return (
+    <span className="inline-flex flex-col items-center">
+      <span className="inline-flex items-center gap-1">
+        <span className="whitespace-nowrap font-semibold text-sdc-navy">
+          {place} of {count}
+        </span>
+        {canRank && (
+          <span className="inline-flex flex-col">
+            {(["up", "down"] as const).map((direction) => (
+              <button
+                key={direction}
+                type="button"
+                aria-label={`Move ${p.key} ${direction} one place in its department`}
+                title={`Move ${direction} one place in ${p.forGroupName ?? "this group"}`}
+                disabled={pending || ask !== null || (direction === "up" ? place === 1 : place === count)}
+                onClick={() => move(direction, false)}
+                className="h-4 w-5 rounded text-micro leading-none text-sdc-gray-600 hover:bg-sdc-gray-100 hover:text-sdc-blue disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                {direction === "up" ? "▲" : "▼"}
+              </button>
+            ))}
+          </span>
+        )}
+      </span>
+      <span className="whitespace-nowrap text-xs text-sdc-gray-600">Company rank {p.portfolioRank}</span>
+      {ask && (
+        <span
+          role="alertdialog"
+          aria-label={`Move ${p.key} past other departments' projects`}
+          className="mt-2 flex w-60 flex-col gap-2 rounded-md border border-sdc-border bg-white p-2 text-left text-xs text-sdc-navy shadow-sm"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setAsk(null);
+          }}
+        >
+          <span>{departmentMoveEffect(ask.move)}</span>
+          <span className="flex justify-end gap-2">
+            <button type="button" autoFocus disabled={pending} className={BUTTON_COMPACT} onClick={() => setAsk(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              className={BUTTON_COMPACT}
+              onClick={() => move(ask.direction, true)}
+            >
+              {pending ? "Moving…" : `Yes, move ${p.key}`}
+            </button>
+          </span>
+        </span>
+      )}
+      {error && <span className="mt-1 max-w-[12rem] text-xs text-sdc-red-text">{error}</span>}
+    </span>
+  );
+}
+
 function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]; departments: Department[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -301,6 +402,7 @@ export function ProjectList({
   departments,
   grouped = false,
   rankNote,
+  rankWithinDepartment = false,
   canEdit,
   canRank,
 }: {
@@ -313,6 +415,11 @@ export function ProjectList({
   grouped?: boolean;
   /** Why ranks cannot be changed in this view, when they cannot. */
   rankNote?: string;
+  /**
+   * Grouped, with every department in view: the rank cell shows a project's place in its own
+   * department, and its arrows move it among that department's projects.
+   */
+  rankWithinDepartment?: boolean;
   /** Holds tracker:edit. */
   canEdit: boolean;
   /** May set the company-wide stack rank (in this app: ELT). */
@@ -369,6 +476,10 @@ export function ProjectList({
                   // A heading where the department changes. The rows arrive a department at a time.
                   const heads = grouped && (i === 0 || projects[i - 1]!.forGroupId !== p.forGroupId);
                   const inGroup = projects.filter((x) => x.forGroupId === p.forGroupId).length;
+                  // The department's ranked projects, top first: its places in the company's order.
+                  const inDepartment = ranked.filter(
+                    (id) => projects.find((x) => x.id === id)?.forGroupId === p.forGroupId,
+                  );
                   return (
                     <Fragment key={p.id}>
                       {heads && (
@@ -387,14 +498,24 @@ export function ProjectList({
                       )}
                       <tr className={`border-b border-sdc-border-soft text-center ${TABLE_ROW_HOVER}`}>
                         <td className="px-3 py-2.5 tabular-nums">
-                          <RankCell
-                            // Remount when the rank changes: moving one project renumbers the others.
-                            key={`${p.id}:${p.portfolioRank}`}
-                            p={p}
-                            canRank={canRank && canEdit}
-                            first={p.id === ranked[0]}
-                            last={p.id === ranked[ranked.length - 1]}
-                          />
+                          {rankWithinDepartment ? (
+                            <DepartmentRankCell
+                              key={`${p.id}:${p.portfolioRank}`}
+                              p={p}
+                              place={inDepartment.indexOf(p.id) >= 0 ? inDepartment.indexOf(p.id) + 1 : null}
+                              count={inDepartment.length}
+                              canRank={canRank && canEdit}
+                            />
+                          ) : (
+                            <RankCell
+                              // Remount when the rank changes: moving one project renumbers the others.
+                              key={`${p.id}:${p.portfolioRank}`}
+                              p={p}
+                              canRank={canRank && canEdit}
+                              first={p.id === ranked[0]}
+                              last={p.id === ranked[ranked.length - 1]}
+                            />
+                          )}
                         </td>
                         <td className="px-3 py-2.5 text-left">
                           <Link href={`/tracker/${p.key}`} className="font-semibold text-sdc-blue hover:underline">

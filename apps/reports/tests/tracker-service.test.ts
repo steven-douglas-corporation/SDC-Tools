@@ -2048,3 +2048,80 @@ test("departments: copied from the roster in two levels, and a project says whic
     "and comes back when the roster has it again",
   );
 });
+
+test("ranking inside a department trades the ranks it already holds, and asks before passing another department", async () => {
+  const P = await import("../src/modules/tracker/service/projects");
+  const F = await import("../src/modules/tracker/components/format");
+  const all = await listDepartments(db);
+  const id = (code: string) => all.find((d) => d.code === code)!.id;
+  const make = async (key: string, dept: string) =>
+    (await createProject(db, ana, { key, name: key, forDepartmentId: id(dept) })).id;
+
+  // Engineering holds ranks 201, 202 and 205; Support holds 203 and 204, between them.
+  const e1 = await make("RKE1", "mech");
+  const e2 = await make("RKE2", "controls");
+  const s1 = await make("RKS1", "finance");
+  const s2 = await make("RKS2", "hr");
+  const e3 = await make("RKE3", "group:engineering");
+  await setPortfolioRanks(db, boss, [
+    { projectId: e1, rank: 201 },
+    { projectId: e2, rank: 202 },
+    { projectId: s1, rank: 203 },
+    { projectId: s2, rank: 204 },
+    { projectId: e3, rank: 205 },
+  ]);
+  const ranks = async () =>
+    Object.fromEntries(
+      (
+        await rows<{ key: string; r: number }>(
+          `SELECT key, portfolio_rank AS r FROM tracker.project WHERE key ~ '^RK[ES][0-9]$' ORDER BY key`,
+        )
+      ).map((x) => [x.key, Number(x.r)]),
+    );
+
+  // Only whoever sets the company's ranks may do this.
+  await refuses(() => P.moveProjectRankInDepartment(db, ana, e2, "up"), "forbidden");
+
+  // Mechanical and Controls are both Engineering: neighbours, with nothing between. No question.
+  const near = await P.moveProjectRankInDepartment(db, boss, e2, "up");
+  assert.deepEqual(near, {
+    done: true,
+    moved: { key: "RKE2", from: 202, to: 201 },
+    other: { key: "RKE1", from: 201, to: 202 },
+    passes: 0,
+  });
+  assert.deepEqual(await ranks(), { RKE1: 202, RKE2: 201, RKE3: 205, RKS1: 203, RKS2: 204 });
+
+  // RKE3 up one place in Engineering means passing both Support projects: nothing changes until confirmed.
+  const asked = await P.moveProjectRankInDepartment(db, boss, e3, "up");
+  assert.deepEqual(asked, {
+    done: false,
+    moved: { key: "RKE3", from: 205, to: 202 },
+    other: { key: "RKE1", from: 202, to: 205 },
+    passes: 2,
+  });
+  assert.deepEqual(await ranks(), { RKE1: 202, RKE2: 201, RKE3: 205, RKS1: 203, RKS2: 204 }, "asking changes nothing");
+  assert.equal(
+    F.departmentMoveEffect(asked!),
+    "RKE3 moves from company rank 205 to 202, ahead of 2 projects of other departments. RKE1 moves to 205.",
+  );
+
+  const done = await P.moveProjectRankInDepartment(db, boss, e3, "up", true);
+  assert.equal(done!.done, true);
+  // Engineering still holds 201, 202 and 205; Support's two never moved.
+  assert.deepEqual(await ranks(), { RKE1: 205, RKE2: 201, RKE3: 202, RKS1: 203, RKS2: 204 });
+
+  // At the top or bottom of its department there is nowhere to go.
+  assert.equal(await P.moveProjectRankInDepartment(db, boss, e2, "up"), null);
+  assert.equal(await P.moveProjectRankInDepartment(db, boss, e1, "down"), null);
+  // Going down says "behind".
+  const down = await P.moveProjectRankInDepartment(db, boss, e3, "down");
+  assert.match(
+    F.departmentMoveEffect(down!),
+    /RKE3 moves from company rank 202 to 205, behind 2 projects of other departments/,
+  );
+
+  // A project with no rank is given one in the full list first.
+  const unranked = await make("RKE4", "mech");
+  await refuses(() => P.moveProjectRankInDepartment(db, boss, unranked, "up"), "invalid", /no stack rank yet/);
+});

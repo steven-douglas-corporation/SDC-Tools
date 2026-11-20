@@ -210,3 +210,16 @@ export function byDepartment<P extends Pick<ProjectListItem, "forGroupSort">>(pr
     .sort((a, b) => (a.p.forGroupSort ?? last) - (b.p.forGroupSort ?? last) || a.i - b.i)
     .map((x) => x.p);
 }
+
+/** What a move inside a department does to the company's ranks, for the question asked before it. */
+export function departmentMoveEffect(move: {
+  moved: { key: string; from: number; to: number };
+  other: { key: string; from: number; to: number };
+  passes: number;
+}): string {
+  const passing =
+    move.passes === 0
+      ? ""
+      : `, ${move.moved.to < move.moved.from ? "ahead of" : "behind"} ${move.passes} ${move.passes === 1 ? "project" : "projects"} of other departments`;
+  return `${move.moved.key} moves from company rank ${move.moved.from} to ${move.moved.to}${passing}. ${move.other.key} moves to ${move.other.to}.`;
+}
