@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { prisma } from "@/lib/prisma";
-import { compareJobIds, isSdcCustomer, validJobTypeFilter } from "@/lib/job-filters";
+import { isSdcCustomer, validJobTypeFilter } from "@/lib/job-filters";
 import { compareSections } from "@/lib/off-grid-hours";
 import { EtcViewMenu } from "@/components/EtcViewMenu";
 import { EtcGridView } from "@/components/EtcGridView";
@@ -51,7 +51,7 @@ import { savePools } from "@/lib/standard-sheet-actions";
 // ONE submission and ONE reopen for the whole month — see lib/monthly-report.ts.
 import { reopenMonthlyReport, checkMonthlyReport } from "@/lib/monthly-report-actions";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, currentMonth, round2, hoursCompleteThrough, workingDaysInMonth, effectiveNewEtc, newEtcDiff, newEtcSeedText, isNewEtcCellDecided, rollupNewEtc, confirmedNewEtc, partsCostCellState, partsCostEffectiveNewEtc, type NewEtcCellState, type NewEtcRollupCell, type PartsCostLive } from "@/lib/etc";
+import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, round2, hoursCompleteThrough, workingDaysInMonth, effectiveNewEtc, newEtcDiff, newEtcSeedText, isNewEtcCellDecided, rollupNewEtc, confirmedNewEtc, partsCostCellState, partsCostEffectiveNewEtc, type NewEtcCellState, type NewEtcRollupCell, type PartsCostLive } from "@/lib/etc";
 import { ReopenMonthButton } from "@/components/ReopenMonthButton";
 import { EtcAutosave } from "@/components/EtcAutosave";
 import { EtcLiveTotals } from "@/components/EtcLiveTotals";
