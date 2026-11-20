@@ -76,16 +76,16 @@ variable **names**; see [DEVELOPMENT.md](DEVELOPMENT.md) for the full list.
 
 ## Authentication provider
 
-- **NextAuth v5** (beta), JWT session strategy, **one provider: Credentials** (email/password,
-  bcrypt-hashed against the `User` table). Sign-up and password change are self-service
-  (`src/app/login/actions.ts`).
-- **⚠ Documentation drift**: `docs/ENTRA-SSO-SETUP.md` and a comment in
-  `src/app/login/page.tsx` both describe Microsoft Entra SSO as the current sign-in method.
-  It is not — `src/lib/auth.ts` registers only the Credentials provider today; Entra was wired
-  in at one point and later reverted back to credentials-only, and those two references were
-  never updated to match. Treat `lib/auth.ts` as ground truth, not those docs, until they're
-  corrected.
-- **Code**: `src/lib/auth.ts`, `src/app/login/`.
+- **NextAuth v5** (beta), JWT session strategy. Three ways in, all ending in the same session:
+  - **Credentials** (email/password, bcrypt-hashed against the `User` table). Sign-up and
+    password change are self-service (`src/app/login/actions.ts`).
+  - **Scheduler hand-off** (`scheduler-sso`): a one-time token from the Scheduler, which is how
+    opening the app from the SDC Tools launcher signs people in. See the Scheduler section below.
+  - **Microsoft Entra ID** (2026-11-14): "Sign in with Microsoft" on the login page, for people
+    who open the app directly in a browser. **Off until configured**, and it cannot be
+    configured for a plain-HTTP address — see `docs/ENTRA-SSO-SETUP.md`. With its three
+    settings absent the provider is not registered and the login page is unchanged.
+- **Code**: `src/lib/auth.ts`, `src/lib/entra-sign-in.ts`, `src/app/login/`.
 
 ## SDC Scheduler (sibling internal app)
 

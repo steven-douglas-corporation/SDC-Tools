@@ -10,6 +10,22 @@ import { currentUserRole } from "@/lib/session-role";
 import { isCompanyEmail } from "@/lib/company-email";
 import { nameFromEmail } from "@/lib/name-from-email";
 import { fetchSchedulerPasswordHash } from "@/lib/scheduler-link";
+import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
+import {
+  ENTRA_PROVIDER_ID,
+  entraDisplayName,
+  entraEmail,
+  entraSettings,
+  entraSettingsProblem,
+  entraSignInRefusal,
+} from "@/lib/entra-sign-in";
+
+// "Sign in with Microsoft", for people who open this app in a browser instead
+// of through the SDC Tools launcher. Null (and the provider below absent) until
+// all three AUTH_MICROSOFT_ENTRA_ID_* settings exist — see entra-sign-in.ts.
+const entra = entraSettings(process.env);
+const entraProblem = entraSettingsProblem(process.env);
+if (entraProblem) console.warn(`[auth] ${entraProblem}`);
 
 // Email/password authentication. Accounts are created via the sign-up form
 // (see src/app/login/actions.ts) or the seed script; passwords are stored as
@@ -106,10 +122,108 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return { id: String(created.id), email: created.email, name: created.name, role: created.role };
       },
     }),
+    // Microsoft Entra ID, single tenant. Registered only when configured, so an
+    // unconfigured server exposes no extra sign-in route at all.
+    //
+    // The scope is cut down to sign-in only and `profile` is replaced: the
+    // library's default also asks for User.Read and downloads the person's
+    // photo from Microsoft Graph on every sign-in, which this app has no use
+    // for. `role` here is a placeholder the type requires — the real role is
+    // read from the User row in the jwt callback, never taken from the token.
+    ...(entra
+      ? [
+          MicrosoftEntraID({
+            clientId: entra.clientId,
+            clientSecret: entra.clientSecret,
+            issuer: entra.issuer,
+            authorization: { params: { scope: "openid profile email" } },
+            profile: (profile) => ({
+              id: profile.sub,
+              name: entraDisplayName(profile),
+              email: entraEmail(profile),
+              image: null,
+              role: "ALL" as const,
+            }),
+          }),
+        ]
+      : []),
   ],
   callbacks: {
+    // Runs for every provider; only the Microsoft one has anything to decide
+    // here (both Credentials providers already decided in authorize()).
+    //
+    // A refusal returns the login page with ?error=microsoft rather than
+    // `false`, which would land on next-auth's own unstyled error page. The
+    // reason is deliberately not passed along: the page shows one message for
+    // every refusal, so it cannot be used to learn which addresses have
+    // accounts or which are deactivated.
+    signIn: async ({ account, profile }) => {
+      if (account?.provider !== ENTRA_PROVIDER_ID) return true;
+      const refused = "/login?error=microsoft";
+      if (!entra || !profile) return refused;
+      if (entraSignInRefusal(profile, entra)) return refused;
+      const email = entraEmail(profile);
+      if (!email) return refused;
+
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (existing) {
+        // Deactivated accounts stay out, exactly as on the password form.
+        return (await currentTokenVersion(existing.id)) === null ? refused : true;
+      }
+
+      // First time this person has reached Reports. Same reasoning as the
+      // Scheduler hand-off above: Microsoft has proved who they are and that
+      // they are in our directory, which is the ownership proof the
+      // self-registration form lacks — so the account is usable at once, at
+      // the least-privilege role. The password hash is random and unusable:
+      // an account made this way can only ever sign in through Microsoft (or
+      // the Scheduler hand-off) until a password is set some other way.
+      try {
+        const created = await prisma.user.create({
+          data: {
+            email,
+            name: entraDisplayName(profile) ?? nameFromEmail(email),
+            passwordHash: await bcrypt.hash(randomBytes(32).toString("hex"), 10),
+          },
+        });
+        await logAuditFor(created.id, created.email, {
+          action: "user.autoProvisioned",
+          entityType: "User",
+          entityId: created.id,
+          summary: `${created.email} auto-provisioned via Microsoft sign-in`,
+        });
+      } catch (e) {
+        // Two first sign-ins for the same person at once: the loser hits the
+        // unique email. Fine as long as the row now exists.
+        if (!(await prisma.user.findUnique({ where: { email } }))) throw e;
+      }
+      return true;
+    },
     jwt: async ({ token, user, account }) => {
-      if (user) {
+      if (user && account?.provider === ENTRA_PROVIDER_ID) {
+        // A Microsoft sign-in. `user.id` here is MICROSOFT's id for the person,
+        // not this app's — every other part of the app reads token.sub as a
+        // User.id, so it is replaced with the real one, looked up by the
+        // address the signIn callback above just accepted. Role and token
+        // version come from the same row, never from the Microsoft token.
+        const email = user.email?.trim().toLowerCase();
+        const row = email ? await prisma.user.findUnique({ where: { email } }) : null;
+        if (!row) return null;
+        const version = await currentTokenVersion(row.id);
+        if (version === null) return null;
+        token.sub = String(row.id);
+        token.email = row.email;
+        token.name = row.name;
+        token.picture = null;
+        token.role = row.role;
+        token.tokenVersion = version;
+        await logAuditFor(row.id, row.email, {
+          action: "auth.signIn",
+          entityType: "User",
+          entityId: row.id,
+          summary: `${row.email} signed in (via Microsoft)`,
+        });
+      } else if (user) {
         // Fresh sign-in — pin the CURRENT version into the token. Read
         // fresh rather than trusting a value off `user` (neither provider's
         // `authorize()` returns one), which also means a version bumped
