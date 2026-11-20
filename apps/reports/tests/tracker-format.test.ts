@@ -95,3 +95,58 @@ test("taking a rank another project holds says what moves, and which way", async
   assert.equal(rankClashEffect(clash(2, "down")), "ALPHA and 1 other project each move down one place.");
   assert.equal(rankClashEffect(clash(4, "up")), "ALPHA and 3 other projects each move up one place.");
 });
+
+test("the figures above the project list are sums of its rows, over open projects only", async () => {
+  const { portfolioSummary } = await import("../src/modules/tracker/components/format");
+  const p = (
+    key: string,
+    state: string,
+    targetDate: string | null,
+    atRisk: boolean | null,
+    remainingHours: number,
+    unscheduledTasks = 0,
+    unestimatedTasks = 0,
+  ) => ({ key, state, targetDate, atRisk, remainingHours, unscheduledTasks, unestimatedTasks });
+
+  assert.deepEqual(portfolioSummary([], "2026-11-20"), {
+    open: 0,
+    active: 0,
+    withTarget: 0,
+    atRisk: 0,
+    hoursLeft: 0,
+    notForecast: 0,
+    noEstimate: 0,
+    pastTarget: 0,
+    nextTarget: null,
+  });
+
+  const s = portfolioSummary(
+    [
+      p("BRAIN", "active", "2026-12-31", false, 86, 1, 0),
+      p("ALPHA", "active", "2026-12-11", true, 42.25, 2, 2),
+      p("IDLE", "planned", null, null, 10.5, 2, 1),
+      p("LATE", "on_hold", "2026-11-01", true, 4),
+      // Finished and cancelled projects are in the list and in none of the figures.
+      p("DONE", "completed", "2026-12-01", true, 99, 9, 9),
+      p("GONE", "cancelled", "2026-11-25", null, 99, 9, 9),
+    ],
+    "2026-11-20",
+  );
+  assert.deepEqual(s, {
+    open: 4,
+    active: 2,
+    withTarget: 3,
+    atRisk: 2,
+    hoursLeft: 142.8,
+    notForecast: 5,
+    noEstimate: 3,
+    pastTarget: 1,
+    // The soonest still to come: not LATE (gone by), not GONE (cancelled).
+    nextTarget: { key: "ALPHA", date: "2026-12-11" },
+  });
+  // A target of today is still to come.
+  assert.deepEqual(portfolioSummary([p("NOW", "active", "2026-11-20", false, 1)], "2026-11-20").nextTarget, {
+    key: "NOW",
+    date: "2026-11-20",
+  });
+});

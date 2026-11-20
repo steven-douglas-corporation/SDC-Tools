@@ -1,4 +1,4 @@
-import type { BoardTask } from "../service/queries";
+import type { BoardTask, ProjectListItem } from "../service/queries";
 
 // How the tracker's screens word dates and forecast reasons. Dependency-free so it can be
 // unit-tested and used from both server and client components.
@@ -129,4 +129,48 @@ export function rankClashEffect(clash: { holderKey: string; moved: number; direc
   return clash.moved <= 1
     ? `${clash.holderKey} moves ${clash.direction} one place.`
     : `${clash.holderKey} and ${clash.moved - 1} other ${clash.moved === 2 ? "project" : "projects"} each move ${clash.direction} one place.`;
+}
+
+/** The project list, added up. Open means planned, active or on hold: work still to come. */
+export interface PortfolioSummary {
+  open: number;
+  active: number;
+  /** Open projects with a target date. */
+  withTarget: number;
+  /** Open projects whose forecast (the safe date when there is one) is after their target. */
+  atRisk: number;
+  hoursLeft: number;
+  /** Open cards the forecast could not give a date. */
+  notForecast: number;
+  /** How many of those have no estimate. */
+  noEstimate: number;
+  /** Open projects whose target date has already gone by. */
+  pastTarget: number;
+  /** The soonest target date still to come, and whose it is. */
+  nextTarget: { key: string; date: string } | null;
+}
+
+export function portfolioSummary(
+  projects: Pick<
+    ProjectListItem,
+    "key" | "state" | "targetDate" | "atRisk" | "remainingHours" | "unscheduledTasks" | "unestimatedTasks"
+  >[],
+  /** YYYY-MM-DD. Passed in, so the sums do not depend on the clock. */
+  today: string,
+): PortfolioSummary {
+  const open = projects.filter((p) => p.state === "planned" || p.state === "active" || p.state === "on_hold");
+  const upcoming = open
+    .filter((p): p is typeof p & { targetDate: string } => p.targetDate != null && p.targetDate >= today)
+    .sort((a, b) => a.targetDate.localeCompare(b.targetDate) || a.key.localeCompare(b.key));
+  return {
+    open: open.length,
+    active: open.filter((p) => p.state === "active").length,
+    withTarget: open.filter((p) => p.targetDate != null).length,
+    atRisk: open.filter((p) => p.atRisk === true).length,
+    hoursLeft: Math.round(open.reduce((sum, p) => sum + p.remainingHours, 0) * 10) / 10,
+    notForecast: open.reduce((sum, p) => sum + p.unscheduledTasks, 0),
+    noEstimate: open.reduce((sum, p) => sum + p.unestimatedTasks, 0),
+    pastTarget: open.filter((p) => p.targetDate != null && p.targetDate < today).length,
+    nextTarget: upcoming[0] ? { key: upcoming[0].key, date: upcoming[0].targetDate } : null,
+  };
 }
