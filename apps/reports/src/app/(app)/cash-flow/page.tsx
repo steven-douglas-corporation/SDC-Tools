@@ -21,6 +21,7 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
   const { as, compare } = params;
   // Left to Invoice Split cutoff: a valid `YYYY-MM` = that month's last day, anything else = today.
   const ltiMonth = params.lti && isValidMonth(params.lti) ? params.lti : null;
+  const liveChosen = params.lti === "today";
 
   // Started HERE, before the asOf/compareAsOf resolution below, because neither
   // of these depends on either of them — and both used to sit inside the
@@ -48,9 +49,13 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
   const splitPromise = resolveSplitMonth(ltiMonth)
     .then(async (month) => {
       const etcJobs = await getEtcSplitJobs(month);
-      const cutoff = ltiMonth ?? (month < currentMonth() ? month : null);
+      // `lti=today` is the explicit "Today (live)" choice; without it an over ETC month defaults to its end.
+      const cutoff = ltiMonth ?? (liveChosen ? null : month < currentMonth() ? month : null);
       const r = etcJobs.length > 0 ? await readPartsEtcBreakout(etcJobs.map((j) => ({ pk: j.pk, jobNumber: j.jobId })), cutoff) : null;
-      const base = { month, cutoff, hasColumn: showsPartsBreakout(month) };
+      // The totals tie only when measured the way Monthly ETC measures: that month's last day, or
+      // live while the month is still the current one (same figure then).
+      const ties = cutoff === month || (cutoff === null && month === currentMonth());
+      const base = { month, cutoff, hasColumn: showsPartsBreakout(month), ties };
       // Nothing to split, said as such: no ETC jobs for the month (not started, or before ETC history),
       // or Total ETO could not be read. Neither may read as "Nothing left to invoice".
       if (r === null) return { ...base, status: "no-jobs" as const, payOverview: buildOverview([], "given"), overrides: 0 };
@@ -117,6 +122,7 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
           status={split.status}
           month={split.month}
           hasColumn={split.hasColumn}
+          ties={split.ties}
           asOfLabel={split.cutoff ? monthEndLabel(split.cutoff) : `today, ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`}
           cutoffMonth={split.cutoff}
           overrides={split.overrides}

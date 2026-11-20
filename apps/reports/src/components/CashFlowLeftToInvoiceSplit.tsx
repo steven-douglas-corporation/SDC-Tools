@@ -27,6 +27,7 @@ export function CashFlowLeftToInvoiceSplit({
   status,
   month,
   hasColumn,
+  ties,
 }: {
   /** Every job's Left to Invoice with each month moved NET_TERMS_DAYS after the required date (expected payment month). */
   payOverview: LeftToInvoiceOverview;
@@ -42,6 +43,8 @@ export function CashFlowLeftToInvoiceSplit({
   month: string;
   /** Does Monthly ETC have a Left to Invoice column for `month`? (August 2026 on.) */
   hasColumn: boolean;
+  /** Is the table measured the way Monthly ETC measures `month` (its last day, or live in the current month)? */
+  ties: boolean;
 }) {
   const { rows, totals } = payOverview;
   const overduePct = totals.sum > 0 ? Math.round((totals.overdue / totals.sum) * 100) : 0;
@@ -77,9 +80,11 @@ export function CashFlowLeftToInvoiceSplit({
             </h3>
             <p className="px-4 pb-2 text-note leading-relaxed text-sdc-gray-600">
               The same jobs, in the same order, as the Monthly ETC grid for {monthName(month)}.{" "}
-              {hasColumn
-                ? "The Total ties to that grid's Parts Cost Left to Invoice column, as long as its Billable filter is off."
-                : "Monthly ETC has no Left to Invoice column for that month, so there is nothing to tie to."}
+              {!hasColumn
+                ? "Monthly ETC has no Left to Invoice column for that month, so there is nothing to tie to."
+                : ties
+                  ? "The Total ties to that grid's Parts Cost Left to Invoice column, as long as its Billable filter is off."
+                  : "Measured as of today, so it can differ from Monthly ETC, which counts that month as of its last day. Pick the month end to compare."}
               {overrides > 0 &&
                 ` ${overrides} job${overrides === 1 ? " has" : "s have"} a manually typed Left to Invoice on Monthly ETC; this table shows Total ETO's figure for ${overrides === 1 ? "it" : "them"}, so those rows can differ.`}
             </p>
