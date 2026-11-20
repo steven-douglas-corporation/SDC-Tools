@@ -19,6 +19,8 @@ export interface NewProject {
   valueBucketId: number;
   /** The department the project is for: the one that benefits. A tracker.team. Required. */
   forDepartmentId: number;
+  /** The department that does the work. A tracker.team. Required. */
+  doneByDepartmentId: number;
   targetDate?: string | null;
   teamId?: number | null;
   jobNumber?: string | null;
@@ -31,6 +33,7 @@ export interface ProjectChanges {
   justification?: string;
   valueBucketId?: number;
   forDepartmentId?: number;
+  doneByDepartmentId?: number;
   targetDate?: string | null;
   state?: ProjectState;
   ownerPersonId?: number;
@@ -100,6 +103,7 @@ export async function createProject(
   const justification = cleanJustification(input.justification);
   if (input.valueBucketId == null) throw new TrackerError("invalid", NO_VALUE);
   if (input.forDepartmentId == null) throw new TrackerError("invalid", NO_DEPARTMENT);
+  if (input.doneByDepartmentId == null) throw new TrackerError("invalid", NO_DOER);
   assertIsoDate(input.targetDate, "Target date");
 
   return db.transaction(async (tx) => {
@@ -107,13 +111,15 @@ export async function createProject(
     if (taken.rows.length) throw new TrackerError("conflict", `The key ${key} is already used by another project.`);
     await valueBucketLabel(tx, input.valueBucketId);
     await departmentName(tx, input.forDepartmentId);
+    await departmentName(tx, input.doneByDepartmentId, NO_DOER);
 
     const row = await one<{ id: number }>(
       tx,
       `INSERT INTO tracker.project
          (key, name, description, objective, definition_of_done, owner_person_id, created_by,
-          target_date, team_id, job_number, justification, value_bucket_id, for_team_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11, $12)
+          target_date, team_id, job_number, justification, value_bucket_id, for_team_id,
+          done_by_team_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id`,
       [
         key,
@@ -128,6 +134,7 @@ export async function createProject(
         justification,
         input.valueBucketId,
         input.forDepartmentId,
+        input.doneByDepartmentId,
       ],
       "Project",
     );
@@ -211,19 +218,20 @@ async function valueBucketLabel(tx: Tx, id: number): Promise<string> {
 }
 
 const NO_DEPARTMENT = "Choose the department the project is for.";
+const NO_DOER = "Choose the department that does the work.";
 
 /** The name of a department a project can be for, or a refusal if there is none such in use. */
-async function departmentName(tx: Tx, id: number): Promise<string> {
+async function departmentName(tx: Tx, id: number, refusal = NO_DEPARTMENT): Promise<string> {
   const { rows } = await tx.query<{ name: string }>(
     `SELECT name FROM tracker.team WHERE id = $1 AND code IS NOT NULL AND active`,
     [id],
   );
-  if (!rows.length) throw new TrackerError("invalid", NO_DEPARTMENT);
+  if (!rows.length) throw new TrackerError("invalid", refusal);
   return rows[0]!.name;
 }
 
 /**
- * Changes a project's name, justification, value, department, target date, state or owner. Each
+ * Changes a project's name, justification, value, departments, target date, state or owner. Each
  * change is logged, except a new name: like a card's title, it is wording, not a decision.
  */
 export async function updateProject(
@@ -244,9 +252,11 @@ export async function updateProject(
       justification: string | null;
       value_bucket_id: number | null;
       for_team_id: number | null;
+      done_by_team_id: number | null;
     }>(
       tx,
-      `SELECT target_date::text, state, owner_person_id, portfolio_rank, justification, value_bucket_id, for_team_id
+      `SELECT target_date::text, state, owner_person_id, portfolio_rank, justification, value_bucket_id, for_team_id,
+              done_by_team_id
          FROM tracker.project WHERE id = $1 FOR UPDATE`,
       [projectId],
       "Project",
@@ -262,6 +272,7 @@ export async function updateProject(
     let justification = cur.justification;
     let valueBucketId = cur.value_bucket_id == null ? null : Number(cur.value_bucket_id);
     let forDepartmentId = cur.for_team_id == null ? null : Number(cur.for_team_id);
+    let doneByDepartmentId = cur.done_by_team_id == null ? null : Number(cur.done_by_team_id);
     if (changes.justification !== undefined) {
       const next = cleanJustification(changes.justification);
       if (next !== cur.justification) {
@@ -292,6 +303,20 @@ export async function updateProject(
       await logProjectChange(tx, projectId, "for_department", was, name, actor, reason ?? null);
       forDepartmentId = changes.forDepartmentId;
     }
+    if (changes.doneByDepartmentId !== undefined && changes.doneByDepartmentId !== doneByDepartmentId) {
+      const name = await departmentName(tx, changes.doneByDepartmentId, NO_DOER);
+      const was =
+        doneByDepartmentId == null
+          ? null
+          : ((await tx.query<{ name: string }>(`SELECT name FROM tracker.team WHERE id = $1`, [doneByDepartmentId]))
+              .rows[0]?.name ?? null);
+      await tx.query(`UPDATE tracker.project SET done_by_team_id = $2 WHERE id = $1`, [
+        projectId,
+        changes.doneByDepartmentId,
+      ]);
+      await logProjectChange(tx, projectId, "done_by_department", was, name, actor, reason ?? null);
+      doneByDepartmentId = changes.doneByDepartmentId;
+    }
     if (changes.targetDate !== undefined && changes.targetDate !== cur.target_date) {
       await tx.query(`UPDATE tracker.project SET target_date = $2 WHERE id = $1`, [projectId, changes.targetDate]);
       await logProjectChange(tx, projectId, "target_date", cur.target_date, changes.targetDate, actor, reason ?? null);
@@ -316,10 +341,13 @@ export async function updateProject(
         throw new TrackerError("invalid", "A project needs a stack rank before it can be made active.");
       }
       // Asked of every new project when it is created; this catches the ones made before that.
-      if (changes.state === "active" && (!justification || valueBucketId == null || forDepartmentId == null)) {
+      if (
+        changes.state === "active" &&
+        (!justification || valueBucketId == null || forDepartmentId == null || doneByDepartmentId == null)
+      ) {
         throw new TrackerError(
           "invalid",
-          "A project needs a justification, a yearly value and a department before it can be made active. Add them on the project's Settings tab.",
+          "A project needs a justification, a yearly value, the department it is for and the department doing the work before it can be made active. Add them on the project's Settings tab.",
         );
       }
       const done = changes.state === "completed";

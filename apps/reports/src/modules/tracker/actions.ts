@@ -99,6 +99,7 @@ export async function createProjectAction(input: {
   justification: string;
   valueBucketId: number | null;
   forDepartmentId: number | null;
+  doneByDepartmentId: number | null;
   targetDate?: string | null;
 }): Promise<ActionResult<{ key: string }>> {
   return act(
@@ -110,6 +111,7 @@ export async function createProjectAction(input: {
         // Null reaches the service as it is, which refuses it in words.
         valueBucketId: input.valueBucketId as number,
         forDepartmentId: input.forDepartmentId as number,
+        doneByDepartmentId: input.doneByDepartmentId as number,
         targetDate: input.targetDate || null,
       });
       return { key: p.key };
@@ -217,18 +219,34 @@ export async function updateProjectAction(input: {
   projectKey: string;
   changes: Pick<
     ProjectChanges,
-    "name" | "justification" | "valueBucketId" | "forDepartmentId" | "targetDate" | "ownerPersonId" | "state"
+    | "name"
+    | "justification"
+    | "valueBucketId"
+    | "forDepartmentId"
+    | "doneByDepartmentId"
+    | "targetDate"
+    | "ownerPersonId"
+    | "state"
   >;
   reason?: string;
 }): Promise<ActionResult> {
   return act(
     async (actor) => {
-      const { name, justification, valueBucketId, forDepartmentId, targetDate, ownerPersonId, state } = input.changes;
+      const c = input.changes;
       await updateProject(
         trackerDb,
         actor,
         input.projectId,
-        { name, justification, valueBucketId, forDepartmentId, targetDate, ownerPersonId, state },
+        {
+          name: c.name,
+          justification: c.justification,
+          valueBucketId: c.valueBucketId,
+          forDepartmentId: c.forDepartmentId,
+          doneByDepartmentId: c.doneByDepartmentId,
+          targetDate: c.targetDate,
+          ownerPersonId: c.ownerPersonId,
+          state: c.state,
+        },
         input.reason?.trim() || null,
       );
       return {};

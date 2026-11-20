@@ -29,6 +29,9 @@ export interface ProjectListItem {
   forGroupId: number | null;
   forGroupName: string | null;
   forGroupSort: number | null;
+  /** The department that does the work. Null only on a project made before this was asked for. */
+  doneByDepartmentId: number | null;
+  doneByDepartmentName: string | null;
   targetDate: string | null;
   taskCount: number;
   doneCount: number;
@@ -62,6 +65,8 @@ interface ProjectRow {
   for_group_id: number | null;
   for_group_name: string | null;
   for_group_sort: number | null;
+  done_by_team_id: number | null;
+  done_by_name: string | null;
   target_date: string | null;
   task_count: string | number | null;
   done_count: string | number | null;
@@ -82,6 +87,7 @@ const PROJECT_COLUMNS = `
   pj.justification, pj.value_bucket_id, vb.label AS value_label, vb.sort_order AS value_sort,
   pj.for_team_id, fd.name AS for_name, coalesce(fg.id, fd.id) AS for_group_id,
   coalesce(fg.name, fd.name) AS for_group_name, coalesce(fg.sort_order, fd.sort_order) AS for_group_sort,
+  pj.done_by_team_id, dd.name AS done_by_name,
   r.target_date::text, r.task_count, r.done_count, r.remaining_hours::float8,
   r.forecast_completion_date::text AS forecast_finish, r.p80_finish::text, r.at_risk, r.at_risk_basis,
   r.unscheduled_tasks, r.unestimated_tasks, r.stale_tasks, r.next_milestone, m.role AS my_role`;
@@ -104,6 +110,8 @@ function toProject(r: ProjectRow, admin: boolean): ProjectListItem {
     forGroupId: r.for_group_id == null ? null : Number(r.for_group_id),
     forGroupName: r.for_group_name,
     forGroupSort: r.for_group_sort == null ? null : Number(r.for_group_sort),
+    doneByDepartmentId: r.done_by_team_id == null ? null : Number(r.done_by_team_id),
+    doneByDepartmentName: r.done_by_name,
     targetDate: r.target_date,
     taskCount: Number(r.task_count ?? 0),
     doneCount: Number(r.done_count ?? 0),
@@ -135,6 +143,7 @@ export async function listProjects(db: Database, actor: Actor): Promise<ProjectL
     LEFT JOIN tracker.value_bucket vb ON vb.id = pj.value_bucket_id
     LEFT JOIN tracker.team fd ON fd.id = pj.for_team_id
     LEFT JOIN tracker.team fg ON fg.id = fd.parent_team_id
+    LEFT JOIN tracker.team dd ON dd.id = pj.done_by_team_id
     LEFT JOIN tracker.project_member m ON m.project_id = r.project_id AND m.person_id = $1
         WHERE $2::boolean OR m.role IS NOT NULL
         ORDER BY (r.state IN ('completed', 'cancelled')), r.portfolio_rank NULLS LAST, r.key`,
@@ -377,6 +386,7 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
     LEFT JOIN tracker.value_bucket vb ON vb.id = pj.value_bucket_id
     LEFT JOIN tracker.team fd ON fd.id = pj.for_team_id
     LEFT JOIN tracker.team fg ON fg.id = fd.parent_team_id
+    LEFT JOIN tracker.team dd ON dd.id = pj.done_by_team_id
     LEFT JOIN tracker.project_member m ON m.project_id = r.project_id AND m.person_id = $1
         WHERE r.key = $2`,
       [actor.personId, projectKey.toUpperCase()],

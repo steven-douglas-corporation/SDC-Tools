@@ -304,9 +304,11 @@ export function isOpen(p: Pick<ProjectListItem, "state">): boolean {
   return p.state !== "completed" && p.state !== "cancelled";
 }
 
-/** Missing one of the three things every project is asked for. */
-export function isIncomplete(p: Pick<ProjectListItem, "justification" | "valueBucketId" | "forDepartmentId">): boolean {
-  return !p.justification || p.valueBucketId == null || p.forDepartmentId == null;
+/** Missing one of the four things every project is asked for. */
+export function isIncomplete(
+  p: Pick<ProjectListItem, "justification" | "valueBucketId" | "forDepartmentId" | "doneByDepartmentId">,
+): boolean {
+  return !p.justification || p.valueBucketId == null || p.forDepartmentId == null || p.doneByDepartmentId == null;
 }
 
 /**
@@ -332,6 +334,7 @@ type Listed = Pick<
   | "valueBucketId"
   | "valueSort"
   | "forDepartmentId"
+  | "doneByDepartmentId"
   | "forGroupSort"
 >;
 

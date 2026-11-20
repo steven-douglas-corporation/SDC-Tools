@@ -17,7 +17,7 @@ const STATES: { value: ProjectState; label: string; note: string }[] = [
   {
     value: "active",
     label: "Active",
-    note: "Being worked on. Needs a stack rank, a justification, a value and a department.",
+    note: "Being worked on. Needs a stack rank, a justification, a value and both departments.",
   },
   { value: "on_hold", label: "On hold", note: "Paused. Its cards stay, and are left out of the forecast." },
   { value: "completed", label: "Finished", note: "Done. It leaves the forecast and frees its people." },
@@ -32,6 +32,7 @@ export function ProjectSettings({
   valueBucketId,
   valueBuckets,
   forDepartmentId,
+  doneByDepartmentId,
   departments,
   targetDate,
   ownerPersonId,
@@ -47,6 +48,7 @@ export function ProjectSettings({
   valueBucketId: number | null;
   valueBuckets: ValueBucket[];
   forDepartmentId: number | null;
+  doneByDepartmentId: number | null;
   departments: Department[];
   targetDate: string | null;
   ownerPersonId: number;
@@ -61,6 +63,7 @@ export function ProjectSettings({
   const [why, setWhy] = useState(justification ?? "");
   const [value, setValue] = useState(valueBucketId?.toString() ?? "");
   const [forId, setForId] = useState(forDepartmentId?.toString() ?? "");
+  const [byId, setById] = useState(doneByDepartmentId?.toString() ?? "");
   const [target, setTarget] = useState(targetDate ?? "");
   const [owner, setOwner] = useState(ownerPersonId.toString());
   const [next, setNext] = useState<ProjectState>(state);
@@ -75,6 +78,7 @@ export function ProjectSettings({
   if (why.trim() !== (justification ?? "")) changes.justification = why;
   if (value !== "" && value !== (valueBucketId?.toString() ?? "")) changes.valueBucketId = Number(value);
   if (forId !== "" && forId !== (forDepartmentId?.toString() ?? "")) changes.forDepartmentId = Number(forId);
+  if (byId !== "" && byId !== (doneByDepartmentId?.toString() ?? "")) changes.doneByDepartmentId = Number(byId);
   if ((target || null) !== targetDate) changes.targetDate = target || null;
   if (Number(owner) !== ownerPersonId) changes.ownerPersonId = Number(owner);
   if (next !== state) changes.state = next;
@@ -140,6 +144,16 @@ export function ProjectSettings({
               <DepartmentOptions departments={departments} />
             </select>
             <span className="text-xs text-sdc-gray-600">Who benefits, not who does the work.</span>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={LABEL}>Done by department</span>
+            <select value={byId} onChange={(e) => setById(e.target.value)} className={INPUT}>
+              {(doneByDepartmentId == null || !departments.some((d) => d.id === doneByDepartmentId)) && (
+                <option value="">{doneByDepartmentId == null ? "Not set yet" : "A department no longer in use"}</option>
+              )}
+              <DepartmentOptions departments={departments} />
+            </select>
+            <span className="text-xs text-sdc-gray-600">Who does the work.</span>
           </label>
           <label className="flex flex-col gap-1">
             <span className={LABEL}>Target date</span>

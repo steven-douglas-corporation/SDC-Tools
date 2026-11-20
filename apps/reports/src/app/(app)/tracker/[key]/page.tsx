@@ -49,6 +49,7 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
     ["State", p.state === "completed" ? "Finished" : state.charAt(0).toUpperCase() + state.slice(1)],
     ["Owner", p.ownerName],
     ["For", p.forDepartmentName ?? "Not set"],
+    ["Done by", p.doneByDepartmentName ?? "Not set"],
     ["Value", p.valueLabel ?? "Not set"],
     ["Stack rank", p.portfolioRank?.toString() ?? "none"],
     ["Target", shortDate(p.targetDate)],

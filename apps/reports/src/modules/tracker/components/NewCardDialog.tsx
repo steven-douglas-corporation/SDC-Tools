@@ -292,12 +292,7 @@ function Form({ board, onClose }: { board: BoardData; onClose: () => void }) {
 
           <label className="flex flex-col gap-1 sm:col-span-2">
             <span className={LABEL}>Description</span>
-            <textarea
-              rows={4}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className={INPUT}
-            />
+            <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} className={INPUT} />
           </label>
         </fieldset>
 
@@ -311,7 +306,11 @@ function Form({ board, onClose }: { board: BoardData; onClose: () => void }) {
         </p>
 
         {asking ? (
-          <div role="alertdialog" aria-label="Close without saving" className="mt-2 flex flex-wrap items-center justify-end gap-2">
+          <div
+            role="alertdialog"
+            aria-label="Close without saving"
+            className="mt-2 flex flex-wrap items-center justify-end gap-2"
+          >
             <span className="mr-auto text-sm text-sdc-navy">Close without saving this card?</span>
             <button type="button" className={BUTTON_SECONDARY} onClick={() => setAsking(false)}>
               Keep editing

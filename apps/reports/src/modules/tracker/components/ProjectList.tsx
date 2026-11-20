@@ -335,6 +335,7 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
   const [justification, setJustification] = useState("");
   const [valueBucketId, setValueBucketId] = useState("");
   const [forDepartmentId, setForDepartmentId] = useState("");
+  const [doneByDepartmentId, setDoneByDepartmentId] = useState("");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
 
@@ -359,6 +360,7 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
             justification,
             valueBucketId: valueBucketId ? Number(valueBucketId) : null,
             forDepartmentId: forDepartmentId ? Number(forDepartmentId) : null,
+            doneByDepartmentId: doneByDepartmentId ? Number(doneByDepartmentId) : null,
             targetDate: targetDate || null,
           });
           if (!res.ok) return setError(res.error);
@@ -410,6 +412,19 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
           <DepartmentOptions departments={departments} />
         </select>
         <span className="text-xs text-sdc-gray-600">Who benefits, not who does the work.</span>
+      </label>
+      <label className="flex min-w-[16rem] flex-col gap-1">
+        <span className={LABEL}>Done by department</span>
+        <select
+          required
+          value={doneByDepartmentId}
+          onChange={(e) => setDoneByDepartmentId(e.target.value)}
+          className={INPUT}
+        >
+          <option value="">Choose a department</option>
+          <DepartmentOptions departments={departments} />
+        </select>
+        <span className="text-xs text-sdc-gray-600">Who does the work.</span>
       </label>
       <label className="flex min-w-[16rem] flex-col gap-1">
         <span className={LABEL}>Value to the bottom line</span>
@@ -596,6 +611,7 @@ export function ProjectList({
                   <th className="px-3 py-2.5">Rank</th>
                   <th className="px-3 py-2.5 text-left">Project</th>
                   <th className="px-3 py-2.5 text-left">For</th>
+                  <th className="px-3 py-2.5 text-left">Done by</th>
                   <th className="px-3 py-2.5 text-left">Value a year</th>
                   <th className="px-3 py-2.5">State</th>
                   <th className="px-3 py-2.5">Cards done</th>
@@ -725,6 +741,9 @@ export function ProjectList({
                         </td>
                         <td className="px-3 py-2.5 text-left">
                           {p.forDepartmentName ?? <Missing>No department</Missing>}
+                        </td>
+                        <td className="px-3 py-2.5 text-left">
+                          {p.doneByDepartmentName ?? <Missing>Not set</Missing>}
                         </td>
                         <td className="px-3 py-2.5 text-left whitespace-nowrap">
                           {p.valueLabel?.replace(" a year", "") ?? <Missing>Not set</Missing>}

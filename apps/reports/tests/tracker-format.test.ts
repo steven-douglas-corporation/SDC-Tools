@@ -256,6 +256,7 @@ test("narrowing the project list: finished hidden, search, one figure, sorting w
       valueBucketId: number | null;
       valueSort: number | null;
       forDepartmentId: number | null;
+      doneByDepartmentId: number | null;
       forGroupSort: number | null;
     }> = {},
   ) => ({
@@ -270,6 +271,7 @@ test("narrowing the project list: finished hidden, search, one figure, sorting w
     valueBucketId: 1,
     valueSort: 1,
     forDepartmentId: 5,
+    doneByDepartmentId: 5,
     forGroupSort: 2,
     ...more,
   });

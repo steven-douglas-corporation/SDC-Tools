@@ -72,6 +72,7 @@ export default async function TrackerProjectSettingsPage({ params }: { params: P
           valueBucketId={p.valueBucketId}
           valueBuckets={valueBuckets}
           forDepartmentId={p.forDepartmentId}
+          doneByDepartmentId={p.doneByDepartmentId}
           departments={departments}
           targetDate={p.targetDate}
           ownerPersonId={p.ownerPersonId}

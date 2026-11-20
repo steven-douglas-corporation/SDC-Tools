@@ -57,12 +57,14 @@ let someDepartment: number;
 const createProject = (
   d: Database,
   actor: Actor,
-  input: Omit<NewProject, "justification" | "valueBucketId" | "forDepartmentId"> & Partial<NewProject>,
+  input: Omit<NewProject, "justification" | "valueBucketId" | "forDepartmentId" | "doneByDepartmentId"> &
+    Partial<NewProject>,
 ) =>
   createProjectAsIs(d, actor, {
     justification: "Saves the team time.",
     valueBucketId: someValue,
     forDepartmentId: someDepartment,
+    doneByDepartmentId: someDepartment,
     ...input,
   });
 
@@ -100,6 +102,7 @@ before(async () => {
   await pg.exec(migration("0009_project_priority_dropped.sql"));
   await pg.exec(migration("0010_project_justification.sql"));
   await pg.exec(migration("0011_project_for_department.sql"));
+  await pg.exec(migration("0012_project_done_by_department.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
   // The company's departments as the roster would hand them over: see the departments test.
@@ -1816,6 +1819,7 @@ test("justification: a project says why it is worth doing and what it is worth, 
   await refuses(
     () =>
       createProjectAsIs(db, ana, {
+        doneByDepartmentId: someDepartment,
         forDepartmentId: someDepartment,
         key: "WHY1",
         name: "No reason",
@@ -1828,6 +1832,7 @@ test("justification: a project says why it is worth doing and what it is worth, 
   await refuses(
     () =>
       createProjectAsIs(db, ana, {
+        doneByDepartmentId: someDepartment,
         forDepartmentId: someDepartment,
         key: "WHY1",
         name: "No value",
@@ -1840,6 +1845,7 @@ test("justification: a project says why it is worth doing and what it is worth, 
   await refuses(
     () =>
       createProjectAsIs(db, ana, {
+        doneByDepartmentId: someDepartment,
         forDepartmentId: someDepartment,
         key: "WHY1",
         name: "Bad value",
@@ -1853,6 +1859,7 @@ test("justification: a project says why it is worth doing and what it is worth, 
   assert.equal(none.length, 0, "a refused project is not created");
 
   const p = await createProjectAsIs(db, ana, {
+    doneByDepartmentId: someDepartment,
     forDepartmentId: someDepartment,
     key: "WHY",
     name: "Roll-up",
@@ -1900,7 +1907,7 @@ test("justification: a project says why it is worth doing and what it is worth, 
   await refuses(
     () => updateProject(db, ana, old.id, { state: "active" }),
     "invalid",
-    /needs a justification, a yearly value and a department before it can be made active/,
+    /needs a justification, a yearly value, the department it is for and the department doing the work/,
   );
   await refuses(
     () => updateProject(db, ana, old.id, { state: "active", justification: "Keeps the lights on." }),
@@ -1953,29 +1960,46 @@ test("departments: copied from the roster in two levels, and a project says whic
   // A project cannot be made without one, or with one that is not in use.
   const asked = { justification: "Saves time.", valueBucketId: someValue };
   await refuses(
-    () => createProjectAsIs(db, ana, { key: "DEPT0", name: "x", ...asked, forDepartmentId: null as unknown as number }),
+    () =>
+      createProjectAsIs(db, ana, {
+        doneByDepartmentId: someDepartment,
+        key: "DEPT0",
+        name: "x",
+        ...asked,
+        forDepartmentId: null as unknown as number,
+      }),
     "invalid",
     /Choose the department the project is for/,
   );
   await refuses(
-    () => createProjectAsIs(db, ana, { key: "DEPT0", name: "x", ...asked, forDepartmentId: 999999 }),
+    () =>
+      createProjectAsIs(db, ana, {
+        doneByDepartmentId: someDepartment,
+        key: "DEPT0",
+        name: "x",
+        ...asked,
+        forDepartmentId: 999999,
+      }),
     "invalid",
     /Choose the department/,
   );
 
   const fin = await createProjectAsIs(db, ana, {
+    doneByDepartmentId: someDepartment,
     key: "DEPTF",
     name: "Close faster",
     ...asked,
     forDepartmentId: id("finance"),
   });
   const eng = await createProjectAsIs(db, ana, {
+    doneByDepartmentId: someDepartment,
     key: "DEPTE",
     name: "Drawing checks",
     ...asked,
     forDepartmentId: id("mech"),
   });
   const wide = await createProjectAsIs(db, ana, {
+    doneByDepartmentId: someDepartment,
     key: "DEPTW",
     name: "Warehouse",
     ...asked,
@@ -2006,7 +2030,7 @@ test("departments: copied from the roster in two levels, and a project says whic
   await refuses(
     () => updateProject(db, ana, old.id, { state: "active" }),
     "invalid",
-    /a yearly value and a department before/,
+    /the department it is for and the department doing the work before/,
   );
   await updateProject(db, ana, old.id, { state: "active", forDepartmentId: id("hr") });
 
@@ -2210,4 +2234,47 @@ test("dropping a project at another's place in its department rearranges only th
     F.departmentDropEffect({ moved: { key: "K", from: 2, to: 1 }, shifted: 1, passes: 0 }),
     "K moves from company rank 2 to 1. 1 other project of its department moves one place to make room.",
   );
+});
+
+test("a project says which department does the work: asked for when made, logged when changed, needed to go active", async () => {
+  const Q = await import("../src/modules/tracker/service/queries");
+  const all = await listDepartments(db);
+  const id = (code: string) => all.find((d) => d.code === code)!.id;
+  const asked = { justification: "Saves time.", valueBucketId: someValue, forDepartmentId: id("mech") };
+  await refuses(
+    () =>
+      createProjectAsIs(db, ana, { key: "DOER0", name: "x", ...asked, doneByDepartmentId: null as unknown as number }),
+    "invalid",
+    /Choose the department that does the work/,
+  );
+  await refuses(
+    () => createProjectAsIs(db, ana, { key: "DOER0", name: "x", ...asked, doneByDepartmentId: 999999 }),
+    "invalid",
+    /does the work/,
+  );
+  const p = await createProjectAsIs(db, ana, {
+    key: "DOER",
+    name: "Checks",
+    ...asked,
+    doneByDepartmentId: id("finance"),
+  });
+  const listed = async () => (await Q.listProjects(db, ana)).find((x) => x.id === p.id)!;
+  assert.equal((await listed()).doneByDepartmentName, "Finance");
+  assert.equal((await listed()).forDepartmentName, "Mechanical Engineering");
+
+  await updateProject(db, ana, p.id, { doneByDepartmentId: id("hr") }, "moved teams");
+  const log = await rows<{ field: string; old_value: string; new_value: string; reason: string }>(
+    `SELECT field, old_value, new_value, reason FROM tracker.project_change_log WHERE project_id = $1`,
+    [p.id],
+  );
+  assert.deepEqual(log, [
+    { field: "done_by_department", old_value: "Finance", new_value: "Human Resources", reason: "moved teams" },
+  ]);
+
+  // A project made before this was asked for cannot go active until it has one.
+  await db.transaction((tx) => tx.query(`UPDATE tracker.project SET done_by_team_id = NULL WHERE id = $1`, [p.id]));
+  assert.equal((await listed()).doneByDepartmentId, null);
+  await setPortfolioRanks(db, boss, [{ projectId: p.id, rank: 91 }]);
+  await refuses(() => updateProject(db, ana, p.id, { state: "active" }), "invalid", /the department doing the work/);
+  await updateProject(db, ana, p.id, { state: "active", doneByDepartmentId: id("hr") });
 });
