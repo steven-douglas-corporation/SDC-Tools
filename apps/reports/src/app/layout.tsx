@@ -59,7 +59,7 @@ export default function RootLayout({
             paint is a zoom the user watches being applied — the whole interface
             would visibly jump on every page load.
 
-            The 0.5/1 bounds are ZOOM_STEPS' first and last entries, duplicated
+            The 0.5/1.5 bounds are ZOOM_STEPS' first and last entries, duplicated
             here because this string cannot import anything.
             tests/app-zoom.test.ts asserts the two agree, so changing the range
             without touching this line fails the suite rather than silently
@@ -76,7 +76,7 @@ export default function RootLayout({
             privacy modes, and a preference is never worth a blank page. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var r=localStorage.getItem('sdc-app-zoom-v1');if(r){var n=parseFloat(r);if(!isNaN(n))document.documentElement.style.setProperty('--app-zoom',String(Math.min(1,Math.max(0.5,Math.round(n*10)/10))));}}catch(e){}`,
+            __html: `try{var r=localStorage.getItem('sdc-app-zoom-v1');if(r){var n=parseFloat(r);if(!isNaN(n))document.documentElement.style.setProperty('--app-zoom',String(Math.min(1.5,Math.max(0.5,Math.round(n*10)/10))));}}catch(e){}`,
           }}
         />
         <SessionProvider>{children}</SessionProvider>
