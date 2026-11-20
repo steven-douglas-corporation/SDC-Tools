@@ -5,8 +5,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { AreaId, Tool } from "@/lib/tools";
 
 // The launcher at the top of the sidebar: which tool is open, and a short list for moving
-// to another, or to Admin. Rendered only for someone with somewhere else to go: with a
-// single tool and no Admin pages the sidebar is exactly as it was.
+// to another, to Admin, or out to the SDC Scheduler. The Scheduler's link is here and
+// nowhere else in the sidebar, so in practice everyone sees the launcher.
 //
 // A grid of dots, not three lines: three lines reads as "show or hide this menu", and the
 // sidebar already has a Collapse control.

@@ -784,8 +784,10 @@ export default function Sidebar({
       </button>
       </div>
 
-      {/* Shown to anyone with somewhere else to go: a second tool, or Admin. */}
-      {(tools.length > 1 || adminHref) && (
+      {/* Shown to anyone with somewhere else to go: a second tool, Admin, or the Scheduler.
+          In practice that is everyone, since the Scheduler's link is in here and nowhere
+          else in the sidebar. */}
+      {(tools.length > 1 || adminHref || schedulerProjectsUrl) && (
         <ToolLauncher
           tools={tools}
           current={currentTool}
@@ -1105,59 +1107,9 @@ export default function Sidebar({
           </button>
         )}
 
-        {/* Cross-app link out to the SDC Scheduler. Deliberately NOT part of
-            GROUPS: those are internal next/link routes with an isActive test,
-            while this is a different app on another port — a plain <a> in a new
-            tab, so the report you're on is never lost. The Scheduler has the
-            mirror-image button back to here. */}
-        {/* Not on the tools page: the Scheduler has a tile there. */}
-        {schedulerProjectsUrl && !onHome && (
-          <div className="flex flex-col gap-[3px]">
-            <p
-              className={
-                collapsed ? "sr-only" : "px-[10px] pb-[7px] font-mono text-micro tracking-[0.16em] text-[#6E88A5] uppercase"
-              }
-            >
-              Apps
-            </p>
-            <a
-              href={schedulerProjectsUrl}
-              onClick={onSchedulerClick}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={
-                inShell
-                  ? "Project Scheduler — opens the SDC Scheduler's Projects page in SDC Tools"
-                  : "Project Scheduler — opens the SDC Scheduler's Projects page in a new tab"
-              }
-              className={`text-sm text-[#C3D1E0] motion-interactive hover:bg-[#0E3157] ${
-                collapsed ? RAIL_ITEM : "flex h-9 items-center gap-[11px] rounded-[7px] px-[10px]"
-              }`}
-            >
-              <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[#8FA6BE]">
-                {/* Same staggered gantt bars used for the Scheduler link in the
-                    grids, so the two read as the same destination. */}
-                <Icon>
-                  <line x1="2.5" y1="3.5" x2="9.5" y2="3.5" strokeLinecap="round" />
-                  <line x1="5.5" y1="8" x2="13.5" y2="8" strokeLinecap="round" />
-                  <line x1="3.5" y1="12.5" x2="10.5" y2="12.5" strokeLinecap="round" />
-                </Icon>
-              </span>
-              <span className={collapsed ? "sr-only" : "truncate"}>Project Scheduler</span>
-              {/* External-link cue, matching the new-tab behavior — and dropped
-                  inside the shell, where the click opens an SDC Tools window
-                  rather than leaving for a browser. Dropped in the rail too:
-                  there is no room for a second glyph beside the icon, and the tooltip
-                  and the sr-only label both say it opens in a new tab. */}
-              {!collapsed && !inShell && (
-                <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" className="ml-auto shrink-0 text-[#6E88A5]">
-                  <path d="M6 3 H13 V10" strokeLinecap="round" strokeLinejoin="round" />
-                  <line x1="13" y1="3" x2="6.5" y2="9.5" strokeLinecap="round" />
-                </svg>
-              )}
-            </a>
-          </div>
-        )}
+        {/* The link out to the SDC Scheduler was a group of its own here, "Apps". It is an
+            entry in the launcher at the top of the sidebar now, beside the tools, and a tile
+            on the tools page: a link to another application is not part of a tool's menu. */}
       </nav>
 
       {/* ── Footer block (§46.5, §46.11) ────────────────────────────────────────
