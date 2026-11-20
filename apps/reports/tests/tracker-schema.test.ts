@@ -55,6 +55,7 @@ before(async () => {
   await db.exec(migration("0010_project_justification.sql"));
   await db.exec(migration("0011_project_for_department.sql"));
   await db.exec(migration("0012_project_done_by_department.sql"));
+  await db.exec(migration("0013_task_actual_start.sql"));
   await db.exec("SET search_path = tracker, public");
 
   ana = Number(

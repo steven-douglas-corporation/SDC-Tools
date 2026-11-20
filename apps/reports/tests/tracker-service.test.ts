@@ -103,6 +103,7 @@ before(async () => {
   await pg.exec(migration("0010_project_justification.sql"));
   await pg.exec(migration("0011_project_for_department.sql"));
   await pg.exec(migration("0012_project_done_by_department.sql"));
+  await pg.exec(migration("0013_task_actual_start.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
   // The company's departments as the roster would hand them over: see the departments test.
@@ -2330,4 +2331,42 @@ test("departments by who does the work: the list looks through either, and an un
     [card.id],
   );
   assert.equal(still[0]!.assignee_person_id, null, "the forecast does not name anyone on the card");
+});
+
+test("a card records the day its work started: stamped on the first move into work, and correctable", async () => {
+  const p = await createProject(db, ana, { key: "STARTD", name: "Start dates" });
+  const t = await createTask(db, ana, { projectId: p.id, title: "Work entered late" });
+  const statuses = await rows<{ id: number; category: string }>(
+    `SELECT id, category FROM tracker.workflow_status WHERE project_id = $1 ORDER BY id`,
+    [p.id],
+  );
+  const status = (category: string) => Number(statuses.find((s) => s.category === category)!.id);
+  const dates = async () =>
+    (
+      await rows<{ s: string | null; f: string | null }>(
+        `SELECT actual_start_date::text AS s, actual_completion_date::text AS f FROM tracker.task WHERE id = $1`,
+        [t.id],
+      )
+    )[0]!;
+  assert.deepEqual(await dates(), { s: null, f: null });
+  await refuses(
+    () => updateTask(db, ana, t.id, { actualCompletionDate: "2026-09-30" }),
+    "invalid",
+    /Only a finished card/,
+  );
+
+  await changeStatus(db, ana, t.id, status("in_progress"));
+  const started = (await dates()).s;
+  assert.ok(started, "the first move into work stamps the day");
+  await changeStatus(db, ana, t.id, status("done"));
+  assert.equal((await dates()).s, started, "a later move does not restamp it");
+
+  // The work really happened in September: both dates are put right.
+  await updateTask(db, ana, t.id, { actualStartDate: "2026-09-02", actualCompletionDate: "2026-09-30" });
+  assert.deepEqual(await dates(), { s: "2026-09-02", f: "2026-09-30" });
+  await refuses(() => updateTask(db, ana, t.id, { actualStartDate: "2026-10-05" }), "invalid", /cannot start after/);
+
+  const T = await import("../src/modules/tracker/service/timeline");
+  const row = (await T.getTimeline(db, ana, "STARTD")).rows.find((r) => r.id === t.id)!;
+  assert.deepEqual([row.startedOn, row.doneOn], ["2026-09-02", "2026-09-30"]);
 });

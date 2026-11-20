@@ -36,8 +36,8 @@ export interface TimelineRow {
   /** The day a finished card was finished. */
   doneOn: string | null;
   /**
-   * The first day work on it is known to have happened: the day it first left To do, or the day
-   * the first of it was finished, whichever is earlier. Null when nothing has been done yet.
+   * The day its work started (a card's own start date; for a project, the earliest among its
+   * cards). Null when nothing has been started yet.
    */
   startedOn: string | null;
   /** Why an open card has no bar, in the engine's words; the screen turns it into a sentence. */
@@ -135,14 +135,6 @@ function earliest(a: string | null, b: string | null): string | null {
   return a < b ? a : b;
 }
 
-/** The first day each card of a project, or of every project, was being worked on or finished. */
-const FIRST_WORKED = `
-  SELECT l.task_id, min(l.changed_at)::date AS day
-    FROM tracker.status_log l
-    JOIN tracker.workflow_status w ON w.id = l.to_status_id
-   WHERE w.category IN ('in_progress', 'done')
-   GROUP BY l.task_id`;
-
 /** One project's timeline. Cancelled cards are left out; finished ones are kept, without a bar. */
 export async function getTimeline(db: Database, actor: Actor, projectKey: string): Promise<Timeline> {
   // getBoard does the access check and refuses a project that is not the caller's.
@@ -186,10 +178,9 @@ export async function getTimeline(db: Database, actor: Actor, projectKey: string
   const started = await db.transaction(async (tx) => {
     if (!(await projectRole(tx, board.project.id, actor))) return new Map<number, string>();
     const { rows } = await tx.query<{ task_id: number; day: string }>(
-      `SELECT s.task_id, s.day::text AS day
-         FROM (${FIRST_WORKED}) s
-         JOIN tracker.task t ON t.id = s.task_id
-        WHERE t.project_id = $1`,
+      `SELECT id AS task_id, actual_start_date::text AS day
+         FROM tracker.task
+        WHERE project_id = $1 AND actual_start_date IS NOT NULL`,
       [board.project.id],
     );
     return new Map(rows.map((r) => [Number(r.task_id), r.day]));
@@ -285,11 +276,10 @@ export async function getPortfolioTimeline(
     const startOf = new Map(starts.rows.map((r) => [Number(r.project_id), r.start]));
     // What has already happened: when each project's work began, and when a finished one ended.
     const worked = await tx.query<{ project_id: number; started: string | null }>(
-      `SELECT t.project_id, min(least(s.day, t.actual_completion_date))::text AS started
-         FROM tracker.task t
-    LEFT JOIN (${FIRST_WORKED}) s ON s.task_id = t.id
-        WHERE t.archived_at IS NULL
-        GROUP BY t.project_id`,
+      `SELECT project_id, min(least(actual_start_date, actual_completion_date))::text AS started
+         FROM tracker.task
+        WHERE archived_at IS NULL
+        GROUP BY project_id`,
     );
     const workedFrom = new Map(worked.rows.map((r) => [Number(r.project_id), r.started]));
     const ended = await tx.query<{ id: number; day: string | null }>(

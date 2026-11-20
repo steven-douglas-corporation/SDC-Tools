@@ -38,6 +38,13 @@ export interface NewTask {
 
 export interface TaskChanges {
   title?: string;
+  /**
+   * The day the work started. Filled in when a card first moves into work; set here to correct
+   * it, or to record work that was done before it was entered. Null clears it.
+   */
+  actualStartDate?: string | null;
+  /** The day a finished card was finished, to correct it. Only a finished card has one. */
+  actualCompletionDate?: string;
   description?: string | null;
   assigneePersonId?: number | null;
   /** Who wants the work done. Never empty. Who created the card is a separate fact and cannot be changed. */
@@ -364,6 +371,8 @@ export async function updateTask(
   assertIsoDate(changes.dueDate, "Due date");
   assertIsoDate(changes.notBeforeDate, "Not-before date");
   assertIsoDate(changes.expectedUnblockDate, "Expected unblock date");
+  assertIsoDate(changes.actualStartDate, "Started on");
+  assertIsoDate(changes.actualCompletionDate, "Finished on");
   if (changes.title !== undefined && !changes.title.trim()) throw new TrackerError("invalid", "A card needs a title.");
 
   await db.transaction(async (tx) => {
@@ -549,6 +558,22 @@ export async function updateTask(
         actor,
         why ?? (changes.notBeforeDate ? (changes.notBeforeReason as string).trim() : null),
       );
+    }
+
+    // When the work happened. Corrections to history, so they are not put in the change log:
+    // the dates themselves are the record.
+    if (changes.actualCompletionDate !== undefined) {
+      if (cur.actual_completion_date == null) {
+        throw new TrackerError("invalid", "Only a finished card has a finish date. Move it to done first.");
+      }
+      assign("actual_completion_date", changes.actualCompletionDate, "::date");
+    }
+    if (changes.actualStartDate !== undefined) {
+      const finish = changes.actualCompletionDate ?? cur.actual_completion_date;
+      if (changes.actualStartDate && finish && changes.actualStartDate > finish) {
+        throw new TrackerError("invalid", "A card cannot start after it was finished.");
+      }
+      assign("actual_start_date", changes.actualStartDate, "::date");
     }
 
     if (set.length) await tx.query(`UPDATE tracker.task SET ${set.join(", ")} WHERE id = $1`, params);
@@ -763,10 +788,20 @@ async function applyStatus(
         SET status_id = $2,
             board_rank = $3::numeric,
             actual_completion_date = CASE WHEN $4 THEN coalesce(actual_completion_date, CURRENT_DATE) ELSE NULL END,
+            actual_start_date = CASE WHEN $7 THEN coalesce(actual_start_date, CURRENT_DATE) ELSE actual_start_date END,
             blocked_reason = $5,
             expected_unblock_date = $6::date
       WHERE id = $1`,
-    [taskId, to.id, rank.next, to.category === "done", blocked?.reason ?? null, blocked?.unblock ?? null],
+    [
+      taskId,
+      to.id,
+      rank.next,
+      to.category === "done",
+      blocked?.reason ?? null,
+      blocked?.unblock ?? null,
+      // Any status that is work: the first such move is the day the card started.
+      to.category !== "todo" && to.category !== "cancelled",
+    ],
   );
   await tx.query(
     `INSERT INTO tracker.status_log (task_id, from_status_id, to_status_id, changed_by, note) VALUES ($1, $2, $3, $4, $5)`,
