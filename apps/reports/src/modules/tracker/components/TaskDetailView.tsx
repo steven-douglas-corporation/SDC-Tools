@@ -18,6 +18,7 @@ import {
 } from "../actions";
 import type { LinkedTask, TaskDetail } from "../service/task-detail";
 import type { OpenCard } from "../service/tasks";
+import { ArchivePrompt } from "./ArchivePrompt";
 import { Checklist } from "./Checklist";
 import { CloseUnderPrompt } from "./CloseUnderPrompt";
 import { SafeDateHelp } from "./HelpTip";
@@ -476,7 +477,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                     Hours left are still right
                   </button>
                 )}
-                {mayArchive && !archiving && (
+                {mayArchive && (
                   <button
                     type="button"
                     disabled={pending}
@@ -492,53 +493,25 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                   </button>
                 )}
                 {mayArchive && archiving && (
-                  <span
-                    role="group"
-                    aria-label="Archive this card"
-                    className="flex flex-wrap items-center gap-2 text-sm"
-                  >
-                    <span className="font-semibold text-sdc-navy">
-                      {task.underCount > 0 ? (
-                        <>
-                          Archive {task.key} and the {task.underCount} card{task.underCount === 1 ? "" : "s"} under it?
-                          They all leave the board and the forecast, and nothing waits on them any more. Their history
-                          is kept. This cannot be undone here.
-                        </>
-                      ) : (
-                        <>
-                          Archive {task.key}? It leaves the board and the forecast, and nothing waits on it any more.
-                          Its history is kept. This cannot be undone here.
-                        </>
-                      )}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      className={BUTTON_COMPACT}
-                      onClick={() =>
-                        run(
-                          () =>
-                            archiveTaskAction({
-                              taskId: task.id,
-                              projectKey: task.projectKey,
-                              taskKey: task.key,
-                              withUnder: task.underCount > 0,
-                            }),
-                          () => router.push(`/tracker/${task.projectKey}`),
-                        )
-                      }
-                    >
-                      {task.underCount > 0 ? `Yes, archive all ${task.underCount + 1}` : "Yes, archive"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      className={BUTTON_COMPACT}
-                      onClick={() => setArchiving(false)}
-                    >
-                      Keep it
-                    </button>
-                  </span>
+                  <ArchivePrompt
+                    cardKey={task.key}
+                    title={task.title}
+                    underCount={task.underCount}
+                    pending={pending}
+                    onKeep={() => setArchiving(false)}
+                    onArchive={() =>
+                      run(
+                        () =>
+                          archiveTaskAction({
+                            taskId: task.id,
+                            projectKey: task.projectKey,
+                            taskKey: task.key,
+                            withUnder: task.underCount > 0,
+                          }),
+                        () => router.push(`/tracker/${task.projectKey}`),
+                      )
+                    }
+                  />
                 )}
               </div>
             )}
