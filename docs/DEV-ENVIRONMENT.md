@@ -76,13 +76,13 @@ again. After editing `schema.prisma`, use `npx prisma migrate dev --name <what>`
 |---|---|---|
 | Where it runs | `SERVER-APP1`, PM2, auto-deployed from `master` within ~5 min | Your machine, started by hand |
 | Port | 4006 | 4006 (same, so links and the shell behave) |
-| Database | MySQL on the server, real company data | MySQL 8 in Docker, `127.0.0.1:3317`, database `sdc_reports_dev`, **seeded fake data** |
+| Database | MySQL on the server, real company data | **Real data, read-only:** the production database through a read-only login (see [Real data](#real-data-the-read-only-production-login)). **For schema changes and anything that writes:** MySQL 8 in Docker, `127.0.0.1:3317`, database `sdc_reports_dev`, seeded fake data |
 | Sign-in | Entra ID SSO via the Scheduler broker, plus credentials | Credentials only (`*@dev.local`) |
 | Total ETO parts lines (parts cost, left-to-invoice, parts list) | Live SQL Server over the LAN | **Faked**: generated PO lines (`SDC_DEV_FAKE_ETO=1`, see [DEV-TEST-DATA.md](DEV-TEST-DATA.md#3-faux-eto-and-bom-data)) |
 | Total ETO BOM tree (Job Details > Procurement) | Live SQL Server | **Faked** from the same PO lines (`SDC_DEV_FAKE_ETO=1`, [`dev-fake-bom.ts`](../apps/reports/src/lib/dev-fake-bom.ts)) |
 | Total ETO job mirror, cash-flow queries | Live SQL Server | **Not connected**; BOM dashboard is seeded instead |
 | Power BI / Fabric | Service principal | **Not connected** |
-| DataWarehouse (Postgres) | Hours, roster, position families, job postings | **Not connected**; hours are seeded directly, job postings are faked (`SDC_DEV_FAKE_HIRING=1`) |
+| DataWarehouse (Postgres) | Hours, roster, position families, job postings | Read-only through the `reports_dev` login when `DATAWAREHOUSE_URL` is set ([tools/data-warehouse/README.md](../tools/data-warehouse/README.md)). Blank in the seeded profile, where hours are seeded directly and job postings are faked (`SDC_DEV_FAKE_HIRING=1`) |
 | Paylocity / inventory workbooks | Files on the share | **Not read**; paths unset |
 | Scheduler integration | Live | **Off**; Scheduler is a separate repo |
 | Hourly auto-refresh + *Refresh Data* | On | **Off** (`SDC_DEV_DISABLE_SYNC=1`) |
@@ -90,8 +90,59 @@ again. After editing `schema.prisma`, use `npx prisma migrate dev --name <what>`
 | Deploys | Merge to `master` | **Nothing you do here deploys.** Open a pull request |
 
 The practical consequence: in production a page is filled by a sync from a
-company system; in dev **you put the rows in the database yourself**. That is
-what the seed and [DEV-TEST-DATA.md](DEV-TEST-DATA.md) are for.
+company system. In dev you have two choices, and which one you use depends on
+the work:
+
+- **Checking numbers, reports and calculations: use real data, read-only.**
+  Seeded data cannot show a problem that only real hours have (a code nobody
+  mapped, a job with years of history), so a fix built against it can be wrong
+  and still look right. See [Real data](#real-data-the-read-only-production-login).
+- **Changing the schema, or testing anything that saves: use the seeded local
+  database**, where you put the rows in yourself. That is what the seed and
+  [DEV-TEST-DATA.md](DEV-TEST-DATA.md) are for.
+
+### Real data: the read-only production login
+
+A dev clone may read the production Reports database (today on `SERVER-APP1`)
+through a **read-only** MySQL login. It must never use the application's own
+login, which can write.
+
+**Status, 2026-11-20: the login does not exist yet.** An administrator has to
+create it on the server before this works. The warehouse already has the same
+arrangement (`reports_dev`, added 2026-11-15); the suggested name here is the
+same. What the administrator runs, with the real database name and a password
+kept in Credential Manager, not in any file in this repo:
+
+```sql
+CREATE USER 'reports_dev'@'%' IDENTIFIED BY '<password>';
+GRANT SELECT ON <production database>.* TO 'reports_dev'@'%';
+```
+
+`SELECT` only. No `INSERT`, `UPDATE`, `DELETE`, `ALTER`, `DROP` or `CREATE`.
+
+The administrator also has to confirm the server's MySQL accepts connections
+from developer machines. [ARCHITECTURE.md](../ARCHITECTURE.md) describes each
+app reaching it as `localhost:3306`, so it may be listening on the server only,
+in which case it needs a bind-address and firewall change limited to the office
+network or VPN.
+
+To use it, set `DATABASE_URL` in your own `apps/reports/.env` to that login and
+keep everything else in the dev profile as it is:
+
+- `SDC_DEV_DISABLE_SYNC=1` stays set. The database would refuse the writes
+  anyway; this stops the app trying every hour.
+- Do not run `prisma migrate`, `prisma db push` or the seed while connected.
+  They will fail, which is the point, but there is no reason to try.
+- Pages and buttons that save (ETC entry, quoted hours, submit, Refresh Data)
+  will show an error. That is expected. Test those against the seeded database.
+- A branch whose `schema.prisma` is ahead of production cannot read tables or
+  columns production does not have yet. Use the seeded database for that work.
+- The data is confidential. Do not paste real names, hours or dollar amounts
+  into a prompt, a commit, a test fixture or a screenshot (see
+  [SECURITY.md](../SECURITY.md)).
+
+Not yet tried: whether sign-in and every read-only page load cleanly under a
+login that cannot write. Note what breaks here when the login exists.
 
 ---
 
@@ -128,9 +179,12 @@ previous months; ETC entries for those months **locked** and the current month
 
 ## 4. Safety: what stops a dev build reaching production
 
-1. **No credentials.** Total ETO, Power BI, the DataWarehouse and the Scheduler
-   are only reachable if you put their credentials in `.env`. The dev profile
-   leaves them blank. Do not add them.
+1. **Read-only credentials only.** Total ETO, Power BI, the DataWarehouse, the
+   Scheduler and the production Reports database are only reachable if you put
+   their credentials in `.env`. The dev profile leaves them blank. The only ones
+   you may add are logins that cannot write: `reports_dev` on the DataWarehouse
+   and the read-only login on the production Reports database
+   ([Real data](#real-data-the-read-only-production-login)).
 2. **The sync switch.** `SDC_DEV_DISABLE_SYNC=1` stops the hourly pass and makes
    *Refresh Data* refuse. Without it the app tries every source on boot and
    a sync can overwrite or purge seeded rows.
@@ -142,8 +196,9 @@ previous months; ETC entries for those months **locked** and the current month
    production checkout. Your clone is a separate directory.
 
 Rules of thumb: never copy a production `.env` into a dev clone; never point
-`DATABASE_URL` at `SERVER-APP1`; never commit `.env`, a database dump or a
-spreadsheet (see [SECURITY.md](../SECURITY.md)).
+`DATABASE_URL` at the production database with a login that can write (the
+read-only login is the only one a dev clone may use); never commit `.env`, a
+database dump or a spreadsheet (see [SECURITY.md](../SECURITY.md)).
 
 ---
 
