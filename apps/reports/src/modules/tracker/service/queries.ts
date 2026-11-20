@@ -45,6 +45,10 @@ export interface ProjectListItem {
   taskCount: number;
   doneCount: number;
   remainingHours: number;
+  /** Hours estimated across the project's cards, done or not: what the remaining hours are left of. */
+  estimatedHours: number;
+  /** The people named on its open cards, by name. Empty when the work is the department's as a whole. */
+  assigneeNames: string[];
   forecastFinish: string | null;
   p80Finish: string | null;
   atRisk: boolean | null;
@@ -75,6 +79,8 @@ interface ProjectRow {
   for_group_id: number | null;
   for_group_name: string | null;
   for_group_sort: number | null;
+  estimated_hours: number | null;
+  assignee_names: string[] | null;
   done_by_team_id: number | null;
   done_by_name: string | null;
   done_by_sort: number | null;
@@ -106,7 +112,19 @@ const PROJECT_COLUMNS = `
   coalesce(dg.name, dd.name) AS done_by_group_name, coalesce(dg.sort_order, dd.sort_order) AS done_by_group_sort,
   r.target_date::text, pj.actual_start_date::text AS start_date, r.task_count, r.done_count, r.remaining_hours::float8,
   r.forecast_completion_date::text AS forecast_finish, r.p80_finish::text, r.at_risk, r.at_risk_basis,
-  r.unscheduled_tasks, r.unestimated_tasks, r.stale_tasks, r.next_milestone, m.role AS my_role`;
+  r.unscheduled_tasks, r.unestimated_tasks, r.stale_tasks, r.next_milestone, m.role AS my_role,
+  (SELECT coalesce(sum(e.effort_estimate_hours), 0)::float8
+     FROM tracker.task e
+     JOIN tracker.workflow_status es ON es.id = e.status_id
+    WHERE e.project_id = r.project_id AND e.archived_at IS NULL AND es.category <> 'cancelled'
+      AND NOT EXISTS (SELECT 1 FROM tracker.task c WHERE c.parent_task_id = e.id AND c.archived_at IS NULL)
+  ) AS estimated_hours,
+  (SELECT array_agg(DISTINCT ap.display_name ORDER BY ap.display_name)
+     FROM tracker.task a
+     JOIN tracker.workflow_status s ON s.id = a.status_id
+     JOIN tracker.person ap ON ap.id = a.assignee_person_id
+    WHERE a.project_id = r.project_id AND a.archived_at IS NULL AND s.category NOT IN ('done', 'cancelled')
+  ) AS assignee_names`;
 
 /**
  * Which of a project's two departments a list is filtered and grouped by: the one it is for,
@@ -205,6 +223,8 @@ function toProject(r: ProjectRow, admin: boolean): ProjectListItem {
     taskCount: Number(r.task_count ?? 0),
     doneCount: Number(r.done_count ?? 0),
     remainingHours: Number(r.remaining_hours ?? 0),
+    estimatedHours: Number(r.estimated_hours ?? 0),
+    assigneeNames: r.assignee_names ?? [],
     forecastFinish: r.forecast_finish,
     p80Finish: r.p80_finish,
     atRisk: r.at_risk,

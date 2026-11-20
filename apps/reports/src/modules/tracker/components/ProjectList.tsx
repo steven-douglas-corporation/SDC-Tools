@@ -615,7 +615,10 @@ export function ProjectList({
                   <th className="px-3 py-2.5 text-left">Value a year</th>
                   <th className="px-3 py-2.5">State</th>
                   <th className="px-3 py-2.5">Cards done</th>
-                  <th className="px-3 py-2.5">Remaining</th>
+                  <th className="px-3 py-2.5 text-left">Assigned to</th>
+                  <th className="px-3 py-2.5" title="Hours left, of the hours estimated across its cards">
+                    Effort
+                  </th>
                   <th className="px-3 py-2.5 text-left">
                     <span className="inline-flex items-center gap-1.5">
                       Dates <SafeDateHelp />
@@ -640,7 +643,7 @@ export function ProjectList({
                       {heads && (
                         <tr className="border-b border-sdc-border bg-sdc-gray-100">
                           <th
-                            colSpan={10}
+                            colSpan={11}
                             scope="colgroup"
                             className="px-3 py-2 text-left text-sm font-semibold text-sdc-navy"
                           >
@@ -754,7 +757,22 @@ export function ProjectList({
                         <td className="px-3 py-2.5 tabular-nums">
                           {p.doneCount} of {p.taskCount}
                         </td>
-                        <td className="px-3 py-2.5 tabular-nums">{hours(p.remainingHours)}</td>
+                        <td className="px-3 py-2.5 text-left">
+                          {p.assigneeNames.length > 0 ? (
+                            p.assigneeNames.join(", ")
+                          ) : (
+                            // Nobody named: the work is the department's, and is forecast on its people.
+                            <span className="text-sdc-gray-600">
+                              {p.doneByDepartmentName ? `${p.doneByDepartmentName} team` : "\u2014"}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums whitespace-nowrap">
+                          {hours(p.remainingHours)}
+                          {p.estimatedHours > 0 && (
+                            <span className="text-sdc-gray-600"> of {hours(p.estimatedHours)}</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2.5 text-left">
                           <Dates p={p} />
                         </td>
