@@ -150,3 +150,57 @@ test("the figures above the project list are sums of its rows, over open project
     date: "2026-11-20",
   });
 });
+
+test("the roster's teams become departments in two levels, with nothing the tracker made up", async () => {
+  const { orgUnits } = await import("../src/modules/tracker/org-units");
+  const shape = (teams: (string | null)[]) => orgUnits(teams).map((u) => [u.code, u.name, u.parentCode]);
+
+  assert.deepEqual(shape([]), [["company", "Company-wide", null]], "company-wide is always offered");
+
+  assert.deepEqual(shape(["controls", "mech", null, "pm", "finance", "hr", "mech"]), [
+    ["company", "Company-wide", null],
+    // One team in its group: it stands alone, not under a group of one.
+    ["pm", "Project Management", null],
+    ["group:engineering", "Engineering", null],
+    ["mech", "Mechanical Engineering", "group:engineering"],
+    ["controls", "Controls Engineering", "group:engineering"],
+    ["group:support", "Support", null],
+    ["hr", "Human Resources", "group:support"],
+    ["finance", "Finance", "group:support"],
+  ]);
+
+  // Only teams somebody is on, and a code the app has no name for is still listed, by its code.
+  const odd = shape(["mech", "skunkworks"]);
+  assert.deepEqual(odd, [
+    ["company", "Company-wide", null],
+    ["mech", "Mechanical Engineering", null],
+    ["skunkworks", "skunkworks", null],
+  ]);
+});
+
+test("the department filter and grouping read the address, and keep rank order inside a department", async () => {
+  const { byDepartment, departmentView, projectsFor } = await import("../src/modules/tracker/components/format");
+  assert.deepEqual(departmentView({}), { forId: null, grouped: false });
+  assert.deepEqual(departmentView({ for: "12", group: "1" }), { forId: 12, grouped: true });
+  assert.deepEqual(departmentView({ for: ["7", "9"], group: "yes" }), { forId: 7, grouped: false });
+  assert.deepEqual(departmentView({ for: "-3" }), { forId: null, grouped: false }, "not a department's id");
+  assert.deepEqual(departmentView({ for: "abc" }).forId, null);
+
+  const p = (key: string, forDepartmentId: number | null, forGroupSort: number | null) => ({
+    key,
+    forDepartmentId,
+    forGroupSort,
+  });
+  const ranked = [p("A", 5, 3), p("B", null, null), p("C", 2, 1), p("D", 6, 3), p("E", 2, 1)];
+  assert.deepEqual(projectsFor(ranked, null), ranked);
+  assert.deepEqual(
+    projectsFor(ranked, new Set([5, 6])).map((x) => x.key),
+    ["A", "D"],
+  );
+  assert.deepEqual(projectsFor(ranked, new Set([99])), [], "a project with no department is for none");
+  assert.deepEqual(
+    byDepartment(ranked).map((x) => x.key),
+    ["C", "E", "A", "D", "B"],
+    "no department goes last",
+  );
+});

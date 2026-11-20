@@ -239,6 +239,12 @@ that enforce the one write path.
   nothing used: projects are ordered by stack rank, and `0010` gives a project a justification
   and a yearly dollar value, chosen from a short table of ranges (`value_bucket`). Both are
   asked for when a project is created and before it can be made active.
+- `0011`: a project says which department it is for (the one that benefits, not the one doing
+  the work). The departments are the company's own teams, copied from the employee roster
+  into `tracker.team` in two levels, as the org chart groups them; nothing is typed in. The
+  project list and the timeline of all projects can be filtered to a department and grouped
+  by department. Which department does the work is not recorded: it waits on every user
+  account being linked to an employee, which single sign-on is to provide.
 
 ### Forecast engine
 

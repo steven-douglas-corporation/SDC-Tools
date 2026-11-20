@@ -5,7 +5,8 @@ import { PageTitle } from "@/components/ui/Typography";
 import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";
 import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
-import { syncPeopleFromUsers, trackerActor } from "@/modules/tracker/current-actor";
+import { syncDepartmentsFromOrg, syncPeopleFromUsers, trackerActor } from "@/modules/tracker/current-actor";
+import { listDepartments } from "@/modules/tracker/service/departments";
 import { TrackerError } from "@/modules/tracker/service/database";
 import { getBoard, listValueBuckets, type Board as BoardData } from "@/modules/tracker/service/queries";
 import { listMembers } from "@/modules/tracker/service/people";
@@ -42,12 +43,15 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
   const p = board.project;
   const members = await listMembers(trackerDb, actor, p.id);
   const valueBuckets = await listValueBuckets(trackerDb);
+  await syncDepartmentsFromOrg();
+  const departments = await listDepartments(trackerDb);
   const canEdit = hasPermission(session.user.role, "tracker:edit");
 
   const state = p.state.replace("_", " ");
   const facts: [string, string][] = [
     ["State", p.state === "completed" ? "Finished" : state.charAt(0).toUpperCase() + state.slice(1)],
     ["Owner", p.ownerName],
+    ["For", p.forDepartmentName ?? "Not set"],
     ["Value", p.valueLabel ?? "Not set"],
     ["Stack rank", p.portfolioRank?.toString() ?? "none"],
     ["Target", shortDate(p.targetDate)],
@@ -78,7 +82,8 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
       <p className="mb-3 max-w-3xl text-sm text-sdc-gray-600">
         {p.justification ?? (
           <span className="italic">
-            No justification yet. A manager adds one, and what the project is worth, in Project settings below.
+            No justification yet. A manager adds one, with what the project is worth and who it is for, in Project
+            settings below.
           </span>
         )}
       </p>
@@ -139,6 +144,8 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
             justification={p.justification}
             valueBucketId={p.valueBucketId}
             valueBuckets={valueBuckets}
+            forDepartmentId={p.forDepartmentId}
+            departments={departments}
             targetDate={p.targetDate}
             ownerPersonId={p.ownerPersonId}
             state={p.state as ProjectState}

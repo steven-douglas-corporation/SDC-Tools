@@ -174,3 +174,39 @@ export function portfolioSummary(
     nextTarget: upcoming[0] ? { key: upcoming[0].key, date: upcoming[0].targetDate } : null,
   };
 }
+
+/** What the project list and the timeline of all projects read from the address. */
+export interface DepartmentView {
+  /** The department chosen in the filter, or null for all of them. */
+  forId: number | null;
+  /** Whether the rows are gathered under a heading per department. */
+  grouped: boolean;
+}
+
+export function departmentView(params: { for?: string | string[]; group?: string | string[] }): DepartmentView {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const id = Number(one(params.for));
+  return { forId: Number.isInteger(id) && id > 0 ? id : null, grouped: one(params.group) === "1" };
+}
+
+/** The projects that are for one of `scope` (see departmentScope). A project with no department is for none. */
+export function projectsFor<P extends Pick<ProjectListItem, "forDepartmentId">>(
+  projects: P[],
+  scope: Set<number> | null,
+): P[] {
+  if (!scope) return projects;
+  return projects.filter((p) => p.forDepartmentId != null && scope.has(p.forDepartmentId));
+}
+
+/**
+ * The same projects with each department's together, departments in the company's own order,
+ * and those with no department last. Inside a department the order given is kept, so a list
+ * that came in stack-rank order is still in rank order under each heading.
+ */
+export function byDepartment<P extends Pick<ProjectListItem, "forGroupSort">>(projects: P[]): P[] {
+  const last = Number.MAX_SAFE_INTEGER;
+  return projects
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => (a.p.forGroupSort ?? last) - (b.p.forGroupSort ?? last) || a.i - b.i)
+    .map((x) => x.p);
+}

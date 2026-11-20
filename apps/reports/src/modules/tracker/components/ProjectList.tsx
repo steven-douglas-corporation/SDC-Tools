@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   BUTTON_COMPACT,
@@ -16,6 +16,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { createProjectAction, moveProjectRankAction, setProjectRankAction, setProjectStateAction } from "../actions";
 import type { RankClash } from "../service/projects";
 import type { ProjectListItem, ValueBucket } from "../service/queries";
+import type { Department } from "../service/departments";
+import { DepartmentOptions } from "./DepartmentPicker";
 import { hours, leftOutOfForecast, rankClashEffect, shortDate } from "./format";
 import { SafeDateHelp } from "./HelpTip";
 
@@ -181,7 +183,7 @@ function StateCell({ p, canEdit }: { p: ProjectListItem; canEdit: boolean }) {
   );
 }
 
-function NewProject({ valueBuckets }: { valueBuckets: ValueBucket[] }) {
+function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]; departments: Department[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState("");
@@ -189,6 +191,7 @@ function NewProject({ valueBuckets }: { valueBuckets: ValueBucket[] }) {
   const [targetDate, setTargetDate] = useState("");
   const [justification, setJustification] = useState("");
   const [valueBucketId, setValueBucketId] = useState("");
+  const [forDepartmentId, setForDepartmentId] = useState("");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
 
@@ -212,6 +215,7 @@ function NewProject({ valueBuckets }: { valueBuckets: ValueBucket[] }) {
             name,
             justification,
             valueBucketId: valueBucketId ? Number(valueBucketId) : null,
+            forDepartmentId: forDepartmentId ? Number(forDepartmentId) : null,
             targetDate: targetDate || null,
           });
           if (!res.ok) return setError(res.error);
@@ -257,6 +261,14 @@ function NewProject({ valueBuckets }: { valueBuckets: ValueBucket[] }) {
         </span>
       </label>
       <label className="flex min-w-[16rem] flex-col gap-1">
+        <span className={LABEL}>For department</span>
+        <select required value={forDepartmentId} onChange={(e) => setForDepartmentId(e.target.value)} className={INPUT}>
+          <option value="">Choose a department</option>
+          <DepartmentOptions departments={departments} />
+        </select>
+        <span className="text-xs text-sdc-gray-600">Who benefits, not who does the work.</span>
+      </label>
+      <label className="flex min-w-[16rem] flex-col gap-1">
         <span className={LABEL}>Value to the bottom line</span>
         <select required value={valueBucketId} onChange={(e) => setValueBucketId(e.target.value)} className={INPUT}>
           <option value="">Choose a range</option>
@@ -286,12 +298,21 @@ function NewProject({ valueBuckets }: { valueBuckets: ValueBucket[] }) {
 export function ProjectList({
   projects,
   valueBuckets,
+  departments,
+  grouped = false,
+  rankNote,
   canEdit,
   canRank,
 }: {
   projects: ProjectListItem[];
   /** The ranges a new project's yearly value is chosen from. */
   valueBuckets: ValueBucket[];
+  /** The departments a new project can be for. */
+  departments: Department[];
+  /** Whether to draw a heading above each department's projects. They arrive already in that order. */
+  grouped?: boolean;
+  /** Why ranks cannot be changed in this view, when they cannot. */
+  rankNote?: string;
   /** Holds tracker:edit. */
   canEdit: boolean;
   /** May set the company-wide stack rank (in this app: ELT). */
@@ -306,7 +327,7 @@ export function ProjectList({
     <div className="space-y-4">
       {canEdit && (
         <div className="flex justify-end">
-          <NewProject valueBuckets={valueBuckets} />
+          <NewProject valueBuckets={valueBuckets} departments={departments} />
         </div>
       )}
 
@@ -320,76 +341,99 @@ export function ProjectList({
           }
         />
       ) : (
-        <div className={`${CARD_BASE} overflow-x-auto`}>
-          <table className="w-full min-w-[64rem] text-sm">
-            <thead>
-              <tr className={TABLE_HEADER_ROW}>
-                <th className="px-3 py-2.5">Rank</th>
-                <th className="px-3 py-2.5 text-left">Project</th>
-                <th className="px-3 py-2.5">State</th>
-                <th className="px-3 py-2.5">Cards done</th>
-                <th className="px-3 py-2.5">Remaining</th>
-                <th className="px-3 py-2.5">Target</th>
-                <th className="px-3 py-2.5">Forecast</th>
-                <th className="px-3 py-2.5">
-                  <span className="inline-flex items-center gap-1.5">
-                    Safe date <SafeDateHelp />
-                  </span>
-                </th>
-                <th className="px-3 py-2.5">Against target</th>
-                <th className="px-3 py-2.5 text-left">Left out of the forecast</th>
-              </tr>
-            </thead>
-            <tbody>
-              {projects.map((p) => {
-                const leftOut = leftOutOfForecast(p.unscheduledTasks, p.unestimatedTasks, p.staleTasks);
-                return (
-                  <tr key={p.id} className={`border-b border-sdc-border-soft text-center ${TABLE_ROW_HOVER}`}>
-                    <td className="px-3 py-2.5 tabular-nums">
-                      <RankCell
-                        // Remount when the rank changes: moving one project renumbers the others.
-                        key={`${p.id}:${p.portfolioRank}`}
-                        p={p}
-                        canRank={canRank && canEdit}
-                        first={p.id === ranked[0]}
-                        last={p.id === ranked[ranked.length - 1]}
-                      />
-                    </td>
-                    <td className="px-3 py-2.5 text-left">
-                      <Link href={`/tracker/${p.key}`} className="font-semibold text-sdc-blue hover:underline">
-                        {p.key}
-                      </Link>
-                      {/* The reason is one hover away for whoever is setting the ranks. */}
-                      <span className="ml-2 text-sdc-navy" title={p.justification ?? undefined}>
-                        {p.name}
-                      </span>
-                      <div className="text-xs text-sdc-gray-600">
-                        {p.valueLabel ?? "No value set"} · Owner: {p.ownerName}
-                        {p.nextMilestone ? ` · Next milestone: ${p.nextMilestone}` : ""}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <StateCell p={p} canEdit={canEdit} />
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums">
-                      {p.doneCount} of {p.taskCount}
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums">{hours(p.remainingHours)}</td>
-                    <td className="px-3 py-2.5">{shortDate(p.targetDate)}</td>
-                    <td className="px-3 py-2.5">{shortDate(p.forecastFinish)}</td>
-                    <td className="px-3 py-2.5">{shortDate(p.p80Finish)}</td>
-                    <td className="px-3 py-2.5">
-                      <Risk p={p} />
-                    </td>
-                    <td className="px-3 py-2.5 text-left text-xs text-sdc-gray-600">
-                      {leftOut.length ? leftOut.map((line) => <div key={line}>{line}</div>) : "Nothing"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {rankNote && <p className="text-xs text-sdc-gray-600">{rankNote}</p>}
+          <div className={`${CARD_BASE} overflow-x-auto`}>
+            <table className="w-full min-w-[64rem] text-sm">
+              <thead>
+                <tr className={TABLE_HEADER_ROW}>
+                  <th className="px-3 py-2.5">Rank</th>
+                  <th className="px-3 py-2.5 text-left">Project</th>
+                  <th className="px-3 py-2.5">State</th>
+                  <th className="px-3 py-2.5">Cards done</th>
+                  <th className="px-3 py-2.5">Remaining</th>
+                  <th className="px-3 py-2.5">Target</th>
+                  <th className="px-3 py-2.5">Forecast</th>
+                  <th className="px-3 py-2.5">
+                    <span className="inline-flex items-center gap-1.5">
+                      Safe date <SafeDateHelp />
+                    </span>
+                  </th>
+                  <th className="px-3 py-2.5">Against target</th>
+                  <th className="px-3 py-2.5 text-left">Left out of the forecast</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((p, i) => {
+                  const leftOut = leftOutOfForecast(p.unscheduledTasks, p.unestimatedTasks, p.staleTasks);
+                  // A heading where the department changes. The rows arrive a department at a time.
+                  const heads = grouped && (i === 0 || projects[i - 1]!.forGroupId !== p.forGroupId);
+                  const inGroup = projects.filter((x) => x.forGroupId === p.forGroupId).length;
+                  return (
+                    <Fragment key={p.id}>
+                      {heads && (
+                        <tr className="border-b border-sdc-border bg-sdc-gray-100">
+                          <th
+                            colSpan={10}
+                            scope="colgroup"
+                            className="px-3 py-2 text-left text-sm font-semibold text-sdc-navy"
+                          >
+                            {p.forGroupName ?? "No department yet"}
+                            <span className="ml-2 font-normal text-sdc-gray-600">
+                              {inGroup} project{inGroup === 1 ? "" : "s"}
+                            </span>
+                          </th>
+                        </tr>
+                      )}
+                      <tr className={`border-b border-sdc-border-soft text-center ${TABLE_ROW_HOVER}`}>
+                        <td className="px-3 py-2.5 tabular-nums">
+                          <RankCell
+                            // Remount when the rank changes: moving one project renumbers the others.
+                            key={`${p.id}:${p.portfolioRank}`}
+                            p={p}
+                            canRank={canRank && canEdit}
+                            first={p.id === ranked[0]}
+                            last={p.id === ranked[ranked.length - 1]}
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 text-left">
+                          <Link href={`/tracker/${p.key}`} className="font-semibold text-sdc-blue hover:underline">
+                            {p.key}
+                          </Link>
+                          {/* The reason is one hover away for whoever is setting the ranks. */}
+                          <span className="ml-2 text-sdc-navy" title={p.justification ?? undefined}>
+                            {p.name}
+                          </span>
+                          <div className="text-xs text-sdc-gray-600">
+                            For {p.forDepartmentName ?? "no department yet"} · {p.valueLabel ?? "No value set"} · Owner:{" "}
+                            {p.ownerName}
+                            {p.nextMilestone ? ` · Next milestone: ${p.nextMilestone}` : ""}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <StateCell p={p} canEdit={canEdit} />
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums">
+                          {p.doneCount} of {p.taskCount}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums">{hours(p.remainingHours)}</td>
+                        <td className="px-3 py-2.5">{shortDate(p.targetDate)}</td>
+                        <td className="px-3 py-2.5">{shortDate(p.forecastFinish)}</td>
+                        <td className="px-3 py-2.5">{shortDate(p.p80Finish)}</td>
+                        <td className="px-3 py-2.5">
+                          <Risk p={p} />
+                        </td>
+                        <td className="px-3 py-2.5 text-left text-xs text-sdc-gray-600">
+                          {leftOut.length ? leftOut.map((line) => <div key={line}>{line}</div>) : "Nothing"}
+                        </td>
+                      </tr>
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

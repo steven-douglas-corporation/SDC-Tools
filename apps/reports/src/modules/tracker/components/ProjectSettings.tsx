@@ -5,6 +5,8 @@ import { BUTTON_PRIMARY, CARD_BASE, INPUT, LABEL } from "@/components/ui/classna
 import { updateProjectAction } from "../actions";
 import type { ProjectChanges, ProjectState } from "../service/projects";
 import type { ValueBucket } from "../service/queries";
+import type { Department } from "../service/departments";
+import { DepartmentOptions } from "./DepartmentPicker";
 
 // What a manager can change about a project after it is created: why it is being done and
 // what it is worth, when it is due, who owns it, and where it stands. Finishing or cancelling
@@ -12,7 +14,11 @@ import type { ValueBucket } from "../service/queries";
 
 const STATES: { value: ProjectState; label: string; note: string }[] = [
   { value: "planned", label: "Planned", note: "Not started. Its work is forecast once it has a stack rank." },
-  { value: "active", label: "Active", note: "Being worked on. Needs a stack rank, a justification and a value." },
+  {
+    value: "active",
+    label: "Active",
+    note: "Being worked on. Needs a stack rank, a justification, a value and a department.",
+  },
   { value: "on_hold", label: "On hold", note: "Paused. Its cards stay, and are left out of the forecast." },
   { value: "completed", label: "Finished", note: "Done. It leaves the forecast and frees its people." },
   { value: "cancelled", label: "Cancelled", note: "Stopped for good. It leaves the forecast and frees its people." },
@@ -24,6 +30,8 @@ export function ProjectSettings({
   justification,
   valueBucketId,
   valueBuckets,
+  forDepartmentId,
+  departments,
   targetDate,
   ownerPersonId,
   state,
@@ -35,6 +43,8 @@ export function ProjectSettings({
   justification: string | null;
   valueBucketId: number | null;
   valueBuckets: ValueBucket[];
+  forDepartmentId: number | null;
+  departments: Department[];
   targetDate: string | null;
   ownerPersonId: number;
   state: ProjectState;
@@ -44,6 +54,7 @@ export function ProjectSettings({
 }) {
   const [why, setWhy] = useState(justification ?? "");
   const [value, setValue] = useState(valueBucketId?.toString() ?? "");
+  const [forId, setForId] = useState(forDepartmentId?.toString() ?? "");
   const [target, setTarget] = useState(targetDate ?? "");
   const [owner, setOwner] = useState(ownerPersonId.toString());
   const [next, setNext] = useState<ProjectState>(state);
@@ -56,6 +67,7 @@ export function ProjectSettings({
   const changes: ProjectChanges = {};
   if (why.trim() !== (justification ?? "")) changes.justification = why;
   if (value !== "" && value !== (valueBucketId?.toString() ?? "")) changes.valueBucketId = Number(value);
+  if (forId !== "" && forId !== (forDepartmentId?.toString() ?? "")) changes.forDepartmentId = Number(forId);
   if ((target || null) !== targetDate) changes.targetDate = target || null;
   if (Number(owner) !== ownerPersonId) changes.ownerPersonId = Number(owner);
   if (next !== state) changes.state = next;
@@ -102,6 +114,16 @@ export function ProjectSettings({
           <span className="text-xs text-sdc-gray-600">
             The best honest range for a year: savings, added profit or cost avoided.
           </span>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={LABEL}>For department</span>
+          <select value={forId} onChange={(e) => setForId(e.target.value)} className={INPUT}>
+            {(forDepartmentId == null || !departments.some((d) => d.id === forDepartmentId)) && (
+              <option value="">{forDepartmentId == null ? "Not set yet" : "A department no longer in use"}</option>
+            )}
+            <DepartmentOptions departments={departments} />
+          </select>
+          <span className="text-xs text-sdc-gray-600">Who benefits, not who does the work.</span>
         </label>
         <label className="flex flex-col gap-1">
           <span className={LABEL}>Target date</span>

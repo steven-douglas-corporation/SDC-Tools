@@ -25,6 +25,23 @@ import {
   updateTask,
 } from "../src/modules/tracker/service/tasks";
 import { runForecast } from "../src/modules/tracker/service/forecast";
+import {
+  departmentScope,
+  listDepartments,
+  syncDepartments,
+  type OrgUnit,
+} from "../src/modules/tracker/service/departments";
+
+const ORG: OrgUnit[] = [
+  { code: "company", name: "Company-wide", parentCode: null },
+  { code: "pm", name: "Project Management", parentCode: null },
+  { code: "group:engineering", name: "Engineering", parentCode: null },
+  { code: "mech", name: "Mechanical Engineering", parentCode: "group:engineering" },
+  { code: "controls", name: "Controls Engineering", parentCode: "group:engineering" },
+  { code: "group:support", name: "Support", parentCode: null },
+  { code: "finance", name: "Finance", parentCode: "group:support" },
+  { code: "hr", name: "Human Resources", parentCode: "group:support" },
+];
 
 const migration = (name: string) =>
   readFileSync(fileURLToPath(new URL(`../db/tracker/migrations/${name}`, import.meta.url)), "utf8");
@@ -33,14 +50,21 @@ let pg: PGlite;
 let db: Database;
 let ana: Actor, ben: Actor, cal: Actor, boss: Actor;
 
-// Every project needs a justification and a yearly value. Tests that are about something
-// else get one of each from here; the test of that rule calls the service as it is.
+// Every project needs a justification, a yearly value and a department. Tests that are about
+// something else get one of each from here; the tests of those rules call the service as it is.
 let someValue: number;
+let someDepartment: number;
 const createProject = (
   d: Database,
   actor: Actor,
-  input: Omit<NewProject, "justification" | "valueBucketId"> & Partial<NewProject>,
-) => createProjectAsIs(d, actor, { justification: "Saves the team time.", valueBucketId: someValue, ...input });
+  input: Omit<NewProject, "justification" | "valueBucketId" | "forDepartmentId"> & Partial<NewProject>,
+) =>
+  createProjectAsIs(d, actor, {
+    justification: "Saves the team time.",
+    valueBucketId: someValue,
+    forDepartmentId: someDepartment,
+    ...input,
+  });
 
 async function rows<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
   return (await pg.query<T>(sql, params)).rows;
@@ -75,8 +99,12 @@ before(async () => {
   await pg.exec(migration("0008_migration_record_readable.sql"));
   await pg.exec(migration("0009_project_priority_dropped.sql"));
   await pg.exec(migration("0010_project_justification.sql"));
+  await pg.exec(migration("0011_project_for_department.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
+  // The company's departments as the roster would hand them over: see the departments test.
+  await syncDepartments(db, ORG);
+  someDepartment = (await listDepartments(db)).find((d) => d.code === "company")!.id;
   someValue = Number(
     (await rows<{ id: number }>(`SELECT id FROM tracker.value_bucket ORDER BY sort_order LIMIT 1`))[0]!.id,
   );
@@ -1771,13 +1799,21 @@ test("justification: a project says why it is worth doing and what it is worth, 
 
   // Neither can be left out when a project is created.
   await refuses(
-    () => createProjectAsIs(db, ana, { key: "WHY1", name: "No reason", justification: "   ", valueBucketId: mid!.id }),
+    () =>
+      createProjectAsIs(db, ana, {
+        forDepartmentId: someDepartment,
+        key: "WHY1",
+        name: "No reason",
+        justification: "   ",
+        valueBucketId: mid!.id,
+      }),
     "invalid",
     /needs a justification: what it saves, earns or prevents/,
   );
   await refuses(
     () =>
       createProjectAsIs(db, ana, {
+        forDepartmentId: someDepartment,
         key: "WHY1",
         name: "No value",
         justification: "Saves two days a month.",
@@ -1787,7 +1823,14 @@ test("justification: a project says why it is worth doing and what it is worth, 
     /worth to the bottom line in a year/,
   );
   await refuses(
-    () => createProjectAsIs(db, ana, { key: "WHY1", name: "Bad value", justification: "x", valueBucketId: 999999 }),
+    () =>
+      createProjectAsIs(db, ana, {
+        forDepartmentId: someDepartment,
+        key: "WHY1",
+        name: "Bad value",
+        justification: "x",
+        valueBucketId: 999999,
+      }),
     "invalid",
     /worth to the bottom line/,
   );
@@ -1795,6 +1838,7 @@ test("justification: a project says why it is worth doing and what it is worth, 
   assert.equal(none.length, 0, "a refused project is not created");
 
   const p = await createProjectAsIs(db, ana, {
+    forDepartmentId: someDepartment,
     key: "WHY",
     name: "Roll-up",
     justification: "  Cuts the monthly roll-up from two days to two hours.  ",
@@ -1841,7 +1885,7 @@ test("justification: a project says why it is worth doing and what it is worth, 
   await refuses(
     () => updateProject(db, ana, old.id, { state: "active" }),
     "invalid",
-    /needs a justification and a yearly value before it can be made active/,
+    /needs a justification, a yearly value and a department before it can be made active/,
   );
   await refuses(
     () => updateProject(db, ana, old.id, { state: "active", justification: "Keeps the lights on." }),
@@ -1856,4 +1900,151 @@ test("justification: a project says why it is worth doing and what it is worth, 
   });
   const [now] = await rows<{ state: string }>(`SELECT state::text FROM tracker.project WHERE id = $1`, [old.id]);
   assert.equal(now!.state, "active");
+});
+
+test("departments: copied from the roster in two levels, and a project says which one it is for", async () => {
+  const Q = await import("../src/modules/tracker/service/queries");
+  const T = await import("../src/modules/tracker/service/timeline");
+
+  // The copy is the roster's list, groups first with their teams under them, in the order given.
+  const all = await listDepartments(db);
+  assert.deepEqual(
+    all.map((d) => [d.name, d.groupName, d.parentId == null]),
+    [
+      ["Company-wide", "Company-wide", true],
+      ["Project Management", "Project Management", true],
+      ["Engineering", "Engineering", true],
+      ["Mechanical Engineering", "Engineering", false],
+      ["Controls Engineering", "Engineering", false],
+      ["Support", "Support", true],
+      ["Finance", "Support", false],
+      ["Human Resources", "Support", false],
+    ],
+  );
+  const id = (code: string) => all.find((d) => d.code === code)!.id;
+  // A group covers its teams; a team covers only itself.
+  assert.deepEqual(
+    [...departmentScope(all, id("group:engineering"))].sort(),
+    [id("group:engineering"), id("mech"), id("controls")].sort(),
+  );
+  assert.deepEqual([...departmentScope(all, id("mech"))], [id("mech")]);
+
+  // Copying the same list again writes nothing.
+  const before = await rows<{ x: string }>(`SELECT string_agg(xmin::text, ',' ORDER BY id) AS x FROM tracker.team`);
+  await syncDepartments(db, ORG);
+  const after = await rows<{ x: string }>(`SELECT string_agg(xmin::text, ',' ORDER BY id) AS x FROM tracker.team`);
+  assert.equal(after[0]!.x, before[0]!.x, "an unchanged roster touches no row");
+
+  // A project cannot be made without one, or with one that is not in use.
+  const asked = { justification: "Saves time.", valueBucketId: someValue };
+  await refuses(
+    () => createProjectAsIs(db, ana, { key: "DEPT0", name: "x", ...asked, forDepartmentId: null as unknown as number }),
+    "invalid",
+    /Choose the department the project is for/,
+  );
+  await refuses(
+    () => createProjectAsIs(db, ana, { key: "DEPT0", name: "x", ...asked, forDepartmentId: 999999 }),
+    "invalid",
+    /Choose the department/,
+  );
+
+  const fin = await createProjectAsIs(db, ana, {
+    key: "DEPTF",
+    name: "Close faster",
+    ...asked,
+    forDepartmentId: id("finance"),
+  });
+  const eng = await createProjectAsIs(db, ana, {
+    key: "DEPTE",
+    name: "Drawing checks",
+    ...asked,
+    forDepartmentId: id("mech"),
+  });
+  const wide = await createProjectAsIs(db, ana, {
+    key: "DEPTW",
+    name: "Warehouse",
+    ...asked,
+    forDepartmentId: id("company"),
+  });
+  const mine = (await Q.listProjects(db, ana)).filter((p) => [fin.id, eng.id, wide.id].includes(p.id));
+  assert.deepEqual(mine.map((p) => [p.key, p.forDepartmentName, p.forGroupName]).sort(), [
+    ["DEPTE", "Mechanical Engineering", "Engineering"],
+    ["DEPTF", "Finance", "Support"],
+    ["DEPTW", "Company-wide", "Company-wide"],
+  ]);
+
+  // Changing it is kept in the history, by name.
+  await updateProject(db, ana, eng.id, { forDepartmentId: id("group:engineering") }, "both teams use it");
+  const log = await rows<{ old_value: string; new_value: string; reason: string }>(
+    `SELECT old_value, new_value, reason FROM tracker.project_change_log
+      WHERE project_id = $1 AND field = 'for_department'`,
+    [eng.id],
+  );
+  assert.deepEqual(log, [
+    { old_value: "Mechanical Engineering", new_value: "Engineering", reason: "both teams use it" },
+  ]);
+
+  // A project from before this was asked for cannot be made active without one.
+  const old = await createProject(db, ana, { key: "DEPTO", name: "From before" });
+  await pg.query(`UPDATE tracker.project SET for_team_id = NULL WHERE id = $1`, [old.id]);
+  await setPortfolioRanks(db, boss, [{ projectId: old.id, rank: 81 }]);
+  await refuses(
+    () => updateProject(db, ana, old.id, { state: "active" }),
+    "invalid",
+    /a yearly value and a department before/,
+  );
+  await updateProject(db, ana, old.id, { state: "active", forDepartmentId: id("hr") });
+
+  // The timeline of all projects: filtered to a department, and gathered under one row each.
+  const keysOf = (t: { rows: { key: string; title: string; depth: number; isParent: boolean }[] }) =>
+    t.rows.filter((r) => ["DEPTF", "DEPTE", "DEPTW", "DEPTO"].includes(r.key) || r.isParent);
+  const support = await T.getPortfolioTimeline(db, ana, { scope: departmentScope(all, id("group:support")) });
+  assert.deepEqual(
+    support.rows.map((r) => r.key).sort(),
+    ["DEPTF", "DEPTO"],
+    "a group's filter finds its teams' projects",
+  );
+  assert.ok(
+    support.rows.every((r) => r.depth === 0 && !r.isParent),
+    "ungrouped rows are flat",
+  );
+
+  const grouped = await T.getPortfolioTimeline(db, ana, {
+    scope: new Set([id("finance"), id("hr"), id("group:engineering"), id("mech"), id("controls")]),
+    grouped: true,
+  });
+  assert.deepEqual(
+    keysOf(grouped).map((r) => [r.isParent ? r.title : r.key, r.depth]),
+    [
+      ["Engineering", 0],
+      ["DEPTE", 1],
+      ["Support", 0],
+      // Rank order inside a department: DEPTO holds a rank, DEPTF does not yet.
+      ["DEPTO", 1],
+      ["DEPTF", 1],
+    ],
+    "departments in the company's order, each above its projects",
+  );
+  assert.ok(
+    grouped.rows.filter((r) => r.isParent).every((r) => r.id < 0 && r.key === ""),
+    "a department's row is no project",
+  );
+
+  // A team the roster drops is switched off, not deleted: the project still says who it was for.
+  await syncDepartments(
+    db,
+    ORG.filter((u) => u.code !== "finance"),
+  );
+  assert.ok(!(await listDepartments(db)).some((d) => d.code === "finance"), "it is no longer offered");
+  assert.equal((await Q.listProjects(db, ana)).find((p) => p.id === fin.id)!.forDepartmentName, "Finance");
+  await refuses(
+    () => updateProject(db, ana, eng.id, { forDepartmentId: id("finance") }),
+    "invalid",
+    /Choose the department/,
+  );
+  await syncDepartments(db, ORG);
+  assert.ok(
+    (await listDepartments(db)).some((d) => d.code === "finance"),
+    "and comes back when the roster has it again",
+  );
 });

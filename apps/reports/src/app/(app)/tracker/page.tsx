@@ -5,7 +5,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";
 import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
-import { trackerActor } from "@/modules/tracker/current-actor";
+import { syncDepartmentsFromOrg, trackerActor } from "@/modules/tracker/current-actor";
+import { departmentScope, listDepartments } from "@/modules/tracker/service/departments";
+import { DepartmentFilter } from "@/modules/tracker/components/DepartmentPicker";
+import { byDepartment, departmentView, projectsFor } from "@/modules/tracker/components/format";
 import { listProjects, listValueBuckets } from "@/modules/tracker/service/queries";
 import { ProjectList } from "@/modules/tracker/components/ProjectList";
 import { PortfolioSummary } from "@/modules/tracker/components/PortfolioSummary";
@@ -13,7 +16,11 @@ import { PortfolioSummary } from "@/modules/tracker/components/PortfolioSummary"
 // The Project Tracker's front page. This file is deliberately thin (docs/MODULES.md): it checks
 // the app permission, works out who is asking, and hands the module's own data to the module's
 // own component. Everything else lives in src/modules/tracker.
-export default async function TrackerPage() {
+export default async function TrackerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ for?: string | string[]; group?: string | string[] }>;
+}) {
   const session = await requirePagePermission("tracker:view");
 
   if (!trackerConfigured()) {
@@ -30,8 +37,19 @@ export default async function TrackerPage() {
   }
 
   const actor = await trackerActor(session);
-  const projects = await listProjects(trackerDb, actor);
+  const everyProject = await listProjects(trackerDb, actor);
   const valueBuckets = await listValueBuckets(trackerDb);
+  // The departments are the company's own, copied from the roster before they are offered.
+  await syncDepartmentsFromOrg();
+  const departments = await listDepartments(trackerDb);
+
+  // ?for=12&group=1: which department's projects, and whether under a heading each. The
+  // figures above the table are of the projects shown, so they follow the filter.
+  const view = departmentView(await searchParams);
+  const chosen = departments.find((d) => d.id === view.forId) ?? null;
+  const shown = projectsFor(everyProject, chosen ? departmentScope(departments, chosen.id) : null);
+  const projects = view.grouped ? byDepartment(shown) : shown;
+  const partial = chosen != null || view.grouped;
 
   return (
     <div className={PAGE_SHELL}>
@@ -44,12 +62,24 @@ export default async function TrackerPage() {
         </Link>{" "}
         sets each person&apos;s hours, time off and the company holidays.
       </p>
+      <div className="mb-4">
+        <DepartmentFilter departments={departments} selected={chosen?.id ?? null} grouped={view.grouped} />
+      </div>
       <PortfolioSummary projects={projects} />
       <ProjectList
         projects={projects}
         valueBuckets={valueBuckets}
+        departments={departments}
+        grouped={view.grouped}
         canEdit={hasPermission(session.user.role, "tracker:edit")}
-        canRank={actor.admin === true}
+        // A rank is a place among every project, so it is only changed with all of them in
+        // view and in rank order.
+        canRank={actor.admin === true && !partial}
+        rankNote={
+          actor.admin === true && partial
+            ? "Ranks are shown, not changed, while the list is filtered or grouped. Show all departments, ungrouped, to change them."
+            : undefined
+        }
       />
     </div>
   );

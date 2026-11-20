@@ -205,9 +205,23 @@ function projectUnscheduledReason(p: ProjectListItem): string {
 export async function getPortfolioTimeline(
   db: Database,
   actor: Actor,
+  view: {
+    /** Only the projects that are for one of these departments (see departmentScope). Null for all. */
+    scope?: Set<number> | null;
+    /** A row per department above its projects, spanning them, with the projects one level in. */
+    grouped?: boolean;
+  } = {},
 ): Promise<Pick<Timeline, "rows" | "links" | "forecastAsOf">> {
   // listProjects applies the "only your projects, or all for an admin" rule.
-  const projects = (await listProjects(db, actor)).filter((p) => p.state !== "completed" && p.state !== "cancelled");
+  const open = (await listProjects(db, actor)).filter((p) => p.state !== "completed" && p.state !== "cancelled");
+  const scope = view.scope ?? null;
+  const inScope = scope ? open.filter((p) => p.forDepartmentId != null && scope.has(p.forDepartmentId)) : open;
+  // Grouped: a department's projects together, departments in the company's order, none last.
+  // The sort is stable, so each department's projects stay in stack-rank order.
+  const last = Number.MAX_SAFE_INTEGER;
+  const projects = view.grouped
+    ? [...inScope].sort((a, b) => (a.forGroupSort ?? last) - (b.forGroupSort ?? last))
+    : inScope;
   const visible = new Set(projects.map((p) => p.id));
 
   return db.transaction(async (tx) => {
@@ -233,30 +247,73 @@ export async function getPortfolioTimeline(
     );
     const run = await tx.query<{ as_of: string }>(`SELECT as_of_date::text AS as_of FROM tracker.current_schedule_run`);
 
-    return {
-      rows: projects.map((p): TimelineRow => {
-        const finish = p.forecastFinish;
-        const state = p.state.replace("_", " ");
-        return {
-          id: p.id,
-          key: p.key,
-          title: p.name,
-          kindLabel: "Task", // the default kind goes unmarked, which is what a project row wants
+    const projectRows = projects.map((p): TimelineRow => {
+      const finish = p.forecastFinish;
+      const state = p.state.replace("_", " ");
+      return {
+        id: p.id,
+        key: p.key,
+        title: p.name,
+        kindLabel: "Task", // the default kind goes unmarked, which is what a project row wants
+        type: "task",
+        depth: view.grouped ? 1 : 0,
+        isParent: false,
+        statusName: state.charAt(0).toUpperCase() + state.slice(1),
+        category: p.state === "active" ? "in_progress" : "todo",
+        assigneeName: `owner ${p.ownerName}`,
+        start: finish ? (startOf.get(p.id) ?? finish) : null,
+        finish,
+        p80Finish: finish && p.p80Finish && p.p80Finish > finish ? p.p80Finish : null,
+        dueDate: p.targetDate,
+        doneOn: null,
+        unscheduledReason: finish ? null : projectUnscheduledReason(p),
+        uncountedHours: null,
+      };
+    });
+
+    // A department's own row: no dates of its own, a bar from the first start to the last
+    // finish among its projects. Its id is negative so it can never be taken for a project's,
+    // which is what the links and the "closed" list in the address go by.
+    const rows: TimelineRow[] = [];
+    projects.forEach((p, i) => {
+      if (view.grouped && (i === 0 || projects[i - 1]!.forGroupId !== p.forGroupId)) {
+        const mine = projects
+          .map((x, j) => ({ x, row: projectRows[j]! }))
+          .filter(({ x }) => x.forGroupId === p.forGroupId)
+          .map(({ row }) => row);
+        const starts = mine
+          .map((r) => r.start)
+          .filter((d): d is string => d != null)
+          .sort();
+        const finishes = mine
+          .map((r) => r.finish)
+          .filter((d): d is string => d != null)
+          .sort();
+        rows.push({
+          id: -(p.forGroupId ?? 0) - 1,
+          key: "",
+          title: p.forGroupName ?? "No department yet",
+          kindLabel: "Department",
           type: "task",
           depth: 0,
-          isParent: false,
-          statusName: state.charAt(0).toUpperCase() + state.slice(1),
-          category: p.state === "active" ? "in_progress" : "todo",
-          assigneeName: `owner ${p.ownerName}`,
-          start: finish ? (startOf.get(p.id) ?? finish) : null,
-          finish,
-          p80Finish: finish && p.p80Finish && p.p80Finish > finish ? p.p80Finish : null,
-          dueDate: p.targetDate,
+          isParent: true,
+          statusName: `${mine.length} project${mine.length === 1 ? "" : "s"}`,
+          category: "todo",
+          assigneeName: null,
+          start: starts[0] ?? null,
+          finish: finishes[finishes.length - 1] ?? null,
+          p80Finish: null,
+          dueDate: null,
           doneOn: null,
-          unscheduledReason: finish ? null : projectUnscheduledReason(p),
+          unscheduledReason: null,
           uncountedHours: null,
-        };
-      }),
+        });
+      }
+      rows.push(projectRows[i]!);
+    });
+
+    return {
+      rows,
       links: waits.rows
         .map((w) => ({ fromId: Number(w.from_project), toId: Number(w.to_project), lagDays: 0 }))
         .filter((l) => visible.has(l.fromId) && visible.has(l.toId)),

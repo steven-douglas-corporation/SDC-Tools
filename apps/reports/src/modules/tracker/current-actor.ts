@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { trackerDb } from "./db";
 import type { Actor } from "./service/database";
 import { ensurePeople, ensurePerson } from "./service/projects";
+import { syncDepartments } from "./service/departments";
+import { orgUnits } from "./org-units";
 
 // The bridge between this app's signed-in user and the tracker's own record of a person.
 // The two are matched by email, which is the one thing every sign-in path agrees on.
@@ -32,4 +34,15 @@ export async function syncPeopleFromUsers(): Promise<void> {
     trackerDb,
     users.map((u) => ({ email: u.email, displayName: u.name })),
   );
+}
+
+/**
+ * Copies the company's departments into the tracker: the teams that active employees are on,
+ * grouped as the org chart groups them (./org-units.ts). Called by the pages that offer a
+ * department to choose or filter by. One grouped read here, and no write at all unless the
+ * roster's teams have changed since the last time.
+ */
+export async function syncDepartmentsFromOrg(): Promise<void> {
+  const teams = await prisma.employee.groupBy({ by: ["team"], where: { active: true, team: { not: null } } });
+  await syncDepartments(trackerDb, orgUnits(teams.map((t) => t.team)));
 }

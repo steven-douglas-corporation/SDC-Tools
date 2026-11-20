@@ -49,7 +49,7 @@ function Mark({ children, label }: { children: React.ReactNode; label: string })
   );
 }
 
-function Legend({ of, stale }: { of: "cards" | "projects"; stale: boolean }) {
+function Legend({ of, stale, grouped }: { of: "cards" | "projects"; stale: boolean; grouped: boolean }) {
   const cards = of === "cards";
   return (
     <ul aria-label="What the marks mean" className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-sdc-gray-600">
@@ -69,6 +69,11 @@ function Legend({ of, stale }: { of: "cards" | "projects"; stale: boolean }) {
       </Mark>
       {cards && (
         <Mark label="Has cards under it; spans them">
+          <span className="h-2 w-full rounded-sm bg-sdc-navy" />
+        </Mark>
+      )}
+      {!cards && grouped && (
+        <Mark label="A department; spans its projects">
           <span className="h-2 w-full rounded-sm bg-sdc-navy" />
         </Mark>
       )}
@@ -264,8 +269,8 @@ export function Timeline({
                     href={toggleHref(shut.has(r.id) ? closed.filter((id) => id !== r.id) : [...closed, r.id])}
                     scroll={false}
                     aria-expanded={!shut.has(r.id)}
-                    aria-label={`${shut.has(r.id) ? "Show" : "Hide"} the cards under ${r.key}`}
-                    title={`${shut.has(r.id) ? "Show" : "Hide"} the cards under ${r.key}`}
+                    aria-label={`${shut.has(r.id) ? "Show" : "Hide"} the ${of === "projects" ? "projects" : "cards"} under ${r.key || r.title}`}
+                    title={`${shut.has(r.id) ? "Show" : "Hide"} the ${of === "projects" ? "projects" : "cards"} under ${r.key || r.title}`}
                     className="relative flex h-4 w-4 shrink-0 items-center justify-center rounded bg-white text-sdc-gray-600 hover:bg-sdc-gray-100 hover:text-sdc-navy"
                   >
                     {shut.has(r.id) ? "\u25B8" : "\u25BE"}
@@ -273,9 +278,12 @@ export function Timeline({
                 ) : (
                   <span className="w-4 shrink-0" />
                 ))}
-              <Link href={hrefFor(r)} className="font-mono font-semibold text-sdc-blue hover:underline">
-                {r.key}
-              </Link>
+              {/* A department's row on the timeline of all projects has a name and no key. */}
+              {r.key && (
+                <Link href={hrefFor(r)} className="font-mono font-semibold text-sdc-blue hover:underline">
+                  {r.key}
+                </Link>
+              )}
               <span
                 title={r.title}
                 className={`truncate ${r.isParent ? "font-semibold text-sdc-navy" : "text-sdc-navy"} ${
@@ -366,7 +374,7 @@ export function Timeline({
                 b ? `${shortDate(r.start)} to ${shortDate(r.finish)}` : null,
                 r.p80Finish ? `safe date ${shortDate(r.p80Finish)}` : null,
                 r.dueDate ? `due ${shortDate(r.dueDate)}` : null,
-                r.isParent ? "spans the cards under it" : r.assigneeName,
+                r.isParent ? (of === "projects" ? "spans its projects" : "spans the cards under it") : r.assigneeName,
                 r.statusName,
               ]
                 .filter(Boolean)
@@ -491,7 +499,7 @@ export function Timeline({
         </div>
       </div>
 
-      <Legend of={of} stale={stale} />
+      <Legend of={of} stale={stale} grouped={parents.length > 0} />
       {stale && (
         <p role="status" className="text-xs font-semibold text-sdc-yellow-text">
           This forecast was made for {shortDate(today)}, not today, so its dates may be out of date. It is redone

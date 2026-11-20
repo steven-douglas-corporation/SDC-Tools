@@ -20,6 +20,13 @@ export interface ProjectListItem {
   valueBucketId: number | null;
   /** What it is worth in a year, as the range's own words, e.g. "$50k to $250k a year". */
   valueLabel: string | null;
+  /** The department the project is for. Null only on a project made before this was asked for. */
+  forDepartmentId: number | null;
+  forDepartmentName: string | null;
+  /** The group that department sits in, or the department itself when it stands alone. Lists are grouped by it. */
+  forGroupId: number | null;
+  forGroupName: string | null;
+  forGroupSort: number | null;
   targetDate: string | null;
   taskCount: number;
   doneCount: number;
@@ -47,6 +54,11 @@ interface ProjectRow {
   justification: string | null;
   value_bucket_id: number | null;
   value_label: string | null;
+  for_team_id: number | null;
+  for_name: string | null;
+  for_group_id: number | null;
+  for_group_name: string | null;
+  for_group_sort: number | null;
   target_date: string | null;
   task_count: string | number | null;
   done_count: string | number | null;
@@ -65,6 +77,8 @@ interface ProjectRow {
 const PROJECT_COLUMNS = `
   r.project_id, r.key, r.name, r.state, r.portfolio_rank, o.display_name AS owner_name, r.owner_person_id,
   pj.justification, pj.value_bucket_id, vb.label AS value_label,
+  pj.for_team_id, fd.name AS for_name, coalesce(fg.id, fd.id) AS for_group_id,
+  coalesce(fg.name, fd.name) AS for_group_name, coalesce(fg.sort_order, fd.sort_order) AS for_group_sort,
   r.target_date::text, r.task_count, r.done_count, r.remaining_hours::float8,
   r.forecast_completion_date::text AS forecast_finish, r.p80_finish::text, r.at_risk, r.at_risk_basis,
   r.unscheduled_tasks, r.unestimated_tasks, r.stale_tasks, r.next_milestone, m.role AS my_role`;
@@ -81,6 +95,11 @@ function toProject(r: ProjectRow, admin: boolean): ProjectListItem {
     justification: r.justification,
     valueBucketId: r.value_bucket_id == null ? null : Number(r.value_bucket_id),
     valueLabel: r.value_label,
+    forDepartmentId: r.for_team_id == null ? null : Number(r.for_team_id),
+    forDepartmentName: r.for_name,
+    forGroupId: r.for_group_id == null ? null : Number(r.for_group_id),
+    forGroupName: r.for_group_name,
+    forGroupSort: r.for_group_sort == null ? null : Number(r.for_group_sort),
     targetDate: r.target_date,
     taskCount: Number(r.task_count ?? 0),
     doneCount: Number(r.done_count ?? 0),
@@ -110,6 +129,8 @@ export async function listProjects(db: Database, actor: Actor): Promise<ProjectL
          JOIN tracker.person o ON o.id = r.owner_person_id
          JOIN tracker.project pj ON pj.id = r.project_id
     LEFT JOIN tracker.value_bucket vb ON vb.id = pj.value_bucket_id
+    LEFT JOIN tracker.team fd ON fd.id = pj.for_team_id
+    LEFT JOIN tracker.team fg ON fg.id = fd.parent_team_id
     LEFT JOIN tracker.project_member m ON m.project_id = r.project_id AND m.person_id = $1
         WHERE $2::boolean OR m.role IS NOT NULL
         ORDER BY (r.state IN ('completed', 'cancelled')), r.portfolio_rank NULLS LAST, r.key`,
@@ -350,6 +371,8 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
          JOIN tracker.person o ON o.id = r.owner_person_id
          JOIN tracker.project pj ON pj.id = r.project_id
     LEFT JOIN tracker.value_bucket vb ON vb.id = pj.value_bucket_id
+    LEFT JOIN tracker.team fd ON fd.id = pj.for_team_id
+    LEFT JOIN tracker.team fg ON fg.id = fd.parent_team_id
     LEFT JOIN tracker.project_member m ON m.project_id = r.project_id AND m.person_id = $1
         WHERE r.key = $2`,
       [actor.personId, projectKey.toUpperCase()],
