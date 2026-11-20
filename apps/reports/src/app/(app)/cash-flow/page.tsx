@@ -5,11 +5,12 @@ import { requireEltOnly } from "@/lib/cash-flow-access";
 import { getProjectEstimates, getCashFlowLines, resolveAsOf, listSnapshots, getLatestSnapshotSummary } from "@/lib/cash-flow";
 import { CashFlowClient } from "@/components/CashFlowClient";
 import { CashFlowLeftToInvoiceSplit } from "@/components/CashFlowLeftToInvoiceSplit";
-import { isValidMonth } from "@/lib/etc";
-import { monthEndLabel } from "@/lib/left-to-invoice";
+import { currentMonth, isValidMonth, round2 } from "@/lib/etc";
+import { monthEndLabel, resolveLeftToInvoice } from "@/lib/left-to-invoice";
+import { showsPartsBreakout } from "@/lib/parts-breakout-scope";
 import { getEtcSplitJobs, resolveSplitMonth } from "@/lib/etc-split-jobs";
 import { readPartsEtcBreakout } from "@/lib/parts-etc-breakout";
-import { buildOverview, pickBuckets, type JobBuckets, type LeftToInvoiceBuckets } from "@/lib/left-to-invoice-by-month";
+import { buildOverview, type JobBuckets } from "@/lib/left-to-invoice-by-month";
 
 // Cash Flow Forecast — ELT-only (see cash-flow-access.ts's own header for
 // why this is a hard role check, not a togglable Permission). "Current" is
@@ -32,33 +33,45 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
   // resolution below throws first.
   const estimatesPromise = getProjectEstimates();
   const snapshotsPromise = listSnapshots();
-  // "Monthly ETC - Left to Invoice Split" (moved here from Monthly ETC): always live, as of
-  // today by default (month null = no cutoff, so it moves as POs are received and invoices
-  // post), or through the month end picked with `lti` — then only POs purchased and invoices
-  // posted on or before that day count, exactly as Monthly ETC computes a month. Never throws — a
-  // Total ETO outage costs this table, not the forecast below it.
+  // "Monthly ETC - Left to Invoice Split" (moved here from Monthly ETC). Never throws — a Total ETO
+  // outage costs this table, not the forecast below it.
   //
   // The JOBS are the Monthly ETC grid's own (lib/etc-split-jobs.ts), in the grid's order, so this
   // table's Total ties to the Monthly ETC Parts Cost Left to Invoice column. They used to be every
   // project in Total ETO, which added jobs the grid does not list (60 vs 42 on 2026-11-20).
+  //
+  // THE DAY the figures are measured on follows Monthly ETC too: it counts a month as of that
+  // month's last day. So the cutoff is the picked `lti` month, else — when the ETC month being shown
+  // is already over — that month's end (December 3rd, before December's ETC exists, still reads
+  // November as of November 30th, exactly like Monthly ETC). Only while the ETC month is the current
+  // one is it "today (live)", which is the same figure for that month.
   const splitPromise = resolveSplitMonth(ltiMonth)
-    .then((month) => getEtcSplitJobs(month))
-    .then((etcJobs) => readPartsEtcBreakout(etcJobs.map((j) => ({ pk: j.pk, jobNumber: j.jobId })), ltiMonth).then((r) => ({ etcJobs, r })))
-    .then(({ etcJobs, r }) => {
-      const jobs: (JobBuckets & { payBuckets: LeftToInvoiceBuckets })[] = [];
+    .then(async (month) => {
+      const etcJobs = await getEtcSplitJobs(month);
+      const cutoff = ltiMonth ?? (month < currentMonth() ? month : null);
+      const r = etcJobs.length > 0 ? await readPartsEtcBreakout(etcJobs.map((j) => ({ pk: j.pk, jobNumber: j.jobId })), cutoff) : null;
+      const base = { month, cutoff, hasColumn: showsPartsBreakout(month) };
+      // Nothing to split, said as such: no ETC jobs for the month (not started, or before ETC history),
+      // or Total ETO could not be read. Neither may read as "Nothing left to invoice".
+      if (r === null) return { ...base, status: "no-jobs" as const, payOverview: buildOverview([], "given"), overrides: 0 };
+      if (r.linesFailed) return { ...base, status: "failed" as const, payOverview: buildOverview([], "given"), overrides: 0 };
+      const jobs: JobBuckets[] = [];
       let overrides = 0;
       for (const j of etcJobs) {
         const b = r.byJobPk.get(j.pk);
-        if (!b?.byRequiredMonth) continue;
-        jobs.push({ jobId: j.jobId, jobName: j.jobName, buckets: b.byRequiredMonth, payBuckets: b.byPaymentMonth ?? b.byRequiredMonth });
+        const buckets = b?.byPaymentMonth;
+        if (!b || !buckets) continue;
+        jobs.push({ jobId: j.jobId, jobName: j.jobName, buckets });
         // A manager-typed figure replaces Total ETO's on the Monthly ETC cell; it cannot be split by
-        // date, so this table keeps Total ETO's and says how many rows differ.
-        if (j.override != null && b.rawLeftToInvoice != null && Math.abs(j.override - Math.round(b.rawLeftToInvoice * 100) / 100) > 0.004) overrides++;
+        // date, so this table keeps Total ETO's and says how many rows differ. Judged by the same
+        // rule the Monthly ETC cell uses (resolveLeftToInvoice), not a copy of it.
+        const resolved = resolveLeftToInvoice({
+          computed: b.rawLeftToInvoice == null ? null : round2(b.rawLeftToInvoice),
+          stored: j.override,
+        });
+        if (resolved.overridden) overrides++;
       }
-      return {
-        payOverview: buildOverview(pickBuckets(jobs, (j) => j.payBuckets), "given"),
-        overrides,
-      };
+      return { ...base, status: "ok" as const, payOverview: buildOverview(jobs, "given"), overrides };
     })
     .catch((e) => {
       console.error("[cash-flow] left to invoice split failed:", e);
@@ -101,8 +114,11 @@ export async function CashFlowView({ params }: { params: { as?: string; compare?
       {split && (
         <CashFlowLeftToInvoiceSplit
           payOverview={split.payOverview}
-          asOfLabel={ltiMonth ? monthEndLabel(ltiMonth) : `today, ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`}
-          cutoffMonth={ltiMonth}
+          status={split.status}
+          month={split.month}
+          hasColumn={split.hasColumn}
+          asOfLabel={split.cutoff ? monthEndLabel(split.cutoff) : `today, ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`}
+          cutoffMonth={split.cutoff}
           overrides={split.overrides}
         />
       )}

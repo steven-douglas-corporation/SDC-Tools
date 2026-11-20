@@ -24,6 +24,9 @@ export function CashFlowLeftToInvoiceSplit({
   asOfLabel,
   cutoffMonth,
   overrides = 0,
+  status,
+  month,
+  hasColumn,
 }: {
   /** Every job's Left to Invoice with each month moved NET_TERMS_DAYS after the required date (expected payment month). */
   payOverview: LeftToInvoiceOverview;
@@ -33,6 +36,12 @@ export function CashFlowLeftToInvoiceSplit({
   cutoffMonth: string | null;
   /** Jobs whose Monthly ETC Left to Invoice cell holds a manager's figure instead of Total ETO's. */
   overrides?: number;
+  /** "failed": Total ETO could not be read. "no-jobs": Monthly ETC has no jobs for `month`. Neither is "nothing left to invoice". */
+  status: "ok" | "failed" | "no-jobs";
+  /** The Monthly ETC month whose jobs are listed. */
+  month: string;
+  /** Does Monthly ETC have a Left to Invoice column for `month`? (August 2026 on.) */
+  hasColumn: boolean;
 }) {
   const { rows, totals } = payOverview;
   const overduePct = totals.sum > 0 ? Math.round((totals.overdue / totals.sum) * 100) : 0;
@@ -50,7 +59,16 @@ export function CashFlowLeftToInvoiceSplit({
       </summary>
       <div className="border-t border-sdc-border">
         <LeftToInvoiceCutoffPicker month={cutoffMonth} />
-        {rows.length === 0 ? (
+        {status === "failed" ? (
+          <p className="border-t border-sdc-border px-4 py-3 text-sdc-muted">
+            Left to Invoice could not be read from Total ETO just now, so nothing is shown here. This is not a $0 balance — refresh to try again.
+          </p>
+        ) : status === "no-jobs" ? (
+          <p className="border-t border-sdc-border px-4 py-3 text-sdc-muted">
+            Monthly ETC has no jobs for {monthName(month)} (that month has not been started, or it is before ETC history), so there is nothing to split.
+            Pick another month.
+          </p>
+        ) : rows.length === 0 ? (
           <p className="border-t border-sdc-border px-4 py-3 text-sdc-muted">Nothing left to invoice as of {asOfLabel}.</p>
         ) : (
           <>
@@ -58,7 +76,10 @@ export function CashFlowLeftToInvoiceSplit({
               Parts Left to Invoice — Monthly ETC jobs, by expected payment month (required date + {NET_TERMS_DAYS} days)
             </h3>
             <p className="px-4 pb-2 text-note leading-relaxed text-sdc-gray-600">
-              The same jobs, in the same order, as the Monthly ETC grid, so the Total ties to its Parts Cost Left to Invoice column.
+              The same jobs, in the same order, as the Monthly ETC grid for {monthName(month)}.{" "}
+              {hasColumn
+                ? "The Total ties to that grid's Parts Cost Left to Invoice column, as long as its Billable filter is off."
+                : "Monthly ETC has no Left to Invoice column for that month, so there is nothing to tie to."}
               {overrides > 0 &&
                 ` ${overrides} job${overrides === 1 ? " has" : "s have"} a manually typed Left to Invoice on Monthly ETC; this table shows Total ETO's figure for ${overrides === 1 ? "it" : "them"}, so those rows can differ.`}
             </p>

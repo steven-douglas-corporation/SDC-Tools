@@ -144,7 +144,7 @@ export function pickBuckets<T extends { jobId: string; jobName: string }>(jobs: 
 export type LeftToInvoiceOverview = {
   /** Ascending `YYYY-MM`, every month any job has money in. */
   months: string[];
-  /** Jobs with a non-zero balance, largest first. */
+  /** Jobs with a non-zero balance, largest first (`order: "largest"`); every job in the caller's order for `"given"`. */
   rows: (JobBuckets & { sum: number })[];
   totals: { overdue: number; months: Record<string, number>; noDate: number; sum: number };
 };

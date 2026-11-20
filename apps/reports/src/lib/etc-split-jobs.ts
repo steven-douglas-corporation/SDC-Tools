@@ -1,7 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { compareJobIds } from "@/lib/job-filters";
-import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
-import { currentMonth } from "@/lib/etc";
+import { defaultEtcMonth, getEtcMonthJobWhere, sortEtcGridJobs } from "@/lib/etc-month-jobs";
 import { PARTS_COST_SECTION } from "@/lib/sections";
 
 // ── The jobs behind the Cash Flow "Left to Invoice Split" ────────────────────
@@ -31,7 +29,7 @@ export type EtcSplitJob = {
 export async function resolveSplitMonth(ltiMonth: string | null): Promise<string> {
   if (ltiMonth) return ltiMonth;
   const latest = await prisma.etcEntry.findFirst({ orderBy: { month: "desc" }, select: { month: true } });
-  return latest?.month ?? currentMonth();
+  return defaultEtcMonth(latest?.month);
 }
 
 /** The month's jobs, exactly as the Monthly ETC grid lists and orders them. */
@@ -48,11 +46,7 @@ export async function getEtcSplitJobs(month: string): Promise<EtcSplitJob[]> {
       etcEntries: { where: { month, section: PARTS_COST_SECTION }, select: { leftToInvoice: true } },
     },
   });
-  // Same two-step order as the grid (etc/page.tsx): Job Id numerically, then active T&M last.
-  // Array#sort is stable, so the second pass only moves rows across the T&M boundary.
-  const isActiveTm = (j: { status: string | null; type: string | null }) => j.status === "Active" && j.type === "T&M";
-  jobs.sort((a, b) => compareJobIds(a.jobId, b.jobId));
-  jobs.sort((a, b) => Number(isActiveTm(a)) - Number(isActiveTm(b)));
+  sortEtcGridJobs(jobs); // the grid's own order — one shared rule
   return jobs
     .filter((j) => j.jobId && j.etcEntries.length > 0)
     .map((j) => ({

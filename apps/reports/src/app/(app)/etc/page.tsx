@@ -10,7 +10,7 @@ import { ETC_DEPT_GROUPS, hiddenFromEtcParams } from "@/lib/etc-view";
 import { ETC_VIEW_COOKIE, hasExplicitEtcView, parseEtcViewCookie } from "@/lib/etc-view-cookie";
 import { bandColSpan } from "@/lib/grid-view";
 import { ExportMenu } from "@/components/ExportMenu";
-import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
+import { defaultEtcMonth, getEtcMonthJobWhere, isActiveTm, sortEtcGridJobs } from "@/lib/etc-month-jobs";
 import { getEtcMonthKpis } from "@/lib/etc-month-kpis";
 import { getUndefinedHoursTotals } from "@/lib/unattributed-hours";
 import { EtcMonthKpiCards } from "@/components/EtcMonthKpiCards";
@@ -607,7 +607,7 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
   ]);
   // A malformed ?month= (typo'd URL) must not flow into queries/date math —
   // fall back to the default month instead of rendering a nonsense view.
-  const month = (monthParam && isValidMonth(monthParam) ? monthParam : undefined) || distinctMonths[0]?.month || currentMonth();
+  const month = (monthParam && isValidMonth(monthParam) ? monthParam : undefined) || defaultEtcMonth(distinctMonths[0]?.month);
 
   // ── Do Left to Invoice / Left to Purchase exist for this month? ───────────
   //
@@ -817,21 +817,10 @@ export async function MonthlyEtcView({ params }: { params: { month?: string; dep
     }))
     .sort((a, b) => b.hours - a.hours);
 
-  // Numeric Job Id order like the sheet (979 before 1020 before 10000) — the
-  // column is a string, so the DB's own sort is lexicographic.
-  jobs.sort((a, b) => compareJobIds(a.jobId, b.jobId));
-
-  // Active T&M jobs sink to the BOTTOM, whatever the Job Id order says.
-  //
-  // Time & materials is billed as it is worked, so an ETC on one is a different
-  // kind of number from a fixed-quote estimate — grouping them out of the main
-  // sequence keeps the two from being read as one list. Same device the Projects
-  // grid uses to sink SDC's own jobs.
-  //
-  // Array#sort is stable, so this only moves rows across the T&M boundary and
-  // leaves the Job Id order within each group untouched.
-  const isActiveTm = (j: { status: string | null; type: string | null }) => j.status === "Active" && j.type === "T&M";
-  jobs.sort((a, b) => Number(isActiveTm(a)) - Number(isActiveTm(b)));
+  // Numeric Job Id order like the sheet (979 before 1020 before 10000), with active T&M jobs
+  // sunk to the BOTTOM — one shared rule (lib/etc-month-jobs.ts), because the Cash Flow Left to
+  // Invoice split lists these same jobs and must keep the same order.
+  sortEtcGridJobs(jobs);
 
   // Rows the grid actually renders after the Billable filter. The FULL `jobs`
   // set still drives month status (started/locked/pending) and submission —
