@@ -332,7 +332,7 @@ const TRACKER_GROUP: NavGroup = {
   ],
 };
 
-// Admin is an area of its own, opened from the gear beside the signed-in person's name. It
+// Admin is an area of its own, opened from the launcher at the top of the sidebar. It
 // was a group at the foot of the one menu; it is kept as a group, shown alone, so its pages
 // are still ordinary sidebar items that can be opened in a tab or in Split View.
 const ADMIN_GROUP: NavGroup = {
@@ -499,7 +499,7 @@ export default function Sidebar({
     .filter((g) => g.items.length > 0);
   // The tools page has no menu of its own, so the things that act on a menu are left off it.
   const onHome = sidebarPath === "/";
-  // Where the gear leads: the first Admin page this person may open. None, no gear.
+  // Where the launcher's Admin entry leads: the first Admin page this person may open.
   const adminHref = ADMIN_GROUP.items.find((i) => visibleHrefs.includes(i.gate ?? i.href))?.href;
 
   // The SAME list, shared with the workspace's tab bar so its "+" and Split View
@@ -744,12 +744,12 @@ export default function Sidebar({
         </div>
       </Link>
 
-      {/* With one tool there is nothing to switch between, except from Admin, where the
-          launcher is the way back to it. */}
-      {(tools.length > 1 || (currentTool === "admin" && tools.length > 0)) && (
+      {/* Shown to anyone with somewhere else to go: a second tool, or Admin. */}
+      {(tools.length > 1 || adminHref) && (
         <ToolLauncher
           tools={tools}
           current={currentTool}
+          adminHref={adminHref}
           collapsed={collapsed}
           railItemClass={RAIL_ITEM}
           scheduler={
@@ -1319,30 +1319,6 @@ export default function Sidebar({
             </form>
             )}
           </div>
-          {/* Admin: users, permissions, the audit log, feedback. Shown to anyone who may
-              open at least one of them. */}
-          {adminHref && (
-            <Link
-              href={adminHref}
-              title="Admin"
-              aria-label="Admin"
-              aria-current={currentTool === "admin" ? "true" : undefined}
-              className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] motion-interactive hover:bg-[#0E3157] hover:text-[#F3F6FA] ${
-                currentTool === "admin" ? "bg-[#0E3157] text-[#F3F6FA]" : "text-[#8FA6BE]"
-              }`}
-            >
-              <span className="flex h-4 w-4 items-center justify-center">
-                <Icon>
-                  <circle cx="8" cy="8" r="2" />
-                  <circle cx="8" cy="8" r="4.6" />
-                  <path
-                    d="M8 1.4 V3.4 M8 12.6 V14.6 M1.4 8 H3.4 M12.6 8 H14.6 M3.3 3.3 L4.75 4.75 M11.25 11.25 L12.7 12.7 M3.3 12.7 L4.75 11.25 M11.25 4.75 L12.7 3.3"
-                    strokeLinecap="round"
-                  />
-                </Icon>
-              </span>
-            </Link>
-          )}
         </div>
 
         {/* The running application version. In the sidebar, so it is on every tab

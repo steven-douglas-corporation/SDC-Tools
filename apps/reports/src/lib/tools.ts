@@ -12,9 +12,9 @@
 export type ToolId = "reports" | "tracker";
 
 /**
- * A tool, or Admin. Admin is not a tool: it has no tile and is not in the launcher. It is
- * the pages every tool shares (users, permissions, the audit log, feedback), reached from
- * the gear beside the signed-in person's name, with a menu of its own when it is open.
+ * A tool, or Admin. Admin is not a tool and has no tile: it is the pages every tool shares
+ * (users, permissions, the audit log, feedback). It is listed in the launcher beside the
+ * tools, and has a menu of its own when it is open.
  */
 export type AreaId = ToolId | "admin";
 

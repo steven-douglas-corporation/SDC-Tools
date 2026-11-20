@@ -5,8 +5,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { AreaId, Tool } from "@/lib/tools";
 
 // The launcher at the top of the sidebar: which tool is open, and a short list for moving
-// to another. Rendered only for someone with more than one tool; with a single tool there
-// is nothing to switch between and the sidebar is exactly as it was.
+// to another, or to Admin. Rendered only for someone with somewhere else to go: with a
+// single tool and no Admin pages the sidebar is exactly as it was.
 //
 // A grid of dots, not three lines: three lines reads as "show or hide this menu", and the
 // sidebar already has a Collapse control.
@@ -27,6 +27,7 @@ export function ToolLauncher({
   current,
   collapsed,
   railItemClass,
+  adminHref,
   scheduler,
 }: {
   tools: Tool[];
@@ -36,6 +37,8 @@ export function ToolLauncher({
   /** The sidebar's own class for an icon-only row in the collapsed rail. */
   railItemClass: string;
   /** The link out to the SDC Scheduler, with the click handling the sidebar already gives it. */
+  /** The first Admin page this person may open. Absent, Admin is not listed. */
+  adminHref?: string;
   scheduler?: { href: string; onClick: (e: React.MouseEvent<HTMLAnchorElement>) => void; inShell: boolean };
 }) {
   const [open, setOpen] = useState(false);
@@ -105,14 +108,17 @@ export function ToolLauncher({
             collapsed ? "left-full top-0 ml-2 w-60" : "inset-x-[14px] top-full -mt-[6px]"
           }`}
         >
-          <Link
-            href="/"
-            onClick={() => setOpen(false)}
-            aria-current={current === null ? "page" : undefined}
-            className={`${ROW} ${current === null ? "bg-[#0E3157] text-[#F3F6FA]" : ""}`}
-          >
-            All tools
-          </Link>
+          {/* With a single tool the tools page only sends the person back to it. */}
+          {tools.length > 1 && (
+            <Link
+              href="/"
+              onClick={() => setOpen(false)}
+              aria-current={current === null ? "page" : undefined}
+              className={`${ROW} ${current === null ? "bg-[#0E3157] text-[#F3F6FA]" : ""}`}
+            >
+              All tools
+            </Link>
+          )}
           {tools.map((t) => (
             <Link
               key={t.id}
@@ -127,6 +133,20 @@ export function ToolLauncher({
               </span>
             </Link>
           ))}
+          {/* Listed so that whatever the button names as open is one of the choices here. */}
+          {adminHref && (
+            <Link
+              href={adminHref}
+              onClick={() => setOpen(false)}
+              aria-current={current === "admin" ? "true" : undefined}
+              className={`${ROW} ${current === "admin" ? "bg-[#0E3157] text-[#F3F6FA]" : ""}`}
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-semibold">Admin</span>
+                <span className="block truncate text-note text-[#7E93AC]">Users, permissions and logs</span>
+              </span>
+            </Link>
+          )}
           {scheduler && (
             <a
               href={scheduler.href}
