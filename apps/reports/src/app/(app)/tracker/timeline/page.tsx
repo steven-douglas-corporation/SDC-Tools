@@ -16,13 +16,19 @@ import { Timeline } from "@/modules/tracker/components/Timeline";
 export default async function TrackerPortfolioTimelinePage({
   searchParams,
 }: {
-  searchParams: Promise<{ for?: string | string[]; group?: string | string[]; closed?: string | string[] }>;
+  searchParams: Promise<{
+    for?: string | string[];
+    group?: string | string[];
+    closed?: string | string[];
+    done?: string | string[];
+  }>;
 }) {
   const session = await requirePagePermission("tracker:view");
   if (!trackerConfigured()) notFound();
   // The same two choices as the project list, read from the address the same way.
   const params = await searchParams;
   const view = departmentView(params);
+  const finished = (Array.isArray(params.done) ? params.done[0] : params.done) === "1";
   await syncDepartmentsFromOrg();
   const departments = await listDepartments(trackerDb);
   const chosen = departments.find((d) => d.id === view.forId) ?? null;
@@ -31,6 +37,7 @@ export default async function TrackerPortfolioTimelinePage({
     grouped: view.grouped,
     lens: view.lens,
     level: view.level,
+    finished,
   });
   // ?closed=-3,-7: the departments whose projects are hidden. A department's row has a negative id.
   const closed = (Array.isArray(params.closed) ? params.closed.join(",") : (params.closed ?? ""))
@@ -42,6 +49,7 @@ export default async function TrackerPortfolioTimelinePage({
     if (chosen) query.set("for", String(chosen.id));
     if (view.grouped) query.set("group", view.level === "team" ? "team" : "1");
     if (view.lens === "by") query.set("dept", "by");
+    if (finished) query.set("done", "1");
     if (ids.length) query.set("closed", ids.join(","));
     const text = query.toString();
     return text ? `/tracker/timeline?${text}` : "/tracker/timeline";
@@ -57,6 +65,23 @@ export default async function TrackerPortfolioTimelinePage({
         <span className="text-sdc-gray-600">Timeline</span>
       </p>
       <PageTitle className="mb-3">Timeline of all projects</PageTitle>
+      <p className="mb-3 text-sm">
+        <Link
+          href={(() => {
+            const query = new URLSearchParams();
+            if (chosen) query.set("for", String(chosen.id));
+            if (view.grouped) query.set("group", view.level === "team" ? "team" : "1");
+            if (view.lens === "by") query.set("dept", "by");
+            if (!finished) query.set("done", "1");
+            const text = query.toString();
+            return text ? `/tracker/timeline?${text}` : "/tracker/timeline";
+          })()}
+          scroll={false}
+          className="font-semibold text-sdc-blue hover:underline"
+        >
+          {finished ? "Hide finished projects" : "Show finished projects"}
+        </Link>
+      </p>
       <div className="mb-4">
         <DepartmentFilter
           departments={departments}
@@ -73,6 +98,7 @@ export default async function TrackerPortfolioTimelinePage({
         hrefFor={(row) => `/tracker/${row.key}/timeline`}
         emptyText={chosen ? `No open project is for ${chosen.name}.` : "There are no open projects to show."}
         of="projects"
+        finished={finished}
       />
     </div>
   );

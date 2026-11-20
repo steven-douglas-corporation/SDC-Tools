@@ -39,7 +39,7 @@ const taskHref = (key: string) => {
   return `/tracker/${key.slice(0, cut)}/${key.slice(cut + 1)}`;
 };
 
-/** One entry in the key under the chart: the mark exactly as it is drawn, and what it means. */
+/** One entry in the key above the chart: the mark exactly as it is drawn, and what it means. */
 function Mark({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <li className="flex items-center gap-1.5">
@@ -55,6 +55,9 @@ function Legend({ of, stale, grouped }: { of: "cards" | "projects"; stale: boole
     <ul aria-label="What the marks mean" className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-sdc-gray-600">
       <Mark label={cards ? "Forecast: start to finish (in progress)" : "Forecast: first start to finish (active)"}>
         <span className="h-3.5 w-full rounded bg-sdc-blue" />
+      </Mark>
+      <Mark label="Work already done: from when it started">
+        <span className="h-3.5 w-full rounded bg-sdc-green/60" />
       </Mark>
       <Mark label={cards ? "Not started yet" : "Not active yet"}>
         <span className="h-3.5 w-full rounded bg-sdc-blue/60" />
@@ -121,6 +124,7 @@ export function Timeline({
   of = "cards",
   closed = [],
   toggleHref,
+  finished = false,
 }: {
   timeline: Pick<TimelineData, "rows" | "links" | "forecastAsOf">;
   /** Where a row's key leads. A card's own page unless told otherwise. */
@@ -128,7 +132,7 @@ export function Timeline({
   emptyText?: string;
   /** One date to mark down the whole chart: a project's target, on that project's timeline. */
   targetDate?: string | null;
-  /** What a row is, which decides the words in the key under the chart. */
+  /** What a row is, which decides the words in the key above the chart. */
   of?: "cards" | "projects";
   /** Ids of the rows whose cards under them are hidden. */
   closed?: number[];
@@ -138,6 +142,11 @@ export function Timeline({
    * the dependency arrows always match the rows on screen.
    */
   toggleHref?: (closed: number[]) => string;
+  /**
+   * Whether the chart reaches back to show finished work in full. Work that is still open is
+   * always drawn from the day it started; this adds what is already finished, however long ago.
+   */
+  finished?: boolean;
 }) {
   const { rows: allRows, links } = timeline;
   if (allRows.length === 0) {
@@ -178,8 +187,10 @@ export function Timeline({
     if (r.finish) dated.push(dayNumber(r.finish));
     if (r.p80Finish) dated.push(dayNumber(r.p80Finish));
     if (r.dueDate && r.category !== "done") dated.push(dayNumber(r.dueDate));
-    // A card finished long ago would stretch the chart for nothing; recent ones are shown.
-    if (r.doneOn && dayNumber(r.doneOn) >= todayN - 14) dated.push(dayNumber(r.doneOn));
+    // Open work reaches back to the day it started. Work finished long ago would stretch the
+    // chart for nothing, so only the recent is shown unless finished work was asked for.
+    if (r.startedOn && (finished || r.category !== "done")) dated.push(dayNumber(r.startedOn));
+    if (r.doneOn && (finished || dayNumber(r.doneOn) >= todayN - 14)) dated.push(dayNumber(r.doneOn));
   }
   if (targetDate) dated.push(dayNumber(targetDate));
   const first = Math.min(...dated) - 2;
@@ -234,6 +245,7 @@ export function Timeline({
 
   return (
     <div className="space-y-3">
+      <Legend of={of} stale={stale} grouped={parents.length > 0} />
       {toggleHref && parents.length > 0 && (
         <p className="flex gap-4 text-xs">
           <Link href={toggleHref(parents)} scroll={false} className="font-semibold text-sdc-blue hover:underline">
@@ -424,6 +436,21 @@ export function Timeline({
                         />
                       </>
                     ))}
+                  {(() => {
+                    // What has already happened: from the day the work started to the day it was
+                    // finished, or to the forecast's day while it is still open.
+                    if (!r.startedOn || r.isParent) return null;
+                    const from = Math.max(first, dayNumber(r.startedOn));
+                    const to = r.doneOn ? dayNumber(r.doneOn) : todayN;
+                    if (to <= from) return null;
+                    return (
+                      <div
+                        title={`${r.key} started ${shortDate(r.startedOn)}${r.doneOn ? `, finished ${shortDate(r.doneOn)}` : ""}`}
+                        style={{ left: x(from), width: x(to) - x(from), top: ROW / 2 - 7 }}
+                        className="absolute h-3.5 rounded-l bg-sdc-green/60"
+                      />
+                    );
+                  })()}
                   {r.doneOn && dayNumber(r.doneOn) >= first && (
                     <div
                       title={`${r.key} finished ${shortDate(r.doneOn)}`}
@@ -499,7 +526,6 @@ export function Timeline({
         </div>
       </div>
 
-      <Legend of={of} stale={stale} grouped={parents.length > 0} />
       {stale && (
         <p role="status" className="text-xs font-semibold text-sdc-yellow-text">
           This forecast was made for {shortDate(today)}, not today, so its dates may be out of date. It is redone

@@ -35,6 +35,11 @@ export interface TimelineRow {
   dueDate: string | null;
   /** The day a finished card was finished. */
   doneOn: string | null;
+  /**
+   * The first day work on it is known to have happened: the day it first left To do, or the day
+   * the first of it was finished, whichever is earlier. Null when nothing has been done yet.
+   */
+  startedOn: string | null;
   /** Why an open card has no bar, in the engine's words; the screen turns it into a sentence. */
   unscheduledReason: string | null;
   /** Hours entered on a parent card that the forecast does not count. Null when there are none. */
@@ -124,6 +129,20 @@ export function layoutTimeline(
   return out;
 }
 
+/** The earlier of two days, either of which may be missing. */
+function earliest(a: string | null, b: string | null): string | null {
+  if (!a || !b) return a ?? b;
+  return a < b ? a : b;
+}
+
+/** The first day each card of a project, or of every project, was being worked on or finished. */
+const FIRST_WORKED = `
+  SELECT l.task_id, min(l.changed_at)::date AS day
+    FROM tracker.status_log l
+    JOIN tracker.workflow_status w ON w.id = l.to_status_id
+   WHERE w.category IN ('in_progress', 'done')
+   GROUP BY l.task_id`;
+
 /** One project's timeline. Cancelled cards are left out; finished ones are kept, without a bar. */
 export async function getTimeline(db: Database, actor: Actor, projectKey: string): Promise<Timeline> {
   // getBoard does the access check and refuses a project that is not the caller's.
@@ -164,6 +183,18 @@ export async function getTimeline(db: Database, actor: Actor, projectKey: string
       .filter((l) => byId.has(l.fromId) && byId.has(l.toId));
   });
 
+  const started = await db.transaction(async (tx) => {
+    if (!(await projectRole(tx, board.project.id, actor))) return new Map<number, string>();
+    const { rows } = await tx.query<{ task_id: number; day: string }>(
+      `SELECT s.task_id, s.day::text AS day
+         FROM (${FIRST_WORKED}) s
+         JOIN tracker.task t ON t.id = s.task_id
+        WHERE t.project_id = $1`,
+      [board.project.id],
+    );
+    return new Map(rows.map((r) => [Number(r.task_id), r.day]));
+  });
+
   return {
     project: board.project,
     rows: laid.map((l) => {
@@ -186,6 +217,7 @@ export async function getTimeline(db: Database, actor: Actor, projectKey: string
         p80Finish: !done && !l.isParent && t.p80Finish && l.finish && t.p80Finish > l.finish ? t.p80Finish : null,
         dueDate: t.dueDate,
         doneOn: done ? t.actualCompletionDate : null,
+        startedOn: l.isParent ? null : earliest(started.get(t.id) ?? null, done ? t.actualCompletionDate : null),
         unscheduledReason: done || l.isParent ? null : t.unscheduledReason,
         uncountedHours: l.isParent ? t.uncountedHours : null,
       };
@@ -222,6 +254,8 @@ export async function getPortfolioTimeline(
     lens?: DepartmentLens;
     /** What a grouped row is: the group a department sits in (the default), or the department itself. */
     level?: DepartmentLevel;
+    /** Finished projects too, each as a row from when its work started to when it was finished. */
+    finished?: boolean;
   } = {},
 ): Promise<Pick<Timeline, "rows" | "links" | "forecastAsOf">> {
   // listProjects applies the "only your projects, or all for an admin" rule.
@@ -229,7 +263,7 @@ export async function getPortfolioTimeline(
     await listProjects(db, actor),
     view.lens ?? "for",
     view.grouped ? (view.level ?? "group") : "group",
-  ).filter((p) => p.state !== "completed" && p.state !== "cancelled");
+  ).filter((p) => p.state !== "cancelled" && (view.finished === true || p.state !== "completed"));
   const scope = view.scope ?? null;
   const inScope = scope ? open.filter((p) => p.forDepartmentId != null && scope.has(p.forDepartmentId)) : open;
   // Grouped: a department's projects together, departments in the company's order, none last.
@@ -249,6 +283,19 @@ export async function getPortfolioTimeline(
         GROUP BY t.project_id`,
     );
     const startOf = new Map(starts.rows.map((r) => [Number(r.project_id), r.start]));
+    // What has already happened: when each project's work began, and when a finished one ended.
+    const worked = await tx.query<{ project_id: number; started: string | null }>(
+      `SELECT t.project_id, min(least(s.day, t.actual_completion_date))::text AS started
+         FROM tracker.task t
+    LEFT JOIN (${FIRST_WORKED}) s ON s.task_id = t.id
+        WHERE t.archived_at IS NULL
+        GROUP BY t.project_id`,
+    );
+    const workedFrom = new Map(worked.rows.map((r) => [Number(r.project_id), r.started]));
+    const ended = await tx.query<{ id: number; day: string | null }>(
+      `SELECT id, actual_completion_date::text AS day FROM tracker.project WHERE state = 'completed'`,
+    );
+    const endedOn = new Map(ended.rows.map((r) => [Number(r.id), r.day]));
     // A project waits on another when an open card in it waits on an open card in the other.
     const waits = await tx.query<{ from_project: number; to_project: number }>(
       `SELECT DISTINCT a.project_id AS from_project, b.project_id AS to_project
@@ -264,7 +311,9 @@ export async function getPortfolioTimeline(
     const run = await tx.query<{ as_of: string }>(`SELECT as_of_date::text AS as_of FROM tracker.current_schedule_run`);
 
     const projectRows = projects.map((p): TimelineRow => {
-      const finish = p.forecastFinish;
+      const done = p.state === "completed";
+      const finish = done ? null : p.forecastFinish;
+      const doneOn = done ? (endedOn.get(p.id) ?? null) : null;
       const state = p.state.replace("_", " ");
       return {
         id: p.id,
@@ -275,14 +324,15 @@ export async function getPortfolioTimeline(
         depth: view.grouped ? 1 : 0,
         isParent: false,
         statusName: state.charAt(0).toUpperCase() + state.slice(1),
-        category: p.state === "active" ? "in_progress" : "todo",
+        category: done ? "done" : p.state === "active" ? "in_progress" : "todo",
         assigneeName: `owner ${p.ownerName}`,
         start: finish ? (startOf.get(p.id) ?? finish) : null,
         finish,
         p80Finish: finish && p.p80Finish && p.p80Finish > finish ? p.p80Finish : null,
         dueDate: p.targetDate,
-        doneOn: null,
-        unscheduledReason: finish ? null : projectUnscheduledReason(p),
+        doneOn,
+        startedOn: earliest(workedFrom.get(p.id) ?? null, doneOn),
+        unscheduledReason: finish || done ? null : projectUnscheduledReason(p),
         uncountedHours: null,
       };
     });
@@ -321,6 +371,7 @@ export async function getPortfolioTimeline(
           p80Finish: null,
           dueDate: null,
           doneOn: null,
+          startedOn: null,
           unscheduledReason: null,
           uncountedHours: null,
         });
