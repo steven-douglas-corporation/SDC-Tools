@@ -2278,3 +2278,56 @@ test("a project says which department does the work: asked for when made, logged
   await refuses(() => updateProject(db, ana, p.id, { state: "active" }), "invalid", /the department doing the work/);
   await updateProject(db, ana, p.id, { state: "active", doneByDepartmentId: id("hr") });
 });
+
+test("departments by who does the work: the list looks through either, and an unnamed card is forecast on that team", async () => {
+  const Q = await import("../src/modules/tracker/service/queries");
+  const P = await import("../src/modules/tracker/service/people");
+  const { setPeopleDepartments } = await import("../src/modules/tracker/service/departments");
+  const all = await listDepartments(db);
+  const id = (code: string) => all.find((d) => d.code === code)!.id;
+  const p = await createProjectAsIs(db, ana, {
+    key: "LENS",
+    name: "Lens",
+    justification: "Saves time.",
+    valueBucketId: someValue,
+    forDepartmentId: id("mech"),
+    doneByDepartmentId: id("finance"),
+  });
+  const mine = (await Q.listProjects(db, ana)).filter((x) => x.id === p.id);
+  assert.equal(mine[0]!.forGroupName, "Engineering");
+  assert.equal(mine[0]!.doneByGroupName, "Support");
+  assert.equal(Q.throughLens(mine, "for")[0], mine[0], "for is the list as it is");
+  const by = Q.throughLens(mine, "by")[0]!;
+  assert.deepEqual(
+    [by.forDepartmentId, by.forGroupName, by.doneByDepartmentId, by.forDepartmentName, by.doneByDepartmentName],
+    [id("finance"), "Support", id("mech"), "Mechanical Engineering", "Finance"],
+    "the fields a list filters and groups on change over; the names shown do not",
+  );
+  assert.equal(Q.throughLens(mine, "by", "team")[0]!.forGroupName, "Finance", "the department itself, not its group");
+  assert.equal(Q.throughLens(mine, "for", "team")[0]!.forGroupName, "Mechanical Engineering");
+
+  // Nobody is named on the card, and nobody is in Finance: it cannot be forecast.
+  const card = await createTask(db, ana, { projectId: p.id, title: "Unnamed work", effortEstimateHours: 8 });
+  await setPortfolioRanks(db, boss, [{ projectId: p.id, rank: 95 }]);
+  const reason = async () =>
+    (
+      await rows<{ unscheduled_reason: string | null }>(
+        `SELECT unscheduled_reason FROM tracker.task_forecast WHERE task_id = $1`,
+        [card.id],
+      )
+    )[0]?.unscheduled_reason;
+  await runForecast(db, { asOf: "2026-11-12", triggeredBy: "change" });
+  assert.equal(await reason(), "no assignee");
+
+  // Someone joins Finance with hours to give: the card is theirs to do, without being named on it.
+  const dee = await ensurePerson(db, { email: "dee@example.test", displayName: "Dee" });
+  await setPeopleDepartments(db, [{ email: "DEE@example.test", teamCode: "finance" }]);
+  await P.setPersonHours(db, { ...boss, admin: true }, dee, 6);
+  await runForecast(db, { asOf: "2026-11-12", triggeredBy: "change" });
+  assert.equal(await reason(), null);
+  const still = await rows<{ assignee_person_id: number | null }>(
+    `SELECT assignee_person_id FROM tracker.task WHERE id = $1`,
+    [card.id],
+  );
+  assert.equal(still[0]!.assignee_person_id, null, "the forecast does not name anyone on the card");
+});

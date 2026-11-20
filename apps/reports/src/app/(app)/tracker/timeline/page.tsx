@@ -29,6 +29,8 @@ export default async function TrackerPortfolioTimelinePage({
   const timeline = await getPortfolioTimeline(trackerDb, await trackerActor(session), {
     scope: chosen ? departmentScope(departments, chosen.id) : null,
     grouped: view.grouped,
+    lens: view.lens,
+    level: view.level,
   });
   // ?closed=-3,-7: the departments whose projects are hidden. A department's row has a negative id.
   const closed = (Array.isArray(params.closed) ? params.closed.join(",") : (params.closed ?? ""))
@@ -38,7 +40,8 @@ export default async function TrackerPortfolioTimelinePage({
   const address = (ids: number[]) => {
     const query = new URLSearchParams();
     if (chosen) query.set("for", String(chosen.id));
-    if (view.grouped) query.set("group", "1");
+    if (view.grouped) query.set("group", view.level === "team" ? "team" : "1");
+    if (view.lens === "by") query.set("dept", "by");
     if (ids.length) query.set("closed", ids.join(","));
     const text = query.toString();
     return text ? `/tracker/timeline?${text}` : "/tracker/timeline";
@@ -55,7 +58,13 @@ export default async function TrackerPortfolioTimelinePage({
       </p>
       <PageTitle className="mb-3">Timeline of all projects</PageTitle>
       <div className="mb-4">
-        <DepartmentFilter departments={departments} selected={chosen?.id ?? null} grouped={view.grouped} />
+        <DepartmentFilter
+          departments={departments}
+          selected={chosen?.id ?? null}
+          grouped={view.grouped}
+          lens={view.lens}
+          level={view.level}
+        />
       </div>
       <Timeline
         timeline={timeline}

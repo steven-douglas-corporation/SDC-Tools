@@ -17,7 +17,7 @@ import {
   narrowProjects,
   ranksLocked,
 } from "@/modules/tracker/components/format";
-import { listProjects, listValueBuckets } from "@/modules/tracker/service/queries";
+import { listProjects, listValueBuckets, throughLens } from "@/modules/tracker/service/queries";
 import { ProjectList } from "@/modules/tracker/components/ProjectList";
 import { PortfolioSummary } from "@/modules/tracker/components/PortfolioSummary";
 
@@ -45,7 +45,12 @@ export default async function TrackerPage({
   }
 
   const actor = await trackerActor(session);
-  const everyProject = await listProjects(trackerDb, actor);
+  const view = listView(await searchParams);
+  const everyProject = throughLens(
+    await listProjects(trackerDb, actor),
+    view.lens,
+    view.grouped ? view.level : "group",
+  );
   const valueBuckets = await listValueBuckets(trackerDb);
   // The departments are the company's own, copied from the roster before they are offered.
   await syncDepartmentsFromOrg();
@@ -53,7 +58,6 @@ export default async function TrackerPage({
 
   // Everything about how the list is narrowed and ordered is in the address (see listView), so
   // the page is drawn on the server with figures to match and any view can be sent to someone.
-  const view = listView(await searchParams);
   const chosen = departments.find((d) => d.id === view.forId) ?? null;
   // `described` is what the figures describe; `projects` is that, narrowed to a chosen figure,
   // sorted and grouped. Choosing a figure does not change the figures.
@@ -83,6 +87,8 @@ export default async function TrackerPage({
           departments={departments}
           selected={chosen?.id ?? null}
           grouped={view.grouped}
+          lens={view.lens}
+          level={view.level}
           sort={view.sort}
           search={view.q}
           finished={view.finished}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { INPUT, LABEL } from "@/components/ui/classnames";
 import type { Department } from "../service/departments";
+import type { DepartmentLens, DepartmentLevel } from "../service/queries";
 import { SORT_LABEL, type ListSort } from "./format";
 
 // Choosing a department, in the two places it is chosen: on a project (which one it is for),
@@ -52,24 +53,32 @@ export function DepartmentFilter({
   departments,
   selected,
   grouped,
+  lens,
+  level,
 }: {
   departments: Department[];
   /** The department chosen, or null for all of them. */
   selected: number | null;
   grouped: boolean;
+  lens: DepartmentLens;
+  level: DepartmentLevel;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
 
-  function go(change: { for?: string; group?: boolean }) {
+  function go(change: { for?: string; group?: string; dept?: string }) {
     const next = new URLSearchParams(params.toString());
+    if (change.dept !== undefined) {
+      if (change.dept) next.set("dept", change.dept);
+      else next.delete("dept");
+    }
     if (change.for !== undefined) {
       if (change.for) next.set("for", change.for);
       else next.delete("for");
     }
     if (change.group !== undefined) {
-      if (change.group) next.set("group", "1");
+      if (change.group) next.set("group", change.group);
       else next.delete("group");
     }
     // What is closed on a grouped timeline belongs to the grouping it was closed in.
@@ -82,7 +91,14 @@ export function DepartmentFilter({
   return (
     <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
       <label className="flex flex-col gap-1">
-        <span className={LABEL}>For department</span>
+        <span className={LABEL}>Departments by</span>
+        <select value={lens} onChange={(e) => go({ dept: e.target.value === "by" ? "by" : "" })} className={INPUT}>
+          <option value="for">Who it is for</option>
+          <option value="by">Who does the work</option>
+        </select>
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={LABEL}>{lens === "by" ? "Done by department" : "For department"}</span>
         <select
           value={selected?.toString() ?? ""}
           onChange={(e) => go({ for: e.target.value })}
@@ -92,9 +108,17 @@ export function DepartmentFilter({
           <DepartmentOptions departments={departments} />
         </select>
       </label>
-      <label className="flex items-center gap-2 pb-2 text-sm text-sdc-navy">
-        <input type="checkbox" checked={grouped} onChange={(e) => go({ group: e.target.checked })} />
-        Group by department
+      <label className="flex flex-col gap-1">
+        <span className={LABEL}>Group by</span>
+        <select
+          value={grouped ? (level === "team" ? "team" : "1") : ""}
+          onChange={(e) => go({ group: e.target.value })}
+          className={INPUT}
+        >
+          <option value="">No grouping</option>
+          <option value="1">Department group</option>
+          <option value="team">Department</option>
+        </select>
       </label>
     </div>
   );
@@ -109,6 +133,8 @@ export function ProjectListControls({
   departments,
   selected,
   grouped,
+  lens,
+  level,
   sort,
   search,
   finished,
@@ -117,6 +143,8 @@ export function ProjectListControls({
   departments: Department[];
   selected: number | null;
   grouped: boolean;
+  lens: DepartmentLens;
+  level: DepartmentLevel;
   sort: ListSort;
   search: string;
   finished: boolean;
@@ -164,17 +192,30 @@ export function ProjectListControls({
         </label>
       </form>
       {departments.length > 0 && (
-        <label className="flex flex-col gap-1">
-          <span className={LABEL}>For department</span>
-          <select
-            value={selected?.toString() ?? ""}
-            onChange={(e) => go({ for: e.target.value || null })}
-            className={`${INPUT} min-w-[14rem]`}
-          >
-            <option value="">All departments</option>
-            <DepartmentOptions departments={departments} />
-          </select>
-        </label>
+        <>
+          <label className="flex flex-col gap-1">
+            <span className={LABEL}>Departments by</span>
+            <select
+              value={lens}
+              onChange={(e) => go({ dept: e.target.value === "by" ? "by" : null })}
+              className={INPUT}
+            >
+              <option value="for">Who it is for</option>
+              <option value="by">Who does the work</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={LABEL}>{lens === "by" ? "Done by department" : "For department"}</span>
+            <select
+              value={selected?.toString() ?? ""}
+              onChange={(e) => go({ for: e.target.value || null })}
+              className={`${INPUT} min-w-[14rem]`}
+            >
+              <option value="">All departments</option>
+              <DepartmentOptions departments={departments} />
+            </select>
+          </label>
+        </>
       )}
       <label className="flex flex-col gap-1">
         <span className={LABEL}>Sort by</span>
@@ -191,9 +232,17 @@ export function ProjectListControls({
         </select>
       </label>
       {departments.length > 0 && (
-        <label className="flex items-center gap-2 pb-2 text-sm text-sdc-navy">
-          <input type="checkbox" checked={grouped} onChange={(e) => go({ group: e.target.checked ? "1" : null })} />
-          Group by department
+        <label className="flex flex-col gap-1">
+          <span className={LABEL}>Group by</span>
+          <select
+            value={grouped ? (level === "team" ? "team" : "1") : ""}
+            onChange={(e) => go({ group: e.target.value || null })}
+            className={INPUT}
+          >
+            <option value="">No grouping</option>
+            <option value="1">Department group</option>
+            <option value="team">Department</option>
+          </select>
         </label>
       )}
       {finishedCount > 0 && (

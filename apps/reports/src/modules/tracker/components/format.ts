@@ -1,4 +1,4 @@
-import type { BoardTask, ProjectListItem } from "../service/queries";
+import type { BoardTask, DepartmentLens, DepartmentLevel, ProjectListItem } from "../service/queries";
 
 // How the tracker's screens word dates and forecast reasons. Dependency-free so it can be
 // unit-tested and used from both server and client components.
@@ -181,12 +181,25 @@ export interface DepartmentView {
   forId: number | null;
   /** Whether the rows are gathered under a heading per department. */
   grouped: boolean;
+  /** Which department the filter and the headings mean: who it is for, or who does the work. */
+  lens: DepartmentLens;
+  /** What a heading is when grouped: the group a department sits in, or the department itself. */
+  level: DepartmentLevel;
 }
 
-export function departmentView(params: { for?: string | string[]; group?: string | string[] }): DepartmentView {
+export function departmentView(params: {
+  for?: string | string[];
+  group?: string | string[];
+  dept?: string | string[];
+}): DepartmentView {
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
   const id = Number(one(params.for));
-  return { forId: Number.isInteger(id) && id > 0 ? id : null, grouped: one(params.group) === "1" };
+  return {
+    forId: Number.isInteger(id) && id > 0 ? id : null,
+    grouped: one(params.group) === "1" || one(params.group) === "team",
+    level: one(params.group) === "team" ? "team" : "group",
+    lens: one(params.dept) === "by" ? "by" : "for",
+  };
 }
 
 /** The projects that are for one of `scope` (see departmentScope). A project with no department is for none. */
@@ -290,7 +303,8 @@ export function listHref(view: ListView, change: Partial<ListView> = {}): string
   const v = { ...view, ...change };
   const query = new URLSearchParams();
   if (v.forId != null) query.set("for", String(v.forId));
-  if (v.grouped) query.set("group", "1");
+  if (v.grouped) query.set("group", v.level === "team" ? "team" : "1");
+  if (v.lens === "by") query.set("dept", "by");
   if (v.sort !== "rank") query.set("sort", v.sort);
   if (v.only) query.set("only", v.only);
   if (v.q) query.set("q", v.q);
@@ -315,10 +329,20 @@ export function isIncomplete(
  * True when ranks can only be read: the list is not every project in rank order. A rank is a
  * place among all of them, so it is changed with all of them in view. Grouping alone does not
  * lock them (a project is then moved within its department), and neither does showing
- * finished projects, which hold no place in the order.
+ * finished projects, which hold no place in the order. Grouped by who does the work, or by
+ * department within a group, they are locked: a move within a heading is defined for the group
+ * a project is for.
  */
-export function ranksLocked(view: Pick<ListView, "forId" | "sort" | "only" | "q">): boolean {
-  return view.forId != null || view.sort !== "rank" || view.only != null || view.q !== "";
+export function ranksLocked(
+  view: Pick<ListView, "forId" | "sort" | "only" | "q" | "grouped" | "lens" | "level">,
+): boolean {
+  return (
+    view.forId != null ||
+    view.sort !== "rank" ||
+    view.only != null ||
+    view.q !== "" ||
+    (view.grouped && (view.lens === "by" || view.level === "team"))
+  );
 }
 
 type Listed = Pick<

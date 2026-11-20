@@ -1,6 +1,14 @@
 import type { Actor, Database } from "./database";
 import { projectRole } from "./access";
-import { getBoard, listProjects, type BoardStatus, type ProjectListItem } from "./queries";
+import {
+  getBoard,
+  listProjects,
+  throughLens,
+  type BoardStatus,
+  type DepartmentLens,
+  type DepartmentLevel,
+  type ProjectListItem,
+} from "./queries";
 
 // What the timeline screen reads: one project's cards laid out as rows, each with the dates its
 // bar is drawn from, plus the dependency links between them. It is the board's data in another
@@ -210,10 +218,18 @@ export async function getPortfolioTimeline(
     scope?: Set<number> | null;
     /** A row per department above its projects, spanning them, with the projects one level in. */
     grouped?: boolean;
+    /** Which department the scope and the rows mean: who it is for (the default), or who does the work. */
+    lens?: DepartmentLens;
+    /** What a grouped row is: the group a department sits in (the default), or the department itself. */
+    level?: DepartmentLevel;
   } = {},
 ): Promise<Pick<Timeline, "rows" | "links" | "forecastAsOf">> {
   // listProjects applies the "only your projects, or all for an admin" rule.
-  const open = (await listProjects(db, actor)).filter((p) => p.state !== "completed" && p.state !== "cancelled");
+  const open = throughLens(
+    await listProjects(db, actor),
+    view.lens ?? "for",
+    view.grouped ? (view.level ?? "group") : "group",
+  ).filter((p) => p.state !== "completed" && p.state !== "cancelled");
   const scope = view.scope ?? null;
   const inScope = scope ? open.filter((p) => p.forDepartmentId != null && scope.has(p.forDepartmentId)) : open;
   // Grouped: a department's projects together, departments in the company's order, none last.

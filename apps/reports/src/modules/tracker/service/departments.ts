@@ -107,3 +107,22 @@ export async function listDepartments(db: Database): Promise<Department[]> {
 export function departmentScope(departments: Department[], id: number): Set<number> {
   return new Set([id, ...departments.filter((d) => d.parentId === id).map((d) => d.id)]);
 }
+
+/**
+ * Puts each person in their department, matched by email and by the roster's own code for the
+ * team. Someone whose team the tracker does not have is left where they are. Writes nothing
+ * when nothing has changed.
+ */
+export async function setPeopleDepartments(db: Database, people: { email: string; teamCode: string }[]): Promise<void> {
+  if (!people.length) return;
+  await db.transaction((tx) =>
+    tx.query(
+      `UPDATE tracker.person p
+          SET team_id = t.id
+         FROM jsonb_to_recordset($1::jsonb) AS x(email text, code text)
+         JOIN tracker.team t ON t.code = x.code
+        WHERE lower(p.email) = lower(x.email) AND p.team_id IS DISTINCT FROM t.id`,
+      [JSON.stringify(people.map((p) => ({ email: p.email, code: p.teamCode })))],
+    ),
+  );
+}
