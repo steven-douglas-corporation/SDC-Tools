@@ -498,7 +498,9 @@ export function ProjectList({
                       )}
                       <tr className={`border-b border-sdc-border-soft text-center ${TABLE_ROW_HOVER}`}>
                         <td className="px-3 py-2.5 tabular-nums">
-                          {rankWithinDepartment ? (
+                          {/* A project with no rank yet has no place in its department to move from, so it
+                              is given a company rank here, in the same box as the ungrouped list. */}
+                          {rankWithinDepartment && p.portfolioRank != null ? (
                             <DepartmentRankCell
                               key={`${p.id}:${p.portfolioRank}`}
                               p={p}
@@ -507,14 +509,21 @@ export function ProjectList({
                               canRank={canRank && canEdit}
                             />
                           ) : (
-                            <RankCell
-                              // Remount when the rank changes: moving one project renumbers the others.
-                              key={`${p.id}:${p.portfolioRank}`}
-                              p={p}
-                              canRank={canRank && canEdit}
-                              first={p.id === ranked[0]}
-                              last={p.id === ranked[ranked.length - 1]}
-                            />
+                            <>
+                              <RankCell
+                                // Remount when the rank changes: moving one project renumbers the others.
+                                key={`${p.id}:${p.portfolioRank}`}
+                                p={p}
+                                canRank={canRank && canEdit}
+                                first={p.id === ranked[0]}
+                                last={p.id === ranked[ranked.length - 1]}
+                              />
+                              {rankWithinDepartment && canRank && canEdit && (
+                                <span className="mt-1 block whitespace-nowrap text-xs text-sdc-gray-600">
+                                  Company rank
+                                </span>
+                              )}
+                            </>
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-left">
