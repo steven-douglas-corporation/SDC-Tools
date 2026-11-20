@@ -7,7 +7,6 @@ import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
 import { trackerActor } from "@/modules/tracker/current-actor";
 import { getPortfolioTimeline } from "@/modules/tracker/service/timeline";
 import { Timeline } from "@/modules/tracker/components/Timeline";
-import { PortfolioViews } from "@/modules/tracker/components/ProjectViews";
 
 // Every open project on one timeline, at /tracker/timeline. "TIMELINE" is a reserved project
 // key (service/projects.ts) so this page can never be shadowed by a project's board.
@@ -25,8 +24,7 @@ export default async function TrackerPortfolioTimelinePage() {
         <span className="text-sdc-gray-400"> / </span>
         <span className="text-sdc-gray-600">Timeline</span>
       </p>
-      <PageTitle className="mb-3">Project Tracker</PageTitle>
-      <PortfolioViews current="timeline" />
+      <PageTitle className="mb-3">Timeline of all projects</PageTitle>
       <Timeline
         timeline={timeline}
         hrefFor={(row) => `/tracker/${row.key}/timeline`}

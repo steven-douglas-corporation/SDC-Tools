@@ -322,7 +322,7 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
   for each dependency; marks for today, the project target, due dates, milestones and finished
   cards. A row with cards under it can be closed, and what is closed is kept in the address.
   Read-only. Every date on it is the stored forecast, the same one the board shows.
-- **Timeline of all projects** (`/tracker/timeline`, a tab beside the project list): a row for each
+- **Timeline of all projects** (`/tracker/timeline`, in the tracker's sidebar menu): a row for each
   open project in stack-rank order, a bar from the first forecast start of its work to its
   forecast finish with a tail to P80, its target date, and an arrow where one project has a card
   waiting on another's. A project's key opens that project's own timeline.
