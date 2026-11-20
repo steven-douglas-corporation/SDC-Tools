@@ -308,7 +308,7 @@ export async function updateProject(
       if (changes.state === "active" && (!justification || valueBucketId == null || forDepartmentId == null)) {
         throw new TrackerError(
           "invalid",
-          "A project needs a justification, a yearly value and a department before it can be made active. Add them in Project settings.",
+          "A project needs a justification, a yearly value and a department before it can be made active. Add them on the project's Settings tab.",
         );
       }
       const done = changes.state === "completed";

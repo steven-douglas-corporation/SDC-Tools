@@ -88,6 +88,8 @@ async function act<T extends object>(
 }
 
 const boardPath = (projectKey: string) => `/tracker/${projectKey.toUpperCase()}`;
+/** The project's Settings tab, where its settings and its people are changed. */
+const settingsPath = (projectKey: string) => `${boardPath(projectKey)}/settings`;
 
 export async function createProjectAction(input: {
   key: string;
@@ -209,7 +211,7 @@ export async function updateProjectAction(input: {
       );
       return {};
     },
-    { paths: ["/tracker", "/tracker/timeline", boardPath(input.projectKey)] },
+    { paths: ["/tracker", "/tracker/timeline", boardPath(input.projectKey), settingsPath(input.projectKey)] },
   );
 }
 
@@ -350,7 +352,7 @@ export async function setMemberAction(input: {
       await setProjectMember(trackerDb, actor, input.projectId, input.personId, input.role);
       return {};
     },
-    { paths: ["/tracker", boardPath(input.projectKey)], forecast: false },
+    { paths: ["/tracker", boardPath(input.projectKey), settingsPath(input.projectKey)], forecast: false },
   );
 }
 

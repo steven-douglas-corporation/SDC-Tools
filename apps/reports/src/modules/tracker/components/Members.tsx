@@ -23,6 +23,7 @@ export function Members({
   members,
   people,
   canManage,
+  open = false,
 }: {
   projectId: number;
   projectKey: string;
@@ -30,6 +31,8 @@ export function Members({
   /** Everyone who could be added. */
   people: { id: number; name: string }[];
   canManage: boolean;
+  /** Shown open to begin with, where it is a main part of the page. */
+  open?: boolean;
 }) {
   const [personId, setPersonId] = useState("");
   const [role, setRole] = useState<Member["role"]>("contributor");
@@ -47,7 +50,7 @@ export function Members({
   }
 
   return (
-    <details className={`${CARD_BASE} p-4`}>
+    <details open={open} className={`${CARD_BASE} p-4`}>
       <summary className="cursor-pointer text-sm font-semibold text-sdc-navy">
         People on this project ({members.length})
       </summary>
