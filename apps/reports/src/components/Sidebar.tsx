@@ -13,6 +13,7 @@ import { NavItemMenu, NavItemMenuButton, type NavMenuAnchor } from "@/components
 import { decideCrossAppNav, insideShell, reportCrossAppNavError } from "@/lib/shell-cross-app-nav";
 import { useToast } from "@/components/ui/Toast";
 import { ToolLauncher } from "@/components/ToolLauncher";
+import { SettingsMenu } from "@/components/SettingsMenu";
 import { toolForPath, toolsFor, type AreaId } from "@/lib/tools";
 import {
   applyNavOrder,
@@ -1121,8 +1122,8 @@ export default function Sidebar({
       </nav>
 
       {/* ── Footer block (§46.5, §46.11) ────────────────────────────────────────
-          One bordered group holding Zoom, Refresh, the collapse toggle and the account
-          row.
+          One bordered group holding Refresh, the collapse toggle and the account row,
+          which ends in the gear for the person's own settings (Zoom among them).
 
           `shrink-0` is the fix for the reported clipping, and it is worth being precise
           about what went wrong because the symptom did not look like a flex bug.
@@ -1139,12 +1140,6 @@ export default function Sidebar({
           the screenshot. The fix is structural, not cosmetic — the footer refuses to
           shrink, and `flex-1` is applied only in the state that wants it. */}
       <div className={`flex shrink-0 flex-col border-t border-[#12314F] pt-2.5 pb-3 ${collapsed ? RAIL_PAD : "px-[14px]"}`}>
-        {/* THE size control for the whole application (§45). Here, and only here:
-            the Monthly ETC and Projects toolbars used to carry their own Text size,
-            Font size, Row height and Column width steppers, so the same app could
-            be at two densities on two tabs. See lib/app-zoom.ts. */}
-        <AppZoom collapsed={collapsed} />
-
         {/* ── Exit Split View — the legacy /split route only (2026-10-08) ─────────
             A workspace split has no button any more: pages and tabs are dragged into
             place, and a split ends when one side runs out of tabs (or with Ctrl+\). The
@@ -1319,6 +1314,18 @@ export default function Sidebar({
             </form>
             )}
           </div>
+          {/* Settings that are the person's own, behind a gear beside their name.
+
+              THE size control for the whole application (§45) lives here, and only
+              here: the Monthly ETC and Projects toolbars used to carry their own Text
+              size, Font size, Row height and Column width steppers, so the same app
+              could be at two densities on two tabs. See lib/app-zoom.ts. It was the
+              footer's first row until 2026-11-20; in the gear it is still on every
+              page and still reachable from the collapsed rail, where the menu opens
+              beside the sidebar with the full control in it. */}
+          <SettingsMenu collapsed={collapsed}>
+            <AppZoom />
+          </SettingsMenu>
         </div>
 
         {/* The running application version. In the sidebar, so it is on every tab

@@ -276,9 +276,14 @@ test("the zoom control lives in the sidebar, so it is on every page", () => {
   // per-page by construction, which is how the app came to have two densities at once.
   const sidebar = readFileSync(join(SRC, "components", "Sidebar.tsx"), "utf8");
   assert.match(sidebar, /<AppZoom\b/, "Sidebar must render the zoom control");
-  // Matched inside the tag rather than with the `s` flag, which this tsconfig's target
-  // does not allow: the control has to be TOLD about the rail, or it cannot stay usable there.
-  assert.match(sidebar, /<AppZoom[^>]*collapsed/, "it must stay usable on the collapsed rail");
+  // It sits in the settings menu beside the signed-in person's name (2026-11-20). The menu
+  // has to be TOLD about the rail, so that it opens beside it with the whole control in
+  // it; that is what keeps the zoom usable when the sidebar is collapsed.
+  assert.match(
+    sidebar,
+    /<SettingsMenu collapsed=\{collapsed\}>\s*<AppZoom \/>\s*<\/SettingsMenu>/,
+    "it must stay usable on the collapsed rail",
+  );
 
   const consumers = COMPONENT_FILES.filter((f) => /<AppZoom\b/.test(code(f)));
   assert.deepEqual(

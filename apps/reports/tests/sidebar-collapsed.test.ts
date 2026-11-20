@@ -151,9 +151,12 @@ test("the footer refuses to shrink", () => {
   // `shrink-0` the footer gives up its own height when the nav is tall — bottom controls
   // pushed past the viewport, which is §46.5's "do not allow items to extend beyond the
   // viewport".
-  const footerStart = SIDEBAR_CODE.indexOf("<AppZoom");
-  const openingTag = SIDEBAR_CODE.lastIndexOf("<div", footerStart);
-  assert.match(SIDEBAR_CODE.slice(openingTag, footerStart), /shrink-0/, "the footer block must be shrink-0");
+  //
+  // The footer is the aside's one bordered column block. (It used to be found from the zoom
+  // control, its first child until that moved into the settings menu beside the user's name.)
+  const blocks = [...SIDEBAR_CODE.matchAll(/<div className=\{`([^`]*\bflex-col\b[^`]*\bborder-t\b[^`]*)`\}>/g)];
+  assert.equal(blocks.length, 1, "exactly one bordered column block: the footer");
+  assert.match(blocks[0]![1]!, /shrink-0/, "the footer block must be shrink-0");
 });
 
 test("the rail's scroll area cannot steal the centring", () => {
