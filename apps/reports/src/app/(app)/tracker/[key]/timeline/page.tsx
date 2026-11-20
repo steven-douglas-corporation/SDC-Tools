@@ -17,7 +17,7 @@ export default async function TrackerTimelinePage({
   searchParams,
 }: {
   params: Promise<{ key: string }>;
-  searchParams: Promise<{ closed?: string | string[] }>;
+  searchParams: Promise<{ closed?: string | string[]; done?: string | string[] }>;
 }) {
   const session = await requirePagePermission("tracker:view");
   if (!trackerConfigured()) notFound();
@@ -34,7 +34,16 @@ export default async function TrackerTimelinePage({
   const p = timeline.project;
   // ?closed=12,40: the rows whose cards under them are hidden. In the address, so a collapsed
   // view can be bookmarked or sent to someone.
-  const asked = (await searchParams).closed;
+  const query = await searchParams;
+  const asked = query.closed;
+  const finished = (Array.isArray(query.done) ? query.done[0] : query.done) === "1";
+  const address = (ids: number[], done = finished) => {
+    const q = new URLSearchParams();
+    if (done) q.set("done", "1");
+    if (ids.length) q.set("closed", ids.join(","));
+    const text = q.toString();
+    return `/tracker/${p.key}/timeline${text ? `?${text}` : ""}`;
+  };
   const closed = (Array.isArray(asked) ? asked.join(",") : (asked ?? ""))
     .split(",")
     .map(Number)
@@ -55,11 +64,17 @@ export default async function TrackerTimelinePage({
       </p>
       <PageTitle className="mb-3">{p.name}</PageTitle>
       <ProjectViews projectKey={p.key} current="timeline" />
+      <p className="mb-3 text-sm">
+        <Link href={address(closed, !finished)} scroll={false} className="font-semibold text-sdc-blue hover:underline">
+          {finished ? "Show recent work only" : "Show all finished work"}
+        </Link>
+      </p>
       <Timeline
         timeline={timeline}
         targetDate={p.targetDate}
         closed={closed}
-        toggleHref={(ids) => `/tracker/${p.key}/timeline${ids.length ? `?closed=${ids.join(",")}` : ""}`}
+        toggleHref={(ids) => address(ids)}
+        finished={finished}
       />
     </div>
   );

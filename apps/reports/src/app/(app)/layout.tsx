@@ -43,7 +43,6 @@ export default async function AppGroupLayout({ children }: { children: React.Rea
   // hasPermission() fresh every time.
   const role = session?.user?.role ?? "ALL";
   const visibleHrefs = ROUTE_PERMISSIONS.filter((r) => hasPermission(role, r.permission)).map((r) => r.path);
-  if (hasPermission(role, "dashboard:view")) visibleHrefs.push("/");
   // /cash-flow needs no special case any more: it is a real row in
   // ROUTE_PERMISSIONS (cash-flow:view, 2026-09-01), so the filter above picks
   // it up like every other link. This used to push it off `role === "ELT"`.

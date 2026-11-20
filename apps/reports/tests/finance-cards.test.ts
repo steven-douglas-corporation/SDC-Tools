@@ -53,7 +53,7 @@ test("a role is offered exactly the cards whose destination it can open, and non
 });
 
 test("the page builds Finances only for a role with cards, only when the tab is open", () => {
-  const page = src("app/(app)/page.tsx");
+  const page = src("app/(app)/dashboard/page.tsx");
   assert.match(page, /const financeCards = financeCardsFor\(session\.user\.role\);/);
   assert.match(page, /const financesOpen = hasFinances && params\.tab === "finances";/);
   assert.match(page, /finances=\{financesOpen \? <FinancesPanel/);

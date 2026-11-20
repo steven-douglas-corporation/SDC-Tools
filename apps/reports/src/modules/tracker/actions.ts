@@ -9,6 +9,10 @@ import { TrackerError, type Actor } from "./service/database";
 import {
   createProject,
   moveProjectRank,
+  moveProjectRankInDepartment,
+  placeProjectInDepartment,
+  type DepartmentRankDrop,
+  type DepartmentRankMove,
   rankClash,
   setProjectMember,
   updateProject,
@@ -86,10 +90,16 @@ async function act<T extends object>(
 }
 
 const boardPath = (projectKey: string) => `/tracker/${projectKey.toUpperCase()}`;
+/** The project's Settings tab, where its settings and its people are changed. */
+const settingsPath = (projectKey: string) => `${boardPath(projectKey)}/settings`;
 
 export async function createProjectAction(input: {
   key: string;
   name: string;
+  justification: string;
+  valueBucketId: number | null;
+  forDepartmentId: number | null;
+  doneByDepartmentId: number | null;
   targetDate?: string | null;
 }): Promise<ActionResult<{ key: string }>> {
   return act(
@@ -97,6 +107,11 @@ export async function createProjectAction(input: {
       const p = await createProject(trackerDb, actor, {
         key: input.key,
         name: input.name,
+        justification: input.justification,
+        // Null reaches the service as it is, which refuses it in words.
+        valueBucketId: input.valueBucketId as number,
+        forDepartmentId: input.forDepartmentId as number,
+        doneByDepartmentId: input.doneByDepartmentId as number,
         targetDate: input.targetDate || null,
       });
       return { key: p.key };
@@ -134,6 +149,46 @@ export async function setProjectRankAction(
 }
 
 /** Moves a project one place up or down the stack rank, swapping it with its neighbour. */
+/**
+ * Moves a project one place among its own department's projects. A move that passes other
+ * departments' projects changes nothing unless `confirmed`, and says what it would do.
+ */
+export async function moveProjectRankInDepartmentAction(
+  projectId: number,
+  direction: "up" | "down",
+  confirmed: boolean,
+): Promise<ActionResult<{ move: DepartmentRankMove | null }>> {
+  let changed = false;
+  return act(
+    async (actor) => {
+      const move = await moveProjectRankInDepartment(trackerDb, actor, projectId, direction, confirmed);
+      changed = move?.done === true;
+      return { move };
+    },
+    { paths: ["/tracker", "/tracker/timeline"], unless: () => !changed },
+  );
+}
+
+/**
+ * Puts a project where another of its department is: what dropping it there does. A move
+ * that passes other departments' projects changes nothing unless `confirmed`.
+ */
+export async function placeProjectInDepartmentAction(
+  projectId: number,
+  atProjectId: number,
+  confirmed: boolean,
+): Promise<ActionResult<{ drop: DepartmentRankDrop | null }>> {
+  let changed = false;
+  return act(
+    async (actor) => {
+      const drop = await placeProjectInDepartment(trackerDb, actor, projectId, atProjectId, confirmed);
+      changed = drop?.done === true;
+      return { drop };
+    },
+    { paths: ["/tracker", "/tracker/timeline"], unless: () => !changed },
+  );
+}
+
 export async function moveProjectRankAction(projectId: number, direction: "up" | "down"): Promise<ActionResult> {
   return act(
     async (actor) => {
@@ -158,26 +213,47 @@ export async function setProjectStateAction(
   );
 }
 
-/** A manager's changes to a project: its target date, its owner, its state (finishing it included). */
+/** A manager's changes to a project: why and what it is worth, its target date, its owner, its state. */
 export async function updateProjectAction(input: {
   projectId: number;
   projectKey: string;
-  changes: Pick<ProjectChanges, "targetDate" | "ownerPersonId" | "state">;
+  changes: Pick<
+    ProjectChanges,
+    | "name"
+    | "justification"
+    | "valueBucketId"
+    | "forDepartmentId"
+    | "doneByDepartmentId"
+    | "targetDate"
+    | "startDate"
+    | "ownerPersonId"
+    | "state"
+  >;
   reason?: string;
 }): Promise<ActionResult> {
   return act(
     async (actor) => {
-      const { targetDate, ownerPersonId, state } = input.changes;
+      const c = input.changes;
       await updateProject(
         trackerDb,
         actor,
         input.projectId,
-        { targetDate, ownerPersonId, state },
+        {
+          name: c.name,
+          justification: c.justification,
+          valueBucketId: c.valueBucketId,
+          forDepartmentId: c.forDepartmentId,
+          doneByDepartmentId: c.doneByDepartmentId,
+          targetDate: c.targetDate,
+          startDate: c.startDate,
+          ownerPersonId: c.ownerPersonId,
+          state: c.state,
+        },
         input.reason?.trim() || null,
       );
       return {};
     },
-    { paths: ["/tracker", "/tracker/timeline", boardPath(input.projectKey)] },
+    { paths: ["/tracker", "/tracker/timeline", boardPath(input.projectKey), settingsPath(input.projectKey)] },
   );
 }
 
@@ -186,10 +262,12 @@ export async function archiveTaskAction(input: {
   taskId: number;
   projectKey: string;
   taskKey: string;
+  /** Said yes to archiving the cards under it too. Without it a card with cards under it is refused. */
+  withUnder?: boolean;
 }): Promise<ActionResult> {
   return act(
     async (actor) => {
-      await archiveTask(trackerDb, actor, input.taskId);
+      await archiveTask(trackerDb, actor, input.taskId, { withUnder: input.withUnder === true });
       return {};
     },
     { paths: ["/tracker", "/tracker/timeline", boardPath(input.projectKey), taskPath(input.taskKey)] },
@@ -267,6 +345,8 @@ export type TaskEdit = Pick<
   | "remainingEffortHours"
   | "dueDate"
   | "estimatedCompletionDate"
+  | "actualStartDate"
+  | "actualCompletionDate"
   | "kind"
   | "parentTaskId"
 >;
@@ -291,6 +371,8 @@ export async function updateTaskAction(input: {
       if (c.effortBucketId !== undefined) changes.effortBucketId = c.effortBucketId;
       if (c.remainingEffortHours !== undefined) changes.remainingEffortHours = c.remainingEffortHours;
       if (c.dueDate !== undefined) changes.dueDate = c.dueDate || null;
+      if (c.actualStartDate !== undefined) changes.actualStartDate = c.actualStartDate || null;
+      if (c.actualCompletionDate) changes.actualCompletionDate = c.actualCompletionDate;
       if (c.estimatedCompletionDate !== undefined) changes.estimatedCompletionDate = c.estimatedCompletionDate || null;
       if (c.kind !== undefined) changes.kind = c.kind || "task";
       if (c.parentTaskId !== undefined) changes.parentTaskId = c.parentTaskId;
@@ -318,7 +400,7 @@ export async function setMemberAction(input: {
       await setProjectMember(trackerDb, actor, input.projectId, input.personId, input.role);
       return {};
     },
-    { paths: ["/tracker", boardPath(input.projectKey)], forecast: false },
+    { paths: ["/tracker", boardPath(input.projectKey), settingsPath(input.projectKey)], forecast: false },
   );
 }
 

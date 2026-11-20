@@ -1,4 +1,4 @@
-import { DashboardView } from "@/app/(app)/page";
+import { DashboardView } from "@/app/(app)/dashboard/page";
 import { JobHoursView } from "@/app/(app)/job-hours/page";
 import { MonthlyEtcView } from "@/app/(app)/etc/page";
 import { ProjectsView } from "@/app/(app)/quoted/page";
@@ -61,7 +61,7 @@ import type { TabId } from "@/lib/workspace";
 // ROUTE_PERMISSIONS, the one map every surface already uses.
 
 const PANE_VIEWS = {
-  "/": DashboardView,
+  "/dashboard": DashboardView,
   "/job-hours": JobHoursView,
   "/etc": MonthlyEtcView,
   "/quoted": ProjectsView,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CARD_BASE } from "@/components/ui/classnames";
 import type { Timeline as TimelineData, TimelineRow } from "../service/timeline";
 import { forecastReason, hours, localToday, shortDate } from "./format";
+import { TimelineTitles } from "./TimelineTitles";
 
 // One project as a timeline: a row per card, grouped under the card it sits under, a bar from
 // the forecast's start to its finish, and an arrow for each dependency. Nothing here is typed
@@ -39,7 +40,7 @@ const taskHref = (key: string) => {
   return `/tracker/${key.slice(0, cut)}/${key.slice(cut + 1)}`;
 };
 
-/** One entry in the key under the chart: the mark exactly as it is drawn, and what it means. */
+/** One entry in the key above the chart: the mark exactly as it is drawn, and what it means. */
 function Mark({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <li className="flex items-center gap-1.5">
@@ -49,12 +50,15 @@ function Mark({ children, label }: { children: React.ReactNode; label: string })
   );
 }
 
-function Legend({ of, stale }: { of: "cards" | "projects"; stale: boolean }) {
+function Legend({ of, stale, grouped }: { of: "cards" | "projects"; stale: boolean; grouped: boolean }) {
   const cards = of === "cards";
   return (
     <ul aria-label="What the marks mean" className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-sdc-gray-600">
       <Mark label={cards ? "Forecast: start to finish (in progress)" : "Forecast: first start to finish (active)"}>
         <span className="h-3.5 w-full rounded bg-sdc-blue" />
+      </Mark>
+      <Mark label="Work already done: from when it started">
+        <span className="h-3.5 w-full rounded bg-sdc-green/60" />
       </Mark>
       <Mark label={cards ? "Not started yet" : "Not active yet"}>
         <span className="h-3.5 w-full rounded bg-sdc-blue/60" />
@@ -69,6 +73,11 @@ function Legend({ of, stale }: { of: "cards" | "projects"; stale: boolean }) {
       </Mark>
       {cards && (
         <Mark label="Has cards under it; spans them">
+          <span className="h-2 w-full rounded-sm bg-sdc-navy" />
+        </Mark>
+      )}
+      {!cards && grouped && (
+        <Mark label="A department; spans its projects">
           <span className="h-2 w-full rounded-sm bg-sdc-navy" />
         </Mark>
       )}
@@ -116,6 +125,7 @@ export function Timeline({
   of = "cards",
   closed = [],
   toggleHref,
+  finished = false,
 }: {
   timeline: Pick<TimelineData, "rows" | "links" | "forecastAsOf">;
   /** Where a row's key leads. A card's own page unless told otherwise. */
@@ -123,7 +133,7 @@ export function Timeline({
   emptyText?: string;
   /** One date to mark down the whole chart: a project's target, on that project's timeline. */
   targetDate?: string | null;
-  /** What a row is, which decides the words in the key under the chart. */
+  /** What a row is, which decides the words in the key above the chart. */
   of?: "cards" | "projects";
   /** Ids of the rows whose cards under them are hidden. */
   closed?: number[];
@@ -133,6 +143,11 @@ export function Timeline({
    * the dependency arrows always match the rows on screen.
    */
   toggleHref?: (closed: number[]) => string;
+  /**
+   * Whether the chart reaches back to show finished work in full. Work that is still open is
+   * always drawn from the day it started; this adds what is already finished, however long ago.
+   */
+  finished?: boolean;
 }) {
   const { rows: allRows, links } = timeline;
   if (allRows.length === 0) {
@@ -173,8 +188,10 @@ export function Timeline({
     if (r.finish) dated.push(dayNumber(r.finish));
     if (r.p80Finish) dated.push(dayNumber(r.p80Finish));
     if (r.dueDate && r.category !== "done") dated.push(dayNumber(r.dueDate));
-    // A card finished long ago would stretch the chart for nothing; recent ones are shown.
-    if (r.doneOn && dayNumber(r.doneOn) >= todayN - 14) dated.push(dayNumber(r.doneOn));
+    // Open work reaches back to the day it started. Work finished long ago would stretch the
+    // chart for nothing, so only the recent is shown unless finished work was asked for.
+    if (r.startedOn && (finished || r.category !== "done")) dated.push(dayNumber(r.startedOn));
+    if (r.doneOn && (finished || dayNumber(r.doneOn) >= todayN - 14)) dated.push(dayNumber(r.doneOn));
   }
   if (targetDate) dated.push(dayNumber(targetDate));
   const first = Math.min(...dated) - 2;
@@ -229,6 +246,7 @@ export function Timeline({
 
   return (
     <div className="space-y-3">
+      <Legend of={of} stale={stale} grouped={parents.length > 0} />
       {toggleHref && parents.length > 0 && (
         <p className="flex gap-4 text-xs">
           <Link href={toggleHref(parents)} scroll={false} className="font-semibold text-sdc-blue hover:underline">
@@ -240,8 +258,9 @@ export function Timeline({
         </p>
       )}
       <div className={`${CARD_BASE} flex overflow-hidden`}>
-        {/* The cards, as a fixed column that stays put while the dates scroll. */}
-        <div className="w-80 shrink-0 border-r border-sdc-border">
+        {/* The cards, as a column that stays put while the dates scroll. Its right edge can be
+            dragged to make the titles wider or narrower. */}
+        <TimelineTitles>
           <div style={{ height: HEAD }} className="border-b border-sdc-border" />
           {rows.map((r) => (
             <div
@@ -264,8 +283,8 @@ export function Timeline({
                     href={toggleHref(shut.has(r.id) ? closed.filter((id) => id !== r.id) : [...closed, r.id])}
                     scroll={false}
                     aria-expanded={!shut.has(r.id)}
-                    aria-label={`${shut.has(r.id) ? "Show" : "Hide"} the cards under ${r.key}`}
-                    title={`${shut.has(r.id) ? "Show" : "Hide"} the cards under ${r.key}`}
+                    aria-label={`${shut.has(r.id) ? "Show" : "Hide"} the ${of === "projects" ? "projects" : "cards"} under ${r.key || r.title}`}
+                    title={`${shut.has(r.id) ? "Show" : "Hide"} the ${of === "projects" ? "projects" : "cards"} under ${r.key || r.title}`}
                     className="relative flex h-4 w-4 shrink-0 items-center justify-center rounded bg-white text-sdc-gray-600 hover:bg-sdc-gray-100 hover:text-sdc-navy"
                   >
                     {shut.has(r.id) ? "\u25B8" : "\u25BE"}
@@ -273,9 +292,12 @@ export function Timeline({
                 ) : (
                   <span className="w-4 shrink-0" />
                 ))}
-              <Link href={hrefFor(r)} className="font-mono font-semibold text-sdc-blue hover:underline">
-                {r.key}
-              </Link>
+              {/* A department's row on the timeline of all projects has a name and no key. */}
+              {r.key && (
+                <Link href={hrefFor(r)} className="font-mono font-semibold text-sdc-blue hover:underline">
+                  {r.key}
+                </Link>
+              )}
               <span
                 title={r.title}
                 className={`truncate ${r.isParent ? "font-semibold text-sdc-navy" : "text-sdc-navy"} ${
@@ -302,7 +324,7 @@ export function Timeline({
               )}
             </div>
           ))}
-        </div>
+        </TimelineTitles>
 
         {/* The dates. */}
         <div className="min-w-0 flex-1 overflow-x-auto">
@@ -366,7 +388,7 @@ export function Timeline({
                 b ? `${shortDate(r.start)} to ${shortDate(r.finish)}` : null,
                 r.p80Finish ? `safe date ${shortDate(r.p80Finish)}` : null,
                 r.dueDate ? `due ${shortDate(r.dueDate)}` : null,
-                r.isParent ? "spans the cards under it" : r.assigneeName,
+                r.isParent ? (of === "projects" ? "spans its projects" : "spans the cards under it") : r.assigneeName,
                 r.statusName,
               ]
                 .filter(Boolean)
@@ -416,6 +438,21 @@ export function Timeline({
                         />
                       </>
                     ))}
+                  {(() => {
+                    // What has already happened: from the day the work started to the day it was
+                    // finished, or to the forecast's day while it is still open.
+                    if (!r.startedOn) return null;
+                    const from = Math.max(first, dayNumber(r.startedOn));
+                    const to = r.doneOn ? dayNumber(r.doneOn) : todayN;
+                    if (to <= from) return null;
+                    return (
+                      <div
+                        title={`${r.key} started ${shortDate(r.startedOn)}${r.doneOn ? `, finished ${shortDate(r.doneOn)}` : ""}`}
+                        style={{ left: x(from), width: x(to) - x(from), top: ROW / 2 - 7 }}
+                        className="absolute h-3.5 rounded-l bg-sdc-green/60"
+                      />
+                    );
+                  })()}
                   {r.doneOn && dayNumber(r.doneOn) >= first && (
                     <div
                       title={`${r.key} finished ${shortDate(r.doneOn)}`}
@@ -491,7 +528,6 @@ export function Timeline({
         </div>
       </div>
 
-      <Legend of={of} stale={stale} />
       {stale && (
         <p role="status" className="text-xs font-semibold text-sdc-yellow-text">
           This forecast was made for {shortDate(today)}, not today, so its dates may be out of date. It is redone

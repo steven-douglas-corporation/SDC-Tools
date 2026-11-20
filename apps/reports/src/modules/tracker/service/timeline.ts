@@ -1,6 +1,14 @@
 import type { Actor, Database } from "./database";
 import { projectRole } from "./access";
-import { getBoard, listProjects, type BoardStatus, type ProjectListItem } from "./queries";
+import {
+  getBoard,
+  listProjects,
+  throughLens,
+  type BoardStatus,
+  type DepartmentLens,
+  type DepartmentLevel,
+  type ProjectListItem,
+} from "./queries";
 
 // What the timeline screen reads: one project's cards laid out as rows, each with the dates its
 // bar is drawn from, plus the dependency links between them. It is the board's data in another
@@ -27,6 +35,11 @@ export interface TimelineRow {
   dueDate: string | null;
   /** The day a finished card was finished. */
   doneOn: string | null;
+  /**
+   * The day its work started (a card's own start date; for a project, the earliest among its
+   * cards). Null when nothing has been started yet.
+   */
+  startedOn: string | null;
   /** Why an open card has no bar, in the engine's words; the screen turns it into a sentence. */
   unscheduledReason: string | null;
   /** Hours entered on a parent card that the forecast does not count. Null when there are none. */
@@ -116,6 +129,12 @@ export function layoutTimeline(
   return out;
 }
 
+/** The earlier of two days, either of which may be missing. */
+function earliest(a: string | null, b: string | null): string | null {
+  if (!a || !b) return a ?? b;
+  return a < b ? a : b;
+}
+
 /** One project's timeline. Cancelled cards are left out; finished ones are kept, without a bar. */
 export async function getTimeline(db: Database, actor: Actor, projectKey: string): Promise<Timeline> {
   // getBoard does the access check and refuses a project that is not the caller's.
@@ -156,35 +175,54 @@ export async function getTimeline(db: Database, actor: Actor, projectKey: string
       .filter((l) => byId.has(l.fromId) && byId.has(l.toId));
   });
 
-  return {
-    project: board.project,
-    rows: laid.map((l) => {
-      const t = byId.get(l.id)!;
-      const status = category.get(t.statusId)!;
-      const done = status.category === "done";
-      return {
-        id: t.id,
-        key: t.key,
-        title: t.title,
-        kindLabel: t.kindLabel,
-        type: t.type,
-        depth: l.depth,
-        isParent: l.isParent,
-        statusName: status.name,
-        category: status.category,
-        assigneeName: t.assigneeName,
-        start: done ? null : l.start,
-        finish: done ? null : l.finish,
-        p80Finish: !done && !l.isParent && t.p80Finish && l.finish && t.p80Finish > l.finish ? t.p80Finish : null,
-        dueDate: t.dueDate,
-        doneOn: done ? t.actualCompletionDate : null,
-        unscheduledReason: done || l.isParent ? null : t.unscheduledReason,
-        uncountedHours: l.isParent ? t.uncountedHours : null,
-      };
-    }),
-    links,
-    forecastAsOf: board.forecastAsOf,
-  };
+  const started = await db.transaction(async (tx) => {
+    if (!(await projectRole(tx, board.project.id, actor))) return new Map<number, string>();
+    const { rows } = await tx.query<{ task_id: number; day: string }>(
+      `SELECT id AS task_id, actual_start_date::text AS day
+         FROM tracker.task
+        WHERE project_id = $1 AND actual_start_date IS NOT NULL`,
+      [board.project.id],
+    );
+    return new Map(rows.map((r) => [Number(r.task_id), r.day]));
+  });
+
+  const rows: TimelineRow[] = laid.map((l) => {
+    const t = byId.get(l.id)!;
+    const status = category.get(t.statusId)!;
+    const done = status.category === "done";
+    return {
+      id: t.id,
+      key: t.key,
+      title: t.title,
+      kindLabel: t.kindLabel,
+      type: t.type,
+      depth: l.depth,
+      isParent: l.isParent,
+      statusName: status.name,
+      category: status.category,
+      assigneeName: t.assigneeName,
+      start: done ? null : l.start,
+      finish: done ? null : l.finish,
+      p80Finish: !done && !l.isParent && t.p80Finish && l.finish && t.p80Finish > l.finish ? t.p80Finish : null,
+      dueDate: t.dueDate,
+      doneOn: done ? t.actualCompletionDate : null,
+      startedOn: earliest(started.get(t.id) ?? null, done ? t.actualCompletionDate : null),
+      unscheduledReason: done || l.isParent ? null : t.unscheduledReason,
+      uncountedHours: l.isParent ? t.uncountedHours : null,
+    };
+  });
+  // A card with cards under it started when the first of them did, or on its own date if a
+  // manager gave it an earlier one. Rows arrive parent first, so the cards under a row are the
+  // run of deeper rows after it.
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const parent = rows[i]!;
+    if (!parent.isParent) continue;
+    for (let j = i + 1; j < rows.length && rows[j]!.depth > parent.depth; j++) {
+      parent.startedOn = earliest(parent.startedOn, rows[j]!.startedOn);
+    }
+  }
+
+  return { project: board.project, rows, links, forecastAsOf: board.forecastAsOf };
 }
 
 // ── All projects on one timeline ─────────────────────────────────────────────
@@ -205,9 +243,33 @@ function projectUnscheduledReason(p: ProjectListItem): string {
 export async function getPortfolioTimeline(
   db: Database,
   actor: Actor,
+  view: {
+    /** Only the projects that are for one of these departments (see departmentScope). Null for all. */
+    scope?: Set<number> | null;
+    /** A row per department above its projects, spanning them, with the projects one level in. */
+    grouped?: boolean;
+    /** Which department the scope and the rows mean: who it is for (the default), or who does the work. */
+    lens?: DepartmentLens;
+    /** What a grouped row is: the group a department sits in (the default), or the department itself. */
+    level?: DepartmentLevel;
+    /** Finished projects too, each as a row from when its work started to when it was finished. */
+    finished?: boolean;
+  } = {},
 ): Promise<Pick<Timeline, "rows" | "links" | "forecastAsOf">> {
   // listProjects applies the "only your projects, or all for an admin" rule.
-  const projects = (await listProjects(db, actor)).filter((p) => p.state !== "completed" && p.state !== "cancelled");
+  const open = throughLens(
+    await listProjects(db, actor),
+    view.lens ?? "for",
+    view.grouped ? (view.level ?? "group") : "group",
+  ).filter((p) => p.state !== "cancelled" && (view.finished === true || p.state !== "completed"));
+  const scope = view.scope ?? null;
+  const inScope = scope ? open.filter((p) => p.forDepartmentId != null && scope.has(p.forDepartmentId)) : open;
+  // Grouped: a department's projects together, departments in the company's order, none last.
+  // The sort is stable, so each department's projects stay in stack-rank order.
+  const last = Number.MAX_SAFE_INTEGER;
+  const projects = view.grouped
+    ? [...inScope].sort((a, b) => (a.forGroupSort ?? last) - (b.forGroupSort ?? last))
+    : inScope;
   const visible = new Set(projects.map((p) => p.id));
 
   return db.transaction(async (tx) => {
@@ -219,6 +281,18 @@ export async function getPortfolioTimeline(
         GROUP BY t.project_id`,
     );
     const startOf = new Map(starts.rows.map((r) => [Number(r.project_id), r.start]));
+    // What has already happened: when each project's work began, and when a finished one ended.
+    const worked = await tx.query<{ project_id: number; started: string | null }>(
+      `SELECT project_id, min(least(actual_start_date, actual_completion_date))::text AS started
+         FROM tracker.task
+        WHERE archived_at IS NULL
+        GROUP BY project_id`,
+    );
+    const workedFrom = new Map(worked.rows.map((r) => [Number(r.project_id), r.started]));
+    const ended = await tx.query<{ id: number; day: string | null }>(
+      `SELECT id, actual_completion_date::text AS day FROM tracker.project WHERE state = 'completed'`,
+    );
+    const endedOn = new Map(ended.rows.map((r) => [Number(r.id), r.day]));
     // A project waits on another when an open card in it waits on an open card in the other.
     const waits = await tx.query<{ from_project: number; to_project: number }>(
       `SELECT DISTINCT a.project_id AS from_project, b.project_id AS to_project
@@ -233,30 +307,77 @@ export async function getPortfolioTimeline(
     );
     const run = await tx.query<{ as_of: string }>(`SELECT as_of_date::text AS as_of FROM tracker.current_schedule_run`);
 
-    return {
-      rows: projects.map((p): TimelineRow => {
-        const finish = p.forecastFinish;
-        const state = p.state.replace("_", " ");
-        return {
-          id: p.id,
-          key: p.key,
-          title: p.name,
-          kindLabel: "Task", // the default kind goes unmarked, which is what a project row wants
+    const projectRows = projects.map((p): TimelineRow => {
+      const done = p.state === "completed";
+      const finish = done ? null : p.forecastFinish;
+      const doneOn = done ? (endedOn.get(p.id) ?? null) : null;
+      const state = p.state.replace("_", " ");
+      return {
+        id: p.id,
+        key: p.key,
+        title: p.name,
+        kindLabel: "Task", // the default kind goes unmarked, which is what a project row wants
+        type: "task",
+        depth: view.grouped ? 1 : 0,
+        isParent: false,
+        statusName: state.charAt(0).toUpperCase() + state.slice(1),
+        category: done ? "done" : p.state === "active" ? "in_progress" : "todo",
+        assigneeName: `owner ${p.ownerName}`,
+        start: finish ? (startOf.get(p.id) ?? finish) : null,
+        finish,
+        p80Finish: finish && p.p80Finish && p.p80Finish > finish ? p.p80Finish : null,
+        dueDate: p.targetDate,
+        doneOn,
+        startedOn: earliest(earliest(p.startDate, workedFrom.get(p.id) ?? null), doneOn),
+        unscheduledReason: finish || done ? null : projectUnscheduledReason(p),
+        uncountedHours: null,
+      };
+    });
+
+    // A department's own row: no dates of its own, a bar from the first start to the last
+    // finish among its projects. Its id is negative so it can never be taken for a project's,
+    // which is what the links and the "closed" list in the address go by.
+    const rows: TimelineRow[] = [];
+    projects.forEach((p, i) => {
+      if (view.grouped && (i === 0 || projects[i - 1]!.forGroupId !== p.forGroupId)) {
+        const mine = projects
+          .map((x, j) => ({ x, row: projectRows[j]! }))
+          .filter(({ x }) => x.forGroupId === p.forGroupId)
+          .map(({ row }) => row);
+        const starts = mine
+          .map((r) => r.start)
+          .filter((d): d is string => d != null)
+          .sort();
+        const finishes = mine
+          .map((r) => r.finish)
+          .filter((d): d is string => d != null)
+          .sort();
+        rows.push({
+          id: -(p.forGroupId ?? 0) - 1,
+          key: "",
+          title: p.forGroupName ?? "No department yet",
+          kindLabel: "Department",
           type: "task",
           depth: 0,
-          isParent: false,
-          statusName: state.charAt(0).toUpperCase() + state.slice(1),
-          category: p.state === "active" ? "in_progress" : "todo",
-          assigneeName: `owner ${p.ownerName}`,
-          start: finish ? (startOf.get(p.id) ?? finish) : null,
-          finish,
-          p80Finish: finish && p.p80Finish && p.p80Finish > finish ? p.p80Finish : null,
-          dueDate: p.targetDate,
+          isParent: true,
+          statusName: `${mine.length} project${mine.length === 1 ? "" : "s"}`,
+          category: "todo",
+          assigneeName: null,
+          start: starts[0] ?? null,
+          finish: finishes[finishes.length - 1] ?? null,
+          p80Finish: null,
+          dueDate: null,
           doneOn: null,
-          unscheduledReason: finish ? null : projectUnscheduledReason(p),
+          startedOn: null,
+          unscheduledReason: null,
           uncountedHours: null,
-        };
-      }),
+        });
+      }
+      rows.push(projectRows[i]!);
+    });
+
+    return {
+      rows,
       links: waits.rows
         .map((w) => ({ fromId: Number(w.from_project), toId: Number(w.to_project), lagDays: 0 }))
         .filter((l) => visible.has(l.fromId) && visible.has(l.toId)),

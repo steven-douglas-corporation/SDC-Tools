@@ -5,15 +5,30 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";
 import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
-import { trackerActor } from "@/modules/tracker/current-actor";
-import { listProjects } from "@/modules/tracker/service/queries";
+import { syncDepartmentsFromOrg, trackerActor } from "@/modules/tracker/current-actor";
+import { departmentScope, listDepartments } from "@/modules/tracker/service/departments";
+import { ProjectListControls } from "@/modules/tracker/components/DepartmentPicker";
+import {
+  ONLY_LABEL,
+  isIncomplete,
+  isOpen,
+  listHref,
+  listView,
+  narrowProjects,
+  ranksLocked,
+} from "@/modules/tracker/components/format";
+import { listProjects, listValueBuckets, throughLens } from "@/modules/tracker/service/queries";
 import { ProjectList } from "@/modules/tracker/components/ProjectList";
-import { PortfolioViews } from "@/modules/tracker/components/ProjectViews";
+import { PortfolioSummary } from "@/modules/tracker/components/PortfolioSummary";
 
 // The Project Tracker's front page. This file is deliberately thin (docs/MODULES.md): it checks
 // the app permission, works out who is asking, and hands the module's own data to the module's
 // own component. Everything else lives in src/modules/tracker.
-export default async function TrackerPage() {
+export default async function TrackerPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await requirePagePermission("tracker:view");
 
   if (!trackerConfigured()) {
@@ -30,26 +45,111 @@ export default async function TrackerPage() {
   }
 
   const actor = await trackerActor(session);
-  const projects = await listProjects(trackerDb, actor);
+  const view = listView(await searchParams);
+  const everyProject = throughLens(
+    await listProjects(trackerDb, actor),
+    view.lens,
+    view.grouped ? view.level : "group",
+  );
+  const valueBuckets = await listValueBuckets(trackerDb);
+  // The departments are the company's own, copied from the roster before they are offered.
+  await syncDepartmentsFromOrg();
+  const departments = await listDepartments(trackerDb);
+
+  // Everything about how the list is narrowed and ordered is in the address (see listView), so
+  // the page is drawn on the server with figures to match and any view can be sent to someone.
+  const chosen = departments.find((d) => d.id === view.forId) ?? null;
+  // `described` is what the figures describe; `projects` is that, narrowed to a chosen figure,
+  // sorted and grouped. Choosing a figure does not change the figures.
+  const { described, shown: projects } = narrowProjects(
+    everyProject,
+    { ...view, forId: chosen?.id ?? null },
+    chosen ? departmentScope(departments, chosen.id) : null,
+  );
+  const locked = ranksLocked({ ...view, forId: chosen?.id ?? null });
+  const withinDepartment = view.grouped && !locked;
+  const incomplete = described.filter((p) => isOpen(p) && isIncomplete(p)).length;
+  const hidden = everyProject.length - everyProject.filter(isOpen).length;
 
   return (
     <div className={PAGE_SHELL}>
       <PageTitle className="mb-1">Project Tracker</PageTitle>
       <p className="mb-4 max-w-3xl text-sm text-sdc-gray-600">
-        Projects in company priority order. <strong>Forecast</strong> is when the work is expected to finish, worked out
-        from the hours left, who is assigned and what waits on what. It is shown beside the target, with the work it
-        leaves out, so a date is never better than it looks. <strong>Safe date</strong> is later: it allows for work
-        running over, and is the one to promise.{" "}
+        Projects in stack-rank order. <strong>Forecast</strong> is when the work is expected to finish;{" "}
+        <strong>Safe date</strong> allows for work running over, and is the one to promise.{" "}
         <Link href="/tracker/people" className="font-semibold text-sdc-blue hover:underline">
           People and time
         </Link>{" "}
-        is where each person&apos;s hours, time off and the company holidays are set.
+        sets each person&apos;s hours, time off and the company holidays.
       </p>
-      <PortfolioViews current="list" />
+      <div className="mb-4">
+        <ProjectListControls
+          departments={departments}
+          selected={chosen?.id ?? null}
+          grouped={view.grouped}
+          lens={view.lens}
+          level={view.level}
+          sort={view.sort}
+          search={view.q}
+          finished={view.finished}
+          finishedCount={hidden}
+        />
+      </div>
+      <PortfolioSummary projects={described} only={view.only} hrefFor={(only) => listHref(view, { only })} />
+
+      {/* What is missing, said once and with a way to see which: every project is asked for a
+          justification, a value and a department, and the ones made before that have none. */}
+      {incomplete > 0 && view.only !== "incomplete" && (
+        <p className="mb-4 rounded-lg border border-sdc-border bg-sdc-yellow-bg px-3 py-2 text-sm text-sdc-yellow-text">
+          {incomplete} open project{incomplete === 1 ? " is" : "s are"} missing a justification, a value or a
+          department, and cannot be made active without them.{" "}
+          <Link
+            href={listHref(view, { only: "incomplete" })}
+            scroll={false}
+            className="font-semibold underline hover:no-underline"
+          >
+            Show {incomplete === 1 ? "it" : "them"}
+          </Link>
+        </p>
+      )}
+      {view.only && (
+        <p className="mb-3 text-sm text-sdc-navy">
+          Showing only <strong>{ONLY_LABEL[view.only]}</strong>.{" "}
+          <Link
+            href={listHref(view, { only: null })}
+            scroll={false}
+            className="font-semibold text-sdc-blue hover:underline"
+          >
+            Show all
+          </Link>
+        </p>
+      )}
+
       <ProjectList
         projects={projects}
+        valueBuckets={valueBuckets}
+        departments={departments}
+        grouped={view.grouped}
+        // No project at all is a different thing from none matching, and is said differently.
+        narrowed={everyProject.length > 0}
+        clearHref="/tracker"
         canEdit={hasPermission(session.user.role, "tracker:edit")}
-        canRank={actor.admin === true}
+        // A rank is a place among every project, so it is only changed with all of them in
+        // view and in rank order.
+        //
+        // Grouped with every department in view, a project is moved among its own
+        // department's projects instead: they trade the ranks that department already holds.
+        canRank={actor.admin === true && !locked}
+        rankWithinDepartment={withinDepartment}
+        rankNote={
+          actor.admin !== true
+            ? undefined
+            : locked
+              ? "Ranks are shown, not changed, while the list is filtered, searched or sorted. Show every project in rank order to change them."
+              : withinDepartment
+                ? "Grouped, a project is moved among its own department's projects. There is still one company rank: to set a project against another department's, ungroup the list."
+                : undefined
+        }
       />
     </div>
   );

@@ -95,7 +95,7 @@ test("the action that returns a named person's whole punch history takes the pag
 });
 
 test("the Dashboard no longer carries the Data Quality section or the source-health card", () => {
-  const page = src("app/(app)/page.tsx");
+  const page = src("app/(app)/dashboard/page.tsx");
   assert.doesNotMatch(page, /DataQualityPanel|RefreshScheduleCard|getDataQuality/);
 });
 

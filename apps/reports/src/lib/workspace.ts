@@ -791,7 +791,7 @@ export function decodeWorkspace(raw: RawParams): Workspace {
   const segments = (one(raw.t) ?? "")
     .split(",")
     // Empty segments are dropped BEFORE normalizePath, not after. That order matters:
-    // normalizePath("") returns "/", which is a real route (the Dashboard), so
+    // normalizePath("") returns the Dashboard's path, which is a real route, so
     // `?t=` or `?t=/etc,,/jobs` would otherwise conjure Dashboard tabs nobody asked
     // for. An absent segment means no tab.
     .map((s) => s.trim())

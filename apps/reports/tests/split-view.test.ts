@@ -30,8 +30,7 @@ import {
 } from "../src/lib/split-view";
 
 const SRC = join(process.cwd(), "src");
-const pageFile = (path: string) =>
-  path === "/" ? join(SRC, "app", "(app)", "page.tsx") : join(SRC, "app", "(app)", path.slice(1), "page.tsx");
+const pageFile = (path: string) => join(SRC, "app", "(app)", path.slice(1), "page.tsx");
 
 // ── The table cannot drift from the pages it describes ───────────────────────
 //
@@ -185,9 +184,11 @@ test("a one-pane URL carries no split noise", () => {
 test("decoding is total — no malformed URL can produce a blank app", () => {
   // A URL is user-editable and is also what survives a reload, so every bad input
   // has to land on something usable.
-  assert.equal(decodeSplit({}).l.path, "/");
+  assert.equal(decodeSplit({}).l.path, "/dashboard");
   assert.equal(decodeSplit({}).r, null);
-  assert.equal(decodeSplit({ l: "/nope" }).l.path, "/", "an unknown left route falls back to the dashboard");
+  assert.equal(decodeSplit({ l: "/nope" }).l.path, "/dashboard", "an unknown left route falls back to the dashboard");
+  // The Dashboard's address until 2026-11-19: a split link saved before the move still opens it.
+  assert.equal(decodeSplit({ l: "/", r: "/etc" }).l.path, "/dashboard");
   assert.equal(decodeSplit({ l: "/etc", r: "/nope" }).r, null, "an unknown right route collapses to one pane");
   assert.equal(decodeSplit({ l: "/etc", ratio: "not-a-number" }).ratio, DEFAULT_RATIO);
   assert.equal(decodeSplit({ l: "/etc", r: "/jobs", ratio: "999" }).ratio, MAX_RATIO);
@@ -216,8 +217,10 @@ test("present-but-empty is preserved, because a page distinguishes it from absen
 
 test("trailing slashes are one route, unknown paths stay unknown", () => {
   assert.equal(normalizePath("/etc/"), "/etc");
-  assert.equal(normalizePath(""), "/");
-  assert.equal(normalizePath("/"), "/");
+  // "/" was the Dashboard's address, and is read as its new one wherever a pane is named.
+  assert.equal(normalizePath(""), "/dashboard");
+  assert.equal(normalizePath("/"), "/dashboard");
+  assert.equal(normalizePath("/dashboard/"), "/dashboard");
   assert.equal(isSplittable("/etc/"), true);
   assert.equal(isSplittable("/admin/users"), false, "admin routes are not panes");
   assert.equal(isSplittable("/login"), false);
@@ -229,7 +232,11 @@ test("Open in Split View keeps the current page on the left, with its context", 
   // The headline workflow: on Monthly ETC in August, open Job Hour Details beside it.
   const s = openInSplit({ path: "/etc", params: { month: "2026-08", dept: "ENG" } }, { path: "/job-hours" });
   assert.equal(s.l.path, "/etc");
-  assert.deepEqual(s.l.params, { month: "2026-08", dept: "ENG" }, "the month and department must survive the transition");
+  assert.deepEqual(
+    s.l.params,
+    { month: "2026-08", dept: "ENG" },
+    "the month and department must survive the transition",
+  );
   assert.equal(s.r!.path, "/job-hours");
   // The pane you just asked for is the one you want to act on next.
   assert.equal(s.active, "r");

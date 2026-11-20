@@ -234,7 +234,7 @@ test("every permission the app can check has a row in the matrix", () => {
 
 test("every top-level tab resolves to a permission", () => {
   const routes: [string, Permission][] = [
-    ["/", "dashboard:view"],
+    ["/dashboard", "dashboard:view"],
     ["/job-hours", "job-hour-details:view"],
     ["/build-readiness", "build-readiness:view"],
     ["/quoted", "projects:view"],

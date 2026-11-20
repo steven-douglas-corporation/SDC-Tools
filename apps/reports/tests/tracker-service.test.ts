@@ -8,11 +8,12 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { TrackerError, type Actor, type Database } from "../src/modules/tracker/service/database";
 import {
-  createProject,
+  createProject as createProjectAsIs,
   ensurePerson,
   setPortfolioRanks,
   setProjectMember,
   updateProject,
+  type NewProject,
 } from "../src/modules/tracker/service/projects";
 import {
   addDependency,
@@ -24,6 +25,23 @@ import {
   updateTask,
 } from "../src/modules/tracker/service/tasks";
 import { runForecast } from "../src/modules/tracker/service/forecast";
+import {
+  departmentScope,
+  listDepartments,
+  syncDepartments,
+  type OrgUnit,
+} from "../src/modules/tracker/service/departments";
+
+const ORG: OrgUnit[] = [
+  { code: "company", name: "Company-wide", parentCode: null },
+  { code: "pm", name: "Project Management", parentCode: null },
+  { code: "group:engineering", name: "Engineering", parentCode: null },
+  { code: "mech", name: "Mechanical Engineering", parentCode: "group:engineering" },
+  { code: "controls", name: "Controls Engineering", parentCode: "group:engineering" },
+  { code: "group:support", name: "Support", parentCode: null },
+  { code: "finance", name: "Finance", parentCode: "group:support" },
+  { code: "hr", name: "Human Resources", parentCode: "group:support" },
+];
 
 const migration = (name: string) =>
   readFileSync(fileURLToPath(new URL(`../db/tracker/migrations/${name}`, import.meta.url)), "utf8");
@@ -31,6 +49,24 @@ const migration = (name: string) =>
 let pg: PGlite;
 let db: Database;
 let ana: Actor, ben: Actor, cal: Actor, boss: Actor;
+
+// Every project needs a justification, a yearly value and a department. Tests that are about
+// something else get one of each from here; the tests of those rules call the service as it is.
+let someValue: number;
+let someDepartment: number;
+const createProject = (
+  d: Database,
+  actor: Actor,
+  input: Omit<NewProject, "justification" | "valueBucketId" | "forDepartmentId" | "doneByDepartmentId"> &
+    Partial<NewProject>,
+) =>
+  createProjectAsIs(d, actor, {
+    justification: "Saves the team time.",
+    valueBucketId: someValue,
+    forDepartmentId: someDepartment,
+    doneByDepartmentId: someDepartment,
+    ...input,
+  });
 
 async function rows<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
   return (await pg.query<T>(sql, params)).rows;
@@ -64,8 +100,19 @@ before(async () => {
   await pg.exec(migration("0007_checklist.sql"));
   await pg.exec(migration("0008_migration_record_readable.sql"));
   await pg.exec(migration("0009_project_priority_dropped.sql"));
+  await pg.exec(migration("0010_project_justification.sql"));
+  await pg.exec(migration("0011_project_for_department.sql"));
+  await pg.exec(migration("0012_project_done_by_department.sql"));
+  await pg.exec(migration("0013_task_actual_start.sql"));
+  await pg.exec(migration("0014_project_start_date.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
+  // The company's departments as the roster would hand them over: see the departments test.
+  await syncDepartments(db, ORG);
+  someDepartment = (await listDepartments(db)).find((d) => d.code === "company")!.id;
+  someValue = Number(
+    (await rows<{ id: number }>(`SELECT id FROM tracker.value_bucket ORDER BY sort_order LIMIT 1`))[0]!.id,
+  );
 
   ana = { personId: await ensurePerson(db, { email: "Ana@Example.test", displayName: "Ana" }) };
   ben = { personId: await ensurePerson(db, { email: "ben@example.test", displayName: "Ben" }) };
@@ -307,6 +354,21 @@ test("who may do what: members only, managers for archiving, the portfolio owner
 
   await archiveTask(db, ana, t.id);
   await refuses(() => updateTask(db, ana, t.id, { priority: 2 }), "invalid", /archived/);
+});
+
+test("a project can be renamed by a manager: the key stays, an empty name is refused, nothing is logged", async () => {
+  const p = await createProject(db, ana, { key: "RENAME", name: "Old name" });
+  await setProjectMember(db, ana, p.id, ben.personId, "contributor");
+  await refuses(() => updateProject(db, ben, p.id, { name: "Mine now" }), "forbidden");
+  await refuses(() => updateProject(db, ana, p.id, { name: "   " }), "invalid", /needs a name/);
+  await updateProject(db, ana, p.id, { name: "  New name  " });
+
+  const [row] = await rows<{ key: string; name: string }>(`SELECT key, name FROM tracker.project WHERE id = $1`, [
+    p.id,
+  ]);
+  assert.deepEqual(row, { key: "RENAME", name: "New name" });
+  const log = await rows(`SELECT 1 FROM tracker.project_change_log WHERE project_id = $1`, [p.id]);
+  assert.equal(log.length, 0);
 });
 
 test("stack ranks can be swapped in one step; a clash changes nothing", async () => {
@@ -1695,7 +1757,11 @@ test("archive: a card with cards under it stays; archiving removes its links and
   await addDependency(db, ana, first.id, waiter.id);
   await addDependency(db, ana, child.id, first.id);
 
-  await refuses(() => archiveTask(db, ana, story.id), "invalid", /has 1 card under it\. Move or archive it first/);
+  await refuses(
+    () => archiveTask(db, ana, story.id),
+    "invalid",
+    /has 1 card under it\. Archive it with it, or move it first/,
+  );
 
   await archiveTask(db, ana, first.id);
   const links = await rows(
@@ -1744,4 +1810,641 @@ test("project settings: a new owner becomes a manager, and a finished project le
     [p.id],
   );
   assert.ok(done!.d, "the day it was finished is recorded");
+});
+
+test("justification: a project says why it is worth doing and what it is worth, before it exists and before it is active", async () => {
+  const Q = await import("../src/modules/tracker/service/queries");
+  const buckets = await Q.listValueBuckets(db);
+  assert.deepEqual(
+    buckets.map((b) => b.label),
+    ["Under $10k a year", "$10k to $50k a year", "$50k to $250k a year", "$250k to $1M a year", "Over $1M a year"],
+  );
+  const [small, , mid] = buckets;
+
+  // Neither can be left out when a project is created.
+  await refuses(
+    () =>
+      createProjectAsIs(db, ana, {
+        doneByDepartmentId: someDepartment,
+        forDepartmentId: someDepartment,
+        key: "WHY1",
+        name: "No reason",
+        justification: "   ",
+        valueBucketId: mid!.id,
+      }),
+    "invalid",
+    /needs a justification: what it saves, earns or prevents/,
+  );
+  await refuses(
+    () =>
+      createProjectAsIs(db, ana, {
+        doneByDepartmentId: someDepartment,
+        forDepartmentId: someDepartment,
+        key: "WHY1",
+        name: "No value",
+        justification: "Saves two days a month.",
+        valueBucketId: null as unknown as number,
+      }),
+    "invalid",
+    /worth to the bottom line in a year/,
+  );
+  await refuses(
+    () =>
+      createProjectAsIs(db, ana, {
+        doneByDepartmentId: someDepartment,
+        forDepartmentId: someDepartment,
+        key: "WHY1",
+        name: "Bad value",
+        justification: "x",
+        valueBucketId: 999999,
+      }),
+    "invalid",
+    /worth to the bottom line/,
+  );
+  const none = await rows(`SELECT 1 FROM tracker.project WHERE key = 'WHY1'`);
+  assert.equal(none.length, 0, "a refused project is not created");
+
+  const p = await createProjectAsIs(db, ana, {
+    doneByDepartmentId: someDepartment,
+    forDepartmentId: someDepartment,
+    key: "WHY",
+    name: "Roll-up",
+    justification: "  Cuts the monthly roll-up from two days to two hours.  ",
+    valueBucketId: mid!.id,
+  });
+  const listed = (await Q.listProjects(db, ana)).find((x) => x.id === p.id)!;
+  assert.deepEqual(
+    [listed.justification, listed.valueBucketId, listed.valueLabel],
+    ["Cuts the monthly roll-up from two days to two hours.", mid!.id, "$50k to $250k a year"],
+  );
+  const board = await Q.getBoard(db, ana, "WHY");
+  assert.equal(board.project.valueLabel, "$50k to $250k a year", "the project page reads the same thing");
+
+  // Both can be changed, with the change kept in the history; the reason cannot be emptied.
+  await updateProject(
+    db,
+    ana,
+    p.id,
+    { justification: "Saves two days a month.", valueBucketId: small!.id },
+    "re-scoped",
+  );
+  await refuses(() => updateProject(db, ana, p.id, { justification: "" }), "invalid", /needs a justification/);
+  const log = await rows<{ field: string; old_value: string; new_value: string; reason: string }>(
+    `SELECT field::text, old_value, new_value, reason FROM tracker.project_change_log WHERE project_id = $1 ORDER BY id`,
+    [p.id],
+  );
+  assert.deepEqual(log, [
+    {
+      field: "justification",
+      old_value: "Cuts the monthly roll-up from two days to two hours.",
+      new_value: "Saves two days a month.",
+      reason: "re-scoped",
+    },
+    { field: "value", old_value: "$50k to $250k a year", new_value: "Under $10k a year", reason: "re-scoped" },
+  ]);
+  // Saying the same thing again changes nothing and logs nothing.
+  await updateProject(db, ana, p.id, { justification: "Saves two days a month.", valueBucketId: small!.id });
+  assert.equal((await rows(`SELECT 1 FROM tracker.project_change_log WHERE project_id = $1`, [p.id])).length, 2);
+
+  // A project made before this was asked for has neither, and cannot be made active until it does.
+  const old = await createProject(db, ana, { key: "OLDWHY", name: "From before" });
+  await pg.query(`UPDATE tracker.project SET justification = NULL, value_bucket_id = NULL WHERE id = $1`, [old.id]);
+  await setPortfolioRanks(db, boss, [{ projectId: old.id, rank: 71 }]);
+  await refuses(
+    () => updateProject(db, ana, old.id, { state: "active" }),
+    "invalid",
+    /needs a justification, a yearly value, the department it is for and the department doing the work/,
+  );
+  await refuses(
+    () => updateProject(db, ana, old.id, { state: "active", justification: "Keeps the lights on." }),
+    "invalid",
+    /before it can be made active/,
+  );
+  // Given both in the same save, it goes active in one step.
+  await updateProject(db, ana, old.id, {
+    state: "active",
+    justification: "Keeps the lights on.",
+    valueBucketId: mid!.id,
+  });
+  const [now] = await rows<{ state: string }>(`SELECT state::text FROM tracker.project WHERE id = $1`, [old.id]);
+  assert.equal(now!.state, "active");
+});
+
+test("departments: copied from the roster in two levels, and a project says which one it is for", async () => {
+  const Q = await import("../src/modules/tracker/service/queries");
+  const T = await import("../src/modules/tracker/service/timeline");
+
+  // The copy is the roster's list, groups first with their teams under them, in the order given.
+  const all = await listDepartments(db);
+  assert.deepEqual(
+    all.map((d) => [d.name, d.groupName, d.parentId == null]),
+    [
+      ["Company-wide", "Company-wide", true],
+      ["Project Management", "Project Management", true],
+      ["Engineering", "Engineering", true],
+      ["Mechanical Engineering", "Engineering", false],
+      ["Controls Engineering", "Engineering", false],
+      ["Support", "Support", true],
+      ["Finance", "Support", false],
+      ["Human Resources", "Support", false],
+    ],
+  );
+  const id = (code: string) => all.find((d) => d.code === code)!.id;
+  // A group covers its teams; a team covers only itself.
+  assert.deepEqual(
+    [...departmentScope(all, id("group:engineering"))].sort(),
+    [id("group:engineering"), id("mech"), id("controls")].sort(),
+  );
+  assert.deepEqual([...departmentScope(all, id("mech"))], [id("mech")]);
+
+  // Copying the same list again writes nothing.
+  const before = await rows<{ x: string }>(`SELECT string_agg(xmin::text, ',' ORDER BY id) AS x FROM tracker.team`);
+  await syncDepartments(db, ORG);
+  const after = await rows<{ x: string }>(`SELECT string_agg(xmin::text, ',' ORDER BY id) AS x FROM tracker.team`);
+  assert.equal(after[0]!.x, before[0]!.x, "an unchanged roster touches no row");
+
+  // A project cannot be made without one, or with one that is not in use.
+  const asked = { justification: "Saves time.", valueBucketId: someValue };
+  await refuses(
+    () =>
+      createProjectAsIs(db, ana, {
+        doneByDepartmentId: someDepartment,
+        key: "DEPT0",
+        name: "x",
+        ...asked,
+        forDepartmentId: null as unknown as number,
+      }),
+    "invalid",
+    /Choose the department the project is for/,
+  );
+  await refuses(
+    () =>
+      createProjectAsIs(db, ana, {
+        doneByDepartmentId: someDepartment,
+        key: "DEPT0",
+        name: "x",
+        ...asked,
+        forDepartmentId: 999999,
+      }),
+    "invalid",
+    /Choose the department/,
+  );
+
+  const fin = await createProjectAsIs(db, ana, {
+    doneByDepartmentId: someDepartment,
+    key: "DEPTF",
+    name: "Close faster",
+    ...asked,
+    forDepartmentId: id("finance"),
+  });
+  const eng = await createProjectAsIs(db, ana, {
+    doneByDepartmentId: someDepartment,
+    key: "DEPTE",
+    name: "Drawing checks",
+    ...asked,
+    forDepartmentId: id("mech"),
+  });
+  const wide = await createProjectAsIs(db, ana, {
+    doneByDepartmentId: someDepartment,
+    key: "DEPTW",
+    name: "Warehouse",
+    ...asked,
+    forDepartmentId: id("company"),
+  });
+  const mine = (await Q.listProjects(db, ana)).filter((p) => [fin.id, eng.id, wide.id].includes(p.id));
+  assert.deepEqual(mine.map((p) => [p.key, p.forDepartmentName, p.forGroupName]).sort(), [
+    ["DEPTE", "Mechanical Engineering", "Engineering"],
+    ["DEPTF", "Finance", "Support"],
+    ["DEPTW", "Company-wide", "Company-wide"],
+  ]);
+
+  // Changing it is kept in the history, by name.
+  await updateProject(db, ana, eng.id, { forDepartmentId: id("group:engineering") }, "both teams use it");
+  const log = await rows<{ old_value: string; new_value: string; reason: string }>(
+    `SELECT old_value, new_value, reason FROM tracker.project_change_log
+      WHERE project_id = $1 AND field = 'for_department'`,
+    [eng.id],
+  );
+  assert.deepEqual(log, [
+    { old_value: "Mechanical Engineering", new_value: "Engineering", reason: "both teams use it" },
+  ]);
+
+  // A project from before this was asked for cannot be made active without one.
+  const old = await createProject(db, ana, { key: "DEPTO", name: "From before" });
+  await pg.query(`UPDATE tracker.project SET for_team_id = NULL WHERE id = $1`, [old.id]);
+  await setPortfolioRanks(db, boss, [{ projectId: old.id, rank: 81 }]);
+  await refuses(
+    () => updateProject(db, ana, old.id, { state: "active" }),
+    "invalid",
+    /the department it is for and the department doing the work before/,
+  );
+  await updateProject(db, ana, old.id, { state: "active", forDepartmentId: id("hr") });
+
+  // The timeline of all projects: filtered to a department, and gathered under one row each.
+  const keysOf = (t: { rows: { key: string; title: string; depth: number; isParent: boolean }[] }) =>
+    t.rows.filter((r) => ["DEPTF", "DEPTE", "DEPTW", "DEPTO"].includes(r.key) || r.isParent);
+  const support = await T.getPortfolioTimeline(db, ana, { scope: departmentScope(all, id("group:support")) });
+  assert.deepEqual(
+    support.rows.map((r) => r.key).sort(),
+    ["DEPTF", "DEPTO"],
+    "a group's filter finds its teams' projects",
+  );
+  assert.ok(
+    support.rows.every((r) => r.depth === 0 && !r.isParent),
+    "ungrouped rows are flat",
+  );
+
+  const grouped = await T.getPortfolioTimeline(db, ana, {
+    scope: new Set([id("finance"), id("hr"), id("group:engineering"), id("mech"), id("controls")]),
+    grouped: true,
+  });
+  assert.deepEqual(
+    keysOf(grouped).map((r) => [r.isParent ? r.title : r.key, r.depth]),
+    [
+      ["Engineering", 0],
+      ["DEPTE", 1],
+      ["Support", 0],
+      // Rank order inside a department: DEPTO holds a rank, DEPTF does not yet.
+      ["DEPTO", 1],
+      ["DEPTF", 1],
+    ],
+    "departments in the company's order, each above its projects",
+  );
+  assert.ok(
+    grouped.rows.filter((r) => r.isParent).every((r) => r.id < 0 && r.key === ""),
+    "a department's row is no project",
+  );
+
+  // A team the roster drops is switched off, not deleted: the project still says who it was for.
+  await syncDepartments(
+    db,
+    ORG.filter((u) => u.code !== "finance"),
+  );
+  assert.ok(!(await listDepartments(db)).some((d) => d.code === "finance"), "it is no longer offered");
+  assert.equal((await Q.listProjects(db, ana)).find((p) => p.id === fin.id)!.forDepartmentName, "Finance");
+  await refuses(
+    () => updateProject(db, ana, eng.id, { forDepartmentId: id("finance") }),
+    "invalid",
+    /Choose the department/,
+  );
+  await syncDepartments(db, ORG);
+  assert.ok(
+    (await listDepartments(db)).some((d) => d.code === "finance"),
+    "and comes back when the roster has it again",
+  );
+});
+
+test("ranking inside a department trades the ranks it already holds, and asks before passing another department", async () => {
+  const P = await import("../src/modules/tracker/service/projects");
+  const F = await import("../src/modules/tracker/components/format");
+  const all = await listDepartments(db);
+  const id = (code: string) => all.find((d) => d.code === code)!.id;
+  const make = async (key: string, dept: string) =>
+    (await createProject(db, ana, { key, name: key, forDepartmentId: id(dept) })).id;
+
+  // Engineering holds ranks 201, 202 and 205; Support holds 203 and 204, between them.
+  const e1 = await make("RKE1", "mech");
+  const e2 = await make("RKE2", "controls");
+  const s1 = await make("RKS1", "finance");
+  const s2 = await make("RKS2", "hr");
+  const e3 = await make("RKE3", "group:engineering");
+  await setPortfolioRanks(db, boss, [
+    { projectId: e1, rank: 201 },
+    { projectId: e2, rank: 202 },
+    { projectId: s1, rank: 203 },
+    { projectId: s2, rank: 204 },
+    { projectId: e3, rank: 205 },
+  ]);
+  const ranks = async () =>
+    Object.fromEntries(
+      (
+        await rows<{ key: string; r: number }>(
+          `SELECT key, portfolio_rank AS r FROM tracker.project WHERE key ~ '^RK[ES][0-9]$' ORDER BY key`,
+        )
+      ).map((x) => [x.key, Number(x.r)]),
+    );
+
+  // Only whoever sets the company's ranks may do this.
+  await refuses(() => P.moveProjectRankInDepartment(db, ana, e2, "up"), "forbidden");
+
+  // Mechanical and Controls are both Engineering: neighbours, with nothing between. No question.
+  const near = await P.moveProjectRankInDepartment(db, boss, e2, "up");
+  assert.deepEqual(near, {
+    done: true,
+    moved: { key: "RKE2", from: 202, to: 201 },
+    other: { key: "RKE1", from: 201, to: 202 },
+    passes: 0,
+  });
+  assert.deepEqual(await ranks(), { RKE1: 202, RKE2: 201, RKE3: 205, RKS1: 203, RKS2: 204 });
+
+  // RKE3 up one place in Engineering means passing both Support projects: nothing changes until confirmed.
+  const asked = await P.moveProjectRankInDepartment(db, boss, e3, "up");
+  assert.deepEqual(asked, {
+    done: false,
+    moved: { key: "RKE3", from: 205, to: 202 },
+    other: { key: "RKE1", from: 202, to: 205 },
+    passes: 2,
+  });
+  assert.deepEqual(await ranks(), { RKE1: 202, RKE2: 201, RKE3: 205, RKS1: 203, RKS2: 204 }, "asking changes nothing");
+  assert.equal(
+    F.departmentMoveEffect(asked!),
+    "RKE3 moves from company rank 205 to 202, ahead of 2 projects of other departments. RKE1 moves to 205.",
+  );
+
+  const done = await P.moveProjectRankInDepartment(db, boss, e3, "up", true);
+  assert.equal(done!.done, true);
+  // Engineering still holds 201, 202 and 205; Support's two never moved.
+  assert.deepEqual(await ranks(), { RKE1: 205, RKE2: 201, RKE3: 202, RKS1: 203, RKS2: 204 });
+
+  // At the top or bottom of its department there is nowhere to go.
+  assert.equal(await P.moveProjectRankInDepartment(db, boss, e2, "up"), null);
+  assert.equal(await P.moveProjectRankInDepartment(db, boss, e1, "down"), null);
+  // Going down says "behind".
+  const down = await P.moveProjectRankInDepartment(db, boss, e3, "down");
+  assert.match(
+    F.departmentMoveEffect(down!),
+    /RKE3 moves from company rank 202 to 205, behind 2 projects of other departments/,
+  );
+
+  // A project with no rank is given one in the full list first.
+  const unranked = await make("RKE4", "mech");
+  await refuses(() => P.moveProjectRankInDepartment(db, boss, unranked, "up"), "invalid", /no stack rank yet/);
+});
+
+test("dropping a project at another's place in its department rearranges only that department's ranks", async () => {
+  const P = await import("../src/modules/tracker/service/projects");
+  const F = await import("../src/modules/tracker/components/format");
+  const all = await listDepartments(db);
+  const id = (code: string) => all.find((d) => d.code === code)!.id;
+  const make = async (key: string, dept: string) =>
+    (await createProject(db, ana, { key, name: key, forDepartmentId: id(dept) })).id;
+
+  // Project Management holds 301, 302, 305 and 306; Finance holds 303 and 304, between them.
+  const a = await make("DRA", "pm");
+  const b = await make("DRB", "pm");
+  const x = await make("DRX", "finance");
+  const y = await make("DRY", "finance");
+  const c = await make("DRC", "pm");
+  const d = await make("DRD", "pm");
+  await setPortfolioRanks(db, boss, [
+    { projectId: a, rank: 301 },
+    { projectId: b, rank: 302 },
+    { projectId: x, rank: 303 },
+    { projectId: y, rank: 304 },
+    { projectId: c, rank: 305 },
+    { projectId: d, rank: 306 },
+  ]);
+  const ranks = async () =>
+    Object.fromEntries(
+      (
+        await rows<{ key: string; r: number }>(
+          `SELECT key, portfolio_rank AS r FROM tracker.project WHERE key ~ '^DR[A-DXY]$' ORDER BY key`,
+        )
+      ).map((r) => [r.key, Number(r.r)]),
+    );
+  const start = { DRA: 301, DRB: 302, DRC: 305, DRD: 306, DRX: 303, DRY: 304 };
+
+  await refuses(() => P.placeProjectInDepartment(db, ana, b, a), "forbidden");
+  assert.equal(await P.placeProjectInDepartment(db, boss, a, a), null, "dropped on itself: nothing to do");
+  // Another department's project is not a place it can be dropped.
+  await refuses(() => P.placeProjectInDepartment(db, boss, a, x), "invalid", /its own department/);
+
+  // B onto A: neighbours with nothing between, so it just happens.
+  assert.deepEqual(await P.placeProjectInDepartment(db, boss, b, a), {
+    done: true,
+    moved: { key: "DRB", from: 302, to: 301 },
+    shifted: 1,
+    passes: 0,
+  });
+  assert.deepEqual(await ranks(), { ...start, DRA: 302, DRB: 301 });
+
+  // D to the top of its department passes both Finance projects: asked first, nothing changed.
+  const asked = await P.placeProjectInDepartment(db, boss, d, b);
+  assert.deepEqual(asked, { done: false, moved: { key: "DRD", from: 306, to: 301 }, shifted: 3, passes: 2 });
+  assert.deepEqual(await ranks(), { ...start, DRA: 302, DRB: 301 }, "asking changes nothing");
+  assert.equal(
+    F.departmentDropEffect(asked!),
+    "DRD moves from company rank 306 to 301, ahead of 2 projects of other departments. 3 other projects of its department each move one place to make room.",
+  );
+
+  // Confirmed: D takes the top place, B, A and C each slide down one of the department's places.
+  assert.equal((await P.placeProjectInDepartment(db, boss, d, b, true))!.done, true);
+  assert.deepEqual(await ranks(), { DRD: 301, DRB: 302, DRA: 305, DRC: 306, DRX: 303, DRY: 304 });
+
+  // Downwards the same way: D back to the bottom, onto the project now last.
+  const down = await P.placeProjectInDepartment(db, boss, d, c, true);
+  assert.deepEqual(down!.moved, { key: "DRD", from: 301, to: 306 });
+  assert.deepEqual(await ranks(), { DRB: 301, DRA: 302, DRC: 305, DRD: 306, DRX: 303, DRY: 304 });
+  assert.match(F.departmentDropEffect(down!), /to 306, behind 2 projects of other departments/);
+  assert.equal(
+    F.departmentDropEffect({ moved: { key: "K", from: 2, to: 1 }, shifted: 1, passes: 0 }),
+    "K moves from company rank 2 to 1. 1 other project of its department moves one place to make room.",
+  );
+});
+
+test("a project says which department does the work: asked for when made, logged when changed, needed to go active", async () => {
+  const Q = await import("../src/modules/tracker/service/queries");
+  const all = await listDepartments(db);
+  const id = (code: string) => all.find((d) => d.code === code)!.id;
+  const asked = { justification: "Saves time.", valueBucketId: someValue, forDepartmentId: id("mech") };
+  await refuses(
+    () =>
+      createProjectAsIs(db, ana, { key: "DOER0", name: "x", ...asked, doneByDepartmentId: null as unknown as number }),
+    "invalid",
+    /Choose the department that does the work/,
+  );
+  await refuses(
+    () => createProjectAsIs(db, ana, { key: "DOER0", name: "x", ...asked, doneByDepartmentId: 999999 }),
+    "invalid",
+    /does the work/,
+  );
+  const p = await createProjectAsIs(db, ana, {
+    key: "DOER",
+    name: "Checks",
+    ...asked,
+    doneByDepartmentId: id("finance"),
+  });
+  const listed = async () => (await Q.listProjects(db, ana)).find((x) => x.id === p.id)!;
+  assert.equal((await listed()).doneByDepartmentName, "Finance");
+  assert.equal((await listed()).forDepartmentName, "Mechanical Engineering");
+
+  await updateProject(db, ana, p.id, { doneByDepartmentId: id("hr") }, "moved teams");
+  const log = await rows<{ field: string; old_value: string; new_value: string; reason: string }>(
+    `SELECT field, old_value, new_value, reason FROM tracker.project_change_log WHERE project_id = $1`,
+    [p.id],
+  );
+  assert.deepEqual(log, [
+    { field: "done_by_department", old_value: "Finance", new_value: "Human Resources", reason: "moved teams" },
+  ]);
+
+  // A project made before this was asked for cannot go active until it has one.
+  await db.transaction((tx) => tx.query(`UPDATE tracker.project SET done_by_team_id = NULL WHERE id = $1`, [p.id]));
+  assert.equal((await listed()).doneByDepartmentId, null);
+  await setPortfolioRanks(db, boss, [{ projectId: p.id, rank: 91 }]);
+  await refuses(() => updateProject(db, ana, p.id, { state: "active" }), "invalid", /the department doing the work/);
+  await updateProject(db, ana, p.id, { state: "active", doneByDepartmentId: id("hr") });
+});
+
+test("departments by who does the work: the list looks through either, and an unnamed card is forecast on that team", async () => {
+  const Q = await import("../src/modules/tracker/service/queries");
+  const P = await import("../src/modules/tracker/service/people");
+  const { setPeopleDepartments } = await import("../src/modules/tracker/service/departments");
+  const all = await listDepartments(db);
+  const id = (code: string) => all.find((d) => d.code === code)!.id;
+  const p = await createProjectAsIs(db, ana, {
+    key: "LENS",
+    name: "Lens",
+    justification: "Saves time.",
+    valueBucketId: someValue,
+    forDepartmentId: id("mech"),
+    doneByDepartmentId: id("finance"),
+  });
+  const mine = (await Q.listProjects(db, ana)).filter((x) => x.id === p.id);
+  assert.equal(mine[0]!.forGroupName, "Engineering");
+  assert.equal(mine[0]!.doneByGroupName, "Support");
+  assert.equal(Q.throughLens(mine, "for")[0], mine[0], "for is the list as it is");
+  const by = Q.throughLens(mine, "by")[0]!;
+  assert.deepEqual(
+    [by.forDepartmentId, by.forGroupName, by.doneByDepartmentId, by.forDepartmentName, by.doneByDepartmentName],
+    [id("finance"), "Support", id("mech"), "Mechanical Engineering", "Finance"],
+    "the fields a list filters and groups on change over; the names shown do not",
+  );
+  assert.equal(Q.throughLens(mine, "by", "team")[0]!.forGroupName, "Finance", "the department itself, not its group");
+  assert.equal(Q.throughLens(mine, "for", "team")[0]!.forGroupName, "Mechanical Engineering");
+
+  // Nobody is named on the card, and nobody is in Finance: it cannot be forecast.
+  const card = await createTask(db, ana, { projectId: p.id, title: "Unnamed work", effortEstimateHours: 8 });
+  await setPortfolioRanks(db, boss, [{ projectId: p.id, rank: 95 }]);
+  const reason = async () =>
+    (
+      await rows<{ unscheduled_reason: string | null }>(
+        `SELECT unscheduled_reason FROM tracker.task_forecast WHERE task_id = $1`,
+        [card.id],
+      )
+    )[0]?.unscheduled_reason;
+  await runForecast(db, { asOf: "2026-11-12", triggeredBy: "change" });
+  assert.equal(await reason(), "no assignee");
+
+  // Someone joins Finance with hours to give: the card is theirs to do, without being named on it.
+  const dee = await ensurePerson(db, { email: "dee@example.test", displayName: "Dee" });
+  await setPeopleDepartments(db, [{ email: "DEE@example.test", teamCode: "finance" }]);
+  await P.setPersonHours(db, { ...boss, admin: true }, dee, 6);
+  await runForecast(db, { asOf: "2026-11-12", triggeredBy: "change" });
+  assert.equal(await reason(), null);
+  const still = await rows<{ assignee_person_id: number | null }>(
+    `SELECT assignee_person_id FROM tracker.task WHERE id = $1`,
+    [card.id],
+  );
+  assert.equal(still[0]!.assignee_person_id, null, "the forecast does not name anyone on the card");
+});
+
+test("a card records the day its work started: stamped on the first move into work, and correctable", async () => {
+  const p = await createProject(db, ana, { key: "STARTD", name: "Start dates" });
+  const t = await createTask(db, ana, { projectId: p.id, title: "Work entered late" });
+  const statuses = await rows<{ id: number; category: string }>(
+    `SELECT id, category FROM tracker.workflow_status WHERE project_id = $1 ORDER BY id`,
+    [p.id],
+  );
+  const status = (category: string) => Number(statuses.find((s) => s.category === category)!.id);
+  const dates = async () =>
+    (
+      await rows<{ s: string | null; f: string | null }>(
+        `SELECT actual_start_date::text AS s, actual_completion_date::text AS f FROM tracker.task WHERE id = $1`,
+        [t.id],
+      )
+    )[0]!;
+  assert.deepEqual(await dates(), { s: null, f: null });
+  await refuses(
+    () => updateTask(db, ana, t.id, { actualCompletionDate: "2026-09-30" }),
+    "invalid",
+    /Only a finished card/,
+  );
+
+  await changeStatus(db, ana, t.id, status("in_progress"));
+  const started = (await dates()).s;
+  assert.ok(started, "the first move into work stamps the day");
+  await changeStatus(db, ana, t.id, status("done"));
+  assert.equal((await dates()).s, started, "a later move does not restamp it");
+
+  // The work really happened in September: both dates are put right.
+  await updateTask(db, ana, t.id, { actualStartDate: "2026-09-02", actualCompletionDate: "2026-09-30" });
+  assert.deepEqual(await dates(), { s: "2026-09-02", f: "2026-09-30" });
+  await refuses(() => updateTask(db, ana, t.id, { actualStartDate: "2026-10-05" }), "invalid", /cannot start after/);
+
+  // Back-dating rewrites what the timeline says happened, so a contributor cannot do it.
+  await setProjectMember(db, ana, p.id, ben.personId, "contributor");
+  await refuses(() => updateTask(db, ben, t.id, { actualStartDate: "2026-09-01" }), "forbidden");
+  await updateTask(db, ben, t.id, { priority: 2 });
+
+  // A card with cards under it starts when the first of them did.
+  const parent = await createTask(db, ana, { projectId: p.id, title: "Feature", kind: "feature" });
+  await updateTask(db, ana, t.id, { parentTaskId: parent.id });
+
+  const T = await import("../src/modules/tracker/service/timeline");
+  const row = (await T.getTimeline(db, ana, "STARTD")).rows.find((r) => r.id === t.id)!;
+  const tl = async () => (await T.getTimeline(db, ana, "STARTD")).rows;
+  assert.deepEqual([row.startedOn, row.doneOn], ["2026-09-02", "2026-09-30"]);
+  assert.equal((await tl()).find((r) => r.id === parent.id)!.startedOn, "2026-09-02");
+  await updateTask(db, ana, parent.id, { actualStartDate: "2026-08-15" });
+  assert.equal((await tl()).find((r) => r.id === parent.id)!.startedOn, "2026-08-15", "its own earlier date wins");
+});
+
+test("a project can say when it started, and the timeline of all projects draws it from then", async () => {
+  const T = await import("../src/modules/tracker/service/timeline");
+  const p = await createProject(db, ana, { key: "PSTART", name: "Began earlier" });
+  const row = async () => (await T.getPortfolioTimeline(db, ana)).rows.find((r) => r.id === p.id)!;
+  assert.equal((await row()).startedOn, null, "nothing started, nothing said");
+
+  await refuses(() => updateProject(db, ana, p.id, { startDate: "last spring" }), "invalid");
+  await updateProject(db, ana, p.id, { startDate: "2026-04-06" }, "began before it was entered");
+  assert.equal((await row()).startedOn, "2026-04-06");
+  const log = await rows<{ field: string; new_value: string }>(
+    `SELECT field, new_value FROM tracker.project_change_log WHERE project_id = $1`,
+    [p.id],
+  );
+  assert.deepEqual(log, [{ field: "start_date", new_value: "2026-04-06" }]);
+
+  // A card that started earlier still wins; clearing the date hands it back to the cards.
+  const t = await createTask(db, ana, { projectId: p.id, title: "Older still" });
+  await db.transaction((tx) =>
+    tx.query(`UPDATE tracker.task SET actual_start_date = '2026-03-02' WHERE id = $1`, [t.id]),
+  );
+  assert.equal((await row()).startedOn, "2026-03-02");
+  await updateProject(db, ana, p.id, { startDate: null });
+  assert.equal((await row()).startedOn, "2026-03-02");
+});
+
+test("archive: a card can take the cards under it along, when asked to, and says so on what waited", async () => {
+  const p = await createProject(db, ana, { key: "ARCHU", name: "Archive under" });
+  const top = await createTask(db, ana, { projectId: p.id, title: "Feature", kind: "feature" });
+  const mid = await createTask(db, ana, { projectId: p.id, title: "Story", kind: "story", parentTaskId: top.id });
+  const leaf = await createTask(db, ana, { projectId: p.id, title: "Leaf", parentTaskId: mid.id });
+  const other = await createTask(db, ana, { projectId: p.id, title: "Elsewhere" });
+  await addDependency(db, ana, leaf.id, other.id);
+
+  await refuses(
+    () => archiveTask(db, ana, top.id),
+    "invalid",
+    /has 2 cards under it\. Archive them with it, or move them first/,
+  );
+  await refuses(() => archiveTask(db, ben, top.id, { withUnder: true }), "forbidden");
+  assert.deepEqual(await archiveTask(db, ana, top.id, { withUnder: true }), { archived: 3 });
+
+  const left = await rows<{ id: number }>(`SELECT id FROM tracker.task WHERE project_id = $1 AND archived_at IS NULL`, [
+    p.id,
+  ]);
+  assert.deepEqual(
+    left.map((r) => Number(r.id)),
+    [other.id],
+    "only the card outside the branch is left",
+  );
+  assert.equal(
+    (await rows(`SELECT 1 FROM tracker.task_dependency WHERE successor_task_id = $1`, [other.id])).length,
+    0,
+  );
+  const said = await rows<{ reason: string }>(
+    `SELECT reason FROM tracker.task_change_log WHERE task_id = $1 AND field = 'dependency' AND new_value IS NULL`,
+    [other.id],
+  );
+  assert.deepEqual(said, [{ reason: "ARCHU-3 was archived with ARCHU-1" }]);
 });

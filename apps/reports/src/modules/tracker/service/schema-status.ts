@@ -22,6 +22,11 @@ export const MIGRATIONS = [
   "0007_checklist.sql",
   "0008_migration_record_readable.sql",
   "0009_project_priority_dropped.sql",
+  "0010_project_justification.sql",
+  "0011_project_for_department.sql",
+  "0012_project_done_by_department.sql",
+  "0013_task_actual_start.sql",
+  "0014_project_start_date.sql",
 ] as const;
 
 /** `missing` is null when the record itself cannot be read, which is true of any database older than 0008. */

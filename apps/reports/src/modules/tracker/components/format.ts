@@ -1,4 +1,4 @@
-import type { BoardTask } from "../service/queries";
+import type { BoardTask, DepartmentLens, DepartmentLevel, ProjectListItem } from "../service/queries";
 
 // How the tracker's screens word dates and forecast reasons. Dependency-free so it can be
 // unit-tested and used from both server and client components.
@@ -129,4 +129,297 @@ export function rankClashEffect(clash: { holderKey: string; moved: number; direc
   return clash.moved <= 1
     ? `${clash.holderKey} moves ${clash.direction} one place.`
     : `${clash.holderKey} and ${clash.moved - 1} other ${clash.moved === 2 ? "project" : "projects"} each move ${clash.direction} one place.`;
+}
+
+/** The project list, added up. Open means planned, active or on hold: work still to come. */
+export interface PortfolioSummary {
+  open: number;
+  active: number;
+  /** Open projects with a target date. */
+  withTarget: number;
+  /** Open projects whose forecast (the safe date when there is one) is after their target. */
+  atRisk: number;
+  hoursLeft: number;
+  /** Open cards the forecast could not give a date. */
+  notForecast: number;
+  /** How many of those have no estimate. */
+  noEstimate: number;
+  /** Open projects whose target date has already gone by. */
+  pastTarget: number;
+  /** The soonest target date still to come, and whose it is. */
+  nextTarget: { key: string; date: string } | null;
+}
+
+export function portfolioSummary(
+  projects: Pick<
+    ProjectListItem,
+    "key" | "state" | "targetDate" | "atRisk" | "remainingHours" | "unscheduledTasks" | "unestimatedTasks"
+  >[],
+  /** YYYY-MM-DD. Passed in, so the sums do not depend on the clock. */
+  today: string,
+): PortfolioSummary {
+  const open = projects.filter((p) => p.state === "planned" || p.state === "active" || p.state === "on_hold");
+  const upcoming = open
+    .filter((p): p is typeof p & { targetDate: string } => p.targetDate != null && p.targetDate >= today)
+    .sort((a, b) => a.targetDate.localeCompare(b.targetDate) || a.key.localeCompare(b.key));
+  return {
+    open: open.length,
+    active: open.filter((p) => p.state === "active").length,
+    withTarget: open.filter((p) => p.targetDate != null).length,
+    atRisk: open.filter((p) => p.atRisk === true).length,
+    hoursLeft: Math.round(open.reduce((sum, p) => sum + p.remainingHours, 0) * 10) / 10,
+    notForecast: open.reduce((sum, p) => sum + p.unscheduledTasks, 0),
+    noEstimate: open.reduce((sum, p) => sum + p.unestimatedTasks, 0),
+    pastTarget: open.filter((p) => p.targetDate != null && p.targetDate < today).length,
+    nextTarget: upcoming[0] ? { key: upcoming[0].key, date: upcoming[0].targetDate } : null,
+  };
+}
+
+/** What the project list and the timeline of all projects read from the address. */
+export interface DepartmentView {
+  /** The department chosen in the filter, or null for all of them. */
+  forId: number | null;
+  /** Whether the rows are gathered under a heading per department. */
+  grouped: boolean;
+  /** Which department the filter and the headings mean: who it is for, or who does the work. */
+  lens: DepartmentLens;
+  /** What a heading is when grouped: the group a department sits in, or the department itself. */
+  level: DepartmentLevel;
+}
+
+export function departmentView(params: {
+  for?: string | string[];
+  group?: string | string[];
+  dept?: string | string[];
+}): DepartmentView {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const id = Number(one(params.for));
+  return {
+    forId: Number.isInteger(id) && id > 0 ? id : null,
+    grouped: one(params.group) === "1" || one(params.group) === "team",
+    level: one(params.group) === "team" ? "team" : "group",
+    lens: one(params.dept) === "by" ? "by" : "for",
+  };
+}
+
+/** The projects that are for one of `scope` (see departmentScope). A project with no department is for none. */
+export function projectsFor<P extends Pick<ProjectListItem, "forDepartmentId">>(
+  projects: P[],
+  scope: Set<number> | null,
+): P[] {
+  if (!scope) return projects;
+  return projects.filter((p) => p.forDepartmentId != null && scope.has(p.forDepartmentId));
+}
+
+/**
+ * The same projects with each department's together, departments in the company's own order,
+ * and those with no department last. Inside a department the order given is kept, so a list
+ * that came in stack-rank order is still in rank order under each heading.
+ */
+export function byDepartment<P extends Pick<ProjectListItem, "forGroupSort">>(projects: P[]): P[] {
+  const last = Number.MAX_SAFE_INTEGER;
+  return projects
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => (a.p.forGroupSort ?? last) - (b.p.forGroupSort ?? last) || a.i - b.i)
+    .map((x) => x.p);
+}
+
+/** What a move inside a department does to the company's ranks, for the question asked before it. */
+export function departmentMoveEffect(move: {
+  moved: { key: string; from: number; to: number };
+  other: { key: string; from: number; to: number };
+  passes: number;
+}): string {
+  const passing =
+    move.passes === 0
+      ? ""
+      : `, ${move.moved.to < move.moved.from ? "ahead of" : "behind"} ${move.passes} ${move.passes === 1 ? "project" : "projects"} of other departments`;
+  return `${move.moved.key} moves from company rank ${move.moved.from} to ${move.moved.to}${passing}. ${move.other.key} moves to ${move.other.to}.`;
+}
+
+/** What dropping a project at a new place in its department does to the company's ranks. */
+export function departmentDropEffect(drop: {
+  moved: { key: string; from: number; to: number };
+  shifted: number;
+  passes: number;
+}): string {
+  const passing =
+    drop.passes === 0
+      ? ""
+      : `, ${drop.moved.to < drop.moved.from ? "ahead of" : "behind"} ${drop.passes} ${drop.passes === 1 ? "project" : "projects"} of other departments`;
+  const making =
+    drop.shifted === 0
+      ? ""
+      : ` ${drop.shifted} other ${drop.shifted === 1 ? "project" : "projects"} of its department ${drop.shifted === 1 ? "moves" : "each move"} one place to make room.`;
+  return `${drop.moved.key} moves from company rank ${drop.moved.from} to ${drop.moved.to}${passing}.${making}`;
+}
+
+// ── The project list's view ────────────────────────────────────────────────────
+// Which projects the list shows and in what order, all of it in the address: the department
+// and grouping above, plus a search, a sort, one figure to narrow to, and whether finished
+// projects are shown. Pure, so the page can be drawn on the server and the rules tested.
+
+export type ListSort = "rank" | "name" | "target" | "forecast" | "value";
+export type ListOnly = "active" | "at-risk" | "not-forecast" | "incomplete";
+
+export const SORT_LABEL: Record<ListSort, string> = {
+  rank: "Stack rank",
+  name: "Name",
+  target: "Target date, soonest first",
+  forecast: "Forecast, soonest first",
+  value: "Value, highest first",
+};
+export const ONLY_LABEL: Record<ListOnly, string> = {
+  active: "active projects",
+  "at-risk": "projects at risk",
+  "not-forecast": "projects with cards not forecast",
+  incomplete: "projects missing a justification, a value or a department",
+};
+
+export interface ListView extends DepartmentView {
+  sort: ListSort;
+  only: ListOnly | null;
+  /** What was typed in the search box, trimmed. */
+  q: string;
+  /** Whether finished and cancelled projects are shown. They are not, unless asked for. */
+  finished: boolean;
+}
+
+export function listView(params: Record<string, string | string[] | undefined>): ListView {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+  const sort = one(params.sort);
+  const only = one(params.only);
+  return {
+    ...departmentView(params),
+    sort: sort in SORT_LABEL ? (sort as ListSort) : "rank",
+    only: only in ONLY_LABEL ? (only as ListOnly) : null,
+    q: one(params.q).trim().slice(0, 80),
+    finished: one(params.done) === "1",
+  };
+}
+
+/** The list's address for a view, or for a view with some of it changed. Defaults are left out. */
+export function listHref(view: ListView, change: Partial<ListView> = {}): string {
+  const v = { ...view, ...change };
+  const query = new URLSearchParams();
+  if (v.forId != null) query.set("for", String(v.forId));
+  if (v.grouped) query.set("group", v.level === "team" ? "team" : "1");
+  if (v.lens === "by") query.set("dept", "by");
+  if (v.sort !== "rank") query.set("sort", v.sort);
+  if (v.only) query.set("only", v.only);
+  if (v.q) query.set("q", v.q);
+  if (v.finished) query.set("done", "1");
+  const text = query.toString();
+  return text ? `/tracker?${text}` : "/tracker";
+}
+
+/** Planned, active or on hold: work still to come. */
+export function isOpen(p: Pick<ProjectListItem, "state">): boolean {
+  return p.state !== "completed" && p.state !== "cancelled";
+}
+
+/** Missing one of the four things every project is asked for. */
+export function isIncomplete(
+  p: Pick<ProjectListItem, "justification" | "valueBucketId" | "forDepartmentId" | "doneByDepartmentId">,
+): boolean {
+  return !p.justification || p.valueBucketId == null || p.forDepartmentId == null || p.doneByDepartmentId == null;
+}
+
+/**
+ * True when ranks can only be read: the list is not every project in rank order. A rank is a
+ * place among all of them, so it is changed with all of them in view. Grouping alone does not
+ * lock them (a project is then moved within its department), and neither does showing
+ * finished projects, which hold no place in the order. Grouped by who does the work, or by
+ * department within a group, they are locked: a move within a heading is defined for the group
+ * a project is for.
+ */
+export function ranksLocked(
+  view: Pick<ListView, "forId" | "sort" | "only" | "q" | "grouped" | "lens" | "level">,
+): boolean {
+  return (
+    view.forId != null ||
+    view.sort !== "rank" ||
+    view.only != null ||
+    view.q !== "" ||
+    (view.grouped && (view.lens === "by" || view.level === "team"))
+  );
+}
+
+type Listed = Pick<
+  ProjectListItem,
+  | "key"
+  | "name"
+  | "state"
+  | "targetDate"
+  | "forecastFinish"
+  | "atRisk"
+  | "unscheduledTasks"
+  | "justification"
+  | "valueBucketId"
+  | "valueSort"
+  | "forDepartmentId"
+  | "doneByDepartmentId"
+  | "forGroupSort"
+>;
+
+/**
+ * Applies a view to the projects, which arrive in stack-rank order.
+ *
+ * `described` is the list before a figure narrows it: the department, the search and whether
+ * finished projects are in. The figures above the list are worked out from it, so choosing a
+ * figure never changes the figures. `shown` is that, narrowed to the chosen figure, sorted and
+ * grouped: the rows of the table.
+ */
+export function narrowProjects<P extends Listed>(
+  projects: P[],
+  view: ListView,
+  scope: Set<number> | null,
+): { described: P[]; shown: P[] } {
+  const words = view.q.toLowerCase();
+  const described = projectsFor(projects, scope)
+    .filter((p) => view.finished || isOpen(p))
+    .filter((p) => !words || p.key.toLowerCase().includes(words) || p.name.toLowerCase().includes(words));
+
+  const wanted: Record<ListOnly, (p: P) => boolean> = {
+    active: (p) => p.state === "active",
+    "at-risk": (p) => isOpen(p) && p.atRisk === true,
+    "not-forecast": (p) => isOpen(p) && p.unscheduledTasks > 0,
+    incomplete: (p) => isOpen(p) && isIncomplete(p),
+  };
+  const only = view.only;
+  const narrowed = only ? described.filter(wanted[only]) : described;
+
+  // Blanks go last whichever way the column runs: a project with no target is not "soonest".
+  const blankLast =
+    <T>(get: (p: P) => T | null, compare: (a: T, b: T) => number) =>
+    (a: P, b: P) => {
+      const [x, y] = [get(a), get(b)];
+      if (x == null || y == null) return (x == null ? 1 : 0) - (y == null ? 1 : 0);
+      return compare(x, y);
+    };
+  const order: Record<ListSort, ((a: P, b: P) => number) | null> = {
+    rank: null,
+    name: (a, b) => a.name.localeCompare(b.name),
+    target: blankLast(
+      (p) => p.targetDate,
+      (a, b) => a.localeCompare(b),
+    ),
+    forecast: blankLast(
+      (p) => p.forecastFinish,
+      (a, b) => a.localeCompare(b),
+    ),
+    value: blankLast(
+      (p) => p.valueSort,
+      (a, b) => b - a,
+    ),
+  };
+  const compare = order[view.sort];
+  // Stable, so ties stay in rank order.
+  const sorted = compare
+    ? narrowed
+        .map((p, i) => ({ p, i }))
+        .sort((a, b) => compare(a.p, b.p) || a.i - b.i)
+        .map((x) => x.p)
+    : narrowed;
+  return { described, shown: view.grouped ? byDepartment(sorted) : sorted };
 }

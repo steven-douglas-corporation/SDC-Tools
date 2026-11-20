@@ -22,6 +22,6 @@ const VIEW_LABEL: Record<DashboardFeedbackView, string> = {
 export function dashboardFeedbackContext(view: DashboardFeedbackView, month: string): FeedbackContext {
   const params: Record<string, string> = { m: month };
   if (view === "finances") params.tab = "finances";
-  const context = buildFeedbackContext({ path: "/", params });
+  const context = buildFeedbackContext({ path: "/dashboard", params });
   return { ...context, viewLabel: VIEW_LABEL[view] };
 }

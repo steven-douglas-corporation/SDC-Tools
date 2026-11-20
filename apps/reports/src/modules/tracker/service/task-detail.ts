@@ -1,5 +1,6 @@
 import { TrackerError, one, type Actor, type Database } from "./database";
 import { projectRole, type ProjectRole } from "./access";
+import { CARDS_UNDER } from "./tasks";
 import { kindTakesChecklist } from "./checklist";
 import {
   rollUp,
@@ -88,6 +89,8 @@ export interface TaskDetail {
   uncountedHours: number | null;
   /** Open work cards under this one with no estimate, so what they add up to is known to be low. */
   unsizedUnder: number;
+  /** Every unarchived card under this one, at any depth: what archiving it would take with it. */
+  underCount: number;
   /** Every kind a card can be given, top of the hierarchy first. */
   kinds: WorkKind[];
   /** Cards in the same project this one could sit under, with the level each counts as. */
@@ -117,6 +120,8 @@ export interface TaskDetail {
   baselineCompletionDate: string | null;
   dueDate: string | null;
   actualCompletionDate: string | null;
+  /** The day the work started: stamped on the first move into work, or set by a manager. */
+  actualStartDate: string | null;
   notBeforeDate: string | null;
   notBeforeReason: string | null;
   blockedReason: string | null;
@@ -202,6 +207,7 @@ interface DetailRow {
   baseline_completion_date: string | null;
   due_date: string | null;
   actual_completion_date: string | null;
+  actual_start_date: string | null;
   not_before_date: string | null;
   not_before_reason: string | null;
   blocked_reason: string | null;
@@ -237,7 +243,7 @@ export async function getTaskDetail(
               t.effort_estimate_hours::float8 AS estimate_hours, t.remaining_effort_hours::float8 AS remaining_hours,
               ${utc("t.remaining_effort_updated_at")} AS remaining_updated_at,
               t.planned_start_date::text, t.estimated_completion_date::text, t.baseline_completion_date::text,
-              t.due_date::text, t.actual_completion_date::text, t.not_before_date::text, t.not_before_reason,
+              t.due_date::text, t.actual_completion_date::text, t.actual_start_date::text, t.not_before_date::text, t.not_before_reason,
               t.blocked_reason, t.expected_unblock_date::text, (t.archived_at IS NOT NULL) AS archived,
               f.scheduled_start::text AS forecast_start, f.scheduled_finish::text AS forecast_finish,
               f.p80_finish::text, f.driver, f.unscheduled_reason,
@@ -541,6 +547,7 @@ export async function getTaskDetail(
       })),
       rollup: rollups.get(taskId) ?? null,
       unsizedUnder: unsized,
+      underCount: (await tx.query(CARDS_UNDER, [taskId])).rows.length,
       uncountedHours: uncountedHours(
         rollups.has(taskId),
         t.status_category,
@@ -575,6 +582,7 @@ export async function getTaskDetail(
       baselineCompletionDate: t.baseline_completion_date,
       dueDate: t.due_date,
       actualCompletionDate: t.actual_completion_date,
+      actualStartDate: t.actual_start_date,
       notBeforeDate: t.not_before_date,
       notBeforeReason: t.not_before_reason,
       blockedReason: t.blocked_reason,

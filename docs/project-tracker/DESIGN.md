@@ -235,8 +235,16 @@ that enforce the one write path.
 - Only finish-to-start dependencies; the other three types were removed until the engine supports them.
 - Later migrations: `0004` counts only cards that carry work, `0005` makes a kind required,
   `0006` records who asked for a card, `0007` adds a card's checklist, `0008` lets the app
-  read the record of applied migrations, and `0009` drops the project's own priority, which
-  nothing used: projects are ordered by stack rank.
+  read the record of applied migrations, `0009` drops the project's own priority, which
+  nothing used: projects are ordered by stack rank, and `0010` gives a project a justification
+  and a yearly dollar value, chosen from a short table of ranges (`value_bucket`). Both are
+  asked for when a project is created and before it can be made active.
+- `0011`: a project says which department it is for (the one that benefits, not the one doing
+  the work). The departments are the company's own teams, copied from the employee roster
+  into `tracker.team` in two levels, as the org chart groups them; nothing is typed in. The
+  project list and the timeline of all projects can be filtered to a department and grouped
+  by department. Which department does the work is not recorded: it waits on every user
+  account being linked to an employee, which single sign-on is to provide.
 
 ### Forecast engine
 
@@ -322,7 +330,7 @@ see. Both permissions ship off for every role, so on a fresh deploy that is ELT 
   for each dependency; marks for today, the project target, due dates, milestones and finished
   cards. A row with cards under it can be closed, and what is closed is kept in the address.
   Read-only. Every date on it is the stored forecast, the same one the board shows.
-- **Timeline of all projects** (`/tracker/timeline`, a tab beside the project list): a row for each
+- **Timeline of all projects** (`/tracker/timeline`, in the tracker's sidebar menu): a row for each
   open project in stack-rank order, a bar from the first forecast start of its work to its
   forecast finish with a tail to P80, its target date, and an arrow where one project has a card
   waiting on another's. A project's key opens that project's own timeline.
