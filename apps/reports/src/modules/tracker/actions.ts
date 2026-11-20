@@ -10,6 +10,8 @@ import {
   createProject,
   moveProjectRank,
   moveProjectRankInDepartment,
+  placeProjectInDepartment,
+  type DepartmentRankDrop,
   type DepartmentRankMove,
   rankClash,
   setProjectMember,
@@ -160,6 +162,26 @@ export async function moveProjectRankInDepartmentAction(
       const move = await moveProjectRankInDepartment(trackerDb, actor, projectId, direction, confirmed);
       changed = move?.done === true;
       return { move };
+    },
+    { paths: ["/tracker", "/tracker/timeline"], unless: () => !changed },
+  );
+}
+
+/**
+ * Puts a project where another of its department is: what dropping it there does. A move
+ * that passes other departments' projects changes nothing unless `confirmed`.
+ */
+export async function placeProjectInDepartmentAction(
+  projectId: number,
+  atProjectId: number,
+  confirmed: boolean,
+): Promise<ActionResult<{ drop: DepartmentRankDrop | null }>> {
+  let changed = false;
+  return act(
+    async (actor) => {
+      const drop = await placeProjectInDepartment(trackerDb, actor, projectId, atProjectId, confirmed);
+      changed = drop?.done === true;
+      return { drop };
     },
     { paths: ["/tracker", "/tracker/timeline"], unless: () => !changed },
   );

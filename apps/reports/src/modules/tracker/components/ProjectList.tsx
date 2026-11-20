@@ -17,14 +17,22 @@ import {
   createProjectAction,
   moveProjectRankAction,
   moveProjectRankInDepartmentAction,
+  placeProjectInDepartmentAction,
   setProjectRankAction,
   setProjectStateAction,
 } from "../actions";
-import type { DepartmentRankMove, RankClash } from "../service/projects";
+import type { DepartmentRankDrop, DepartmentRankMove, RankClash } from "../service/projects";
 import type { ProjectListItem, ValueBucket } from "../service/queries";
 import type { Department } from "../service/departments";
 import { DepartmentOptions } from "./DepartmentPicker";
-import { departmentMoveEffect, hours, leftOutOfForecast, rankClashEffect, shortDate } from "./format";
+import {
+  departmentDropEffect,
+  departmentMoveEffect,
+  hours,
+  leftOutOfForecast,
+  rankClashEffect,
+  shortDate,
+} from "./format";
 import { SafeDateHelp } from "./HelpTip";
 
 // The tracker's front page: every project the person can see, in stack-rank order, with the
@@ -284,6 +292,9 @@ function DepartmentRankCell({
   );
 }
 
+/** What a dragged project row carries. Its own type, so nothing else dropped on the list is taken for one. */
+const RANK_DRAG = "application/x-sdc-tracker-project";
+
 function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]; departments: Department[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -430,6 +441,45 @@ export function ProjectList({
     .filter((p) => p.portfolioRank != null && p.state !== "completed" && p.state !== "cancelled")
     .sort((a, b) => (a.portfolioRank as number) - (b.portfolioRank as number))
     .map((p) => p.id);
+
+  // ── Dragging a project to a new rank ──────────────────────────────────────────
+  // An extra way in, beside the rank box and the arrows, which stay: they are how the
+  // keyboard does it, and typing a number beats dragging down a long list. A row is picked
+  // up by its handle, never by the row itself, so dragging does not fight with its links.
+  //
+  // Dropped on a ranked project, the dragged one takes that project's place and the ones
+  // between move one place: the same thing typing its rank does. Grouped by department it
+  // can only be dropped within its own department, and trades among the ranks the
+  // department holds, asking first when that passes another department's project.
+  const canDrag = canRank && canEdit;
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [overId, setOverId] = useState<number | null>(null);
+  const [dropAsk, setDropAsk] = useState<{ id: number; at: number; drop: DepartmentRankDrop } | null>(null);
+  const [dropError, setDropError] = useState("");
+  const [dropping, startDrop] = useTransition();
+
+  function mayDropOn(target: ProjectListItem): boolean {
+    const dragged = projects.find((x) => x.id === dragId);
+    if (!dragged || dragged.id === target.id || target.portfolioRank == null) return false;
+    if (!rankWithinDepartment) return true;
+    return dragged.portfolioRank != null && dragged.forGroupId === target.forGroupId;
+  }
+
+  function dropOn(id: number, target: ProjectListItem, confirmed: boolean) {
+    setDropError("");
+    startDrop(async () => {
+      if (rankWithinDepartment) {
+        const res = await placeProjectInDepartmentAction(id, target.id, confirmed);
+        if (!res.ok) return setDropError(res.error);
+        setDropAsk(res.drop && !res.drop.done ? { id, at: target.id, drop: res.drop } : null);
+      } else {
+        // Taking a rank someone holds is what a drop means, so there is nothing to ask.
+        const res = await setProjectRankAction(id, target.portfolioRank as number, true);
+        if (!res.ok) setDropError(res.error);
+      }
+    });
+  }
+
   return (
     <div className="space-y-4">
       {canEdit && (
@@ -450,6 +500,46 @@ export function ProjectList({
       ) : (
         <>
           {rankNote && <p className="text-xs text-sdc-gray-600">{rankNote}</p>}
+          {canDrag && (
+            <p className="text-xs text-sdc-gray-600">
+              Drag a project by its handle (<span aria-hidden="true">⠿</span>) to change its rank
+              {rankWithinDepartment ? " within its department" : ""}.
+            </p>
+          )}
+          {dropAsk && (
+            <div
+              role="alertdialog"
+              aria-label="Move past other departments' projects"
+              className="flex flex-wrap items-center gap-3 rounded-md border border-sdc-border bg-white p-3 text-sm text-sdc-navy shadow-sm"
+            >
+              <span>{departmentDropEffect(dropAsk.drop)}</span>
+              <button
+                type="button"
+                autoFocus
+                disabled={dropping}
+                className={BUTTON_COMPACT}
+                onClick={() => setDropAsk(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={dropping}
+                className={BUTTON_COMPACT}
+                onClick={() => {
+                  const target = projects.find((x) => x.id === dropAsk.at);
+                  if (target) dropOn(dropAsk.id, target, true);
+                }}
+              >
+                {dropping ? "Moving…" : `Yes, move ${dropAsk.drop.moved.key}`}
+              </button>
+            </div>
+          )}
+          {dropError && (
+            <p role="alert" className="text-sm font-semibold text-sdc-red-text">
+              {dropError}
+            </p>
+          )}
           <div className={`${CARD_BASE} overflow-x-auto`}>
             <table className="w-full min-w-[64rem] text-sm">
               <thead>
@@ -496,35 +586,80 @@ export function ProjectList({
                           </th>
                         </tr>
                       )}
-                      <tr className={`border-b border-sdc-border-soft text-center ${TABLE_ROW_HOVER}`}>
+                      <tr
+                        className={`border-b border-sdc-border-soft text-center ${TABLE_ROW_HOVER} ${
+                          overId === p.id ? "outline outline-2 -outline-offset-2 outline-sdc-blue" : ""
+                        } ${dragId === p.id ? "opacity-50" : ""}`}
+                        onDragOver={(e) => {
+                          if (!canDrag || !e.dataTransfer.types.includes(RANK_DRAG) || !mayDropOn(p)) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          if (overId !== p.id) setOverId(p.id);
+                        }}
+                        onDragLeave={() => {
+                          if (overId === p.id) setOverId(null);
+                        }}
+                        onDrop={(e) => {
+                          if (!canDrag || !mayDropOn(p)) return;
+                          e.preventDefault();
+                          const id = dragId;
+                          setDragId(null);
+                          setOverId(null);
+                          if (id != null) dropOn(id, p, false);
+                        }}
+                      >
                         <td className="px-3 py-2.5 tabular-nums">
-                          {/* A project with no rank yet has no place in its department to move from, so it
+                          {/* The handle beside the rank, not above it, however narrow the column. */}
+                          <div className="flex items-start justify-center gap-1.5">
+                            {canDrag && (
+                              <span
+                                draggable
+                                data-rank-handle={p.key}
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData(RANK_DRAG, String(p.id));
+                                  e.dataTransfer.effectAllowed = "move";
+                                  setDragId(p.id);
+                                }}
+                                onDragEnd={() => {
+                                  setDragId(null);
+                                  setOverId(null);
+                                }}
+                                // Not announced: the rank box and the arrows are the same thing by keyboard.
+                                aria-hidden="true"
+                                title="Drag to change the rank"
+                                className="mt-1 inline-block cursor-grab text-base leading-none text-sdc-gray-400 select-none hover:text-sdc-navy active:cursor-grabbing"
+                              >
+                                ⠿
+                              </span>
+                            )}
+                            {/* A project with no rank yet has no place in its department to move from, so it
                               is given a company rank here, in the same box as the ungrouped list. */}
-                          {rankWithinDepartment && p.portfolioRank != null ? (
-                            <DepartmentRankCell
-                              key={`${p.id}:${p.portfolioRank}`}
-                              p={p}
-                              place={inDepartment.indexOf(p.id) >= 0 ? inDepartment.indexOf(p.id) + 1 : null}
-                              count={inDepartment.length}
-                              canRank={canRank && canEdit}
-                            />
-                          ) : (
-                            <>
-                              <RankCell
-                                // Remount when the rank changes: moving one project renumbers the others.
+                            {rankWithinDepartment && p.portfolioRank != null ? (
+                              <DepartmentRankCell
                                 key={`${p.id}:${p.portfolioRank}`}
                                 p={p}
+                                place={inDepartment.indexOf(p.id) >= 0 ? inDepartment.indexOf(p.id) + 1 : null}
+                                count={inDepartment.length}
                                 canRank={canRank && canEdit}
-                                first={p.id === ranked[0]}
-                                last={p.id === ranked[ranked.length - 1]}
                               />
-                              {rankWithinDepartment && canRank && canEdit && (
-                                <span className="mt-1 block whitespace-nowrap text-xs text-sdc-gray-600">
-                                  Company rank
-                                </span>
-                              )}
-                            </>
-                          )}
+                            ) : (
+                              <>
+                                <RankCell
+                                  // Remount when the rank changes: moving one project renumbers the others.
+                                  key={`${p.id}:${p.portfolioRank}`}
+                                  p={p}
+                                  canRank={canRank && canEdit}
+                                  first={p.id === ranked[0]}
+                                  last={p.id === ranked[ranked.length - 1]}
+                                />
+                                {rankWithinDepartment && canRank && canEdit && (
+                                  <span className="mt-1 block whitespace-nowrap text-xs text-sdc-gray-600">
+                                    Company rank
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-2.5 text-left">
                           <Link href={`/tracker/${p.key}`} className="font-semibold text-sdc-blue hover:underline">

@@ -548,3 +548,90 @@ export async function moveProjectRankInDepartment(
   }
   return move;
 }
+
+/** What dropping a project at another's place in its department does, or would do. */
+export interface DepartmentRankDrop {
+  /** False when nothing was changed: the move passes other departments' projects and was not confirmed. */
+  done: boolean;
+  moved: { key: string; from: number; to: number };
+  /** How many other projects of the department each move one place to make room. */
+  shifted: number;
+  /** How many projects of other departments the moved project passes. */
+  passes: number;
+}
+
+/**
+ * Puts a project where another of its department is, the ones between moving one place to
+ * make room. It is the dragged form of moveProjectRankInDepartment, and keeps the same rule:
+ * the department's projects are rearranged among the company ranks the department already
+ * holds, so no other department's project changes rank. A move that passes other departments'
+ * projects changes nothing unless `confirmed`. Returns null when dropped on itself.
+ */
+export async function placeProjectInDepartment(
+  db: Database,
+  actor: Actor,
+  projectId: number,
+  atProjectId: number,
+  confirmed = false,
+  reason?: string | null,
+): Promise<DepartmentRankDrop | null> {
+  if (projectId === atProjectId) return null;
+  const plan = await db.transaction(async (tx) => {
+    await requireGlobalRole(tx, actor, "portfolio_owner");
+    const { rows } = await tx.query<{ id: number; key: string; rank: number; grp: number | null }>(
+      `SELECT p.id, p.key, p.portfolio_rank AS rank, coalesce(t.parent_team_id, t.id) AS grp
+         FROM tracker.project p
+    LEFT JOIN tracker.team t ON t.id = p.for_team_id
+        WHERE p.portfolio_rank IS NOT NULL AND p.state NOT IN ('completed', 'cancelled')
+        ORDER BY p.portfolio_rank, p.id`,
+    );
+    const ranked = rows.map((r) => ({
+      id: Number(r.id),
+      key: r.key,
+      rank: Number(r.rank),
+      grp: r.grp == null ? null : Number(r.grp),
+    }));
+    const me = ranked.find((r) => r.id === projectId);
+    const at = ranked.find((r) => r.id === atProjectId);
+    if (!me) throw new TrackerError("invalid", "This project has no stack rank yet. Give it one first.");
+    if (!at || at.grp !== me.grp) {
+      throw new TrackerError(
+        "invalid",
+        "Grouped by department, a project can only be dropped on a ranked project of its own department.",
+      );
+    }
+    const mates = ranked.filter((r) => r.grp === me.grp);
+    // The department's places, top first. The moved project takes the place of the one it is
+    // dropped on; everything between slides one place towards where it came from.
+    const slots = mates.map((m) => m.rank);
+    const order = mates.filter((m) => m.id !== me.id);
+    order.splice(mates.indexOf(at), 0, me);
+    const changes = order
+      .map((m, i) => ({ projectId: m.id, rank: slots[i]!, was: m.rank }))
+      .filter((c) => c.rank !== c.was);
+    const to = slots[order.indexOf(me)]!;
+    const [low, high] = [Math.min(me.rank, to), Math.max(me.rank, to)];
+    return {
+      me,
+      to,
+      changes,
+      passes: ranked.filter((r) => r.grp !== me.grp && r.rank > low && r.rank < high).length,
+    };
+  });
+
+  const drop: DepartmentRankDrop = {
+    done: plan.passes === 0 || confirmed,
+    moved: { key: plan.me.key, from: plan.me.rank, to: plan.to },
+    shifted: plan.changes.length - 1,
+    passes: plan.passes,
+  };
+  if (drop.done) {
+    await setPortfolioRanks(
+      db,
+      actor,
+      plan.changes.map((c) => ({ projectId: c.projectId, rank: c.rank })),
+      reason,
+    );
+  }
+  return drop;
+}

@@ -223,3 +223,20 @@ export function departmentMoveEffect(move: {
       : `, ${move.moved.to < move.moved.from ? "ahead of" : "behind"} ${move.passes} ${move.passes === 1 ? "project" : "projects"} of other departments`;
   return `${move.moved.key} moves from company rank ${move.moved.from} to ${move.moved.to}${passing}. ${move.other.key} moves to ${move.other.to}.`;
 }
+
+/** What dropping a project at a new place in its department does to the company's ranks. */
+export function departmentDropEffect(drop: {
+  moved: { key: string; from: number; to: number };
+  shifted: number;
+  passes: number;
+}): string {
+  const passing =
+    drop.passes === 0
+      ? ""
+      : `, ${drop.moved.to < drop.moved.from ? "ahead of" : "behind"} ${drop.passes} ${drop.passes === 1 ? "project" : "projects"} of other departments`;
+  const making =
+    drop.shifted === 0
+      ? ""
+      : ` ${drop.shifted} other ${drop.shifted === 1 ? "project" : "projects"} of its department ${drop.shifted === 1 ? "moves" : "each move"} one place to make room.`;
+  return `${drop.moved.key} moves from company rank ${drop.moved.from} to ${drop.moved.to}${passing}.${making}`;
+}

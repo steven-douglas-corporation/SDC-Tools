@@ -2125,3 +2125,74 @@ test("ranking inside a department trades the ranks it already holds, and asks be
   const unranked = await make("RKE4", "mech");
   await refuses(() => P.moveProjectRankInDepartment(db, boss, unranked, "up"), "invalid", /no stack rank yet/);
 });
+
+test("dropping a project at another's place in its department rearranges only that department's ranks", async () => {
+  const P = await import("../src/modules/tracker/service/projects");
+  const F = await import("../src/modules/tracker/components/format");
+  const all = await listDepartments(db);
+  const id = (code: string) => all.find((d) => d.code === code)!.id;
+  const make = async (key: string, dept: string) =>
+    (await createProject(db, ana, { key, name: key, forDepartmentId: id(dept) })).id;
+
+  // Project Management holds 301, 302, 305 and 306; Finance holds 303 and 304, between them.
+  const a = await make("DRA", "pm");
+  const b = await make("DRB", "pm");
+  const x = await make("DRX", "finance");
+  const y = await make("DRY", "finance");
+  const c = await make("DRC", "pm");
+  const d = await make("DRD", "pm");
+  await setPortfolioRanks(db, boss, [
+    { projectId: a, rank: 301 },
+    { projectId: b, rank: 302 },
+    { projectId: x, rank: 303 },
+    { projectId: y, rank: 304 },
+    { projectId: c, rank: 305 },
+    { projectId: d, rank: 306 },
+  ]);
+  const ranks = async () =>
+    Object.fromEntries(
+      (
+        await rows<{ key: string; r: number }>(
+          `SELECT key, portfolio_rank AS r FROM tracker.project WHERE key ~ '^DR[A-DXY]$' ORDER BY key`,
+        )
+      ).map((r) => [r.key, Number(r.r)]),
+    );
+  const start = { DRA: 301, DRB: 302, DRC: 305, DRD: 306, DRX: 303, DRY: 304 };
+
+  await refuses(() => P.placeProjectInDepartment(db, ana, b, a), "forbidden");
+  assert.equal(await P.placeProjectInDepartment(db, boss, a, a), null, "dropped on itself: nothing to do");
+  // Another department's project is not a place it can be dropped.
+  await refuses(() => P.placeProjectInDepartment(db, boss, a, x), "invalid", /its own department/);
+
+  // B onto A: neighbours with nothing between, so it just happens.
+  assert.deepEqual(await P.placeProjectInDepartment(db, boss, b, a), {
+    done: true,
+    moved: { key: "DRB", from: 302, to: 301 },
+    shifted: 1,
+    passes: 0,
+  });
+  assert.deepEqual(await ranks(), { ...start, DRA: 302, DRB: 301 });
+
+  // D to the top of its department passes both Finance projects: asked first, nothing changed.
+  const asked = await P.placeProjectInDepartment(db, boss, d, b);
+  assert.deepEqual(asked, { done: false, moved: { key: "DRD", from: 306, to: 301 }, shifted: 3, passes: 2 });
+  assert.deepEqual(await ranks(), { ...start, DRA: 302, DRB: 301 }, "asking changes nothing");
+  assert.equal(
+    F.departmentDropEffect(asked!),
+    "DRD moves from company rank 306 to 301, ahead of 2 projects of other departments. 3 other projects of its department each move one place to make room.",
+  );
+
+  // Confirmed: D takes the top place, B, A and C each slide down one of the department's places.
+  assert.equal((await P.placeProjectInDepartment(db, boss, d, b, true))!.done, true);
+  assert.deepEqual(await ranks(), { DRD: 301, DRB: 302, DRA: 305, DRC: 306, DRX: 303, DRY: 304 });
+
+  // Downwards the same way: D back to the bottom, onto the project now last.
+  const down = await P.placeProjectInDepartment(db, boss, d, c, true);
+  assert.deepEqual(down!.moved, { key: "DRD", from: 301, to: 306 });
+  assert.deepEqual(await ranks(), { DRB: 301, DRA: 302, DRC: 305, DRD: 306, DRX: 303, DRY: 304 });
+  assert.match(F.departmentDropEffect(down!), /to 306, behind 2 projects of other departments/);
+  assert.equal(
+    F.departmentDropEffect({ moved: { key: "K", from: 2, to: 1 }, shifted: 1, passes: 0 }),
+    "K moves from company rank 2 to 1. 1 other project of its department moves one place to make room.",
+  );
+});
