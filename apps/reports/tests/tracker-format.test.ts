@@ -204,3 +204,141 @@ test("the department filter and grouping read the address, and keep rank order i
     "no department goes last",
   );
 });
+
+test("the project list's view is read from the address and written back without its defaults", async () => {
+  const F = await import("../src/modules/tracker/components/format");
+  const plain: ReturnType<typeof F.listView> = {
+    forId: null,
+    grouped: false,
+    sort: "rank",
+    only: null,
+    q: "",
+    finished: false,
+  };
+  assert.deepEqual(F.listView({}), plain);
+  assert.deepEqual(
+    F.listView({ sort: "nonsense", only: "everything", q: "   ", done: "yes" }),
+    plain,
+    "unknown values are ignored",
+  );
+  const busy = F.listView({ for: "12", group: "1", sort: "value", only: "at-risk", q: "  ware ", done: "1" });
+  assert.deepEqual(busy, { forId: 12, grouped: true, sort: "value", only: "at-risk", q: "ware", finished: true });
+
+  assert.equal(F.listHref(F.listView({})), "/tracker");
+  assert.equal(F.listHref(busy), "/tracker?for=12&group=1&sort=value&only=at-risk&q=ware&done=1");
+  // One thing changed, the rest kept: what a figure's link does.
+  assert.equal(F.listHref(busy, { only: null }), "/tracker?for=12&group=1&sort=value&q=ware&done=1");
+  assert.equal(F.listHref(F.listView({}), { only: "incomplete" }), "/tracker?only=incomplete");
+  // Round trip.
+  assert.deepEqual(F.listView(Object.fromEntries(new URLSearchParams(F.listHref(busy).split("?")[1]))), busy);
+
+  // Ranks are changed only with every project in view, in rank order.
+  assert.equal(F.ranksLocked(plain), false);
+  assert.equal(F.ranksLocked({ ...plain, forId: 3 }), true);
+  assert.equal(F.ranksLocked({ ...plain, sort: "name" }), true);
+  assert.equal(F.ranksLocked({ ...plain, only: "active" }), true);
+  assert.equal(F.ranksLocked({ ...plain, q: "x" }), true);
+});
+
+test("narrowing the project list: finished hidden, search, one figure, sorting with blanks last", async () => {
+  const F = await import("../src/modules/tracker/components/format");
+  const view = F.listView({});
+  const p = (
+    key: string,
+    name: string,
+    state: string,
+    more: Partial<{
+      targetDate: string | null;
+      forecastFinish: string | null;
+      atRisk: boolean | null;
+      unscheduledTasks: number;
+      justification: string | null;
+      valueBucketId: number | null;
+      valueSort: number | null;
+      forDepartmentId: number | null;
+      forGroupSort: number | null;
+    }> = {},
+  ) => ({
+    key,
+    name,
+    state,
+    targetDate: null,
+    forecastFinish: null,
+    atRisk: null,
+    unscheduledTasks: 0,
+    justification: "Saves time.",
+    valueBucketId: 1,
+    valueSort: 1,
+    forDepartmentId: 5,
+    forGroupSort: 2,
+    ...more,
+  });
+  // In stack-rank order, as the service hands them over, finished last.
+  const all = [
+    p("WH", "Warehouse", "active", {
+      targetDate: "2026-12-31",
+      forecastFinish: "2027-01-10",
+      atRisk: true,
+      valueSort: 5,
+    }),
+    p("ETC", "ETC roll-up", "active", {
+      targetDate: "2026-12-11",
+      forecastFinish: "2026-12-01",
+      atRisk: false,
+      valueSort: 3,
+      forDepartmentId: 7,
+      forGroupSort: 1,
+    }),
+    p("OLD", "Legacy tidy", "planned", {
+      unscheduledTasks: 2,
+      justification: null,
+      valueBucketId: null,
+      valueSort: null,
+    }),
+    p("PAY", "Paylocity time off", "on_hold", {
+      forecastFinish: "2026-11-30",
+      valueSort: 3,
+      forDepartmentId: null,
+      forGroupSort: null,
+    }),
+    p("DONE", "Warehouse phase one", "completed", { valueSort: 4 }),
+    p("DROP", "Abandoned", "cancelled"),
+  ];
+  const keys = (v: Partial<typeof view>, scope: Set<number> | null = null) =>
+    F.narrowProjects(all, { ...view, ...v }, scope).shown.map((x) => x.key);
+
+  assert.deepEqual(keys({}), ["WH", "ETC", "OLD", "PAY"], "finished and cancelled are left out unless asked for");
+  assert.deepEqual(keys({ finished: true }), ["WH", "ETC", "OLD", "PAY", "DONE", "DROP"]);
+  assert.deepEqual(keys({ q: "ware" }), ["WH"], "the name, any case; the finished one stays hidden");
+  assert.deepEqual(keys({ q: "WARE", finished: true }), ["WH", "DONE"]);
+  assert.deepEqual(keys({ q: "etc" }), ["ETC"], "or the key");
+  assert.deepEqual(keys({}, new Set([7])), ["ETC"]);
+
+  assert.deepEqual(keys({ only: "active" }), ["WH", "ETC"]);
+  assert.deepEqual(keys({ only: "at-risk" }), ["WH"]);
+  assert.deepEqual(keys({ only: "not-forecast" }), ["OLD"]);
+  assert.deepEqual(keys({ only: "incomplete" }), ["OLD", "PAY"], "no justification, no value, or no department");
+  assert.equal(F.isIncomplete(all[0]!), false);
+
+  assert.deepEqual(keys({ sort: "name" }), ["ETC", "OLD", "PAY", "WH"]);
+  assert.deepEqual(keys({ sort: "target" }), ["ETC", "WH", "OLD", "PAY"], "no target goes last, in rank order");
+  assert.deepEqual(keys({ sort: "forecast" }), ["PAY", "ETC", "WH", "OLD"]);
+  assert.deepEqual(
+    keys({ sort: "value" }),
+    ["WH", "ETC", "PAY", "OLD"],
+    "highest first, ties in rank order, none last",
+  );
+  assert.deepEqual(keys({ grouped: true }), ["ETC", "WH", "OLD", "PAY"], "by department, no department last");
+  assert.deepEqual(keys({ grouped: true, sort: "name" }), ["ETC", "OLD", "WH", "PAY"], "sorted inside each department");
+
+  // The figures describe the list before one of them narrows it.
+  const chosen = F.narrowProjects(all, { ...view, only: "at-risk" }, null);
+  assert.deepEqual(
+    chosen.described.map((x) => x.key),
+    ["WH", "ETC", "OLD", "PAY"],
+  );
+  assert.deepEqual(
+    chosen.shown.map((x) => x.key),
+    ["WH"],
+  );
+});

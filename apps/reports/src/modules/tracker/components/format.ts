@@ -240,3 +240,159 @@ export function departmentDropEffect(drop: {
       : ` ${drop.shifted} other ${drop.shifted === 1 ? "project" : "projects"} of its department ${drop.shifted === 1 ? "moves" : "each move"} one place to make room.`;
   return `${drop.moved.key} moves from company rank ${drop.moved.from} to ${drop.moved.to}${passing}.${making}`;
 }
+
+// ── The project list's view ────────────────────────────────────────────────────
+// Which projects the list shows and in what order, all of it in the address: the department
+// and grouping above, plus a search, a sort, one figure to narrow to, and whether finished
+// projects are shown. Pure, so the page can be drawn on the server and the rules tested.
+
+export type ListSort = "rank" | "name" | "target" | "forecast" | "value";
+export type ListOnly = "active" | "at-risk" | "not-forecast" | "incomplete";
+
+export const SORT_LABEL: Record<ListSort, string> = {
+  rank: "Stack rank",
+  name: "Name",
+  target: "Target date, soonest first",
+  forecast: "Forecast, soonest first",
+  value: "Value, highest first",
+};
+export const ONLY_LABEL: Record<ListOnly, string> = {
+  active: "active projects",
+  "at-risk": "projects at risk",
+  "not-forecast": "projects with cards not forecast",
+  incomplete: "projects missing a justification, a value or a department",
+};
+
+export interface ListView extends DepartmentView {
+  sort: ListSort;
+  only: ListOnly | null;
+  /** What was typed in the search box, trimmed. */
+  q: string;
+  /** Whether finished and cancelled projects are shown. They are not, unless asked for. */
+  finished: boolean;
+}
+
+export function listView(params: Record<string, string | string[] | undefined>): ListView {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+  const sort = one(params.sort);
+  const only = one(params.only);
+  return {
+    ...departmentView(params),
+    sort: sort in SORT_LABEL ? (sort as ListSort) : "rank",
+    only: only in ONLY_LABEL ? (only as ListOnly) : null,
+    q: one(params.q).trim().slice(0, 80),
+    finished: one(params.done) === "1",
+  };
+}
+
+/** The list's address for a view, or for a view with some of it changed. Defaults are left out. */
+export function listHref(view: ListView, change: Partial<ListView> = {}): string {
+  const v = { ...view, ...change };
+  const query = new URLSearchParams();
+  if (v.forId != null) query.set("for", String(v.forId));
+  if (v.grouped) query.set("group", "1");
+  if (v.sort !== "rank") query.set("sort", v.sort);
+  if (v.only) query.set("only", v.only);
+  if (v.q) query.set("q", v.q);
+  if (v.finished) query.set("done", "1");
+  const text = query.toString();
+  return text ? `/tracker?${text}` : "/tracker";
+}
+
+/** Planned, active or on hold: work still to come. */
+export function isOpen(p: Pick<ProjectListItem, "state">): boolean {
+  return p.state !== "completed" && p.state !== "cancelled";
+}
+
+/** Missing one of the three things every project is asked for. */
+export function isIncomplete(p: Pick<ProjectListItem, "justification" | "valueBucketId" | "forDepartmentId">): boolean {
+  return !p.justification || p.valueBucketId == null || p.forDepartmentId == null;
+}
+
+/**
+ * True when ranks can only be read: the list is not every project in rank order. A rank is a
+ * place among all of them, so it is changed with all of them in view. Grouping alone does not
+ * lock them (a project is then moved within its department), and neither does showing
+ * finished projects, which hold no place in the order.
+ */
+export function ranksLocked(view: Pick<ListView, "forId" | "sort" | "only" | "q">): boolean {
+  return view.forId != null || view.sort !== "rank" || view.only != null || view.q !== "";
+}
+
+type Listed = Pick<
+  ProjectListItem,
+  | "key"
+  | "name"
+  | "state"
+  | "targetDate"
+  | "forecastFinish"
+  | "atRisk"
+  | "unscheduledTasks"
+  | "justification"
+  | "valueBucketId"
+  | "valueSort"
+  | "forDepartmentId"
+  | "forGroupSort"
+>;
+
+/**
+ * Applies a view to the projects, which arrive in stack-rank order.
+ *
+ * `described` is the list before a figure narrows it: the department, the search and whether
+ * finished projects are in. The figures above the list are worked out from it, so choosing a
+ * figure never changes the figures. `shown` is that, narrowed to the chosen figure, sorted and
+ * grouped: the rows of the table.
+ */
+export function narrowProjects<P extends Listed>(
+  projects: P[],
+  view: ListView,
+  scope: Set<number> | null,
+): { described: P[]; shown: P[] } {
+  const words = view.q.toLowerCase();
+  const described = projectsFor(projects, scope)
+    .filter((p) => view.finished || isOpen(p))
+    .filter((p) => !words || p.key.toLowerCase().includes(words) || p.name.toLowerCase().includes(words));
+
+  const wanted: Record<ListOnly, (p: P) => boolean> = {
+    active: (p) => p.state === "active",
+    "at-risk": (p) => isOpen(p) && p.atRisk === true,
+    "not-forecast": (p) => isOpen(p) && p.unscheduledTasks > 0,
+    incomplete: (p) => isOpen(p) && isIncomplete(p),
+  };
+  const only = view.only;
+  const narrowed = only ? described.filter(wanted[only]) : described;
+
+  // Blanks go last whichever way the column runs: a project with no target is not "soonest".
+  const blankLast =
+    <T>(get: (p: P) => T | null, compare: (a: T, b: T) => number) =>
+    (a: P, b: P) => {
+      const [x, y] = [get(a), get(b)];
+      if (x == null || y == null) return (x == null ? 1 : 0) - (y == null ? 1 : 0);
+      return compare(x, y);
+    };
+  const order: Record<ListSort, ((a: P, b: P) => number) | null> = {
+    rank: null,
+    name: (a, b) => a.name.localeCompare(b.name),
+    target: blankLast(
+      (p) => p.targetDate,
+      (a, b) => a.localeCompare(b),
+    ),
+    forecast: blankLast(
+      (p) => p.forecastFinish,
+      (a, b) => a.localeCompare(b),
+    ),
+    value: blankLast(
+      (p) => p.valueSort,
+      (a, b) => b - a,
+    ),
+  };
+  const compare = order[view.sort];
+  // Stable, so ties stay in rank order.
+  const sorted = compare
+    ? narrowed
+        .map((p, i) => ({ p, i }))
+        .sort((a, b) => compare(a.p, b.p) || a.i - b.i)
+        .map((x) => x.p)
+    : narrowed;
+  return { described, shown: view.grouped ? byDepartment(sorted) : sorted };
+}

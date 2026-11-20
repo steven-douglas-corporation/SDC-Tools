@@ -7,8 +7,16 @@ import { hasPermission } from "@/lib/permissions";
 import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
 import { syncDepartmentsFromOrg, trackerActor } from "@/modules/tracker/current-actor";
 import { departmentScope, listDepartments } from "@/modules/tracker/service/departments";
-import { DepartmentFilter } from "@/modules/tracker/components/DepartmentPicker";
-import { byDepartment, departmentView, projectsFor } from "@/modules/tracker/components/format";
+import { ProjectListControls } from "@/modules/tracker/components/DepartmentPicker";
+import {
+  ONLY_LABEL,
+  isIncomplete,
+  isOpen,
+  listHref,
+  listView,
+  narrowProjects,
+  ranksLocked,
+} from "@/modules/tracker/components/format";
 import { listProjects, listValueBuckets } from "@/modules/tracker/service/queries";
 import { ProjectList } from "@/modules/tracker/components/ProjectList";
 import { PortfolioSummary } from "@/modules/tracker/components/PortfolioSummary";
@@ -19,7 +27,7 @@ import { PortfolioSummary } from "@/modules/tracker/components/PortfolioSummary"
 export default async function TrackerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ for?: string | string[]; group?: string | string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await requirePagePermission("tracker:view");
 
@@ -43,14 +51,21 @@ export default async function TrackerPage({
   await syncDepartmentsFromOrg();
   const departments = await listDepartments(trackerDb);
 
-  // ?for=12&group=1: which department's projects, and whether under a heading each. The
-  // figures above the table are of the projects shown, so they follow the filter.
-  const view = departmentView(await searchParams);
+  // Everything about how the list is narrowed and ordered is in the address (see listView), so
+  // the page is drawn on the server with figures to match and any view can be sent to someone.
+  const view = listView(await searchParams);
   const chosen = departments.find((d) => d.id === view.forId) ?? null;
-  const shown = projectsFor(everyProject, chosen ? departmentScope(departments, chosen.id) : null);
-  const projects = view.grouped ? byDepartment(shown) : shown;
-  const partial = chosen != null || view.grouped;
-  const withinDepartment = view.grouped && chosen == null;
+  // `described` is what the figures describe; `projects` is that, narrowed to a chosen figure,
+  // sorted and grouped. Choosing a figure does not change the figures.
+  const { described, shown: projects } = narrowProjects(
+    everyProject,
+    { ...view, forId: chosen?.id ?? null },
+    chosen ? departmentScope(departments, chosen.id) : null,
+  );
+  const locked = ranksLocked({ ...view, forId: chosen?.id ?? null });
+  const withinDepartment = view.grouped && !locked;
+  const incomplete = described.filter((p) => isOpen(p) && isIncomplete(p)).length;
+  const hidden = everyProject.length - everyProject.filter(isOpen).length;
 
   return (
     <div className={PAGE_SHELL}>
@@ -64,28 +79,70 @@ export default async function TrackerPage({
         sets each person&apos;s hours, time off and the company holidays.
       </p>
       <div className="mb-4">
-        <DepartmentFilter departments={departments} selected={chosen?.id ?? null} grouped={view.grouped} />
+        <ProjectListControls
+          departments={departments}
+          selected={chosen?.id ?? null}
+          grouped={view.grouped}
+          sort={view.sort}
+          search={view.q}
+          finished={view.finished}
+          finishedCount={hidden}
+        />
       </div>
-      <PortfolioSummary projects={projects} />
+      <PortfolioSummary projects={described} only={view.only} hrefFor={(only) => listHref(view, { only })} />
+
+      {/* What is missing, said once and with a way to see which: every project is asked for a
+          justification, a value and a department, and the ones made before that have none. */}
+      {incomplete > 0 && view.only !== "incomplete" && (
+        <p className="mb-4 rounded-lg border border-sdc-border bg-sdc-yellow-bg px-3 py-2 text-sm text-sdc-yellow-text">
+          {incomplete} open project{incomplete === 1 ? " is" : "s are"} missing a justification, a value or a
+          department, and cannot be made active without them.{" "}
+          <Link
+            href={listHref(view, { only: "incomplete" })}
+            scroll={false}
+            className="font-semibold underline hover:no-underline"
+          >
+            Show {incomplete === 1 ? "it" : "them"}
+          </Link>
+        </p>
+      )}
+      {view.only && (
+        <p className="mb-3 text-sm text-sdc-navy">
+          Showing only <strong>{ONLY_LABEL[view.only]}</strong>.{" "}
+          <Link
+            href={listHref(view, { only: null })}
+            scroll={false}
+            className="font-semibold text-sdc-blue hover:underline"
+          >
+            Show all
+          </Link>
+        </p>
+      )}
+
       <ProjectList
         projects={projects}
         valueBuckets={valueBuckets}
         departments={departments}
         grouped={view.grouped}
+        // No project at all is a different thing from none matching, and is said differently.
+        narrowed={everyProject.length > 0}
+        clearHref="/tracker"
         canEdit={hasPermission(session.user.role, "tracker:edit")}
         // A rank is a place among every project, so it is only changed with all of them in
         // view and in rank order.
         //
         // Grouped with every department in view, a project is moved among its own
         // department's projects instead: they trade the ranks that department already holds.
-        canRank={actor.admin === true && (!partial || withinDepartment)}
+        canRank={actor.admin === true && !locked}
         rankWithinDepartment={withinDepartment}
         rankNote={
-          actor.admin !== true || !partial
+          actor.admin !== true
             ? undefined
-            : withinDepartment
-              ? "Grouped, the arrows move a project among its own department's projects. There is still one company rank: to set a project against another department's, ungroup the list."
-              : "Ranks are shown, not changed, while the list is filtered. Show all departments to change them."
+            : locked
+              ? "Ranks are shown, not changed, while the list is filtered, searched or sorted. Show every project in rank order to change them."
+              : withinDepartment
+                ? "Grouped, a project is moved among its own department's projects. There is still one company rank: to set a project against another department's, ungroup the list."
+                : undefined
         }
       />
     </div>

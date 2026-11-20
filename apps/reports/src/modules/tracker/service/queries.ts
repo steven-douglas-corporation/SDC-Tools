@@ -20,6 +20,8 @@ export interface ProjectListItem {
   valueBucketId: number | null;
   /** What it is worth in a year, as the range's own words, e.g. "$50k to $250k a year". */
   valueLabel: string | null;
+  /** The range's place among the ranges, smallest first, for sorting by value. */
+  valueSort: number | null;
   /** The department the project is for. Null only on a project made before this was asked for. */
   forDepartmentId: number | null;
   forDepartmentName: string | null;
@@ -54,6 +56,7 @@ interface ProjectRow {
   justification: string | null;
   value_bucket_id: number | null;
   value_label: string | null;
+  value_sort: number | null;
   for_team_id: number | null;
   for_name: string | null;
   for_group_id: number | null;
@@ -76,7 +79,7 @@ interface ProjectRow {
 
 const PROJECT_COLUMNS = `
   r.project_id, r.key, r.name, r.state, r.portfolio_rank, o.display_name AS owner_name, r.owner_person_id,
-  pj.justification, pj.value_bucket_id, vb.label AS value_label,
+  pj.justification, pj.value_bucket_id, vb.label AS value_label, vb.sort_order AS value_sort,
   pj.for_team_id, fd.name AS for_name, coalesce(fg.id, fd.id) AS for_group_id,
   coalesce(fg.name, fd.name) AS for_group_name, coalesce(fg.sort_order, fd.sort_order) AS for_group_sort,
   r.target_date::text, r.task_count, r.done_count, r.remaining_hours::float8,
@@ -95,6 +98,7 @@ function toProject(r: ProjectRow, admin: boolean): ProjectListItem {
     justification: r.justification,
     valueBucketId: r.value_bucket_id == null ? null : Number(r.value_bucket_id),
     valueLabel: r.value_label,
+    valueSort: r.value_sort == null ? null : Number(r.value_sort),
     forDepartmentId: r.for_team_id == null ? null : Number(r.for_team_id),
     forDepartmentName: r.for_name,
     forGroupId: r.for_group_id == null ? null : Number(r.for_group_id),

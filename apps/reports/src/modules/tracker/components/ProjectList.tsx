@@ -292,6 +292,37 @@ function DepartmentRankCell({
   );
 }
 
+/** Something every project is asked for and this one lacks. Said in words, in amber. */
+function Missing({ children }: { children: React.ReactNode }) {
+  return <span className="text-xs font-semibold text-sdc-yellow-text">{children}</span>;
+}
+
+/**
+ * A project's three dates in one cell: the target, the forecast and the safe date. The one
+ * the project is judged on is in red, and says so, when it falls after the target.
+ */
+function Dates({ p }: { p: ProjectListItem }) {
+  const late = p.atRisk === true ? (p.atRiskBasis === "p80" ? "safe" : "forecast") : null;
+  const rows: [string, string | null, boolean][] = [
+    ["Target", p.targetDate, false],
+    ["Forecast", p.forecastFinish, late === "forecast"],
+    ["Safe", p.p80Finish, late === "safe"],
+  ];
+  return (
+    <dl className="grid grid-cols-[auto_auto] justify-start gap-x-2 text-xs whitespace-nowrap">
+      {rows.map(([label, date, isLate]) => (
+        <div key={label} className="contents">
+          <dt className="text-sdc-gray-600">{label}</dt>
+          <dd className={isLate ? "font-semibold text-sdc-red-text" : "text-sdc-navy"}>
+            {shortDate(date)}
+            {isLate && <span className="sr-only"> (after the target)</span>}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /** What a dragged project row carries. Its own type, so nothing else dropped on the list is taken for one. */
 const RANK_DRAG = "application/x-sdc-tracker-project";
 
@@ -414,6 +445,8 @@ export function ProjectList({
   grouped = false,
   rankNote,
   rankWithinDepartment = false,
+  narrowed = false,
+  clearHref,
   canEdit,
   canRank,
 }: {
@@ -431,6 +464,10 @@ export function ProjectList({
    * department, and its arrows move it among that department's projects.
    */
   rankWithinDepartment?: boolean;
+  /** True when there are projects, so an empty list means none matched, not none exist. */
+  narrowed?: boolean;
+  /** Where the list is with nothing narrowing it. */
+  clearHref?: string;
   /** Holds tracker:edit. */
   canEdit: boolean;
   /** May set the company-wide stack rank (in this app: ELT). */
@@ -488,7 +525,19 @@ export function ProjectList({
         </div>
       )}
 
-      {projects.length === 0 ? (
+      {projects.length === 0 && narrowed ? (
+        <EmptyState
+          title="No project matches"
+          message="Nothing fits the department, search or figure chosen above."
+          action={
+            clearHref ? (
+              <Link href={clearHref} className="font-semibold text-sdc-blue hover:underline">
+                Show every project
+              </Link>
+            ) : undefined
+          }
+        />
+      ) : projects.length === 0 ? (
         <EmptyState
           title="No projects yet"
           message={
@@ -541,23 +590,23 @@ export function ProjectList({
             </p>
           )}
           <div className={`${CARD_BASE} overflow-x-auto`}>
-            <table className="w-full min-w-[64rem] text-sm">
+            <table className="w-full min-w-[60rem] text-sm">
               <thead>
                 <tr className={TABLE_HEADER_ROW}>
                   <th className="px-3 py-2.5">Rank</th>
                   <th className="px-3 py-2.5 text-left">Project</th>
+                  <th className="px-3 py-2.5 text-left">For</th>
+                  <th className="px-3 py-2.5 text-left">Value a year</th>
                   <th className="px-3 py-2.5">State</th>
                   <th className="px-3 py-2.5">Cards done</th>
                   <th className="px-3 py-2.5">Remaining</th>
-                  <th className="px-3 py-2.5">Target</th>
-                  <th className="px-3 py-2.5">Forecast</th>
-                  <th className="px-3 py-2.5">
+                  <th className="px-3 py-2.5 text-left">
                     <span className="inline-flex items-center gap-1.5">
-                      Safe date <SafeDateHelp />
+                      Dates <SafeDateHelp />
                     </span>
                   </th>
                   <th className="px-3 py-2.5">Against target</th>
-                  <th className="px-3 py-2.5 text-left">Left out of the forecast</th>
+                  <th className="px-3 py-2.5 text-left">Not forecast</th>
                 </tr>
               </thead>
               <tbody>
@@ -670,10 +719,15 @@ export function ProjectList({
                             {p.name}
                           </span>
                           <div className="text-xs text-sdc-gray-600">
-                            For {p.forDepartmentName ?? "no department yet"} · {p.valueLabel ?? "No value set"} · Owner:{" "}
-                            {p.ownerName}
+                            Owner: {p.ownerName}
                             {p.nextMilestone ? ` · Next milestone: ${p.nextMilestone}` : ""}
                           </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-left">
+                          {p.forDepartmentName ?? <Missing>No department</Missing>}
+                        </td>
+                        <td className="px-3 py-2.5 text-left whitespace-nowrap">
+                          {p.valueLabel?.replace(" a year", "") ?? <Missing>Not set</Missing>}
                         </td>
                         <td className="px-3 py-2.5">
                           <StateCell p={p} canEdit={canEdit} />
@@ -682,14 +736,34 @@ export function ProjectList({
                           {p.doneCount} of {p.taskCount}
                         </td>
                         <td className="px-3 py-2.5 tabular-nums">{hours(p.remainingHours)}</td>
-                        <td className="px-3 py-2.5">{shortDate(p.targetDate)}</td>
-                        <td className="px-3 py-2.5">{shortDate(p.forecastFinish)}</td>
-                        <td className="px-3 py-2.5">{shortDate(p.p80Finish)}</td>
+                        <td className="px-3 py-2.5 text-left">
+                          <Dates p={p} />
+                        </td>
                         <td className="px-3 py-2.5">
                           <Risk p={p} />
                         </td>
                         <td className="px-3 py-2.5 text-left text-xs text-sdc-gray-600">
-                          {leftOut.length ? leftOut.map((line) => <div key={line}>{line}</div>) : "Nothing"}
+                          {leftOut.length === 0 ? (
+                            "Nothing"
+                          ) : (
+                            <details>
+                              <summary className="cursor-pointer whitespace-nowrap font-semibold text-sdc-navy">
+                                {[
+                                  p.unscheduledTasks > 0
+                                    ? `${p.unscheduledTasks} card${p.unscheduledTasks === 1 ? "" : "s"}`
+                                    : null,
+                                  p.staleTasks > 0 ? `${p.staleTasks} unconfirmed` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(", ")}
+                              </summary>
+                              <div className="mt-1 min-w-[12rem] space-y-0.5">
+                                {leftOut.map((line) => (
+                                  <div key={line}>{line}</div>
+                                ))}
+                              </div>
+                            </details>
+                          )}
                         </td>
                       </tr>
                     </Fragment>
