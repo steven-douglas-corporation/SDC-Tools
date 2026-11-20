@@ -262,10 +262,12 @@ export async function archiveTaskAction(input: {
   taskId: number;
   projectKey: string;
   taskKey: string;
+  /** Said yes to archiving the cards under it too. Without it a card with cards under it is refused. */
+  withUnder?: boolean;
 }): Promise<ActionResult> {
   return act(
     async (actor) => {
-      await archiveTask(trackerDb, actor, input.taskId);
+      await archiveTask(trackerDb, actor, input.taskId, { withUnder: input.withUnder === true });
       return {};
     },
     { paths: ["/tracker", "/tracker/timeline", boardPath(input.projectKey), taskPath(input.taskKey)] },

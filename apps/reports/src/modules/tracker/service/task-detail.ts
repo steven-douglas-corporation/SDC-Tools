@@ -1,5 +1,6 @@
 import { TrackerError, one, type Actor, type Database } from "./database";
 import { projectRole, type ProjectRole } from "./access";
+import { CARDS_UNDER } from "./tasks";
 import { kindTakesChecklist } from "./checklist";
 import {
   rollUp,
@@ -88,6 +89,8 @@ export interface TaskDetail {
   uncountedHours: number | null;
   /** Open work cards under this one with no estimate, so what they add up to is known to be low. */
   unsizedUnder: number;
+  /** Every unarchived card under this one, at any depth: what archiving it would take with it. */
+  underCount: number;
   /** Every kind a card can be given, top of the hierarchy first. */
   kinds: WorkKind[];
   /** Cards in the same project this one could sit under, with the level each counts as. */
@@ -544,6 +547,7 @@ export async function getTaskDetail(
       })),
       rollup: rollups.get(taskId) ?? null,
       unsizedUnder: unsized,
+      underCount: (await tx.query(CARDS_UNDER, [taskId])).rows.length,
       uncountedHours: uncountedHours(
         rollups.has(taskId),
         t.status_category,

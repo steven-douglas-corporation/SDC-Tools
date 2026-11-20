@@ -1757,7 +1757,11 @@ test("archive: a card with cards under it stays; archiving removes its links and
   await addDependency(db, ana, first.id, waiter.id);
   await addDependency(db, ana, child.id, first.id);
 
-  await refuses(() => archiveTask(db, ana, story.id), "invalid", /has 1 card under it\. Move or archive it first/);
+  await refuses(
+    () => archiveTask(db, ana, story.id),
+    "invalid",
+    /has 1 card under it\. Archive it with it, or move it first/,
+  );
 
   await archiveTask(db, ana, first.id);
   const links = await rows(
@@ -2408,4 +2412,39 @@ test("a project can say when it started, and the timeline of all projects draws 
   assert.equal((await row()).startedOn, "2026-03-02");
   await updateProject(db, ana, p.id, { startDate: null });
   assert.equal((await row()).startedOn, "2026-03-02");
+});
+
+test("archive: a card can take the cards under it along, when asked to, and says so on what waited", async () => {
+  const p = await createProject(db, ana, { key: "ARCHU", name: "Archive under" });
+  const top = await createTask(db, ana, { projectId: p.id, title: "Feature", kind: "feature" });
+  const mid = await createTask(db, ana, { projectId: p.id, title: "Story", kind: "story", parentTaskId: top.id });
+  const leaf = await createTask(db, ana, { projectId: p.id, title: "Leaf", parentTaskId: mid.id });
+  const other = await createTask(db, ana, { projectId: p.id, title: "Elsewhere" });
+  await addDependency(db, ana, leaf.id, other.id);
+
+  await refuses(
+    () => archiveTask(db, ana, top.id),
+    "invalid",
+    /has 2 cards under it\. Archive them with it, or move them first/,
+  );
+  await refuses(() => archiveTask(db, ben, top.id, { withUnder: true }), "forbidden");
+  assert.deepEqual(await archiveTask(db, ana, top.id, { withUnder: true }), { archived: 3 });
+
+  const left = await rows<{ id: number }>(`SELECT id FROM tracker.task WHERE project_id = $1 AND archived_at IS NULL`, [
+    p.id,
+  ]);
+  assert.deepEqual(
+    left.map((r) => Number(r.id)),
+    [other.id],
+    "only the card outside the branch is left",
+  );
+  assert.equal(
+    (await rows(`SELECT 1 FROM tracker.task_dependency WHERE successor_task_id = $1`, [other.id])).length,
+    0,
+  );
+  const said = await rows<{ reason: string }>(
+    `SELECT reason FROM tracker.task_change_log WHERE task_id = $1 AND field = 'dependency' AND new_value IS NULL`,
+    [other.id],
+  );
+  assert.deepEqual(said, [{ reason: "ARCHU-3 was archived with ARCHU-1" }]);
 });

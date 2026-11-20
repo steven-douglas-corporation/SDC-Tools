@@ -479,11 +479,11 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                 {mayArchive && !archiving && (
                   <button
                     type="button"
-                    disabled={pending || task.children.length > 0}
+                    disabled={pending}
                     className={BUTTON_COMPACT}
                     title={
-                      task.children.length > 0
-                        ? "Move or archive the cards under this one first"
+                      task.underCount > 0
+                        ? "Takes this card and the cards under it off the board and out of the forecast. Their history is kept."
                         : "Takes the card off the board and out of the forecast. Its history is kept."
                     }
                     onClick={() => setArchiving(true)}
@@ -498,8 +498,18 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                     className="flex flex-wrap items-center gap-2 text-sm"
                   >
                     <span className="font-semibold text-sdc-navy">
-                      Archive {task.key}? It leaves the board and the forecast, and nothing waits on it any more. Its
-                      history is kept. This cannot be undone here.
+                      {task.underCount > 0 ? (
+                        <>
+                          Archive {task.key} and the {task.underCount} card{task.underCount === 1 ? "" : "s"} under it?
+                          They all leave the board and the forecast, and nothing waits on them any more. Their history
+                          is kept. This cannot be undone here.
+                        </>
+                      ) : (
+                        <>
+                          Archive {task.key}? It leaves the board and the forecast, and nothing waits on it any more.
+                          Its history is kept. This cannot be undone here.
+                        </>
+                      )}
                     </span>
                     <button
                       type="button"
@@ -507,12 +517,18 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                       className={BUTTON_COMPACT}
                       onClick={() =>
                         run(
-                          () => archiveTaskAction({ taskId: task.id, projectKey: task.projectKey, taskKey: task.key }),
+                          () =>
+                            archiveTaskAction({
+                              taskId: task.id,
+                              projectKey: task.projectKey,
+                              taskKey: task.key,
+                              withUnder: task.underCount > 0,
+                            }),
                           () => router.push(`/tracker/${task.projectKey}`),
                         )
                       }
                     >
-                      Yes, archive
+                      {task.underCount > 0 ? `Yes, archive all ${task.underCount + 1}` : "Yes, archive"}
                     </button>
                     <button
                       type="button"

@@ -1025,36 +1025,63 @@ export async function addComment(db: Database, actor: Actor, taskId: number, bod
   });
 }
 
-/** Tasks are archived, never deleted, so their history stays intact. */
-export async function archiveTask(db: Database, actor: Actor, taskId: number): Promise<void> {
-  await db.transaction(async (tx) => {
+/** Every unarchived card under a card, at any depth. */
+export const CARDS_UNDER = `
+  WITH RECURSIVE under AS (
+    SELECT c.id FROM tracker.task c WHERE c.parent_task_id = $1 AND c.archived_at IS NULL
+    UNION ALL
+    SELECT c.id FROM tracker.task c JOIN under u ON c.parent_task_id = u.id WHERE c.archived_at IS NULL
+  )
+  SELECT id FROM under`;
+
+/**
+ * Archives a card: it leaves the board, the timeline and the forecast, and nothing waits on it
+ * any more. Cards are archived, never deleted, so their history stays intact.
+ *
+ * A card with cards under it takes them with it, but only when asked to (`withUnder`), so that
+ * nobody archives a whole branch by archiving its top card without being told. Returns how many
+ * cards were archived.
+ */
+export async function archiveTask(
+  db: Database,
+  actor: Actor,
+  taskId: number,
+  options: { withUnder?: boolean } = {},
+): Promise<{ archived: number }> {
+  return db.transaction(async (tx) => {
     const cur = await lockTask(tx, taskId);
     await requireProjectRole(tx, cur.project_id, actor, "manager");
-    // A card's place in the tree is how the cards under it are found, so it cannot go first.
-    const under = await tx.query(`SELECT 1 FROM tracker.task WHERE parent_task_id = $1 AND archived_at IS NULL`, [
-      taskId,
-    ]);
-    if (under.rows.length > 0) {
-      const n = under.rows.length;
+    const under = (await tx.query<{ id: number }>(CARDS_UNDER, [taskId])).rows.map((r) => Number(r.id));
+    if (under.length > 0 && !options.withUnder) {
+      const n = under.length;
       throw new TrackerError(
         "invalid",
-        `This card has ${n} card${n === 1 ? "" : "s"} under it. Move or archive ${n === 1 ? "it" : "them"} first.`,
+        `This card has ${n} card${n === 1 ? "" : "s"} under it. Archive ${n === 1 ? "it" : "them"} with it, or move ${n === 1 ? "it" : "them"} first.`,
       );
     }
-    // Nothing should wait on a card nobody can see, so its links go with it, and each card that
-    // was waiting on it gets a line in its history saying why it no longer does.
+    const going = [taskId, ...under];
+    const gone = new Set(going);
+    // Nothing should wait on a card nobody can see, so its links go with it, and each card left
+    // behind that was waiting on one of them gets a line in its history saying why it no longer does.
     const self = await taskKey(tx, taskId);
     const links = await tx.query<{ predecessor_task_id: number; successor_task_id: number }>(
-      `DELETE FROM tracker.task_dependency WHERE predecessor_task_id = $1 OR successor_task_id = $1
+      `DELETE FROM tracker.task_dependency
+        WHERE predecessor_task_id = ANY($1::bigint[]) OR successor_task_id = ANY($1::bigint[])
        RETURNING predecessor_task_id, successor_task_id`,
-      [taskId],
+      [going],
     );
     for (const l of links.rows) {
       const waiter = Number(l.successor_task_id);
-      const on = Number(l.predecessor_task_id) === taskId ? self : await taskKey(tx, Number(l.predecessor_task_id));
-      await logTaskChange(tx, waiter, "dependency", `waits on ${on.key}`, null, actor, `${self.key} was archived`);
+      if (gone.has(waiter)) continue;
+      const on = await taskKey(tx, Number(l.predecessor_task_id));
+      const why =
+        on.key === self.key || under.length === 0
+          ? `${on.key} was archived`
+          : `${on.key} was archived with ${self.key}`;
+      await logTaskChange(tx, waiter, "dependency", `waits on ${on.key}`, null, actor, why);
     }
-    await tx.query(`UPDATE tracker.task SET archived_at = now() WHERE id = $1`, [taskId]);
+    await tx.query(`UPDATE tracker.task SET archived_at = now() WHERE id = ANY($1::bigint[])`, [going]);
     await settleParents(tx, cur.project_id, cur.parent_task_id, actor);
+    return { archived: going.length };
   });
 }
