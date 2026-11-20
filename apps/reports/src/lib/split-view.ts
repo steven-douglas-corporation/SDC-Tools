@@ -106,6 +106,14 @@ export const otherPane = (p: Pane): Pane => (p === "l" ? "r" : "l");
 // So the combination is refused, with the reason shown, rather than allowed and
 // hoped about. Monthly ETC beside ANY other page is fully supported; it is only
 // ETC-beside-ETC that is blocked.
+/**
+ * The Dashboard's address, and the page a pane falls back to when it is asked for one it
+ * cannot show. Until 2026-11-19 this was "/", which is now the tools page and is never a
+ * pane; normalizePath reads the old address as this one, so saved tabs, split links and
+ * bookmarks made before the move still open the Dashboard.
+ */
+export const DASHBOARD_PATH = "/dashboard";
+
 export const SPLIT_ROUTES: readonly {
   path: string;
   label: string;
@@ -121,7 +129,7 @@ export const SPLIT_ROUTES: readonly {
    */
   instanceParam?: string;
 }[] = [
-  { path: "/", label: "Dashboard", params: ["tab", "m"] },
+  { path: DASHBOARD_PATH, label: "Dashboard", params: ["tab", "m"] },
   // `part`: a BOM part to highlight in the Parts List, sent by Open POs' PO panel.
   { path: "/job-hours", label: "Job Details", params: ["jobs", "job", "part"], instanceParam: "jobs" },
   { path: "/etc", label: "Monthly ETC", params: ["month", "dept", "jobname", "parts", "billables"], exclusive: true, instanceParam: "month" },
@@ -181,14 +189,15 @@ export function splitRoute(path: string) {
 }
 
 /**
- * Trailing slashes and empty strings normalized to "/" so "/etc/" and "/etc" are
- * one route. Anything else is returned as-is — an unknown path must stay
- * recognizably unknown rather than being coerced into a route that exists.
+ * Trailing slashes are dropped so "/etc/" and "/etc" are one route. An empty string or "/"
+ * is the Dashboard: that was its address until it moved to DASHBOARD_PATH, and every saved
+ * pane that names it must keep working. Anything else is returned as-is — an unknown path
+ * must stay recognizably unknown rather than being coerced into a route that exists.
  */
 export function normalizePath(path: string): string {
-  if (!path) return "/";
+  if (!path) return DASHBOARD_PATH;
   const trimmed = path.replace(/\/+$/, "");
-  return trimmed === "" ? "/" : trimmed;
+  return trimmed === "" ? DASHBOARD_PATH : trimmed;
 }
 
 // ── Ratio ───────────────────────────────────────────────────────────────────
@@ -286,12 +295,12 @@ const one = (v: string | string[] | undefined): string | undefined => (Array.isA
  * produces.
  */
 export function decodeSplit(raw: RawParams): SplitState {
-  const leftPath = normalizePath(one(raw[PARAM_ROUTE.l]) ?? "/");
+  const leftPath = normalizePath(one(raw[PARAM_ROUTE.l]) ?? DASHBOARD_PATH);
   const rightRaw = one(raw[PARAM_ROUTE.r]);
 
   const l: PaneState = {
-    path: isSplittable(leftPath) ? leftPath : "/",
-    params: readPaneParams(raw, "l", isSplittable(leftPath) ? leftPath : "/"),
+    path: isSplittable(leftPath) ? leftPath : DASHBOARD_PATH,
+    params: readPaneParams(raw, "l", isSplittable(leftPath) ? leftPath : DASHBOARD_PATH),
   };
 
   let r: PaneState | null = null;
@@ -386,7 +395,7 @@ export function openInSplit(
   const currentPath = normalizePath(current.path);
   const targetPath = normalizePath(target.path);
   return {
-    l: { path: isSplittable(currentPath) ? currentPath : "/", params: pickParams(currentPath, current.params) },
+    l: { path: isSplittable(currentPath) ? currentPath : DASHBOARD_PATH, params: pickParams(currentPath, current.params) },
     r: { path: targetPath, params: pickParams(targetPath, target.params ?? {}) },
     ratio: clampRatio(ratio),
     // The pane you just asked for is the one you want to act on next.

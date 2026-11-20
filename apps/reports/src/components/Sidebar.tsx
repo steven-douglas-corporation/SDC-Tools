@@ -12,6 +12,8 @@ import { useWorkspaceActions } from "@/components/useWorkspaceActions";
 import { NavItemMenu, NavItemMenuButton, type NavMenuAnchor } from "@/components/NavItemMenu";
 import { decideCrossAppNav, insideShell, reportCrossAppNavError } from "@/lib/shell-cross-app-nav";
 import { useToast } from "@/components/ui/Toast";
+import { ToolLauncher } from "@/components/ToolLauncher";
+import { toolForPath, toolsFor, type ToolId } from "@/lib/tools";
 import {
   applyNavOrder,
   moveItem,
@@ -75,8 +77,16 @@ const RAIL_ITEM = "flex h-9 w-full items-center justify-center rounded-[7px]";
 /** So the collapse toggle can `aria-controls` the thing it collapses (§46.15). */
 const SIDEBAR_ID = "app-sidebar";
 
-type NavItem = { href: string; label: string; icon: React.ReactNode; isActive: (path: string) => boolean };
-type NavGroup = { label: string; items: NavItem[] };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  isActive: (path: string) => boolean;
+  /** The route whose permission shows this item, when that is not the item's own href. */
+  gate?: string;
+};
+/** `tool`: the tool whose menu this group belongs to. Without one it is shown in every tool. */
+type NavGroup = { label: string; items: NavItem[]; tool?: ToolId };
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -120,14 +130,14 @@ function NavPendingHint() {
 // routes by accident.
 const PROFITABILITY_HREF = "/job-cost-explorer";
 
-const GROUPS: NavGroup[] = [
+const REPORT_GROUPS: Omit<NavGroup, "tool">[] = [
   {
     label: "Overview",
     items: [
       {
-        href: "/",
+        href: "/dashboard",
         label: "Dashboard",
-        isActive: (p) => p === "/",
+        isActive: (p) => p === "/dashboard",
         icon: (
           <Icon>
             <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" />
@@ -152,20 +162,6 @@ const GROUPS: NavGroup[] = [
             <path d="M1.5 13.5 C1.5 10.5 3.5 9.5 6 9.5 C8.5 9.5 10.5 10.5 10.5 13.5" strokeLinecap="round" />
             <circle cx="11.5" cy="6" r="2" />
             <path d="M12 9.5 C13.8 9.8 14.8 11 14.8 13" strokeLinecap="round" />
-          </Icon>
-        ),
-      },
-      {
-        // The Project Tracker module (2026-11-15). Shown only to roles holding
-        // tracker:view, which ships OFF for everyone but ELT.
-        href: "/tracker",
-        label: "Project Tracker",
-        isActive: (p) => p === "/tracker" || p.startsWith("/tracker/"),
-        icon: (
-          <Icon>
-            <rect x="1.75" y="2.5" width="3.5" height="11" rx="0.75" />
-            <rect x="6.25" y="2.5" width="3.5" height="7" rx="0.75" />
-            <rect x="10.75" y="2.5" width="3.5" height="9" rx="0.75" />
           </Icon>
         ),
       },
@@ -281,6 +277,60 @@ const GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+const GROUPS: NavGroup[] = REPORT_GROUPS.map((g) => ({ ...g, tool: "reports" }));
+
+// The Project Tracker's own menu (src/modules/tracker). It was one link in the Reports menu
+// until the tracker became a tool of its own; see lib/tools.ts. All three pages are gated by
+// the one route row, /tracker, so they appear and disappear together.
+const TRACKER_GROUP: NavGroup = {
+  label: "Project Tracker",
+  tool: "tracker",
+  items: [
+    {
+      href: "/tracker",
+      label: "Projects",
+      gate: "/tracker",
+      // A project's own board, timeline and cards are all "in" Projects.
+      isActive: (p) =>
+        p === "/tracker" || (p.startsWith("/tracker/") && p !== "/tracker/timeline" && p !== "/tracker/people"),
+      icon: (
+        <Icon>
+          <rect x="1.75" y="2.5" width="3.5" height="11" rx="0.75" />
+          <rect x="6.25" y="2.5" width="3.5" height="7" rx="0.75" />
+          <rect x="10.75" y="2.5" width="3.5" height="9" rx="0.75" />
+        </Icon>
+      ),
+    },
+    {
+      href: "/tracker/timeline",
+      label: "Timeline",
+      gate: "/tracker",
+      isActive: (p) => p === "/tracker/timeline",
+      icon: (
+        <Icon>
+          <line x1="2.5" y1="3.5" x2="9.5" y2="3.5" strokeLinecap="round" />
+          <line x1="5.5" y1="8" x2="13.5" y2="8" strokeLinecap="round" />
+          <line x1="3.5" y1="12.5" x2="10.5" y2="12.5" strokeLinecap="round" />
+        </Icon>
+      ),
+    },
+    {
+      href: "/tracker/people",
+      label: "People and time",
+      gate: "/tracker",
+      isActive: (p) => p === "/tracker/people",
+      icon: (
+        <Icon>
+          <circle cx="6" cy="5.5" r="2.5" />
+          <path d="M1.5 13.5 C1.5 10.5 3.5 9.5 6 9.5 C8.5 9.5 10.5 10.5 10.5 13.5" strokeLinecap="round" />
+          <circle cx="12" cy="9" r="2.75" />
+          <path d="M12 7.6 V9 L13 9.7" strokeLinecap="round" strokeLinejoin="round" />
+        </Icon>
+      ),
+    },
+  ],
+};
 
 const ADMIN_GROUP: NavGroup = {
   label: "Admin",
@@ -432,8 +482,16 @@ export default function Sidebar({
   // refused there, or the reverse. An item whose href isn't in that map at
   // all (there are none today) would show unconditionally; every current nav
   // item has an entry.
-  const visibleGroups = [...GROUPS, ADMIN_GROUP]
-    .map((g) => ({ ...g, items: g.items.filter((i) => visibleHrefs.includes(i.href)) }))
+  //
+  // Each tool has its own menu (lib/tools.ts). The groups of the tool the page on screen
+  // belongs to are shown, with Admin under every one of them. Someone with a single tool
+  // sees that tool's menu on every page, so for a role with Reports alone nothing moved.
+  const tools = toolsFor(visibleHrefs);
+  const currentTool = toolForPath(sidebarPath);
+  const menuTool = currentTool ?? (tools.length === 1 ? tools[0]!.id : null);
+  const visibleGroups = [...GROUPS, TRACKER_GROUP, ADMIN_GROUP]
+    .filter((g) => !g.tool || g.tool === menuTool)
+    .map((g) => ({ ...g, items: g.items.filter((i) => visibleHrefs.includes(i.gate ?? i.href)) }))
     .filter((g) => g.items.length > 0);
 
   // The SAME list, shared with the workspace's tab bar so its "+" and Split View
@@ -660,7 +718,13 @@ export default function Sidebar({
           The wordmark is now `sr-only` when collapsed rather than unmounted: it is the
           application's name, and a screen reader should still be able to reach it from
           the landmark (§46.15). */}
-      <div className={`flex items-center gap-[11px] pt-5 pb-[18px] ${collapsed ? "justify-center px-0" : "px-[18px]"}`}>
+      {/* The logo and the name are the way home: the tools page, which sends someone with a
+          single tool straight to it. */}
+      <Link
+        href="/"
+        title="All tools"
+        className={`flex items-center gap-[11px] pt-5 pb-[18px] ${collapsed ? "justify-center px-0" : "px-[18px]"}`}
+      >
         {/* Slightly lifted tile so the white-on-navy SDC mark still reads as a
             distinct badge against the navy panel behind it. */}
         <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-[#0D2A49] shadow-[inset_0_0_0_1px_#1B4270]">
@@ -670,7 +734,19 @@ export default function Sidebar({
           <p className="truncate text-sm font-semibold leading-tight tracking-[-0.005em] text-[#F3F6FA]">SDC Projects Reports</p>
           <p className="truncate text-note text-[#7E93AC]">Steven Douglas Corp.</p>
         </div>
-      </div>
+      </Link>
+
+      {tools.length > 1 && (
+        <ToolLauncher
+          tools={tools}
+          current={currentTool}
+          collapsed={collapsed}
+          railItemClass={RAIL_ITEM}
+          scheduler={
+            schedulerProjectsUrl ? { href: schedulerProjectsUrl, onClick: onSchedulerClick, inShell } : undefined
+          }
+        />
+      )}
 
       {/* Search — the design shows this field, so it had to be real rather than
           decorative: it filters the nav below by label. ⌘/Ctrl+K focuses it,
@@ -686,7 +762,7 @@ export default function Sidebar({
               onKeyDown={(e) => {
                 if (e.key === "Escape") setQuery("");
               }}
-              placeholder="Search reports"
+              placeholder={menuTool === "tracker" ? "Search menu" : "Search reports"}
               aria-label="Filter navigation"
               className="min-w-0 flex-1 bg-transparent text-xs text-[#C3D1E0] placeholder:text-[#7189A3] focus:outline-none"
             />

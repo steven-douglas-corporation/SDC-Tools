@@ -451,7 +451,7 @@ test("T&M jobs are left out of the report at the query itself, and every other v
 });
 
 test("the Finances tab offers the section only to a role that may open Job Details", () => {
-  const page = noComments(src("src", "app", "(app)", "page.tsx"));
+  const page = noComments(src("src", "app", "(app)", "dashboard", "page.tsx"));
   assert.match(page, /const partsBudget = canSeePartsBudget\(session\.user\.role\);/);
   assert.match(page, /const hasFinances = financeCards\.length > 0 \|\| partsBudget;/);
   assert.match(page, /partsBudget=\{partsBudget\}/);

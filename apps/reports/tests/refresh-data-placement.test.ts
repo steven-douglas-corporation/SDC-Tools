@@ -49,7 +49,7 @@ test("exactly one component in the app renders Refresh Data", () => {
     "src/components/Sidebar.tsx",
     "src/app/(app)/etc/page.tsx",
     "src/app/(app)/quoted/page.tsx",
-    "src/app/(app)/page.tsx",
+    "src/app/(app)/dashboard/page.tsx",
     "src/app/(app)/jobs/page.tsx",
     "src/app/(app)/employees/page.tsx",
   ];

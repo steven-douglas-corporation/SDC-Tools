@@ -13,16 +13,16 @@ const src = (rel: string) => readFileSync(join(__dirname, "..", "src", rel), "ut
 
 test("a button reports the exact tab it is on, not whatever pane the shell resolves", () => {
   const fin = dashboardFeedbackContext("finances", "2026-10");
-  assert.equal(fin.routePath, "/");
+  assert.equal(fin.routePath, "/dashboard");
   assert.equal(fin.viewLabel, "Dashboard — Finances");
   assert.deepEqual(fin.params, { m: "2026-10", tab: "finances" });
   assert.equal(fin.periodMonth, "2026-10");
-  assert.equal(fin.contextUrl, "/?m=2026-10&tab=finances");
+  assert.equal(fin.contextUrl, "/dashboard?m=2026-10&tab=finances");
 
   const exec = dashboardFeedbackContext("executive", "2026-10");
   assert.equal(exec.viewLabel, "Dashboard — Executive");
   assert.deepEqual(exec.params, { m: "2026-10" }, "Executive is the default tab, so it carries no tab param");
-  assert.equal(exec.contextUrl, "/?m=2026-10");
+  assert.equal(exec.contextUrl, "/dashboard?m=2026-10");
 });
 
 test("the label fits the column it is stored in", () => {
@@ -34,8 +34,11 @@ test("the label fits the column it is stored in", () => {
 });
 
 test("both tabs carry the band, and each names its own view", () => {
-  assert.match(src("app/(app)/page.tsx"), /<DashboardFeedbackBand view="executive" month=\{month\} \/>/);
-  assert.match(src("components/dashboard/FinancesPanel.tsx"), /<DashboardFeedbackBand view="finances" month=\{month\} \/>/);
+  assert.match(src("app/(app)/dashboard/page.tsx"), /<DashboardFeedbackBand view="executive" month=\{month\} \/>/);
+  assert.match(
+    src("components/dashboard/FinancesPanel.tsx"),
+    /<DashboardFeedbackBand view="finances" month=\{month\} \/>/,
+  );
 });
 
 test("one button opens the suggestion wording, the other the ordinary problem form", () => {
@@ -57,7 +60,10 @@ test("a suggestion files as an enhancement at the lowest urgency", () => {
 
 test("the Flag pill is unchanged: it opens its own drawer without the suggestion wording", () => {
   const button = src("components/FeedbackButton.tsx");
-  assert.match(button, /\{open && <FeedbackDrawer context=\{context\} canView=\{canView\} onClose=\{\(\) => setOpen\(false\)\} \/>\}/);
+  assert.match(
+    button,
+    /\{open && <FeedbackDrawer context=\{context\} canView=\{canView\} onClose=\{\(\) => setOpen\(false\)\} \/>\}/,
+  );
   assert.match(button, /aria-label="Report a problem with this view"/);
   // The shell still renders the drawer in exactly one component.
   const importers = ["components/AppShell.tsx", "components/dashboard/DashboardFeedbackBand.tsx"].filter((f) =>

@@ -30,9 +30,7 @@ import { normalizePath } from "@/lib/split-view";
 
 /** Every path this role's sidebar would show — identical to the layout's `visibleHrefs`. */
 export function permittedRoutePaths(role: AppRole | null | undefined): string[] {
-  const out = ROUTE_PERMISSIONS.filter((r) => hasPermission(role, r.permission)).map((r) => r.path);
-  if (hasPermission(role, "dashboard:view")) out.push("/");
-  return out;
+  return ROUTE_PERMISSIONS.filter((r) => hasPermission(role, r.permission)).map((r) => r.path);
 }
 
 /**

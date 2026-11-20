@@ -8,6 +8,10 @@ import { hasPermission, type AppRole, type Permission } from "@/lib/permissions"
 export const ROUTE_PERMISSIONS: readonly { path: string; permission: Permission }[] = [
   { path: "/job-hours", permission: "job-hour-details:view" },
   { path: "/tm", permission: "tm:view" },
+  // The Dashboard had the site's bare address until 2026-11-19, with a special case below
+  // for it. It is an ordinary row now that "/" is the tools page, which every signed-in
+  // person may open. Not first, on purpose: see safeFallbackPath.
+  { path: "/dashboard", permission: "dashboard:view" },
   { path: "/build-readiness", permission: "build-readiness:view" },
   // After /job-hours on purpose: safeFallbackPath() returns the first entry a role holds.
   { path: "/open-pos", permission: "open-pos:view" },
@@ -71,9 +75,8 @@ export const ROUTE_PERMISSIONS: readonly { path: string; permission: Permission 
   { path: "/tracker", permission: "tracker:view" },
 ];
 
-/** Longest-prefix match; "/" is only ever an exact match (everything is a prefix of it). */
+/** Longest-prefix match. "/" is the tools page and needs no permission of its own. */
 export function permissionForPath(pathname: string): Permission | null {
-  if (pathname === "/") return "dashboard:view";
   const hit = ROUTE_PERMISSIONS.filter((r) => pathname.startsWith(r.path)).sort(
     (a, b) => b.path.length - a.path.length,
   )[0];
