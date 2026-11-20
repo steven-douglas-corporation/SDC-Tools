@@ -2,10 +2,11 @@
 
 import { usePaneUrl } from "@/components/PaneUrlProvider";
 
-// Cutoff for the Cash Flow "Left to Invoice Split": today (live, the default) or the end of a
+// Cutoff for the Cash Flow "Left to Invoice Split": today (live) or the end of a
 // chosen month. Lives in the page's own `lti` param — pane-aware, so it works on the plain page,
 // in a workspace tab and in a split pane — and the server re-reads the split for it.
-// No `lti` = today. A native month input yields `YYYY-MM`, the one shape the server accepts.
+// "Today (live)" is the explicit `lti=today`. No `lti` = the page's default: the ETC month's end once
+// that month is over, today while it is current. A native month input yields `YYYY-MM`, the one shape the server accepts.
 
 export function LeftToInvoiceCutoffPicker({ month }: { month: string | null }) {
   const url = usePaneUrl();
@@ -22,7 +23,7 @@ export function LeftToInvoiceCutoffPicker({ month }: { month: string | null }) {
       <span className="font-semibold text-sdc-navy">Calculate as of</span>
       <button
         type="button"
-        onClick={() => set(null)}
+        onClick={() => set("today")}
         aria-pressed={month === null}
         className={`rounded border px-2 py-1 ${month === null ? "border-sdc-navy bg-sdc-navy text-white" : "border-sdc-border bg-white text-sdc-navy hover:bg-sdc-blue-light/40"}`}
       >
