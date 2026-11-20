@@ -186,36 +186,43 @@ export async function getTimeline(db: Database, actor: Actor, projectKey: string
     return new Map(rows.map((r) => [Number(r.task_id), r.day]));
   });
 
-  return {
-    project: board.project,
-    rows: laid.map((l) => {
-      const t = byId.get(l.id)!;
-      const status = category.get(t.statusId)!;
-      const done = status.category === "done";
-      return {
-        id: t.id,
-        key: t.key,
-        title: t.title,
-        kindLabel: t.kindLabel,
-        type: t.type,
-        depth: l.depth,
-        isParent: l.isParent,
-        statusName: status.name,
-        category: status.category,
-        assigneeName: t.assigneeName,
-        start: done ? null : l.start,
-        finish: done ? null : l.finish,
-        p80Finish: !done && !l.isParent && t.p80Finish && l.finish && t.p80Finish > l.finish ? t.p80Finish : null,
-        dueDate: t.dueDate,
-        doneOn: done ? t.actualCompletionDate : null,
-        startedOn: l.isParent ? null : earliest(started.get(t.id) ?? null, done ? t.actualCompletionDate : null),
-        unscheduledReason: done || l.isParent ? null : t.unscheduledReason,
-        uncountedHours: l.isParent ? t.uncountedHours : null,
-      };
-    }),
-    links,
-    forecastAsOf: board.forecastAsOf,
-  };
+  const rows: TimelineRow[] = laid.map((l) => {
+    const t = byId.get(l.id)!;
+    const status = category.get(t.statusId)!;
+    const done = status.category === "done";
+    return {
+      id: t.id,
+      key: t.key,
+      title: t.title,
+      kindLabel: t.kindLabel,
+      type: t.type,
+      depth: l.depth,
+      isParent: l.isParent,
+      statusName: status.name,
+      category: status.category,
+      assigneeName: t.assigneeName,
+      start: done ? null : l.start,
+      finish: done ? null : l.finish,
+      p80Finish: !done && !l.isParent && t.p80Finish && l.finish && t.p80Finish > l.finish ? t.p80Finish : null,
+      dueDate: t.dueDate,
+      doneOn: done ? t.actualCompletionDate : null,
+      startedOn: earliest(started.get(t.id) ?? null, done ? t.actualCompletionDate : null),
+      unscheduledReason: done || l.isParent ? null : t.unscheduledReason,
+      uncountedHours: l.isParent ? t.uncountedHours : null,
+    };
+  });
+  // A card with cards under it started when the first of them did, or on its own date if a
+  // manager gave it an earlier one. Rows arrive parent first, so the cards under a row are the
+  // run of deeper rows after it.
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const parent = rows[i]!;
+    if (!parent.isParent) continue;
+    for (let j = i + 1; j < rows.length && rows[j]!.depth > parent.depth; j++) {
+      parent.startedOn = earliest(parent.startedOn, rows[j]!.startedOn);
+    }
+  }
+
+  return { project: board.project, rows, links, forecastAsOf: board.forecastAsOf };
 }
 
 // ── All projects on one timeline ─────────────────────────────────────────────

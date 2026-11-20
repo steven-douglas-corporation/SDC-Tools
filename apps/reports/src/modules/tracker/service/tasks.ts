@@ -40,7 +40,7 @@ export interface TaskChanges {
   title?: string;
   /**
    * The day the work started. Filled in when a card first moves into work; set here to correct
-   * it, or to record work that was done before it was entered. Null clears it.
+   * it, or to record work that was done before it was entered. Null clears it. Managers only.
    */
   actualStartDate?: string | null;
   /** The day a finished card was finished, to correct it. Only a finished card has one. */
@@ -560,8 +560,13 @@ export async function updateTask(
       );
     }
 
-    // When the work happened. Corrections to history, so they are not put in the change log:
-    // the dates themselves are the record.
+    // When the work happened. The start is stamped when a card first moves into work and the
+    // finish when it is done; setting either by hand is back-dating, which rewrites what the
+    // timeline says happened, so it is for a manager of the project. They are corrections to
+    // history and are not put in the change log: the dates themselves are the record.
+    if (changes.actualStartDate !== undefined || changes.actualCompletionDate !== undefined) {
+      await requireProjectRole(tx, cur.project_id, actor, "manager");
+    }
     if (changes.actualCompletionDate !== undefined) {
       if (cur.actual_completion_date == null) {
         throw new TrackerError("invalid", "Only a finished card has a finish date. Move it to done first.");

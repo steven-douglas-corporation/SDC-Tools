@@ -112,6 +112,10 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   const [remaining, setRemaining] = useState(task.remainingHours?.toString() ?? "");
   const [priority, setPriority] = useState(task.priority.toString());
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
+  const [startedOn, setStartedOn] = useState(task.actualStartDate ?? "");
+  const [finishedOn, setFinishedOn] = useState(task.actualCompletionDate ?? "");
+  // Setting these by hand is back-dating: it changes what the timeline says happened.
+  const mayBackDate = mayChange && task.myRole === "manager";
   const [estimated, setEstimated] = useState(task.estimatedCompletionDate ?? "");
   const [kind, setKind] = useState(task.kind);
   const [parentId, setParentId] = useState(task.parentTaskId?.toString() ?? "");
@@ -160,6 +164,8 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
     if (nextParent !== task.parentTaskId) changes.parentTaskId = nextParent;
     if (Number(priority) !== task.priority) changes.priority = Number(priority);
     if ((dueDate || null) !== task.dueDate) changes.dueDate = dueDate || null;
+    if ((startedOn || null) !== task.actualStartDate) changes.actualStartDate = startedOn || null;
+    if (finishedOn && finishedOn !== task.actualCompletionDate) changes.actualCompletionDate = finishedOn;
     if ((estimated || null) !== task.estimatedCompletionDate) changes.estimatedCompletionDate = estimated || null;
     if (Object.keys(changes).length === 0) return setSaved("Nothing to save.");
     run(
@@ -396,6 +402,34 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                 />
                 <span className="text-xs text-sdc-gray-600">A commitment. The forecast is compared with it.</span>
               </label>
+              <label className="flex flex-col gap-1">
+                <span className={LABEL}>Started on</span>
+                <input
+                  type="date"
+                  value={startedOn}
+                  disabled={!mayBackDate}
+                  onChange={(e) => setStartedOn(e.target.value)}
+                  className={INPUT}
+                />
+                <span className="text-xs text-sdc-gray-600">
+                  Filled in when the card first moves into work. A manager can set an earlier day.
+                </span>
+              </label>
+              {task.actualCompletionDate && (
+                <label className="flex flex-col gap-1">
+                  <span className={LABEL}>Finished on</span>
+                  <input
+                    type="date"
+                    value={finishedOn}
+                    disabled={!mayBackDate}
+                    onChange={(e) => setFinishedOn(e.target.value)}
+                    className={INPUT}
+                  />
+                  <span className="text-xs text-sdc-gray-600">
+                    Filled in when the card was done. A manager can correct it.
+                  </span>
+                </label>
+              )}
               <label className="flex flex-col gap-1">
                 <span className={LABEL}>Your estimated completion</span>
                 <input

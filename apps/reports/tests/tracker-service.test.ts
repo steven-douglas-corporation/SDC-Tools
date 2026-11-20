@@ -2367,9 +2367,22 @@ test("a card records the day its work started: stamped on the first move into wo
   assert.deepEqual(await dates(), { s: "2026-09-02", f: "2026-09-30" });
   await refuses(() => updateTask(db, ana, t.id, { actualStartDate: "2026-10-05" }), "invalid", /cannot start after/);
 
+  // Back-dating rewrites what the timeline says happened, so a contributor cannot do it.
+  await setProjectMember(db, ana, p.id, ben.personId, "contributor");
+  await refuses(() => updateTask(db, ben, t.id, { actualStartDate: "2026-09-01" }), "forbidden");
+  await updateTask(db, ben, t.id, { priority: 2 });
+
+  // A card with cards under it starts when the first of them did.
+  const parent = await createTask(db, ana, { projectId: p.id, title: "Feature", kind: "feature" });
+  await updateTask(db, ana, t.id, { parentTaskId: parent.id });
+
   const T = await import("../src/modules/tracker/service/timeline");
   const row = (await T.getTimeline(db, ana, "STARTD")).rows.find((r) => r.id === t.id)!;
+  const tl = async () => (await T.getTimeline(db, ana, "STARTD")).rows;
   assert.deepEqual([row.startedOn, row.doneOn], ["2026-09-02", "2026-09-30"]);
+  assert.equal((await tl()).find((r) => r.id === parent.id)!.startedOn, "2026-09-02");
+  await updateTask(db, ana, parent.id, { actualStartDate: "2026-08-15" });
+  assert.equal((await tl()).find((r) => r.id === parent.id)!.startedOn, "2026-08-15", "its own earlier date wins");
 });
 
 test("a project can say when it started, and the timeline of all projects draws it from then", async () => {

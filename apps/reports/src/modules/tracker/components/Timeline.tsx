@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CARD_BASE } from "@/components/ui/classnames";
 import type { Timeline as TimelineData, TimelineRow } from "../service/timeline";
 import { forecastReason, hours, localToday, shortDate } from "./format";
+import { TimelineTitles } from "./TimelineTitles";
 
 // One project as a timeline: a row per card, grouped under the card it sits under, a bar from
 // the forecast's start to its finish, and an arrow for each dependency. Nothing here is typed
@@ -257,8 +258,9 @@ export function Timeline({
         </p>
       )}
       <div className={`${CARD_BASE} flex overflow-hidden`}>
-        {/* The cards, as a fixed column that stays put while the dates scroll. */}
-        <div className="w-80 shrink-0 border-r border-sdc-border">
+        {/* The cards, as a column that stays put while the dates scroll. Its right edge can be
+            dragged to make the titles wider or narrower. */}
+        <TimelineTitles>
           <div style={{ height: HEAD }} className="border-b border-sdc-border" />
           {rows.map((r) => (
             <div
@@ -322,7 +324,7 @@ export function Timeline({
               )}
             </div>
           ))}
-        </div>
+        </TimelineTitles>
 
         {/* The dates. */}
         <div className="min-w-0 flex-1 overflow-x-auto">
@@ -439,7 +441,7 @@ export function Timeline({
                   {(() => {
                     // What has already happened: from the day the work started to the day it was
                     // finished, or to the forecast's day while it is still open.
-                    if (!r.startedOn || r.isParent) return null;
+                    if (!r.startedOn) return null;
                     const from = Math.max(first, dayNumber(r.startedOn));
                     const to = r.doneOn ? dayNumber(r.doneOn) : todayN;
                     if (to <= from) return null;

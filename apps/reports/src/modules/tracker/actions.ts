@@ -343,6 +343,8 @@ export type TaskEdit = Pick<
   | "remainingEffortHours"
   | "dueDate"
   | "estimatedCompletionDate"
+  | "actualStartDate"
+  | "actualCompletionDate"
   | "kind"
   | "parentTaskId"
 >;
@@ -367,6 +369,8 @@ export async function updateTaskAction(input: {
       if (c.effortBucketId !== undefined) changes.effortBucketId = c.effortBucketId;
       if (c.remainingEffortHours !== undefined) changes.remainingEffortHours = c.remainingEffortHours;
       if (c.dueDate !== undefined) changes.dueDate = c.dueDate || null;
+      if (c.actualStartDate !== undefined) changes.actualStartDate = c.actualStartDate || null;
+      if (c.actualCompletionDate) changes.actualCompletionDate = c.actualCompletionDate;
       if (c.estimatedCompletionDate !== undefined) changes.estimatedCompletionDate = c.estimatedCompletionDate || null;
       if (c.kind !== undefined) changes.kind = c.kind || "task";
       if (c.parentTaskId !== undefined) changes.parentTaskId = c.parentTaskId;
