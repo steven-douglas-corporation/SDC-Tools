@@ -42,8 +42,6 @@ starts that same task first and waits for it, then runs the sources below, so it
 on the SFTP server now instead of what the last scheduled run found. This app's own hourly and
 startup passes do not start it: the load's own schedule covers the unattended case. See `src/lib/warehouse-ingest.ts`.
 
-Turning it on in production, step by step: [DEPLOY-REFRESH-SFTP-PULL.md](DEPLOY-REFRESH-SFTP-PULL.md).
-
 - **Setting:** `WAREHOUSE_INGEST_TASK` in `.env`, the task as Task Scheduler names it
   (`\DataWarehouse\Paylocity ingest`). Unset, the pull is skipped.
 - **Permission:** the Windows account the app runs as must be allowed to start the task. The
