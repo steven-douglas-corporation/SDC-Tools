@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
-import type { Tool, ToolId } from "@/lib/tools";
+import type { AreaId, Tool } from "@/lib/tools";
 
 // The launcher at the top of the sidebar: which tool is open, and a short list for moving
 // to another. Rendered only for someone with more than one tool; with a single tool there
@@ -30,8 +30,8 @@ export function ToolLauncher({
   scheduler,
 }: {
   tools: Tool[];
-  /** The tool the page on screen belongs to; null on the tools page. */
-  current: ToolId | null;
+  /** The area the page on screen belongs to; null on the tools page. */
+  current: AreaId | null;
   collapsed: boolean;
   /** The sidebar's own class for an icon-only row in the collapsed rail. */
   railItemClass: string;
@@ -41,7 +41,7 @@ export function ToolLauncher({
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const panelId = useId();
-  const label = tools.find((t) => t.id === current)?.label ?? "All tools";
+  const label = tools.find((t) => t.id === current)?.label ?? (current === "admin" ? "Admin" : "All tools");
 
   useEffect(() => {
     if (!open) return;

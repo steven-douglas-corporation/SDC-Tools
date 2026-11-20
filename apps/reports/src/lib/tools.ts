@@ -11,6 +11,13 @@
 
 export type ToolId = "reports" | "tracker";
 
+/**
+ * A tool, or Admin. Admin is not a tool: it has no tile and is not in the launcher. It is
+ * the pages every tool shares (users, permissions, the audit log, feedback), reached from
+ * the gear beside the signed-in person's name, with a menu of its own when it is open.
+ */
+export type AreaId = ToolId | "admin";
+
 export interface Tool {
   id: ToolId;
   label: string;
@@ -22,7 +29,7 @@ export interface Tool {
 
 const isTrackerPath = (path: string): boolean => path === "/tracker" || path.startsWith("/tracker/");
 
-/** Pages every tool shares: they sit in the sidebar's Admin group whichever tool is open. */
+/** Pages every tool shares. They are the Admin area, and never make a tool on their own. */
 const isSharedPath = (path: string): boolean =>
   path === "/feedback" || path === "/audit-log" || path.startsWith("/admin/");
 
@@ -54,8 +61,9 @@ export function toolsFor(permitted: readonly string[]): Tool[] {
   return tools;
 }
 
-/** Which tool a page belongs to. Null for the tools page itself, which belongs to none. */
-export function toolForPath(path: string): ToolId | null {
+/** Which area a page belongs to. Null for the tools page itself, which belongs to none. */
+export function toolForPath(path: string): AreaId | null {
   if (path === "/" || path === "") return null;
+  if (isSharedPath(path)) return "admin";
   return isTrackerPath(path) ? "tracker" : "reports";
 }

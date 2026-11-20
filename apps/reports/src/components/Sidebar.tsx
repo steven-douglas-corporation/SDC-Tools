@@ -13,7 +13,7 @@ import { NavItemMenu, NavItemMenuButton, type NavMenuAnchor } from "@/components
 import { decideCrossAppNav, insideShell, reportCrossAppNavError } from "@/lib/shell-cross-app-nav";
 import { useToast } from "@/components/ui/Toast";
 import { ToolLauncher } from "@/components/ToolLauncher";
-import { toolForPath, toolsFor, type ToolId } from "@/lib/tools";
+import { toolForPath, toolsFor, type AreaId } from "@/lib/tools";
 import {
   applyNavOrder,
   moveItem,
@@ -85,8 +85,8 @@ type NavItem = {
   /** The route whose permission shows this item, when that is not the item's own href. */
   gate?: string;
 };
-/** `tool`: the tool whose menu this group belongs to. Without one it is shown in every tool. */
-type NavGroup = { label: string; items: NavItem[]; tool?: ToolId };
+/** `tool`: the area whose menu this group belongs to. Without one it is shown in every area. */
+type NavGroup = { label: string; items: NavItem[]; tool?: AreaId };
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -332,8 +332,12 @@ const TRACKER_GROUP: NavGroup = {
   ],
 };
 
+// Admin is an area of its own, opened from the gear beside the signed-in person's name. It
+// was a group at the foot of the one menu; it is kept as a group, shown alone, so its pages
+// are still ordinary sidebar items that can be opened in a tab or in Split View.
 const ADMIN_GROUP: NavGroup = {
   label: "Admin",
+  tool: "admin",
   items: [
     // Feedback sits with the Audit Log because they are the same kind of screen
     // — a record of what happened, read rather than worked in. Unlike the rest
@@ -483,9 +487,9 @@ export default function Sidebar({
   // all (there are none today) would show unconditionally; every current nav
   // item has an entry.
   //
-  // Each tool has its own menu (lib/tools.ts). The groups of the tool the page on screen
-  // belongs to are shown, with Admin under every one of them. Someone with a single tool
-  // sees that tool's menu on every page, so for a role with Reports alone nothing moved.
+  // Each area has its own menu (lib/tools.ts): the groups of the one the page on screen
+  // belongs to are shown, and no others. On the tools page that is none, unless the person
+  // has a single tool, whose menu is then shown everywhere outside Admin.
   const tools = toolsFor(visibleHrefs);
   const currentTool = toolForPath(sidebarPath);
   const menuTool = currentTool ?? (tools.length === 1 ? tools[0]!.id : null);
@@ -493,6 +497,10 @@ export default function Sidebar({
     .filter((g) => !g.tool || g.tool === menuTool)
     .map((g) => ({ ...g, items: g.items.filter((i) => visibleHrefs.includes(i.gate ?? i.href)) }))
     .filter((g) => g.items.length > 0);
+  // The tools page has no menu of its own, so the things that act on a menu are left off it.
+  const onHome = sidebarPath === "/";
+  // Where the gear leads: the first Admin page this person may open. None, no gear.
+  const adminHref = ADMIN_GROUP.items.find((i) => visibleHrefs.includes(i.gate ?? i.href))?.href;
 
   // The SAME list, shared with the workspace's tab bar so its "+" and Split View
   // pickers offer exactly the pages this sidebar shows — a route offered there and
@@ -736,7 +744,9 @@ export default function Sidebar({
         </div>
       </Link>
 
-      {tools.length > 1 && (
+      {/* With one tool there is nothing to switch between, except from Admin, where the
+          launcher is the way back to it. */}
+      {(tools.length > 1 || (currentTool === "admin" && tools.length > 0)) && (
         <ToolLauncher
           tools={tools}
           current={currentTool}
@@ -750,8 +760,9 @@ export default function Sidebar({
 
       {/* Search — the design shows this field, so it had to be real rather than
           decorative: it filters the nav below by label. ⌘/Ctrl+K focuses it,
-          Escape clears. Hidden when collapsed (no room for a text field). */}
-      {!collapsed && (
+          Escape clears. Hidden when collapsed (no room for a text field), and on the
+          tools page, which has no menu to filter. */}
+      {!collapsed && !onHome && (
         <div className="px-[14px] pb-[14px]">
           <div className="flex h-8 items-center gap-[9px] rounded-[7px] bg-[#0B2846] px-[10px] shadow-[inset_0_0_0_1px_#17395C,0_1px_1px_rgba(0,0,0,0.35)] focus-within:shadow-[inset_0_0_0_1px_#4C8DE8]">
             <span className="h-[11px] w-[11px] shrink-0 rounded-full shadow-[inset_0_0_0_1.4px_#5F7B98]" />
@@ -762,7 +773,7 @@ export default function Sidebar({
               onKeyDown={(e) => {
                 if (e.key === "Escape") setQuery("");
               }}
-              placeholder={menuTool === "tracker" ? "Search menu" : "Search reports"}
+              placeholder={menuTool === "reports" ? "Search reports" : "Search menu"}
               aria-label="Filter navigation"
               className="min-w-0 flex-1 bg-transparent text-xs text-[#C3D1E0] placeholder:text-[#7189A3] focus:outline-none"
             />
@@ -1059,7 +1070,8 @@ export default function Sidebar({
             while this is a different app on another port — a plain <a> in a new
             tab, so the report you're on is never lost. The Scheduler has the
             mirror-image button back to here. */}
-        {schedulerProjectsUrl && (
+        {/* Not on the tools page: the Scheduler has a tile there. */}
+        {schedulerProjectsUrl && !onHome && (
           <div className="flex flex-col gap-[3px]">
             <p
               className={
@@ -1307,6 +1319,30 @@ export default function Sidebar({
             </form>
             )}
           </div>
+          {/* Admin: users, permissions, the audit log, feedback. Shown to anyone who may
+              open at least one of them. */}
+          {adminHref && (
+            <Link
+              href={adminHref}
+              title="Admin"
+              aria-label="Admin"
+              aria-current={currentTool === "admin" ? "true" : undefined}
+              className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] motion-interactive hover:bg-[#0E3157] hover:text-[#F3F6FA] ${
+                currentTool === "admin" ? "bg-[#0E3157] text-[#F3F6FA]" : "text-[#8FA6BE]"
+              }`}
+            >
+              <span className="flex h-4 w-4 items-center justify-center">
+                <Icon>
+                  <circle cx="8" cy="8" r="2" />
+                  <circle cx="8" cy="8" r="4.6" />
+                  <path
+                    d="M8 1.4 V3.4 M8 12.6 V14.6 M1.4 8 H3.4 M12.6 8 H14.6 M3.3 3.3 L4.75 4.75 M11.25 11.25 L12.7 12.7 M3.3 12.7 L4.75 11.25 M11.25 4.75 L12.7 3.3"
+                    strokeLinecap="round"
+                  />
+                </Icon>
+              </span>
+            </Link>
+          )}
         </div>
 
         {/* The running application version. In the sidebar, so it is on every tab

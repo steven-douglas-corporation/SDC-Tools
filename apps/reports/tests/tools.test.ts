@@ -30,7 +30,9 @@ test("a page belongs to one tool, and the tools page to none", () => {
   assert.equal(toolForPath("/tracker"), "tracker");
   assert.equal(toolForPath("/tracker/ALPHA/7"), "tracker");
   assert.equal(toolForPath("/trackers"), "reports", "a prefix that is not a path segment is not the tracker");
-  for (const path of ["/dashboard", "/etc", "/w", "/split", "/admin/users"]) assert.equal(toolForPath(path), "reports");
+  for (const path of ["/dashboard", "/etc", "/w", "/split"]) assert.equal(toolForPath(path), "reports");
+  // Admin is an area of its own, with its own menu, and is never counted as a tool.
+  for (const path of ["/feedback", "/audit-log", "/admin/users"]) assert.equal(toolForPath(path), "admin");
 });
 
 test("the tools page needs no permission, the Dashboard keeps its own, and neither is a fallback", () => {
