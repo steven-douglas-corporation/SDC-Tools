@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import moduleBoundaries from "./eslint.modules.mjs";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -15,6 +16,8 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // What a module under src/modules may import; nothing until that folder exists.
+  ...moduleBoundaries,
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
