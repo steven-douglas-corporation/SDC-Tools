@@ -321,7 +321,7 @@ export async function getPortfolioTimeline(
         p80Finish: finish && p.p80Finish && p.p80Finish > finish ? p.p80Finish : null,
         dueDate: p.targetDate,
         doneOn,
-        startedOn: earliest(workedFrom.get(p.id) ?? null, doneOn),
+        startedOn: earliest(earliest(p.startDate, workedFrom.get(p.id) ?? null), doneOn),
         unscheduledReason: finish || done ? null : projectUnscheduledReason(p),
         uncountedHours: null,
       };

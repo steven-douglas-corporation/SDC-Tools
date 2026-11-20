@@ -75,6 +75,7 @@ export default async function TrackerProjectSettingsPage({ params }: { params: P
           doneByDepartmentId={p.doneByDepartmentId}
           departments={departments}
           targetDate={p.targetDate}
+          startDate={p.startDate}
           ownerPersonId={p.ownerPersonId}
           state={p.state as ProjectState}
           openCards={p.taskCount - p.doneCount}

@@ -26,6 +26,7 @@ export const MIGRATIONS = [
   "0011_project_for_department.sql",
   "0012_project_done_by_department.sql",
   "0013_task_actual_start.sql",
+  "0014_project_start_date.sql",
 ] as const;
 
 /** `missing` is null when the record itself cannot be read, which is true of any database older than 0008. */

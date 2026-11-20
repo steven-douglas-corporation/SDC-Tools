@@ -104,6 +104,7 @@ before(async () => {
   await pg.exec(migration("0011_project_for_department.sql"));
   await pg.exec(migration("0012_project_done_by_department.sql"));
   await pg.exec(migration("0013_task_actual_start.sql"));
+  await pg.exec(migration("0014_project_start_date.sql"));
   await pg.exec("RESET search_path");
   db = { transaction: (fn) => pg.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, params) })) as never };
   // The company's departments as the roster would hand them over: see the departments test.
@@ -2369,4 +2370,29 @@ test("a card records the day its work started: stamped on the first move into wo
   const T = await import("../src/modules/tracker/service/timeline");
   const row = (await T.getTimeline(db, ana, "STARTD")).rows.find((r) => r.id === t.id)!;
   assert.deepEqual([row.startedOn, row.doneOn], ["2026-09-02", "2026-09-30"]);
+});
+
+test("a project can say when it started, and the timeline of all projects draws it from then", async () => {
+  const T = await import("../src/modules/tracker/service/timeline");
+  const p = await createProject(db, ana, { key: "PSTART", name: "Began earlier" });
+  const row = async () => (await T.getPortfolioTimeline(db, ana)).rows.find((r) => r.id === p.id)!;
+  assert.equal((await row()).startedOn, null, "nothing started, nothing said");
+
+  await refuses(() => updateProject(db, ana, p.id, { startDate: "last spring" }), "invalid");
+  await updateProject(db, ana, p.id, { startDate: "2026-04-06" }, "began before it was entered");
+  assert.equal((await row()).startedOn, "2026-04-06");
+  const log = await rows<{ field: string; new_value: string }>(
+    `SELECT field, new_value FROM tracker.project_change_log WHERE project_id = $1`,
+    [p.id],
+  );
+  assert.deepEqual(log, [{ field: "start_date", new_value: "2026-04-06" }]);
+
+  // A card that started earlier still wins; clearing the date hands it back to the cards.
+  const t = await createTask(db, ana, { projectId: p.id, title: "Older still" });
+  await db.transaction((tx) =>
+    tx.query(`UPDATE tracker.task SET actual_start_date = '2026-03-02' WHERE id = $1`, [t.id]),
+  );
+  assert.equal((await row()).startedOn, "2026-03-02");
+  await updateProject(db, ana, p.id, { startDate: null });
+  assert.equal((await row()).startedOn, "2026-03-02");
 });

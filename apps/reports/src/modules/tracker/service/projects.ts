@@ -34,6 +34,8 @@ export interface ProjectChanges {
   valueBucketId?: number;
   forDepartmentId?: number;
   doneByDepartmentId?: number;
+  /** The day the project started, when that was before its first card was started. Null clears it. */
+  startDate?: string | null;
   targetDate?: string | null;
   state?: ProjectState;
   ownerPersonId?: number;
@@ -242,10 +244,12 @@ export async function updateProject(
   reason?: string | null,
 ): Promise<void> {
   assertIsoDate(changes.targetDate, "Target date");
+  assertIsoDate(changes.startDate, "Started on");
   await db.transaction(async (tx) => {
     await requireProjectRole(tx, projectId, actor, "manager");
     const cur = await one<{
       target_date: string | null;
+      start_date: string | null;
       state: ProjectState;
       owner_person_id: number;
       portfolio_rank: number | null;
@@ -255,7 +259,7 @@ export async function updateProject(
       done_by_team_id: number | null;
     }>(
       tx,
-      `SELECT target_date::text, state, owner_person_id, portfolio_rank, justification, value_bucket_id, for_team_id,
+      `SELECT target_date::text, actual_start_date::text AS start_date, state, owner_person_id, portfolio_rank, justification, value_bucket_id, for_team_id,
               done_by_team_id
          FROM tracker.project WHERE id = $1 FOR UPDATE`,
       [projectId],
@@ -316,6 +320,10 @@ export async function updateProject(
       ]);
       await logProjectChange(tx, projectId, "done_by_department", was, name, actor, reason ?? null);
       doneByDepartmentId = changes.doneByDepartmentId;
+    }
+    if (changes.startDate !== undefined && changes.startDate !== cur.start_date) {
+      await tx.query(`UPDATE tracker.project SET actual_start_date = $2 WHERE id = $1`, [projectId, changes.startDate]);
+      await logProjectChange(tx, projectId, "start_date", cur.start_date, changes.startDate, actor, reason ?? null);
     }
     if (changes.targetDate !== undefined && changes.targetDate !== cur.target_date) {
       await tx.query(`UPDATE tracker.project SET target_date = $2 WHERE id = $1`, [projectId, changes.targetDate]);

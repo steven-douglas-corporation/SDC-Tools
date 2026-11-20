@@ -225,6 +225,7 @@ export async function updateProjectAction(input: {
     | "forDepartmentId"
     | "doneByDepartmentId"
     | "targetDate"
+    | "startDate"
     | "ownerPersonId"
     | "state"
   >;
@@ -244,6 +245,7 @@ export async function updateProjectAction(input: {
           forDepartmentId: c.forDepartmentId,
           doneByDepartmentId: c.doneByDepartmentId,
           targetDate: c.targetDate,
+          startDate: c.startDate,
           ownerPersonId: c.ownerPersonId,
           state: c.state,
         },

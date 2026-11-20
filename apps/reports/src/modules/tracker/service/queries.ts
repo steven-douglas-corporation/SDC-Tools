@@ -40,6 +40,8 @@ export interface ProjectListItem {
   doneByGroupName: string | null;
   doneByGroupSort: number | null;
   targetDate: string | null;
+  /** The day the project started, where a manager has said so. Otherwise its cards decide. */
+  startDate: string | null;
   taskCount: number;
   doneCount: number;
   remainingHours: number;
@@ -80,6 +82,7 @@ interface ProjectRow {
   done_by_group_name: string | null;
   done_by_group_sort: number | null;
   target_date: string | null;
+  start_date: string | null;
   task_count: string | number | null;
   done_count: string | number | null;
   remaining_hours: number | null;
@@ -101,7 +104,7 @@ const PROJECT_COLUMNS = `
   coalesce(fg.name, fd.name) AS for_group_name, coalesce(fg.sort_order, fd.sort_order) AS for_group_sort,
   pj.done_by_team_id, dd.name AS done_by_name, coalesce(dg.id, dd.id) AS done_by_group_id,
   coalesce(dg.name, dd.name) AS done_by_group_name, coalesce(dg.sort_order, dd.sort_order) AS done_by_group_sort,
-  r.target_date::text, r.task_count, r.done_count, r.remaining_hours::float8,
+  r.target_date::text, pj.actual_start_date::text AS start_date, r.task_count, r.done_count, r.remaining_hours::float8,
   r.forecast_completion_date::text AS forecast_finish, r.p80_finish::text, r.at_risk, r.at_risk_basis,
   r.unscheduled_tasks, r.unestimated_tasks, r.stale_tasks, r.next_milestone, m.role AS my_role`;
 
@@ -198,6 +201,7 @@ function toProject(r: ProjectRow, admin: boolean): ProjectListItem {
     doneByGroupName: r.done_by_group_name,
     doneByGroupSort: r.done_by_group_sort == null ? null : Number(r.done_by_group_sort),
     targetDate: r.target_date,
+    startDate: r.start_date,
     taskCount: Number(r.task_count ?? 0),
     doneCount: Number(r.done_count ?? 0),
     remainingHours: Number(r.remaining_hours ?? 0),

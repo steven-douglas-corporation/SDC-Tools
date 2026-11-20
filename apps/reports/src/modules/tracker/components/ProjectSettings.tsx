@@ -35,6 +35,7 @@ export function ProjectSettings({
   doneByDepartmentId,
   departments,
   targetDate,
+  startDate,
   ownerPersonId,
   state,
   openCards,
@@ -51,6 +52,7 @@ export function ProjectSettings({
   doneByDepartmentId: number | null;
   departments: Department[];
   targetDate: string | null;
+  startDate: string | null;
   ownerPersonId: number;
   state: ProjectState;
   /** Cards that carry work and are not done yet. */
@@ -65,6 +67,7 @@ export function ProjectSettings({
   const [forId, setForId] = useState(forDepartmentId?.toString() ?? "");
   const [byId, setById] = useState(doneByDepartmentId?.toString() ?? "");
   const [target, setTarget] = useState(targetDate ?? "");
+  const [started, setStarted] = useState(startDate ?? "");
   const [owner, setOwner] = useState(ownerPersonId.toString());
   const [next, setNext] = useState<ProjectState>(state);
   const [reason, setReason] = useState("");
@@ -80,6 +83,7 @@ export function ProjectSettings({
   if (forId !== "" && forId !== (forDepartmentId?.toString() ?? "")) changes.forDepartmentId = Number(forId);
   if (byId !== "" && byId !== (doneByDepartmentId?.toString() ?? "")) changes.doneByDepartmentId = Number(byId);
   if ((target || null) !== targetDate) changes.targetDate = target || null;
+  if ((started || null) !== startDate) changes.startDate = started || null;
   if (Number(owner) !== ownerPersonId) changes.ownerPersonId = Number(owner);
   if (next !== state) changes.state = next;
   const changed = Object.keys(changes).length > 0;
@@ -154,6 +158,13 @@ export function ProjectSettings({
               <DepartmentOptions departments={departments} />
             </select>
             <span className="text-xs text-sdc-gray-600">Who does the work.</span>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={LABEL}>Started on</span>
+            <input type="date" value={started} onChange={(e) => setStarted(e.target.value)} className={INPUT} />
+            <span className="text-xs text-sdc-gray-600">
+              When the work began, if that was before its first card. Blank lets the cards decide.
+            </span>
           </label>
           <label className="flex flex-col gap-1">
             <span className={LABEL}>Target date</span>
