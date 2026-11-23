@@ -119,9 +119,9 @@ export function PortfolioSummary({
         warn={s.pastTarget > 0}
         note={
           s.pastTarget > 0
-            ? `${count(s.pastTarget, "project is", "projects are")} past target${s.nextTarget ? `; next is ${s.nextTarget.name}` : ""}`
+            ? `${count(s.pastTarget, "project is", "projects are")} past target${s.nextTarget ? `; next is ${s.nextTarget.key} ${s.nextTarget.name}` : ""}`
             : s.nextTarget
-              ? s.nextTarget.name
+              ? `${s.nextTarget.key} ${s.nextTarget.name}`
               : "No target dates to come"
         }
         href={s.nextTarget ? `/tracker/${s.nextTarget.key}` : undefined}
