@@ -776,7 +776,11 @@ export function ProjectList({
                           className="px-3 py-2.5 text-left"
                           title={
                             done.byHours
-                              ? `${hours(done.doneHours)} of ${hours(p.estimatedHours)} done \u00b7 ${p.doneCount} of ${p.taskCount} cards`
+                              ? `${hours(done.doneHours)} of ${hours(p.estimatedHours)} done \u00b7 ${p.doneCount} of ${p.taskCount} cards${
+                                  p.unestimatedDoneCards + p.unestimatedTasks > 0
+                                    ? `. ${p.unestimatedDoneCards + p.unestimatedTasks} with no estimate are counted at the average size.`
+                                    : ""
+                                }`
                               : `${p.doneCount} of ${p.taskCount} cards done. No hours are estimated, so this is by count.`
                           }
                         >

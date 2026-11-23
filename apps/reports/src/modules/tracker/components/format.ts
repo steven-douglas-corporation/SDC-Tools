@@ -72,15 +72,29 @@ export function notInForecast(noDate: number, noEstimate: number): string | null
 /**
  * How far along a project is. Weighted by hours where its cards have estimates, so one large
  * card counts for more than several small ones; by the count of cards where none has.
+ *
+ * Cards with no estimate still count. Work recorded after it was done often has none, and
+ * leaving it out would show a half-finished project as not started. Each such card is taken to
+ * be the size of the project's average estimated card: a guess, but a fairer one than zero.
  */
-export function progress(p: { taskCount: number; doneCount: number; remainingHours: number; estimatedHours: number }): {
-  percent: number;
-  byHours: boolean;
-  doneHours: number;
-} {
+export function progress(p: {
+  taskCount: number;
+  doneCount: number;
+  remainingHours: number;
+  estimatedHours: number;
+  estimatedCards?: number;
+  /** Finished cards that never had an estimate. */
+  unestimatedDoneCards?: number;
+  /** Open cards with no estimate. */
+  unestimatedTasks?: number;
+}): { percent: number; byHours: boolean; doneHours: number } {
   if (p.estimatedHours > 0) {
     const doneHours = Math.max(0, p.estimatedHours - p.remainingHours);
-    return { percent: Math.min(100, Math.round((doneHours / p.estimatedHours) * 100)), byHours: true, doneHours };
+    const average = p.estimatedCards && p.estimatedCards > 0 ? p.estimatedHours / p.estimatedCards : 0;
+    const unsizedDone = (p.unestimatedDoneCards ?? 0) * average;
+    const unsizedOpen = (p.unestimatedTasks ?? 0) * average;
+    const total = p.estimatedHours + unsizedDone + unsizedOpen;
+    return { percent: Math.min(100, Math.round(((doneHours + unsizedDone) / total) * 100)), byHours: true, doneHours };
   }
   return { percent: p.taskCount > 0 ? Math.round((p.doneCount / p.taskCount) * 100) : 0, byHours: false, doneHours: 0 };
 }

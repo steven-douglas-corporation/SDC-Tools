@@ -47,6 +47,9 @@ export interface ProjectListItem {
   remainingHours: number;
   /** Hours estimated across the project's cards, done or not: what the remaining hours are left of. */
   estimatedHours: number;
+  /** How many of its cards carry an estimate, and how many finished ones never had one. */
+  estimatedCards: number;
+  unestimatedDoneCards: number;
   /** The people named on its open cards, by name. Empty when the work is the department's as a whole. */
   assigneeNames: string[];
   forecastFinish: string | null;
@@ -80,6 +83,8 @@ interface ProjectRow {
   for_group_name: string | null;
   for_group_sort: number | null;
   estimated_hours: number | null;
+  estimated_cards: number | null;
+  unestimated_done_cards: number | null;
   assignee_names: string[] | null;
   done_by_team_id: number | null;
   done_by_name: string | null;
@@ -119,6 +124,20 @@ const PROJECT_COLUMNS = `
     WHERE e.project_id = r.project_id AND e.archived_at IS NULL AND es.category <> 'cancelled'
       AND NOT EXISTS (SELECT 1 FROM tracker.task c WHERE c.parent_task_id = e.id AND c.archived_at IS NULL)
   ) AS estimated_hours,
+  (SELECT count(*)::int
+     FROM tracker.task e
+     JOIN tracker.workflow_status es ON es.id = e.status_id
+    WHERE e.project_id = r.project_id AND e.archived_at IS NULL AND es.category <> 'cancelled'
+      AND NOT EXISTS (SELECT 1 FROM tracker.task c WHERE c.parent_task_id = e.id AND c.archived_at IS NULL)
+      AND e.effort_estimate_hours IS NOT NULL
+  ) AS estimated_cards,
+  (SELECT count(*)::int
+     FROM tracker.task e
+     JOIN tracker.workflow_status es ON es.id = e.status_id
+    WHERE e.project_id = r.project_id AND e.archived_at IS NULL AND es.category <> 'cancelled'
+      AND NOT EXISTS (SELECT 1 FROM tracker.task c WHERE c.parent_task_id = e.id AND c.archived_at IS NULL)
+      AND e.effort_estimate_hours IS NULL AND e.type <> 'milestone' AND es.category = 'done'
+  ) AS unestimated_done_cards,
   (SELECT array_agg(DISTINCT ap.display_name ORDER BY ap.display_name)
      FROM tracker.task a
      JOIN tracker.workflow_status s ON s.id = a.status_id
@@ -224,6 +243,8 @@ function toProject(r: ProjectRow, admin: boolean): ProjectListItem {
     doneCount: Number(r.done_count ?? 0),
     remainingHours: Number(r.remaining_hours ?? 0),
     estimatedHours: Number(r.estimated_hours ?? 0),
+    estimatedCards: Number(r.estimated_cards ?? 0),
+    unestimatedDoneCards: Number(r.unestimated_done_cards ?? 0),
     assigneeNames: r.assignee_names ?? [],
     forecastFinish: r.forecast_finish,
     p80Finish: r.p80_finish,

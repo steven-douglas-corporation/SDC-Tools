@@ -36,6 +36,33 @@ test("hours drop a pointless decimal", async () => {
     doneHours: 0,
   });
   assert.equal(F.progress({ taskCount: 0, doneCount: 0, remainingHours: 0, estimatedHours: 0 }).percent, 0);
+  // Four finished cards with no estimate beside ten estimated ones of 10 h each, none started:
+  // they count as 40 h done of 140, not as nothing.
+  assert.equal(
+    F.progress({
+      taskCount: 14,
+      doneCount: 4,
+      remainingHours: 100,
+      estimatedHours: 100,
+      estimatedCards: 10,
+      unestimatedDoneCards: 4,
+      unestimatedTasks: 0,
+    }).percent,
+    29,
+  );
+  // An open card with no estimate makes the whole larger, so it cannot flatter the figure.
+  assert.equal(
+    F.progress({
+      taskCount: 3,
+      doneCount: 1,
+      remainingHours: 0,
+      estimatedHours: 20,
+      estimatedCards: 2,
+      unestimatedDoneCards: 0,
+      unestimatedTasks: 2,
+    }).percent,
+    50,
+  );
   assert.equal(
     F.progress({ taskCount: 2, doneCount: 0, remainingHours: 50, estimatedHours: 40 }).percent,
     0,
