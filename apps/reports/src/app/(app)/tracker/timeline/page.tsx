@@ -6,9 +6,9 @@ import { requirePagePermission } from "@/lib/require-permission";
 import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
 import { syncDepartmentsFromOrg, trackerActor } from "@/modules/tracker/current-actor";
 import { getPortfolioTimeline } from "@/modules/tracker/service/timeline";
-import { departmentScope, listDepartments } from "@/modules/tracker/service/departments";
+import { departmentsScope, listDepartments } from "@/modules/tracker/service/departments";
 import { DepartmentFilter } from "@/modules/tracker/components/DepartmentPicker";
-import { departmentView } from "@/modules/tracker/components/format";
+import { departmentView, groupingOf } from "@/modules/tracker/components/format";
 import { Timeline } from "@/modules/tracker/components/Timeline";
 
 // Every open project on one timeline, at /tracker/timeline. "TIMELINE" is a reserved project
@@ -31,9 +31,10 @@ export default async function TrackerPortfolioTimelinePage({
   const finished = (Array.isArray(params.done) ? params.done[0] : params.done) === "1";
   await syncDepartmentsFromOrg();
   const departments = await listDepartments(trackerDb);
-  const chosen = departments.find((d) => d.id === view.forId) ?? null;
+  const filtered = view.forIds.length > 0 || view.byIds.length > 0;
   const timeline = await getPortfolioTimeline(trackerDb, await trackerActor(session), {
-    scope: chosen ? departmentScope(departments, chosen.id) : null,
+    scope: departmentsScope(departments, view.forIds),
+    byScope: departmentsScope(departments, view.byIds),
     grouped: view.grouped,
     lens: view.lens,
     level: view.level,
@@ -44,11 +45,15 @@ export default async function TrackerPortfolioTimelinePage({
     .split(",")
     .map(Number)
     .filter((n) => Number.isInteger(n) && n < 0);
+  // The department choices, written into an address the same way wherever one is built here.
+  const setDepartments = (query: URLSearchParams) => {
+    if (view.forIds.length) query.set("for", view.forIds.join(","));
+    if (view.byIds.length) query.set("by", view.byIds.join(","));
+    if (view.grouped) query.set("group", groupingOf(view));
+  };
   const address = (ids: number[]) => {
     const query = new URLSearchParams();
-    if (chosen) query.set("for", String(chosen.id));
-    if (view.grouped) query.set("group", view.level === "team" ? "team" : "1");
-    if (view.lens === "by") query.set("dept", "by");
+    setDepartments(query);
     if (finished) query.set("done", "1");
     if (ids.length) query.set("closed", ids.join(","));
     const text = query.toString();
@@ -69,9 +74,7 @@ export default async function TrackerPortfolioTimelinePage({
         <Link
           href={(() => {
             const query = new URLSearchParams();
-            if (chosen) query.set("for", String(chosen.id));
-            if (view.grouped) query.set("group", view.level === "team" ? "team" : "1");
-            if (view.lens === "by") query.set("dept", "by");
+            setDepartments(query);
             if (!finished) query.set("done", "1");
             const text = query.toString();
             return text ? `/tracker/timeline?${text}` : "/tracker/timeline";
@@ -85,10 +88,9 @@ export default async function TrackerPortfolioTimelinePage({
       <div className="mb-4">
         <DepartmentFilter
           departments={departments}
-          selected={chosen?.id ?? null}
-          grouped={view.grouped}
-          lens={view.lens}
-          level={view.level}
+          forIds={view.forIds}
+          byIds={view.byIds}
+          grouping={groupingOf(view)}
         />
       </div>
       <Timeline
@@ -96,7 +98,7 @@ export default async function TrackerPortfolioTimelinePage({
         closed={closed}
         toggleHref={view.grouped ? address : undefined}
         hrefFor={(row) => `/tracker/${row.key}/timeline`}
-        emptyText={chosen ? `No open project is for ${chosen.name}.` : "There are no open projects to show."}
+        emptyText={filtered ? "No open project fits the departments chosen." : "There are no open projects to show."}
         of="projects"
         finished={finished}
       />

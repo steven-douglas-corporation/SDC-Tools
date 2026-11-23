@@ -246,9 +246,11 @@ export async function getPortfolioTimeline(
   view: {
     /** Only the projects that are for one of these departments (see departmentScope). Null for all. */
     scope?: Set<number> | null;
+    /** Only the projects done by one of these departments. Null for all. */
+    byScope?: Set<number> | null;
     /** A row per department above its projects, spanning them, with the projects one level in. */
     grouped?: boolean;
-    /** Which department the scope and the rows mean: who it is for (the default), or who does the work. */
+    /** Which department a grouped row is: who it is for (the default), or who does the work. */
     lens?: DepartmentLens;
     /** What a grouped row is: the group a department sits in (the default), or the department itself. */
     level?: DepartmentLevel;
@@ -257,13 +259,17 @@ export async function getPortfolioTimeline(
   } = {},
 ): Promise<Pick<Timeline, "rows" | "links" | "forecastAsOf">> {
   // listProjects applies the "only your projects, or all for an admin" rule.
-  const open = throughLens(
-    await listProjects(db, actor),
-    view.lens ?? "for",
-    view.grouped ? (view.level ?? "group") : "group",
-  ).filter((p) => p.state !== "cancelled" && (view.finished === true || p.state !== "completed"));
+  // Filtered on the departments as they are, before the grouping changes which one a row sits under.
   const scope = view.scope ?? null;
-  const inScope = scope ? open.filter((p) => p.forDepartmentId != null && scope.has(p.forDepartmentId)) : open;
+  const byScope = view.byScope ?? null;
+  const wanted = (await listProjects(db, actor)).filter(
+    (p) =>
+      p.state !== "cancelled" &&
+      (view.finished === true || p.state !== "completed") &&
+      (!scope || (p.forDepartmentId != null && scope.has(p.forDepartmentId))) &&
+      (!byScope || (p.doneByDepartmentId != null && byScope.has(p.doneByDepartmentId))),
+  );
+  const inScope = throughLens(wanted, view.lens ?? "for", view.grouped ? (view.level ?? "group") : "group");
   // Grouped: a department's projects together, departments in the company's order, none last.
   // The sort is stable, so each department's projects stay in stack-rank order.
   const last = Number.MAX_SAFE_INTEGER;

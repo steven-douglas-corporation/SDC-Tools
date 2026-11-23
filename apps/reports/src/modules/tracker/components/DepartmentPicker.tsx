@@ -4,12 +4,12 @@ import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { INPUT, LABEL } from "@/components/ui/classnames";
 import type { Department } from "../service/departments";
-import type { DepartmentLens, DepartmentLevel } from "../service/queries";
-import { SORT_LABEL, type ListSort } from "./format";
+import { GROUPINGS, SORT_LABEL, type Grouping, type ListSort } from "./format";
 
-// Choosing a department, in the two places it is chosen: on a project (which one it is for),
-// and above a list (which ones to show). Both list the departments the same way, a group with
-// its teams under it, so a person sees one shape of the company everywhere.
+// Choosing a department, in the two places it is chosen: on a project (which one it is for and
+// which one does the work), and above a list (which ones to show). Both list the departments
+// the same way, a group with its teams under it, so a person sees one shape of the company
+// everywhere.
 
 /**
  * The departments as <option>s. A group with teams under it becomes an <optgroup> whose first
@@ -44,127 +44,183 @@ export function DepartmentOptions({ departments }: { departments: Department[] }
 }
 
 /**
- * The filter above the project list and the timeline of all projects: which department's
- * projects to show, and whether to gather them under a heading per department. Both are kept
- * in the address (?for=12&group=1), so the page is drawn on the server with the figures to
- * match, and a filtered view can be bookmarked or sent to someone.
+ * A filter on departments with a tick box for each, so several can be shown at once. Ticking a
+ * group shows everything for it and for the teams under it. Nothing ticked means all of them.
  */
-export function DepartmentFilter({
+function DepartmentTicks({
+  label,
   departments,
-  selected,
-  grouped,
-  lens,
-  level,
+  chosen,
+  onChange,
+}: {
+  label: string;
+  departments: Department[];
+  chosen: number[];
+  onChange: (ids: number[]) => void;
+}) {
+  const tops = departments.filter((d) => d.parentId == null);
+  const names = chosen.map((id) => departments.find((d) => d.id === id)?.name).filter(Boolean);
+  const said = names.length === 0 ? "All departments" : names.length <= 2 ? names.join(", ") : `${names.length} chosen`;
+  const toggle = (id: number) => onChange(chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id]);
+  const tick = (d: Department, indent: boolean) => (
+    <label
+      key={d.id}
+      className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-sdc-navy hover:bg-sdc-gray-100 ${indent ? "pl-7" : "font-semibold"}`}
+    >
+      <input type="checkbox" checked={chosen.includes(d.id)} onChange={() => toggle(d.id)} />
+      {d.name}
+    </label>
+  );
+  return (
+    <div className="flex flex-col gap-1">
+      <span className={LABEL}>{label}</span>
+      <details className="relative">
+        <summary
+          className={`${INPUT} flex min-w-[13rem] cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden`}
+        >
+          <span className="truncate">{said}</span>
+          <span aria-hidden="true" className="text-sdc-gray-600">
+            {"▾"}
+          </span>
+        </summary>
+        <div
+          role="group"
+          aria-label={label}
+          className="styled-scrollbar absolute left-0 z-20 mt-1 max-h-80 min-w-[16rem] overflow-y-auto rounded-lg border border-sdc-border bg-white p-1.5 shadow-lg"
+        >
+          {tops.map((top) => (
+            <div key={top.id}>
+              {tick(top, false)}
+              {departments.filter((d) => d.parentId === top.id).map((t) => tick(t, true))}
+            </div>
+          ))}
+          {chosen.length > 0 && (
+            <button
+              type="button"
+              className="mt-1 w-full rounded px-2 py-1 text-left text-sm font-semibold text-sdc-blue hover:bg-sdc-gray-100"
+              onClick={() => onChange([])}
+            >
+              Show all departments
+            </button>
+          )}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+/** The three department controls, shared by the project list and the timeline of all projects. */
+function DepartmentControls({
+  departments,
+  forIds,
+  byIds,
+  grouping,
+  go,
 }: {
   departments: Department[];
-  /** The department chosen, or null for all of them. */
-  selected: number | null;
-  grouped: boolean;
-  lens: DepartmentLens;
-  level: DepartmentLevel;
+  forIds: number[];
+  byIds: number[];
+  grouping: Grouping;
+  go: (change: Record<string, string | null>) => void;
 }) {
+  if (departments.length === 0) return null;
+  return (
+    <>
+      <DepartmentTicks
+        label="For department"
+        departments={departments}
+        chosen={forIds}
+        onChange={(ids) => go({ for: ids.join(",") || null })}
+      />
+      <DepartmentTicks
+        label="Done by department"
+        departments={departments}
+        chosen={byIds}
+        onChange={(ids) => go({ by: ids.join(",") || null })}
+      />
+      <label className="flex flex-col gap-1">
+        <span className={LABEL}>Group by</span>
+        <select value={grouping} onChange={(e) => go({ group: e.target.value || null })} className={INPUT}>
+          {(Object.keys(GROUPINGS) as Grouping[]).map((g) => (
+            <option key={g} value={g}>
+              {GROUPINGS[g]}
+            </option>
+          ))}
+        </select>
+      </label>
+    </>
+  );
+}
+
+function useAddress(alsoClear: string[] = []) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-
-  function go(change: { for?: string; group?: string; dept?: string }) {
+  return (change: Record<string, string | null>) => {
     const next = new URLSearchParams(params.toString());
-    if (change.dept !== undefined) {
-      if (change.dept) next.set("dept", change.dept);
-      else next.delete("dept");
+    for (const [key, value] of Object.entries(change)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
     }
-    if (change.for !== undefined) {
-      if (change.for) next.set("for", change.for);
-      else next.delete("for");
-    }
-    if (change.group !== undefined) {
-      if (change.group) next.set("group", change.group);
-      else next.delete("group");
-    }
-    // What is closed on a grouped timeline belongs to the grouping it was closed in.
-    next.delete("closed");
+    for (const key of alsoClear) next.delete(key);
     const query = next.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }
+  };
+}
 
+/**
+ * The controls above the timeline of all projects: which departments' projects to show, and
+ * whether to gather them under a heading per department. Kept in the address (?for=12,14&group=by),
+ * so the page is drawn on the server to match and a view can be bookmarked or sent to someone.
+ */
+export function DepartmentFilter({
+  departments,
+  forIds,
+  byIds,
+  grouping,
+}: {
+  departments: Department[];
+  forIds: number[];
+  byIds: number[];
+  grouping: Grouping;
+}) {
+  // What is closed on a grouped timeline belongs to the grouping it was closed in.
+  const go = useAddress(["closed"]);
   if (departments.length === 0) return null;
   return (
     <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Departments by</span>
-        <select value={lens} onChange={(e) => go({ dept: e.target.value === "by" ? "by" : "" })} className={INPUT}>
-          <option value="for">Who it is for</option>
-          <option value="by">Who does the work</option>
-        </select>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>{lens === "by" ? "Done by department" : "For department"}</span>
-        <select
-          value={selected?.toString() ?? ""}
-          onChange={(e) => go({ for: e.target.value })}
-          className={`${INPUT} min-w-[14rem]`}
-        >
-          <option value="">All departments</option>
-          <DepartmentOptions departments={departments} />
-        </select>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Group by</span>
-        <select
-          value={grouped ? (level === "team" ? "team" : "1") : ""}
-          onChange={(e) => go({ group: e.target.value })}
-          className={INPUT}
-        >
-          <option value="">No grouping</option>
-          <option value="1">Department group</option>
-          <option value="team">Department</option>
-        </select>
-      </label>
+      <DepartmentControls departments={departments} forIds={forIds} byIds={byIds} grouping={grouping} go={go} />
     </div>
   );
 }
 
 /**
- * Everything above the project list that narrows or orders it: the department and grouping, a
- * search, a sort, and whether finished projects are shown. Each change goes into the address
+ * Everything above the project list that narrows or orders it: a search, the departments, the
+ * grouping, a sort, and whether finished projects are shown. Each change goes into the address
  * (see listView in ./format.ts), which is what the page is drawn from.
  */
 export function ProjectListControls({
   departments,
-  selected,
-  grouped,
-  lens,
-  level,
+  forIds,
+  byIds,
+  grouping,
   sort,
   search,
   finished,
   finishedCount,
 }: {
   departments: Department[];
-  selected: number | null;
-  grouped: boolean;
-  lens: DepartmentLens;
-  level: DepartmentLevel;
+  forIds: number[];
+  byIds: number[];
+  grouping: Grouping;
   sort: ListSort;
   search: string;
   finished: boolean;
   /** How many finished or cancelled projects there are to show. With none, the switch is left out. */
   finishedCount: number;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const params = useSearchParams();
+  const go = useAddress();
   const [typed, setTyped] = useState(search);
-
-  function go(change: Record<string, string | null>) {
-    const next = new URLSearchParams(params.toString());
-    for (const [key, value] of Object.entries(change)) {
-      if (value) next.set(key, value);
-      else next.delete(key);
-    }
-    const query = next.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }
 
   return (
     <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
@@ -191,32 +247,7 @@ export function ProjectListControls({
           />
         </label>
       </form>
-      {departments.length > 0 && (
-        <>
-          <label className="flex flex-col gap-1">
-            <span className={LABEL}>Departments by</span>
-            <select
-              value={lens}
-              onChange={(e) => go({ dept: e.target.value === "by" ? "by" : null })}
-              className={INPUT}
-            >
-              <option value="for">Who it is for</option>
-              <option value="by">Who does the work</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className={LABEL}>{lens === "by" ? "Done by department" : "For department"}</span>
-            <select
-              value={selected?.toString() ?? ""}
-              onChange={(e) => go({ for: e.target.value || null })}
-              className={`${INPUT} min-w-[14rem]`}
-            >
-              <option value="">All departments</option>
-              <DepartmentOptions departments={departments} />
-            </select>
-          </label>
-        </>
-      )}
+      <DepartmentControls departments={departments} forIds={forIds} byIds={byIds} grouping={grouping} go={go} />
       <label className="flex flex-col gap-1">
         <span className={LABEL}>Sort by</span>
         <select
@@ -231,20 +262,6 @@ export function ProjectListControls({
           ))}
         </select>
       </label>
-      {departments.length > 0 && (
-        <label className="flex flex-col gap-1">
-          <span className={LABEL}>Group by</span>
-          <select
-            value={grouped ? (level === "team" ? "team" : "1") : ""}
-            onChange={(e) => go({ group: e.target.value || null })}
-            className={INPUT}
-          >
-            <option value="">No grouping</option>
-            <option value="1">Department group</option>
-            <option value="team">Department</option>
-          </select>
-        </label>
-      )}
       {finishedCount > 0 && (
         <label className="flex items-center gap-2 pb-2 text-sm text-sdc-navy">
           <input type="checkbox" checked={finished} onChange={(e) => go({ done: e.target.checked ? "1" : null })} />

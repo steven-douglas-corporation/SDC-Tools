@@ -109,6 +109,16 @@ export function departmentScope(departments: Department[], id: number): Set<numb
 }
 
 /**
+ * The ids several choices cover together, or null when nothing is chosen (which means all).
+ * A choice that is not a department in use is ignored.
+ */
+export function departmentsScope(departments: Department[], ids: number[]): Set<number> | null {
+  const known = ids.filter((id) => departments.some((d) => d.id === id));
+  if (known.length === 0) return null;
+  return new Set(known.flatMap((id) => [...departmentScope(departments, id)]));
+}
+
+/**
  * Puts each person in their department, matched by email and by the roster's own code for the
  * team. Someone whose team the tracker does not have is left where they are. Writes nothing
  * when nothing has changed.

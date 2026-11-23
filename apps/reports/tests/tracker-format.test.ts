@@ -234,33 +234,18 @@ test("the roster's teams become departments in two levels, with nothing the trac
 
 test("the department filter and grouping read the address, and keep rank order inside a department", async () => {
   const { byDepartment, departmentView, projectsFor } = await import("../src/modules/tracker/components/format");
-  assert.deepEqual(departmentView({}), { forId: null, grouped: false, lens: "for", level: "group" });
-  assert.deepEqual(departmentView({ for: "12", group: "1" }), {
-    forId: 12,
-    grouped: true,
-    lens: "for",
-    level: "group",
-  });
-  assert.deepEqual(departmentView({ dept: "by", group: "1" }), {
-    forId: null,
-    grouped: true,
-    lens: "by",
-    level: "group",
-  });
-  assert.equal(departmentView({ dept: "other" }).lens, "for");
-  assert.deepEqual(departmentView({ group: "team" }), { forId: null, grouped: true, lens: "for", level: "team" });
-  assert.deepEqual(departmentView({ for: ["7", "9"], group: "yes" }), {
-    forId: 7,
-    grouped: false,
-    lens: "for",
-    level: "group",
-  });
-  assert.deepEqual(
-    departmentView({ for: "-3" }),
-    { forId: null, grouped: false, lens: "for", level: "group" },
-    "not a department's id",
-  );
-  assert.deepEqual(departmentView({ for: "abc" }).forId, null);
+  const none = { forIds: [], byIds: [], grouped: false, lens: "for", level: "group" };
+  assert.deepEqual(departmentView({}), none);
+  assert.deepEqual(departmentView({ for: "12", group: "1" }), { ...none, forIds: [12], grouped: true });
+  // Several at once, in either filter, and both together.
+  assert.deepEqual(departmentView({ for: "12,14", by: "7" }), { ...none, forIds: [12, 14], byIds: [7] });
+  assert.deepEqual(departmentView({ for: ["7,7,x,-3", "9"] }).forIds, [7], "repeats and non-ids are dropped");
+  // The grouping says which department the headings are, and at which level.
+  assert.deepEqual(departmentView({ group: "team" }), { ...none, grouped: true, level: "team" });
+  assert.deepEqual(departmentView({ group: "by" }), { ...none, grouped: true, lens: "by" });
+  assert.deepEqual(departmentView({ group: "by-team" }), { ...none, grouped: true, lens: "by", level: "team" });
+  assert.deepEqual(departmentView({ group: "yes" }), none, "not a grouping");
+  assert.deepEqual(departmentView({ for: "abc" }).forIds, []);
 
   const p = (key: string, forDepartmentId: number | null, forGroupSort: number | null) => ({
     key,
@@ -284,7 +269,8 @@ test("the department filter and grouping read the address, and keep rank order i
 test("the project list's view is read from the address and written back without its defaults", async () => {
   const F = await import("../src/modules/tracker/components/format");
   const plain: ReturnType<typeof F.listView> = {
-    forId: null,
+    forIds: [],
+    byIds: [],
     grouped: false,
     lens: "for",
     level: "group",
@@ -301,7 +287,8 @@ test("the project list's view is read from the address and written back without 
   );
   const busy = F.listView({ for: "12", group: "1", sort: "value", only: "at-risk", q: "  ware ", done: "1" });
   assert.deepEqual(busy, {
-    forId: 12,
+    forIds: [12],
+    byIds: [],
     grouped: true,
     lens: "for",
     level: "group",
@@ -312,22 +299,24 @@ test("the project list's view is read from the address and written back without 
   });
 
   assert.equal(F.listHref(F.listView({})), "/tracker");
-  assert.equal(F.listHref(busy), "/tracker?for=12&group=1&sort=value&only=at-risk&q=ware&done=1");
+  assert.equal(F.listHref(busy), "/tracker?for=12&group=for&sort=value&only=at-risk&q=ware&done=1");
   // One thing changed, the rest kept: what a figure's link does.
-  assert.equal(F.listHref(busy, { only: null }), "/tracker?for=12&group=1&sort=value&q=ware&done=1");
+  assert.equal(F.listHref(busy, { only: null }), "/tracker?for=12&group=for&sort=value&q=ware&done=1");
   assert.equal(F.listHref(F.listView({}), { only: "incomplete" }), "/tracker?only=incomplete");
   // Round trip.
   assert.deepEqual(F.listView(Object.fromEntries(new URLSearchParams(F.listHref(busy).split("?")[1]))), busy);
 
   // Ranks are changed only with every project in view, in rank order.
   assert.equal(F.ranksLocked(plain), false);
-  assert.equal(F.listHref({ ...plain, lens: "by", grouped: true }), "/tracker?group=1&dept=by");
+  assert.equal(F.listHref({ ...plain, lens: "by", grouped: true }), "/tracker?group=by");
+  assert.equal(F.listHref({ ...plain, forIds: [3, 5], byIds: [9] }), "/tracker?for=3%2C5&by=9");
+  assert.equal(F.ranksLocked({ ...plain, byIds: [9] }), true, "filtered by who does the work");
   assert.equal(F.ranksLocked({ ...plain, lens: "by" }), false, "the same list as ever until it is grouped");
   assert.equal(F.ranksLocked({ ...plain, lens: "by", grouped: true }), true, "grouped by who does the work");
-  assert.equal(F.listHref({ ...plain, grouped: true, level: "team" }), "/tracker?group=team");
+  assert.equal(F.listHref({ ...plain, grouped: true, level: "team" }), "/tracker?group=for-team");
   assert.equal(F.ranksLocked({ ...plain, grouped: true, level: "team" }), true, "grouped by department within a group");
   assert.equal(F.ranksLocked({ ...plain, grouped: true }), false);
-  assert.equal(F.ranksLocked({ ...plain, forId: 3 }), true);
+  assert.equal(F.ranksLocked({ ...plain, forIds: [3] }), true);
   assert.equal(F.ranksLocked({ ...plain, sort: "name" }), true);
   assert.equal(F.ranksLocked({ ...plain, only: "active" }), true);
   assert.equal(F.ranksLocked({ ...plain, q: "x" }), true);

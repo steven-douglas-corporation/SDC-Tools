@@ -229,30 +229,83 @@ export function portfolioSummary(
 }
 
 /** What the project list and the timeline of all projects read from the address. */
+/**
+ * How a list is gathered under headings, as it is written in the address (?group=...): not at
+ * all, or by one of a project's two departments, at the level of the group a department sits in
+ * or of the department itself.
+ */
+export const GROUPINGS = {
+  "": "No grouping",
+  for: "Who it is for: department group",
+  "for-team": "Who it is for: department",
+  by: "Who does the work: department group",
+  "by-team": "Who does the work: department",
+} as const;
+export type Grouping = keyof typeof GROUPINGS;
+
 export interface DepartmentView {
-  /** The department chosen in the filter, or null for all of them. */
-  forId: number | null;
+  /** The departments ticked in the For filter. Empty for all of them. */
+  forIds: number[];
+  /** The departments ticked in the Done by filter. Empty for all of them. */
+  byIds: number[];
   /** Whether the rows are gathered under a heading per department. */
   grouped: boolean;
-  /** Which department the filter and the headings mean: who it is for, or who does the work. */
+  /** Which of a project's two departments the headings are: who it is for, or who does the work. */
   lens: DepartmentLens;
   /** What a heading is when grouped: the group a department sits in, or the department itself. */
   level: DepartmentLevel;
 }
 
+/** A list of ids from the address: "12,14". Anything that is not a department's id is dropped. */
+function idList(value: string | undefined): number[] {
+  const ids = (value ?? "")
+    .split(",")
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0);
+  return [...new Set(ids)];
+}
+
 export function departmentView(params: {
   for?: string | string[];
+  by?: string | string[];
   group?: string | string[];
-  dept?: string | string[];
 }): DepartmentView {
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-  const id = Number(one(params.for));
+  // "1" and "team" are how the first two were written before there were four.
+  const asked = one(params.group) ?? "";
+  const group = asked === "1" ? "for" : asked === "team" ? "for-team" : asked;
+  const grouping: Grouping = group in GROUPINGS ? (group as Grouping) : "";
   return {
-    forId: Number.isInteger(id) && id > 0 ? id : null,
-    grouped: one(params.group) === "1" || one(params.group) === "team",
-    level: one(params.group) === "team" ? "team" : "group",
-    lens: one(params.dept) === "by" ? "by" : "for",
+    forIds: idList(one(params.for)),
+    byIds: idList(one(params.by)),
+    grouped: grouping !== "",
+    level: grouping === "for-team" || grouping === "by-team" ? "team" : "group",
+    lens: grouping === "by" || grouping === "by-team" ? "by" : "for",
   };
+}
+
+/** The view's grouping as the address writes it. */
+export function groupingOf(view: Pick<DepartmentView, "grouped" | "lens" | "level">): Grouping {
+  if (!view.grouped) return "";
+  if (view.lens === "by") return view.level === "team" ? "by-team" : "by";
+  return view.level === "team" ? "for-team" : "for";
+}
+
+/**
+ * The projects that pass the two department filters: for one of `forScope`, and done by one of
+ * `byScope` (see departmentsScope). Null is no filter. A project with no department passes
+ * neither filter when one is set.
+ */
+export function inDepartments<P extends Pick<ProjectListItem, "forDepartmentId" | "doneByDepartmentId">>(
+  projects: P[],
+  forScope: Set<number> | null,
+  byScope: Set<number> | null,
+): P[] {
+  return projects.filter(
+    (p) =>
+      (!forScope || (p.forDepartmentId != null && forScope.has(p.forDepartmentId))) &&
+      (!byScope || (p.doneByDepartmentId != null && byScope.has(p.doneByDepartmentId))),
+  );
 }
 
 /** The projects that are for one of `scope` (see departmentScope). A project with no department is for none. */
@@ -355,9 +408,9 @@ export function listView(params: Record<string, string | string[] | undefined>):
 export function listHref(view: ListView, change: Partial<ListView> = {}): string {
   const v = { ...view, ...change };
   const query = new URLSearchParams();
-  if (v.forId != null) query.set("for", String(v.forId));
-  if (v.grouped) query.set("group", v.level === "team" ? "team" : "1");
-  if (v.lens === "by") query.set("dept", "by");
+  if (v.forIds.length) query.set("for", v.forIds.join(","));
+  if (v.byIds.length) query.set("by", v.byIds.join(","));
+  if (v.grouped) query.set("group", groupingOf(v));
   if (v.sort !== "rank") query.set("sort", v.sort);
   if (v.only) query.set("only", v.only);
   if (v.q) query.set("q", v.q);
@@ -387,10 +440,11 @@ export function isIncomplete(
  * a project is for.
  */
 export function ranksLocked(
-  view: Pick<ListView, "forId" | "sort" | "only" | "q" | "grouped" | "lens" | "level">,
+  view: Pick<ListView, "forIds" | "byIds" | "sort" | "only" | "q" | "grouped" | "lens" | "level">,
 ): boolean {
   return (
-    view.forId != null ||
+    view.forIds.length > 0 ||
+    view.byIds.length > 0 ||
     view.sort !== "rank" ||
     view.only != null ||
     view.q !== "" ||

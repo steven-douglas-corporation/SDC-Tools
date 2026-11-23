@@ -6,10 +6,12 @@ import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";
 import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
 import { syncDepartmentsFromOrg, trackerActor } from "@/modules/tracker/current-actor";
-import { departmentScope, listDepartments } from "@/modules/tracker/service/departments";
+import { departmentsScope, listDepartments } from "@/modules/tracker/service/departments";
 import { ProjectListControls } from "@/modules/tracker/components/DepartmentPicker";
 import {
   ONLY_LABEL,
+  groupingOf,
+  inDepartments,
   isIncomplete,
   isOpen,
   listHref,
@@ -45,28 +47,28 @@ export default async function TrackerPage({
   }
 
   const actor = await trackerActor(session);
+  // Everything about how the list is narrowed and ordered is in the address (see listView), so
+  // the page is drawn on the server with figures to match and any view can be sent to someone.
   const view = listView(await searchParams);
-  const everyProject = throughLens(
-    await listProjects(trackerDb, actor),
-    view.lens,
-    view.grouped ? view.level : "group",
-  );
   const valueBuckets = await listValueBuckets(trackerDb);
   // The departments are the company's own, copied from the roster before they are offered.
   await syncDepartmentsFromOrg();
   const departments = await listDepartments(trackerDb);
-
-  // Everything about how the list is narrowed and ordered is in the address (see listView), so
-  // the page is drawn on the server with figures to match and any view can be sent to someone.
-  const chosen = departments.find((d) => d.id === view.forId) ?? null;
+  // Filtered on the two departments as they are, then looked at through the grouping, which
+  // decides which of the two a row sits under.
+  const everyProject = throughLens(
+    inDepartments(
+      await listProjects(trackerDb, actor),
+      departmentsScope(departments, view.forIds),
+      departmentsScope(departments, view.byIds),
+    ),
+    view.lens,
+    view.grouped ? view.level : "group",
+  );
   // `described` is what the figures describe; `projects` is that, narrowed to a chosen figure,
   // sorted and grouped. Choosing a figure does not change the figures.
-  const { described, shown: projects } = narrowProjects(
-    everyProject,
-    { ...view, forId: chosen?.id ?? null },
-    chosen ? departmentScope(departments, chosen.id) : null,
-  );
-  const locked = ranksLocked({ ...view, forId: chosen?.id ?? null });
+  const { described, shown: projects } = narrowProjects(everyProject, view, null);
+  const locked = ranksLocked(view);
   const withinDepartment = view.grouped && !locked;
   const incomplete = described.filter((p) => isOpen(p) && isIncomplete(p)).length;
   const hidden = everyProject.length - everyProject.filter(isOpen).length;
@@ -85,10 +87,9 @@ export default async function TrackerPage({
       <div className="mb-4">
         <ProjectListControls
           departments={departments}
-          selected={chosen?.id ?? null}
-          grouped={view.grouped}
-          lens={view.lens}
-          level={view.level}
+          forIds={view.forIds}
+          byIds={view.byIds}
+          grouping={groupingOf(view)}
           sort={view.sort}
           search={view.q}
           finished={view.finished}
