@@ -372,6 +372,17 @@ export async function updateProject(
 }
 
 /**
+ * Every project key there is, whoever may see the project. A new key has to differ from all of
+ * them, including those of projects the person creating one cannot see.
+ */
+export async function listProjectKeys(db: Database): Promise<string[]> {
+  const { rows } = await db.transaction((tx) =>
+    tx.query<{ key: string }>(`SELECT key FROM tracker.project ORDER BY key`),
+  );
+  return rows.map((r) => r.key);
+}
+
+/**
  * Sets the company-wide stack rank of one or more projects in a single step, so two projects
  * can swap places. Only the portfolio owner (or an admin) may do this. No two open projects may
  * end up sharing a rank; if they would, nothing is changed.

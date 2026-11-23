@@ -15,6 +15,7 @@ import {
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   createProjectAction,
+  suggestProjectKeyAction,
   moveProjectRankAction,
   moveProjectRankInDepartmentAction,
   placeProjectInDepartmentAction,
@@ -24,6 +25,7 @@ import {
 import type { DepartmentRankDrop, DepartmentRankMove, RankClash } from "../service/projects";
 import type { ProjectListItem, ValueBucket } from "../service/queries";
 import type { Department } from "../service/departments";
+import { cleanKey, keyFromName } from "../project-key";
 import { DepartmentOptions } from "./DepartmentPicker";
 import {
   departmentDropEffect,
@@ -344,6 +346,9 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
+  // The key is suggested from the name until the person types one of their own.
+  const [keyTyped, setKeyTyped] = useState(false);
+  const [keyNote, setKeyNote] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [justification, setJustification] = useState("");
   const [valueBucketId, setValueBucketId] = useState("");
@@ -351,6 +356,23 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
   const [doneByDepartmentId, setDoneByDepartmentId] = useState("");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
+
+  // Asked once the name is finished: a key suggested with the justification in mind and checked
+  // against the keys in use. It replaces the rule's key unless the person has typed their own
+  // in the meantime.
+  async function suggestKey() {
+    const asked = name.trim();
+    if (keyTyped || !asked) return;
+    const res = await suggestProjectKeyAction({ name: asked, justification });
+    if (!res.ok) return;
+    setKeyTyped((typed) => {
+      if (!typed) {
+        setKey(res.key);
+        setKeyNote(res.byAi ? "Suggested from the name. Type over it to choose your own." : "");
+      }
+      return typed;
+    });
+  }
 
   if (!open) {
     return (
@@ -381,23 +403,39 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
         });
       }}
     >
+      <label className="flex min-w-[16rem] flex-1 flex-col gap-1">
+        <span className={LABEL}>Name</span>
+        <input
+          required
+          autoFocus
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            // A key made by rule, at once, for as long as the person has not typed their own.
+            if (!keyTyped) setKey(keyFromName(e.target.value));
+          }}
+          onBlur={suggestKey}
+          className={INPUT}
+        />
+        <span className="text-xs text-sdc-gray-600">&nbsp;</span>
+      </label>
       <label className="flex flex-col gap-1">
         <span className={LABEL}>Key</span>
         <input
           required
-          autoFocus
           maxLength={8}
           placeholder="BIN"
           value={key}
-          onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+          onChange={(e) => {
+            setKeyTyped(true);
+            setKeyNote("");
+            setKey(cleanKey(e.target.value));
+          }}
           className={`${INPUT} w-28 uppercase`}
         />
-        <span className="text-xs text-sdc-gray-600">Prefix for card numbers, e.g. BIN-42</span>
-      </label>
-      <label className="flex min-w-[16rem] flex-1 flex-col gap-1">
-        <span className={LABEL}>Name</span>
-        <input required value={name} onChange={(e) => setName(e.target.value)} className={INPUT} />
-        <span className="text-xs text-sdc-gray-600">&nbsp;</span>
+        <span className="text-xs text-sdc-gray-600">
+          {keyNote || `Prefix for card numbers, e.g. ${key || "BIN"}-42. Cannot be changed later.`}
+        </span>
       </label>
       <label className="flex flex-col gap-1">
         <span className={LABEL}>Target date</span>

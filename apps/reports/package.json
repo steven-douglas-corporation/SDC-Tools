@@ -18,6 +18,7 @@
     "dev:verify": "set AUTH_URL=http://localhost:3021&& set NEXT_DIST_DIR=.next-verify&& next dev -p 3021"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.13.0",
     "@azure/msal-node": "^5.3.1",
     "@azure/msal-node-extensions": "^5.3.1",
     "@prisma/client": "6.19.3",

@@ -4,10 +4,13 @@ import { revalidatePath } from "next/cache";
 import { assertActionPermission } from "@/lib/require-permission";
 import { trackerDb, trackerEngineDb } from "./db";
 import { trackerActor } from "./current-actor";
+import { suggestProjectKey } from "./key-suggestion";
+import { keyFromName } from "./project-key";
 import { localToday } from "./components/format";
 import { TrackerError, type Actor } from "./service/database";
 import {
   createProject,
+  listProjectKeys,
   moveProjectRank,
   moveProjectRankInDepartment,
   placeProjectInDepartment,
@@ -92,6 +95,24 @@ async function act<T extends object>(
 const boardPath = (projectKey: string) => `/tracker/${projectKey.toUpperCase()}`;
 /** The project's Settings tab, where its settings and its people are changed. */
 const settingsPath = (projectKey: string) => `${boardPath(projectKey)}/settings`;
+
+/**
+ * A key to offer for a new project. The rule's key is always given; Claude's is given too when
+ * the tracker has an API key and an answer came back in time. Changes nothing.
+ */
+export async function suggestProjectKeyAction(input: {
+  name: string;
+  justification: string;
+}): Promise<ActionResult<{ key: string; byAi: boolean }>> {
+  return act(
+    async () => {
+      const taken = await listProjectKeys(trackerDb);
+      const ai = await suggestProjectKey({ name: input.name, justification: input.justification, taken });
+      return { key: ai ?? keyFromName(input.name, taken), byAi: ai != null };
+    },
+    { paths: [], forecast: false },
+  );
+}
 
 export async function createProjectAction(input: {
   key: string;
