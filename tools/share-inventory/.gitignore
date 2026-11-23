@@ -1,0 +1,16 @@
+# Crawled data and findings never go into git: they list where sensitive
+# material sits on the shares. The default database lives outside the repo
+# (%LOCALAPPDATA%\SDC-Brain); these rules are a second line of defence.
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+findings-report*
+
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
