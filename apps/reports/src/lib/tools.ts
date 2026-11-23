@@ -30,8 +30,14 @@ export interface Tool {
 const isTrackerPath = (path: string): boolean => path === "/tracker" || path.startsWith("/tracker/");
 
 /** Pages every tool shares. They are the Admin area, and never make a tool on their own. */
+// Admin is the app's own area: accounts, permissions and feedback, shared by every tool. Two
+// pages under /admin and beside it are about Reports' data only (Data Management, the Audit
+// Log) and belong to Reports, whatever their addresses say.
+const isReportsHousekeeping = (path: string): boolean =>
+  path === "/audit-log" || path === "/admin/data-management" || path.startsWith("/admin/data-management/");
+
 const isSharedPath = (path: string): boolean =>
-  path === "/feedback" || path === "/audit-log" || path.startsWith("/admin/");
+  !isReportsHousekeeping(path) && (path === "/feedback" || path.startsWith("/admin/"));
 
 /**
  * The tools a person has, in the order they are shown. `permitted` is every path their role
@@ -39,7 +45,9 @@ const isSharedPath = (path: string): boolean =>
  */
 export function toolsFor(permitted: readonly string[]): Tool[] {
   const tools: Tool[] = [];
-  const reportPages = permitted.filter((p) => !isTrackerPath(p) && !isSharedPath(p));
+  // The housekeeping pages sit in Reports' menu but do not make Reports a tool on their own:
+  // someone who may open only the Audit Log is not offered a Reports tile that leads nowhere else.
+  const reportPages = permitted.filter((p) => !isTrackerPath(p) && !isSharedPath(p) && !isReportsHousekeeping(p));
   if (reportPages.length > 0) {
     tools.push({
       id: "reports",

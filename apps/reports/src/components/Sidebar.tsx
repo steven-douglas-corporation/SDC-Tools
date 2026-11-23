@@ -277,6 +277,40 @@ const REPORT_GROUPS: Omit<NavGroup, "tool">[] = [
       },
     ],
   },
+  // Reports' own housekeeping (2026-11-23). These two sat in Admin, which is now the area for
+  // the whole app: accounts, permissions and feedback, shared by every tool. Data Management
+  // (rosters, finances, data quality) and the Audit Log are about Reports' data only, so they
+  // live with Reports. Their addresses and permissions are unchanged.
+  {
+    label: "Records",
+    items: [
+      {
+        href: "/admin/data-management",
+        label: "Data Management",
+        isActive: (p) => p === "/admin/data-management",
+        icon: (
+          <Icon>
+            <path d="M2 4.5 C2 3.4 4.7 2.5 8 2.5 C11.3 2.5 14 3.4 14 4.5" strokeLinecap="round" />
+            <path d="M2 4.5 V11.5 C2 12.6 4.7 13.5 8 13.5 C11.3 13.5 14 12.6 14 11.5 V4.5" strokeLinecap="round" />
+            <path d="M2 8 C2 9.1 4.7 10 8 10 C11.3 10 14 9.1 14 8" strokeLinecap="round" />
+          </Icon>
+        ),
+      },
+      {
+        href: "/audit-log",
+        label: "Audit Log",
+        isActive: (p) => p === "/audit-log",
+        icon: (
+          <Icon>
+            <rect x="2" y="2" width="12" height="12" rx="1.5" />
+            <line x1="4.5" y1="5.5" x2="11.5" y2="5.5" strokeLinecap="round" />
+            <line x1="4.5" y1="8" x2="11.5" y2="8" strokeLinecap="round" />
+            <line x1="4.5" y1="10.5" x2="8.5" y2="10.5" strokeLinecap="round" />
+          </Icon>
+        ),
+      },
+    ],
+  },
 ];
 
 const GROUPS: NavGroup[] = REPORT_GROUPS.map((g) => ({ ...g, tool: "reports" }));
@@ -353,31 +387,6 @@ const ADMIN_GROUP: NavGroup = {
       icon: (
         <Icon>
           <path d="M3.5 13.5 V2.5 H11 L10 5 L11 7.5 H3.5" strokeLinecap="round" strokeLinejoin="round" />
-        </Icon>
-      ),
-    },
-    {
-      href: "/audit-log",
-      label: "Audit Log",
-      isActive: (p) => p === "/audit-log",
-      icon: (
-        <Icon>
-          <rect x="2" y="2" width="12" height="12" rx="1.5" />
-          <line x1="4.5" y1="5.5" x2="11.5" y2="5.5" strokeLinecap="round" />
-          <line x1="4.5" y1="8" x2="11.5" y2="8" strokeLinecap="round" />
-          <line x1="4.5" y1="10.5" x2="8.5" y2="10.5" strokeLinecap="round" />
-        </Icon>
-      ),
-    },
-    {
-      href: "/admin/data-management",
-      label: "Data Management",
-      isActive: (p) => p === "/admin/data-management",
-      icon: (
-        <Icon>
-          <path d="M2 4.5 C2 3.4 4.7 2.5 8 2.5 C11.3 2.5 14 3.4 14 4.5" strokeLinecap="round" />
-          <path d="M2 4.5 V11.5 C2 12.6 4.7 13.5 8 13.5 C11.3 13.5 14 12.6 14 11.5 V4.5" strokeLinecap="round" />
-          <path d="M2 8 C2 9.1 4.7 10 8 10 C11.3 10 14 9.1 14 8" strokeLinecap="round" />
         </Icon>
       ),
     },
