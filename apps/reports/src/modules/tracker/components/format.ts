@@ -21,10 +21,11 @@ export function shortDate(iso: string | null | undefined): string {
   return `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
 
-/** Hours without a trailing ".0": 6 -> "6 h", 4.5 -> "4.5 h". */
+/** Hours without a trailing ".0", and with a comma in the thousands: 6 -> "6 h", 4.5 -> "4.5 h", 3494 -> "3,494 h". */
 export function hours(value: number | null | undefined): string {
   if (value == null) return "—";
-  return `${Number.isInteger(value) ? value : Math.round(value * 10) / 10} h`;
+  // en-US is named so the server and every browser write the same thing, whatever their own locale.
+  return `${(Math.round(value * 10) / 10).toLocaleString("en-US", { maximumFractionDigits: 1 })} h`;
 }
 
 /**

@@ -15,6 +15,8 @@ test("hours drop a pointless decimal", () => {
   assert.equal(hours(4.5), "4.5 h");
   assert.equal(hours(10.25), "10.3 h");
   assert.equal(hours(0), "0 h");
+  assert.equal(hours(3494), "3,494 h");
+  assert.equal(hours(12345.67), "12,345.7 h");
   assert.equal(hours(null), "—");
 });
 
