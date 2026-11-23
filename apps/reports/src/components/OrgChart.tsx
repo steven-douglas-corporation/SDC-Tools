@@ -201,13 +201,13 @@ function TeamCard({
   // still across a change of detail, and the far end of a reporting line.
   const canvasMarks = { "data-canvas-item": "card", "data-canvas-key": id, "data-canvas-card-leader": leaderId };
   if (compact) {
-    // Read at under half size (59% canvas x the app's 80%), so large type; the
-    // people come back on zooming in.
+    // Collapsed (the canvas's Collapse all): large type, so the summary reads
+    // zoomed right out. A click expands all and zooms to this card.
     return (
       <section
         {...canvasMarks}
-        data-canvas-zoom-on-click=""
-        title="Click to zoom in"
+        data-canvas-expand-on-click=""
+        title="Click to expand all cards and zoom to this one"
         className="flex cursor-zoom-in flex-col overflow-hidden rounded-xl border border-sdc-border bg-white shadow-sm data-canvas-lit:ring-4 data-canvas-lit:ring-sdc-blue"
       >
         <h3 className="px-4 py-3 font-heading text-3xl font-bold" style={{ background: colors.bg, color: colors.text }}>

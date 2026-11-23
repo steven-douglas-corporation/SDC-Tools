@@ -26,8 +26,9 @@ import { countOrgNodes } from "@/lib/org-chart-search";
 // builds them and hands them over.
 //
 // What the canvas adds (2026-11-19):
-//   - Zoomed out, every card is a summary in large type (TeamCard `compact`),
-//     and a click on one zooms to it. A search keeps full detail.
+//   - Collapse all (a button; was by zoom until 2026-11-20): every card is a
+//     summary in large type (TeamCard `compact`), and a click on one expands
+//     all and zooms to it. A search keeps full detail.
 //   - A search doesn't remove anyone (that would move every card): non-matches
 //     dim, and the canvas jumps between the matches.
 //   - Reporting lines: the lines above only say which FUNCTION a card is in;

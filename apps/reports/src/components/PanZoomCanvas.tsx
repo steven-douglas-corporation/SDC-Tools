@@ -10,9 +10,11 @@ import { createContext, use, useCallback, useEffect, useImperativeHandle, useLay
 //   Drag              pan (a drag that moves never clicks what it started on)
 //   Wheel / trackpad  pan — the browser's own scrolling (Shift+wheel sideways)
 //   Ctrl/⌘ + wheel    zoom around the pointer (a trackpad pinch sends this too)
-//   Click / dbl-click a [data-canvas-zoom-on-click] element / any [data-canvas-item]: zoom to it
+//   Click             a [data-canvas-expand-on-click] summary: expand all, zoom to it
+//   Double-click      any [data-canvas-item]: zoom to it
 //   Keys              arrows / Page keys scroll, + / − zoom, 0 goes home (fits), Esc leaves full screen
-//   Buttons           (along the top) zoom out / in, 100%, Home (fits), Full screen, Save as PDF
+//   Buttons           (along the top) Collapse / Expand all, zoom out / in, 100%, Home (fits),
+//                     Full screen, Save as PDF
 //   Overview map      bottom left: where you are; click or drag in it to move
 //
 // It is real DOM, not a <canvas>: the cards' clicks, hover notes and dropdowns
@@ -63,17 +65,19 @@ import { createContext, use, useCallback, useEffect, useImperativeHandle, useLay
 //                                    to it (a panel fits whole, a card fits its width)
 //   data-canvas-key="…"              a stable id, so the view can hold a card still
 //                                    while the detail level changes its size
-//   data-canvas-zoom-on-click        a plain click zooms to it (summary cards)
+//   data-canvas-expand-on-click      a plain click expands all and zooms to it (summary cards)
 //   data-canvas-match                a search match: the canvas jumps between these
 //                                    and marks the current one data-canvas-current
 //
-// ── Detail by zoom (2026-11-19) ─────────────────────────────────────────────
+// ── Collapse / Expand all (2026-11-20) ──────────────────────────────────────
 //
-// Below COMPACT_BELOW nobody can read a name, so the content is told to draw
-// summaries instead (useCanvasCompact). The switch waits for a gesture to
-// settle, and keeps the card nearest the middle (or the one being zoomed to)
-// where it was on screen, so the chart doesn't jump. A search turns it off
-// (allowCompact): the matches are people, and summaries have none.
+// A button tells the content to draw every card as a summary or in full
+// (useCanvasCompact). Was switched by the zoom (below 60%) from 2026-11-19;
+// now it is the viewer's choice, at any zoom. Collapsing fits the (much
+// shorter) chart; expanding keeps the card nearest the middle where it was on
+// screen, so the chart doesn't jump. Remembered with the view for the session.
+// A search shows every card in full (allowCompact) and hides the button: the
+// matches are people, and summaries have none.
 //
 // ── Keeping it smooth ───────────────────────────────────────────────────────
 //
@@ -111,8 +115,6 @@ const GRID_STEP = 20;
 // How long after the last wheel event a zoom counts as over. Long enough that
 // a mouse wheel's separate notches read as one zoom, not a redraw between each.
 const SETTLE_MS = 300;
-// Below this zoom the content draws summaries (see "Detail by zoom").
-const COMPACT_BELOW = 0.6;
 const ANIMATE_MS = 280;
 // A search jump lands at least this close in, so the names are readable.
 const MATCH_SCALE = 0.9;
@@ -124,7 +126,6 @@ const SAVE_MS = 250;
 
 type View = { x: number; y: number; scale: number };
 type Box = { x: number; y: number; w: number; h: number };
-type PlaceOpts = { hold?: boolean; refit?: boolean };
 
 const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -141,12 +142,12 @@ function boxIn(content: HTMLElement, el: Element): Box {
   return { x: (r.left - c.left) / k, y: (r.top - c.top) / k, w: r.width / k, h: r.height / k };
 }
 
-function readSavedView(key: string | undefined): View | null {
+function readSavedView(key: string | undefined): (View & { collapsed: boolean }) | null {
   if (!key) return null;
   try {
     const v = JSON.parse(sessionStorage.getItem(key) ?? "null");
     return v && [v.x, v.y, v.scale].every((n) => typeof n === "number" && Number.isFinite(n))
-      ? { x: v.x, y: v.y, scale: clampScale(v.scale) }
+      ? { x: v.x, y: v.y, scale: clampScale(v.scale), collapsed: v.collapsed === true }
       : null;
   } catch {
     return null;
@@ -159,7 +160,7 @@ export type PanZoomHandle = {
 };
 
 const CompactContext = createContext(false);
-/** True while the canvas is zoomed out far enough that the content should draw summaries. */
+/** True while the viewer has collapsed the cards: the content should draw summaries. */
 export const useCanvasCompact = () => use(CompactContext);
 
 const escapeHtml = (s: string) =>
@@ -204,7 +205,8 @@ export function PanZoomCanvas({
   const fittedRef = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [zoomCompact, setZoomCompact] = useState(false);
+  // Collapse all: the viewer's choice (see "Collapse / Expand all").
+  const [collapsed, setCollapsed] = useState(false);
   const compactRef = useRef(false);
   // The props the frame-by-frame code reads, kept current after each render.
   const allowCompactRef = useRef(allowCompact);
@@ -213,14 +215,14 @@ export function PanZoomCanvas({
     allowCompactRef.current = allowCompact;
     storageKeyRef.current = storageKey;
   }, [allowCompact, storageKey]);
-  const compact = allowCompact && zoomCompact;
+  const compact = allowCompact && collapsed;
 
-  // A card to hold still across a change of detail: where it was on screen.
+  // What to do once a change of detail is laid out: hold a card still where it
+  // was on screen, fit the new layout, zoom to a card, or put a saved view back.
   const anchor = useRef<{ key: string; px: number; py: number } | null>(null);
-  // The card being zoomed to, which is the one to hold still when it arrives.
-  const anchorHint = useRef<string | null>(null);
-  // A Fit that changed the detail level fits again once the new layout is in.
   const refitPending = useRef(false);
+  const pendingZoom = useRef<string | null>(null);
+  const pendingView = useRef<View | null>(null);
 
   // ── Geometry (see "Panning is native scrolling") ───────────────────────────
 
@@ -275,7 +277,8 @@ export function PanZoomCanvas({
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       try {
-        if (storageKeyRef.current && fittedRef.current) sessionStorage.setItem(storageKeyRef.current, JSON.stringify(readView()));
+        if (storageKeyRef.current && fittedRef.current)
+          sessionStorage.setItem(storageKeyRef.current, JSON.stringify({ ...readView(), collapsed: compactRef.current }));
       } catch {
         // Storage off (private window, blocked): the view just isn't remembered.
       }
@@ -283,40 +286,22 @@ export function PanZoomCanvas({
   }, [readView]);
   useEffect(() => () => clearTimeout(saveTimer.current), []);
 
-  // Summaries or full detail, by the zoom of `v`. Returns whether it changed.
-  // `hold` keeps a card still on screen across the change.
-  const syncDetail = useCallback((hold: boolean, v: View) => {
-    const want = v.scale < COMPACT_BELOW;
-    if (want === compactRef.current) {
-      // A zoom-to that didn't change the detail: its hint is spent either way.
-      anchorHint.current = null;
-      return false;
-    }
-    compactRef.current = want;
+  // The card nearest the middle of the view, and where it is on screen: held
+  // there while the detail level changes its size.
+  const middleCard = useCallback((v: View) => {
     const content = contentRef.current;
     const sc = scrollerRef.current;
-    anchor.current = null;
-    if (hold && allowCompactRef.current && content && sc) {
-      const hinted = anchorHint.current
-        ? content.querySelector(`[data-canvas-key="${CSS.escape(anchorHint.current)}"]`)
-        : null;
-      let best: Element | null = hinted;
-      if (!best) {
-        let bestD = Infinity;
-        for (const el of content.querySelectorAll('[data-canvas-item="card"][data-canvas-key]')) {
-          const b = boxIn(content, el);
-          const d = Math.hypot(v.x + (b.x + b.w / 2) * v.scale - sc.clientWidth / 2, v.y + b.y * v.scale - sc.clientHeight / 2);
-          if (d < bestD) [best, bestD] = [el, d];
-        }
-      }
-      if (best) {
-        const b = boxIn(content, best);
-        anchor.current = { key: best.getAttribute("data-canvas-key")!, px: v.x + b.x * v.scale, py: v.y + b.y * v.scale };
-      }
+    if (!content || !sc) return null;
+    let best: Element | null = null;
+    let bestD = Infinity;
+    for (const el of content.querySelectorAll('[data-canvas-item="card"][data-canvas-key]')) {
+      const b = boxIn(content, el);
+      const d = Math.hypot(v.x + (b.x + b.w / 2) * v.scale - sc.clientWidth / 2, v.y + b.y * v.scale - sc.clientHeight / 2);
+      if (d < bestD) [best, bestD] = [el, d];
     }
-    anchorHint.current = null;
-    setZoomCompact(want);
-    return true;
+    if (!best) return null;
+    const b = boxIn(content, best);
+    return { key: best.getAttribute("data-canvas-key")!, px: v.x + b.x * v.scale, py: v.y + b.y * v.scale };
   }, []);
 
   // Where the chart's top-left may go at zoom `s` (see "Clamped"); null with no
@@ -347,7 +332,7 @@ export function PanZoomCanvas({
   // Puts the view on screen, now. In a zoom gesture only the transform moves;
   // otherwise the sizer, the chart's place in it and the scroll are committed.
   const place = useCallback(
-    (raw: View, { hold = true, refit = false }: PlaceOpts = {}) => {
+    (raw: View) => {
       const sc = scrollerRef.current;
       const sizer = sizerRef.current;
       const content = contentRef.current;
@@ -402,12 +387,9 @@ export function PanZoomCanvas({
       if (labelRef.current && labelRef.current.textContent !== label) labelRef.current.textContent = label;
       updateMap();
       if (!gesture.current) committed.current = readView();
-      if (!gesture.current && fittedRef.current) {
-        if (syncDetail(hold, readView()) && refit) refitPending.current = allowCompactRef.current;
-        saveSoon();
-      }
+      if (!gesture.current && fittedRef.current) saveSoon();
     },
-    [readView, syncDetail, saveSoon, updateMap, clampView, bounds],
+    [readView, saveSoon, updateMap, clampView, bounds],
   );
 
   // At most once a frame.
@@ -526,7 +508,6 @@ export function PanZoomCanvas({
       let s = Math.min(1, (vw - 2 * pad) / b.w);
       if (how === "panel") s = Math.min(s, (vh - TOP_ROOM - pad) / b.h);
       s = clampScale(s);
-      anchorHint.current = el.getAttribute("data-canvas-key");
       animateTo({ scale: s, x: vw / 2 - (b.x + b.w / 2) * s, y: TOP_ROOM - b.y * s });
     },
     [animateTo],
@@ -548,8 +529,30 @@ export function PanZoomCanvas({
     [animateTo, latest],
   );
 
+  // Collapse or expand every card (see "Collapse / Expand all"). Expanding
+  // holds the middle card still, or zooms to the card keyed `zoomTo` (a click
+  // on a summary). The rest happens once the new layout is in (the detail
+  // effect below).
+  const setDetail = useCallback(
+    (want: boolean, zoomTo?: string | null) => {
+      if (want === compactRef.current || !allowCompactRef.current) return;
+      cancelAnim();
+      compactRef.current = want;
+      anchor.current = null;
+      refitPending.current = false;
+      pendingZoom.current = null;
+      pendingView.current = null;
+      if (want) refitPending.current = true;
+      else if (zoomTo) pendingZoom.current = zoomTo;
+      else anchor.current = middleCard(readView());
+      setCollapsed(want);
+      saveSoon();
+    },
+    [cancelAnim, middleCard, readView, saveSoon],
+  );
+
   // focus() from outside (the handle): summaries don't draw people, so when
-  // they are showing, full detail comes back first and the jump waits for it
+  // they are showing, the cards are expanded first and the jump waits for it
   // (the detail effect below picks it up).
   const pendingFocus = useRef<string | null>(null);
   const focus = useCallback(
@@ -557,18 +560,16 @@ export function PanZoomCanvas({
       const content = contentRef.current;
       if (!content) return false;
       if (compactRef.current && allowCompactRef.current) {
-        pendingFocus.current = selector;
-        compactRef.current = false;
+        setDetail(false);
         anchor.current = null;
-        anchorHint.current = null;
-        setZoomCompact(false);
+        pendingFocus.current = selector;
         return true;
       }
       const el = content.querySelector(selector);
       if (el) jumpTo(el);
       return !!el;
     },
-    [jumpTo],
+    [jumpTo, setDetail],
   );
   useImperativeHandle(ref, () => ({ focus }), [focus]);
 
@@ -588,14 +589,9 @@ export function PanZoomCanvas({
     const [vw, vh] = [sc.clientWidth, sc.clientHeight];
     const [cw, ch] = [content.offsetWidth, content.offsetHeight];
     if (!cw || !ch) return;
-    let s = clampScale(Math.min(1, (vw - 2 * FIT_PADDING) / cw, (vh - TOP_ROOM - FIT_PADDING) / ch));
-    // Already summaries: stay summaries. They are shorter, so the fit can come
-    // out above the switch, and full detail would then no longer fit.
-    if (compactRef.current && allowCompactRef.current) s = Math.min(s, COMPACT_BELOW - 0.01);
+    const s = clampScale(Math.min(1, (vw - 2 * FIT_PADDING) / cw, (vh - TOP_ROOM - FIT_PADDING) / ch));
     // Centred sideways; from the top, so the chart's head is where the eye lands.
-    // A placement, not a move: no card to hold still, and if the detail changes,
-    // fit again to the new layout.
-    place({ x: (vw - cw * s) / 2, y: TOP_ROOM, scale: s }, { hold: false, refit: true });
+    place({ x: (vw - cw * s) / 2, y: TOP_ROOM, scale: s });
   }, [place]);
 
   // First placement, once there is a size — where the viewer left it this
@@ -614,47 +610,64 @@ export function PanZoomCanvas({
       if (!fittedRef.current) {
         fittedRef.current = true;
         const saved = readSavedView(storageKeyRef.current);
-        if (saved) place(saved, { hold: false });
-        else fit();
+        if (saved) {
+          const { collapsed: wasCollapsed, ...view } = saved;
+          // Collapsed when the viewer left: collapse again, and put the view
+          // back once the summaries are laid out (it was saved against them).
+          if (wasCollapsed && allowCompactRef.current) {
+            compactRef.current = true;
+            pendingView.current = view;
+            setCollapsed(true);
+          }
+          place(view);
+        } else fit();
         // After the placement is written, so the content is never shown unplaced.
         requestAnimationFrame(() => setFitted(true));
         return;
       }
       const back = hidden.current;
       hidden.current = false;
-      if (!gesture.current && !anim.current) place(back && committed.current ? committed.current : latest(), { hold: false });
+      if (!gesture.current && !anim.current) place(back && committed.current ? committed.current : latest());
     });
     ro.observe(content);
     ro.observe(sc);
     return () => ro.disconnect();
   }, [fit, place, latest]);
 
-  // The detail level changed: hold the anchored card still, or re-fit.
+  // The detail level changed and the new layout is in: do what setDetail (or
+  // the first placement) left to do.
   useLayoutEffect(() => {
     const content = contentRef.current;
+    const [focusSel, zoomKey, view, refit, a] = [
+      pendingFocus.current,
+      pendingZoom.current,
+      pendingView.current,
+      refitPending.current,
+      anchor.current,
+    ];
+    pendingFocus.current = pendingZoom.current = pendingView.current = anchor.current = null;
+    refitPending.current = false;
+    if (!content) return;
+    const byKey = (key: string) => content.querySelector(`[data-canvas-key="${CSS.escape(key)}"]`);
     // A focus() that needed full detail: it is drawn now.
-    if (pendingFocus.current) {
-      const el = content?.querySelector(pendingFocus.current);
-      pendingFocus.current = null;
-      refitPending.current = false;
-      anchor.current = null;
+    if (focusSel) {
+      const el = content.querySelector(focusSel);
       if (el) jumpTo(el);
-      return;
-    }
-    if (refitPending.current) {
-      refitPending.current = false;
+    } else if (zoomKey) {
+      const el = byKey(zoomKey);
+      if (el) zoomToElement(el, "card");
+    } else if (view) {
+      place(view);
+    } else if (refit) {
       fit();
-      return;
+    } else if (a) {
+      const el = byKey(a.key);
+      if (!el) return;
+      const b = boxIn(content, el);
+      const v = readView();
+      place({ ...v, x: a.px - b.x * v.scale, y: a.py - b.y * v.scale });
     }
-    const a = anchor.current;
-    anchor.current = null;
-    if (!a || !content) return;
-    const el = content.querySelector(`[data-canvas-key="${CSS.escape(a.key)}"]`);
-    if (!el) return;
-    const b = boxIn(content, el);
-    const v = readView();
-    place({ ...v, x: a.px - b.x * v.scale, y: a.py - b.y * v.scale }, { hold: false });
-  }, [compact, fit, place, readView, jumpTo]);
+  }, [compact, fit, place, readView, jumpTo, zoomToElement]);
 
   // ── Zoom ───────────────────────────────────────────────────────────────────
 
@@ -789,16 +802,16 @@ export function PanZoomCanvas({
     e.preventDefault();
   };
 
-  // Clicks the chart itself doesn't claim: a summary card zooms in on a click,
-  // any card or panel on a double-click.
+  // Clicks the chart itself doesn't claim: a summary card expands all and zooms
+  // to itself on a click, any card or panel zooms on a double-click.
   const ownClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
     if (t.closest("button, a, summary, input, select, textarea, label, [data-no-pan]")) return null;
     return contentRef.current?.contains(t) ? t : null;
   };
   const onClick = (e: React.MouseEvent) => {
-    const el = ownClick(e)?.closest("[data-canvas-zoom-on-click]");
-    if (el) zoomToElement(el, "card");
+    const el = ownClick(e)?.closest("[data-canvas-expand-on-click]");
+    if (el) setDetail(false, el.getAttribute("data-canvas-key"));
   };
   const onDoubleClick = (e: React.MouseEvent) => {
     const el = ownClick(e)?.closest("[data-canvas-item]");
@@ -1044,6 +1057,22 @@ export function PanZoomCanvas({
                   </button>
                 </>
               )}
+            </div>
+          )}
+          {allowCompact && (
+            <div className={group}>
+              <button
+                type="button"
+                className={`${btn} text-xs`}
+                onClick={() => setDetail(!collapsed)}
+                title={
+                  collapsed
+                    ? "Show every card in full, with its people"
+                    : "Show every card as a summary: name, head count and hiring"
+                }
+              >
+                {collapsed ? "Expand all" : "Collapse all"}
+              </button>
             </div>
           )}
           {toolbar}
