@@ -2309,8 +2309,12 @@ test("departments by who does the work: the list looks through either, and an un
     [id("finance"), "Support", id("mech"), "Mechanical Engineering", "Finance"],
     "the fields a list filters and groups on change over; the names shown do not",
   );
-  assert.equal(Q.throughLens(mine, "by", "team")[0]!.forGroupName, "Finance", "the department itself, not its group");
-  assert.equal(Q.throughLens(mine, "for", "team")[0]!.forGroupName, "Mechanical Engineering");
+  assert.equal(
+    Q.throughLens(mine, "by", "team")[0]!.forGroupName,
+    "Support › Finance",
+    "the department itself, named with its group",
+  );
+  assert.equal(Q.throughLens(mine, "for", "team")[0]!.forGroupName, "Engineering › Mechanical Engineering");
 
   // Nobody is named on the card, and nobody is in Finance: it cannot be forecast.
   const card = await createTask(db, ana, { projectId: p.id, title: "Unnamed work", effortEstimateHours: 8 });

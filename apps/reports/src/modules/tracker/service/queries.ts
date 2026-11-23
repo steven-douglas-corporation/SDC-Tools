@@ -204,7 +204,13 @@ export function throughLens<P extends Lensed>(
       forDepartmentId: id,
       // Departments stay together under their group's place in the company's order.
       forGroupId: level === "team" ? id : group.id,
-      forGroupName: level === "team" ? own.name : group.name,
+      // A department is named with the group it sits in, so a heading says where it belongs.
+      forGroupName:
+        level !== "team"
+          ? group.name
+          : group.id != null && group.id !== id && group.name && own.name
+            ? `${group.name} › ${own.name}`
+            : own.name,
       forGroupSort: level === "team" && group.sort != null ? group.sort * 1000 + (own.sort ?? 0) : group.sort,
       // The other department, so a check for a missing one still sees both.
       doneByDepartmentId: by ? p.forDepartmentId : p.doneByDepartmentId,
