@@ -47,6 +47,44 @@ export function uncountedComparison(own: number, under: number, unsized: number)
   return `The cards under it have ${hours(under)} left, ${compared}.${missing}`;
 }
 
+/** Cards being worked on whose hours left nobody has touched for a while, in words. */
+export const STALE_HOURS = (n: number) =>
+  `${n} card${n === 1 ? " has" : "s have"} hours left that have not been updated in over a week`;
+
+/**
+ * The caveat on a project's forecast date: how many of its cards the forecast could not date,
+ * and why when it is for lack of an estimate. Null when every card is dated. The date is then
+ * the earliest the project could finish, not when it will.
+ */
+export function notInForecast(noDate: number, noEstimate: number): string | null {
+  if (noDate <= 0) return null;
+  const why =
+    noEstimate <= 0
+      ? ""
+      : noEstimate >= noDate
+        ? noDate === 1
+          ? ": it has no estimate"
+          : ": none of them has an estimate"
+        : `, ${noEstimate} for lack of an estimate`;
+  return `${noDate} card${noDate === 1 ? " is" : "s are"} not in this forecast${why}. The real finish is later.`;
+}
+
+/**
+ * How far along a project is. Weighted by hours where its cards have estimates, so one large
+ * card counts for more than several small ones; by the count of cards where none has.
+ */
+export function progress(p: { taskCount: number; doneCount: number; remainingHours: number; estimatedHours: number }): {
+  percent: number;
+  byHours: boolean;
+  doneHours: number;
+} {
+  if (p.estimatedHours > 0) {
+    const doneHours = Math.max(0, p.estimatedHours - p.remainingHours);
+    return { percent: Math.min(100, Math.round((doneHours / p.estimatedHours) * 100)), byHours: true, doneHours };
+  }
+  return { percent: p.taskCount > 0 ? Math.round((p.doneCount / p.taskCount) * 100) : 0, byHours: false, doneHours: 0 };
+}
+
 /**
  * What a project's forecast leaves out, as short phrases. A card with no estimate is one of the
  * cards with no forecast date, so it is given as the reason, not counted a second time.
@@ -65,7 +103,7 @@ export function leftOutOfForecast(noDate: number, noEstimate: number, unconfirme
     out.push(`${noDate} card${noDate === 1 ? " has" : "s have"} no forecast date${why}`);
   }
   if (unconfirmed > 0) {
-    out.push(`${unconfirmed} card${unconfirmed === 1 ? " has" : "s have"} hours left that nobody has confirmed lately`);
+    out.push(STALE_HOURS(unconfirmed));
   }
   return out;
 }
@@ -273,7 +311,7 @@ export const SORT_LABEL: Record<ListSort, string> = {
 export const ONLY_LABEL: Record<ListOnly, string> = {
   active: "active projects",
   "at-risk": "projects at risk",
-  "not-forecast": "projects with cards not forecast",
+  "not-forecast": "projects with cards the forecast could not date",
   incomplete: "projects missing a justification, a value or a department",
 };
 

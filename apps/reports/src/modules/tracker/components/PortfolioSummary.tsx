@@ -100,7 +100,7 @@ export function PortfolioSummary({
       />
       <Figure label="Hours left" value={hours(s.hoursLeft)} note="Across every open project" />
       <Figure
-        label="Cards not forecast"
+        label="Cards without a date"
         value={String(s.notForecast)}
         warn={s.notForecast > 0}
         note={

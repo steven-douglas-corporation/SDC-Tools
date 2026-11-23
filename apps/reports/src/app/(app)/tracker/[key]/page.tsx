@@ -11,7 +11,7 @@ import { getBoard, type Board as BoardData } from "@/modules/tracker/service/que
 import { Board } from "@/modules/tracker/components/Board";
 import { ProjectViews } from "@/modules/tracker/components/ProjectViews";
 import { SafeDateHelp } from "@/modules/tracker/components/HelpTip";
-import { hours, shortDate } from "@/modules/tracker/components/format";
+import { STALE_HOURS, hours, shortDate } from "@/modules/tracker/components/format";
 
 const plural = (label: string) => (label.endsWith("y") ? `${label.slice(0, -1)}ies` : `${label}s`);
 
@@ -124,12 +124,19 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
       ) : (
         (p.unscheduledTasks > 0 || p.staleTasks > 0) && (
           <p className="mb-4 rounded-lg border border-sdc-border bg-sdc-yellow-bg px-3 py-2 text-sm text-sdc-yellow-text">
-            The forecast above leaves out {p.unscheduledTasks} card{p.unscheduledTasks === 1 ? "" : "s"}
-            {p.unestimatedTasks > 0 ? ` (${p.unestimatedTasks} with no estimate)` : ""}
-            {p.staleTasks > 0
-              ? `, and ${p.staleTasks} card${p.staleTasks === 1 ? " has" : "s have"} hours left that nobody has confirmed lately`
-              : ""}
-            . Each card says why.
+            {p.unscheduledTasks > 0 && (
+              <>
+                The forecast above leaves out {p.unscheduledTasks} card{p.unscheduledTasks === 1 ? "" : "s"}
+                {p.unestimatedTasks > 0 ? ` (${p.unestimatedTasks} with no estimate)` : ""}, so the real finish is
+                later. Each card says why.{" "}
+              </>
+            )}
+            {p.staleTasks > 0 && (
+              <>
+                {STALE_HOURS(p.staleTasks)}: open {p.staleTasks === 1 ? "it" : "each"} and update the hours, or confirm
+                they are still right.
+              </>
+            )}
           </p>
         )
       )}

@@ -10,12 +10,37 @@ test("dates are shown as weekday, month and day, without going through a time zo
   assert.equal(shortDate("not a date"), "not a date");
 });
 
-test("hours drop a pointless decimal", () => {
+test("hours drop a pointless decimal", async () => {
   assert.equal(hours(6), "6 h");
   assert.equal(hours(4.5), "4.5 h");
   assert.equal(hours(10.25), "10.3 h");
   assert.equal(hours(0), "0 h");
   assert.equal(hours(3494), "3,494 h");
+
+  const F = await import("../src/modules/tracker/components/format");
+  assert.equal(F.notInForecast(0, 0), null, "every card dated: nothing to say");
+  assert.equal(F.notInForecast(1, 1), "1 card is not in this forecast: it has no estimate. The real finish is later.");
+  assert.equal(
+    F.notInForecast(6, 4),
+    "6 cards are not in this forecast, 4 for lack of an estimate. The real finish is later.",
+  );
+  // Progress is by hours when there are estimates: one big card done counts for more than its number.
+  assert.deepEqual(F.progress({ taskCount: 4, doneCount: 1, remainingHours: 20, estimatedHours: 100 }), {
+    percent: 80,
+    byHours: true,
+    doneHours: 80,
+  });
+  assert.deepEqual(F.progress({ taskCount: 4, doneCount: 1, remainingHours: 0, estimatedHours: 0 }), {
+    percent: 25,
+    byHours: false,
+    doneHours: 0,
+  });
+  assert.equal(F.progress({ taskCount: 0, doneCount: 0, remainingHours: 0, estimatedHours: 0 }).percent, 0);
+  assert.equal(
+    F.progress({ taskCount: 2, doneCount: 0, remainingHours: 50, estimatedHours: 40 }).percent,
+    0,
+    "never below zero",
+  );
   assert.equal(hours(12345.67), "12,345.7 h");
   assert.equal(hours(null), "—");
 });
@@ -86,7 +111,7 @@ test("what a forecast leaves out is said in whole phrases, without counting a ca
   assert.deepEqual(leftOutOfForecast(3, 1, 0), ["3 cards have no forecast date, 1 for lack of an estimate"]);
   assert.deepEqual(leftOutOfForecast(2, 0, 1), [
     "2 cards have no forecast date",
-    "1 card has hours left that nobody has confirmed lately",
+    "1 card has hours left that have not been updated in over a week",
   ]);
 });
 

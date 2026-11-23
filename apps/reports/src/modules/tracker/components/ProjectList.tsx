@@ -29,7 +29,8 @@ import {
   departmentDropEffect,
   departmentMoveEffect,
   hours,
-  leftOutOfForecast,
+  notInForecast,
+  progress,
   rankClashEffect,
   shortDate,
 } from "./format";
@@ -301,7 +302,7 @@ function Missing({ children }: { children: React.ReactNode }) {
  * A project's three dates in one cell: the target, the forecast and the safe date. The one
  * the project is judged on is in red, and says so, when it falls after the target.
  */
-function Dates({ p }: { p: ProjectListItem }) {
+function Dates({ p, caveat }: { p: ProjectListItem; caveat: string | null }) {
   const late = p.atRisk === true ? (p.atRiskBasis === "p80" ? "safe" : "forecast") : null;
   const rows: [string, string | null, boolean][] = [
     ["Target", p.targetDate, false],
@@ -316,6 +317,18 @@ function Dates({ p }: { p: ProjectListItem }) {
           <dd className={isLate ? "font-semibold text-sdc-red-text" : "text-sdc-navy"}>
             {shortDate(date)}
             {isLate && <span className="sr-only"> (after the target)</span>}
+            {/* A date worked out without some of the cards is the earliest it could be, and says so. */}
+            {caveat && date && label !== "Target" && (
+              <span
+                tabIndex={0}
+                role="note"
+                title={caveat}
+                aria-label={caveat}
+                className="ml-0.5 cursor-help rounded font-bold text-sdc-yellow-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-sdc-blue"
+              >
+                *
+              </span>
+            )}
           </dd>
         </div>
       ))}
@@ -614,10 +627,15 @@ export function ProjectList({
                   <th className="px-3 py-2.5 text-left">Done by</th>
                   <th className="px-3 py-2.5 text-left">Value a year</th>
                   <th className="px-3 py-2.5">State</th>
-                  <th className="px-3 py-2.5">Cards done</th>
+                  <th
+                    className="px-3 py-2.5 text-left"
+                    title="How far along it is, by hours where its cards have estimates"
+                  >
+                    Progress
+                  </th>
                   <th className="px-3 py-2.5 text-left">Assigned to</th>
-                  <th className="px-3 py-2.5" title="Hours left, of the hours estimated across its cards">
-                    Effort
+                  <th className="px-3 py-2.5" title="Hours of work left, of the hours estimated across its cards">
+                    Hours left
                   </th>
                   <th className="px-3 py-2.5 text-left">
                     <span className="inline-flex items-center gap-1.5">
@@ -625,12 +643,12 @@ export function ProjectList({
                     </span>
                   </th>
                   <th className="px-3 py-2.5">Against target</th>
-                  <th className="px-3 py-2.5 text-left">Not forecast</th>
                 </tr>
               </thead>
               <tbody>
                 {projects.map((p, i) => {
-                  const leftOut = leftOutOfForecast(p.unscheduledTasks, p.unestimatedTasks, p.staleTasks);
+                  const caveat = notInForecast(p.unscheduledTasks, p.unestimatedTasks);
+                  const done = progress(p);
                   // A heading where the department changes. The rows arrive a department at a time.
                   const heads = grouped && (i === 0 || projects[i - 1]!.forGroupId !== p.forGroupId);
                   const inGroup = projects.filter((x) => x.forGroupId === p.forGroupId).length;
@@ -643,7 +661,7 @@ export function ProjectList({
                       {heads && (
                         <tr className="border-b border-sdc-border bg-sdc-gray-100">
                           <th
-                            colSpan={11}
+                            colSpan={10}
                             scope="colgroup"
                             className="px-3 py-2 text-left text-sm font-semibold text-sdc-navy"
                           >
@@ -754,8 +772,26 @@ export function ProjectList({
                         <td className="px-3 py-2.5">
                           <StateCell p={p} canEdit={canEdit} />
                         </td>
-                        <td className="px-3 py-2.5 tabular-nums">
-                          {p.doneCount} of {p.taskCount}
+                        <td
+                          className="px-3 py-2.5 text-left"
+                          title={
+                            done.byHours
+                              ? `${hours(done.doneHours)} of ${hours(p.estimatedHours)} done \u00b7 ${p.doneCount} of ${p.taskCount} cards`
+                              : `${p.doneCount} of ${p.taskCount} cards done. No hours are estimated, so this is by count.`
+                          }
+                        >
+                          <span className="flex items-center gap-2 whitespace-nowrap">
+                            <span
+                              className="h-1.5 w-14 overflow-hidden rounded-full bg-sdc-gray-100"
+                              aria-hidden="true"
+                            >
+                              <span
+                                className="block h-full rounded-full bg-sdc-blue"
+                                style={{ width: `${done.percent}%` }}
+                              />
+                            </span>
+                            <span className="tabular-nums">{done.percent}%</span>
+                          </span>
                         </td>
                         <td className="px-3 py-2.5 text-left">
                           {p.assigneeNames.length > 0 ? (
@@ -768,39 +804,16 @@ export function ProjectList({
                           )}
                         </td>
                         <td className="px-3 py-2.5 tabular-nums whitespace-nowrap">
-                          {hours(p.remainingHours)}
+                          {hours(p.remainingHours)} left
                           {p.estimatedHours > 0 && (
                             <span className="text-sdc-gray-600"> of {hours(p.estimatedHours)}</span>
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-left">
-                          <Dates p={p} />
+                          <Dates p={p} caveat={caveat} />
                         </td>
                         <td className="px-3 py-2.5">
                           <Risk p={p} />
-                        </td>
-                        <td className="px-3 py-2.5 text-left text-xs text-sdc-gray-600">
-                          {leftOut.length === 0 ? (
-                            "Nothing"
-                          ) : (
-                            <details>
-                              <summary className="cursor-pointer whitespace-nowrap font-semibold text-sdc-navy">
-                                {[
-                                  p.unscheduledTasks > 0
-                                    ? `${p.unscheduledTasks} card${p.unscheduledTasks === 1 ? "" : "s"}`
-                                    : null,
-                                  p.staleTasks > 0 ? `${p.staleTasks} unconfirmed` : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(", ")}
-                              </summary>
-                              <div className="mt-1 min-w-[12rem] space-y-0.5">
-                                {leftOut.map((line) => (
-                                  <div key={line}>{line}</div>
-                                ))}
-                              </div>
-                            </details>
-                          )}
                         </td>
                       </tr>
                     </Fragment>
