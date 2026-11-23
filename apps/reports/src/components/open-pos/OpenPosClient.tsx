@@ -30,7 +30,17 @@ import {
   type OpenPosResult,
 } from "@/lib/open-pos-rules";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
-import { ADV_OPTIONS, advActive, advCounts, advMatch, NO_ADV_FILTERS, type AdvCategory, type AdvFilters } from "@/lib/open-pos-filters";
+import {
+  ADV_OPTIONS,
+  advActive,
+  advCounts,
+  advMatch,
+  arrivesAfterRequired,
+  datesArriveAfter,
+  NO_ADV_FILTERS,
+  type AdvCategory,
+  type AdvFilters,
+} from "@/lib/open-pos-filters";
 
 // For managers first (the Scheduler's Vendor POs page is the buyers' worklist).
 //
@@ -42,10 +52,13 @@ import { ADV_OPTIONS, advActive, advCounts, advMatch, NO_ADV_FILTERS, type AdvCa
 // invoice. All client-side: the server sent every open PO.
 // (2026-11-18, by request: the invoice tiles, Invoiced not received / Received not invoiced /
 // Not yet invoiced, left Basic. Advanced's Invoiced checkboxes still filter by invoice.)
+// (2026-11-20, by request: the Timeline has its own Basic list, TIMELINE_PICKS, starting on
+// "Arrives after it's required" (DEFAULT_TIMELINE_TILE): Here and All open place nothing new on
+// it. Cards and Table share the list above. Each keeps its own pick.)
 
 /** The money measures a tile can be about (keys of OpenPoMoney). `received` is the Here list's. */
 type MetricId = "late" | "notReceived" | "invoicedNotReceived" | "receivedNotInvoiced" | "leftToInvoice" | "received";
-type TileId = "all" | MetricId;
+type TileId = "all" | "after" | MetricId;
 // Four separate choices, each with its own control, so no button does two jobs:
 //   Show     WHAT the page is about: what is still open, or what is here (received).
 //   Filter   WHICH POs: the tiles (one at a time), Deliveries (coming / outstanding)
@@ -72,6 +85,8 @@ const TILES: { id: TileId; metric: MetricId; label: string; short: string; hint:
   { id: "all", metric: "leftToInvoice", label: "All open", short: "Left to invoice", hint: "Every PO still owing a delivery or an invoice" },
   { id: "late", metric: "late", label: "Late", short: "Late", hint: "Not yet received, on lines past their expected date" },
   { id: "notReceived", metric: "notReceived", label: "Not yet received", short: "Not yet received", hint: "Ordered quantity not yet received, at PO price" },
+  // The Timeline's own (TIMELINE_PICKS); its amount is the value still to arrive.
+  { id: "after", metric: "notReceived", label: "Arrives after it's required", short: "Not yet received", hint: "The next part to arrive is expected after the BOM's required date for it" },
 ];
 
 /** Show: Here. Not a tile: it stands in for one, so the cards and the status line read the same way. */
@@ -81,8 +96,19 @@ const HERE_TILE = { id: "received" as TileId, metric: "received" as MetricId, la
 // is about parts still to arrive, so a PO that is all here but not yet invoiced is not listed
 // until All open or Here is picked).
 const DEFAULT_TILE: TileId = "notReceived";
+// The Timeline's Basic list and starting pick (2026-11-20, by request): the timeline is where
+// expected meets required, so it opens on the POs that arrive too late.
+const TIMELINE_PICKS: TileId[] = ["after", "late", "notReceived"];
+const DEFAULT_TIMELINE_TILE: TileId = "after";
 
-const inTile = (r: OpenPoRow, id: TileId) => (id === "all" ? true : id === "leftToInvoice" ? hasInvoiceBalance(r.leftToInvoice) : r.money[id] > 0);
+const inTile = (r: OpenPoRow, id: TileId, requiredByLine: ReadonlyMap<string, string>) =>
+  id === "all"
+    ? true
+    : id === "after"
+      ? arrivesAfterRequired(r, requiredByLine)
+      : id === "leftToInvoice"
+        ? hasInvoiceBalance(r.leftToInvoice)
+        : r.money[id] > 0;
 const sumMoney = (ms: OpenPoMoney[], id: MetricId) => Math.round(ms.reduce((s, m) => s + m[id], 0) * 100) / 100;
 const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
@@ -810,10 +836,15 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   // by category (open-pos-filters.ts), over open POs only, as the page's name says. Each keeps its own picks; only the one showing applies. (2026-11-16: Open /
   // Here was a separate Show switch above them; it is a filter like the rest.)
   const [tile, setTile] = useState<TileId | "here">(DEFAULT_TILE);
+  // The Timeline's own Basic pick (TIMELINE_PICKS).
+  const [timelineTile, setTimelineTile] = useState<TileId>(DEFAULT_TIMELINE_TILE);
   const [filterMode, setFilterMode] = useState<FilterMode>("basic");
   const [adv, setAdv] = useState<AdvFilters>(NO_ADV_FILTERS);
-  // "here": Basic's Here pick, which lists the Here POs (no timeline; amounts are value received).
-  const mode: Mode = filterMode === "basic" && tile === "here" ? "here" : "open";
+  const [view, setView] = useState<View>("cards");
+  // The Basic pick that applies: the Timeline's on the timeline, else Cards' and Table's.
+  const basicTile: TileId | "here" = view === "timeline" ? timelineTile : tile;
+  // "here": Basic's Here pick, which lists the Here POs (Cards and Table only; amounts are value received).
+  const mode: Mode = filterMode === "basic" && basicTile === "here" ? "here" : "open";
   const toggleAdv = (cat: AdvCategory, id: string) =>
     setAdv((a) => {
       const n = new Set(a[cat]);
@@ -822,7 +853,6 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       return { ...a, [cat]: n };
     });
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<View>("cards");
   const [groupBy, setGroupBy] = useState<GroupBy>("projects");
   // The PO open in the panel, and which of its jobs' BOM the panel shows (the card's job on a
   // project card or timeline row, otherwise the PO's first job).
@@ -884,8 +914,9 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
     };
   }, [data.rows]);
 
-  // Here has no timeline (nothing to place on it): its view falls back to the cards.
-  const shownView: View = mode === "here" && view === "timeline" ? "cards" : view;
+  // Here has no timeline (nothing to place on it), but the Timeline has its own Basic list
+  // without Here (2026-11-20), so every view can always be picked.
+  const shownView: View = view;
   // The left column: as tall as its controls, up to a cap, scrolling on its own past it.
   // Beside the Timeline (which fits the window, so the page does not scroll) the cap is
   // measured: down to the window's bottom, above the page's bottom padding. In Cards and Table
@@ -897,7 +928,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   const sideHeight = useFillHeight(sideRef, shownView === "timeline", true);
   const sideCap = shownView !== "timeline" ? "calc(var(--app-vh) - 2rem)" : sideHeight ? `${sideHeight}px` : "none";
   // Advanced has no Money pick: the cards show All open's amount (left to invoice).
-  const cur = mode === "here" ? HERE_TILE : filterMode === "advanced" ? TILES[0] : (TILES.find((t) => t.id === tile) ?? TILES[0]);
+  const cur = mode === "here" ? HERE_TILE : filterMode === "advanced" ? TILES[0] : (TILES.find((t) => t.id === basicTile) ?? TILES[0]);
   const metric = cur.metric;
   // Every loaded job, not only those with open POs: a closed PO can be on a job with nothing open.
   const jobName = useMemo(() => new Map(data.allJobs.map((j) => [j.jobId, j.jobName])), [data.allJobs]);
@@ -943,22 +974,25 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
         mode === "here"
           ? data.here
           : filterMode === "basic"
-            ? data.rows.filter((r) => inTile(r, tile as TileId))
+            ? data.rows.filter((r) => inTile(r, basicTile as TileId, required.byLine))
             : data.rows.filter((r) => advMatch(r, adv, advCtx)),
         searchIn,
         query,
       ),
-    [mode, data.rows, data.here, filterMode, tile, adv, advCtx, searchIn, query],
+    [mode, data.rows, data.here, filterMode, basicTile, required.byLine, adv, advCtx, searchIn, query],
   );
 
   const tiles = useMemo(
     () =>
       TILES.map((t) => {
-        const rows = data.rows.filter((r) => inTile(r, t.id));
+        const rows = data.rows.filter((r) => inTile(r, t.id, required.byLine));
         return { ...t, value: sumMoney(rows.map((r) => r.money), t.metric), pos: rows.length, jobs: new Set(rows.flatMap((r) => r.jobIds)).size };
       }),
-    [data.rows],
+    [data.rows, required.byLine],
   );
+  // The timeline drawing only the rows that arrive after they're required (its Basic pick):
+  // on a project row a split PO is dated by that job's lines, so not every row of a listed PO is.
+  const onlyAfter = view === "timeline" && filterMode === "basic" && timelineTile === "after";
 
   // One card per job: its own share of each shown PO, its own lines' counts.
   const projects = useMemo(() => {
@@ -1022,7 +1056,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                   received: lastReceived(c.row.items, receivedByLine, p.jobId),
                 };
               })
-              .filter((x) => x.dates.outstanding);
+              .filter((x) => (onlyAfter ? datesArriveAfter(x.dates) : x.dates.outstanding));
             return {
               key: p.jobId,
               label: (
@@ -1039,11 +1073,11 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
         : suppliers.map((s) => {
             const pos = s.pos
               .map((c) => ({ row: c.row, money: c.money, dates: c.dates, other: `Job ${c.row.jobIds.join(", ")}`, received: lastReceived(c.row.items, receivedByLine) }))
-              .filter((x) => x.dates.outstanding);
+              .filter((x) => (onlyAfter ? datesArriveAfter(x.dates) : x.dates.outstanding));
             return { key: s.name, label: s.name, sublabel: sub(pos), title: s.name, pos };
           });
     return rows.filter((r) => r.pos.length > 0);
-  }, [groupBy, projects, suppliers, data.asOf, receivedByLine]);
+  }, [groupBy, projects, suppliers, data.asOf, receivedByLine, onlyAfter]);
 
 
   if (data.rows.length === 0 && data.here.length === 0) {
@@ -1051,11 +1085,13 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
   }
 
   const searching = query.trim() !== "";
-  const filtered = searching || (filterMode === "basic" ? tile !== DEFAULT_TILE : advActive(adv));
+  const basicDefault = view === "timeline" ? DEFAULT_TIMELINE_TILE : DEFAULT_TILE;
+  const filtered = searching || (filterMode === "basic" ? basicTile !== basicDefault : advActive(adv));
   const total = mode === "here" ? data.here.length : data.rows.length;
   const shownJobs = new Set(shown.flatMap((r) => r.jobIds)).size;
   const clearFilters = () => {
     setTile(DEFAULT_TILE);
+    setTimelineTile(DEFAULT_TIMELINE_TILE);
     setAdv(NO_ADV_FILTERS);
     setQuery("");
   };
@@ -1158,7 +1194,15 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       rows={timelineRows}
       asOf={data.asOf}
       onOpenPo={openRow}
-      emptyText="Nothing still to arrive among the POs shown. Try Clear filters."
+      emptyText={
+        onlyAfter && required.state === "loading"
+          ? "Loading required dates from the BOM…"
+          : onlyAfter && required.state === "failed"
+            ? "Required dates couldn't be read from the BOM, so nothing can be shown as arriving after it's required. Pick Not yet received to see every PO still to arrive."
+            : onlyAfter
+              ? "Nothing among the POs shown is expected after the BOM's required date."
+              : "Nothing still to arrive among the POs shown. Try Clear filters."
+      }
       dotsBy={dotsBy}
       requiredState={required.state}
       subgroups={groupBy === "projects" && bySupplier}
@@ -1196,7 +1240,7 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
           onChange={setView}
           options={[
             { value: "cards" as const, label: "Cards", title: "The cards only, several to a row" },
-            ...(mode === "open" ? [{ value: "timeline" as const, label: "Timeline", title: "When each PO is expected against the BOM's required date, grouped by project or supplier" }] : []),
+            { value: "timeline" as const, label: "Timeline", title: "When each PO is expected against the BOM's required date, grouped by project or supplier" },
             { value: "table" as const, label: "Table", title: "Every PO in one sortable list" },
           ]}
         />
@@ -1289,7 +1333,11 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
                 {total > shown.length ? ` · ${total - shown.length} hidden` : ""}
               </span>
               {filtered && (
-                <button type="button" onClick={clearFilters} title="Back to the starting view: Basic's Not yet received, no Advanced checkboxes, the search emptied" className="text-note font-semibold text-sdc-blue hover:underline">
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  title={`Back to the starting view: Basic's ${view === "timeline" ? "Arrives after it's required on the Timeline" : "Not yet received"}, no Advanced checkboxes, the search emptied`}
+                  className="text-note font-semibold text-sdc-blue hover:underline">
                   Clear filters
                 </button>
               )}
@@ -1365,10 +1413,40 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
             />
           </SideGroup>
 
-          {filterMode === "basic" && (
+          {filterMode === "basic" && view === "timeline" && (
             <SideGroup
               title="Show"
-              tip="One at a time, starting on Not yet received. All open is every PO still owing a delivery or an invoice; Late and Not yet received narrow that to deliveries still owed. Each shows how many POs it lists; hover for the value, which is also what the cards show and Biggest amount first sorts by. Here is POs with parts that have arrived, closed ones included. To filter by invoice, use Advanced"
+              tip="The Timeline's own list, one at a time, starting on Arrives after it's required: the POs whose next part is expected after the BOM's required date, drawn red. Late is POs past their expected date and still not here; Not yet received is every PO still to arrive. Cards and Table keep their own pick"
+            >
+              <OptionList
+                label="Show"
+                value={timelineTile}
+                onChange={setTimelineTile}
+                options={TIMELINE_PICKS.map((id) => {
+                  const t = tiles.find((x) => x.id === id)!;
+                  const waiting = id === "after" && required.state !== "ok";
+                  return {
+                    value: id,
+                    label: t.label,
+                    detail: waiting
+                      ? required.state === "loading"
+                        ? "Loading…"
+                        : "Unavailable"
+                      : `${t.pos} ${t.pos === 1 ? "PO" : "POs"}`,
+                    tone: !waiting && (id === "late" || id === "after") ? ("danger" as const) : undefined,
+                    title: waiting
+                      ? `${t.hint}. ${required.state === "loading" ? "Loading required dates from the BOM" : "Required dates couldn't be read from the BOM"}`
+                      : `${t.hint}. ${usdExact(t.value)} still to arrive on ${t.pos} POs, ${t.jobs} jobs`,
+                  };
+                })}
+              />
+            </SideGroup>
+          )}
+
+          {filterMode === "basic" && view !== "timeline" && (
+            <SideGroup
+              title="Show"
+              tip="One at a time, starting on Not yet received. All open is every PO still owing a delivery or an invoice; Late and Not yet received narrow that to deliveries still owed. Each shows how many POs it lists; hover for the value, which is also what the cards show and Biggest amount first sorts by. Here is POs with parts that have arrived, closed ones included. To filter by invoice, use Advanced. The Timeline has its own list"
             >
               <OptionList
                 label="Show"
