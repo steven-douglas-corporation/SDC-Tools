@@ -9,6 +9,13 @@ safe and accurate: reliable loads (Phase 2), one agreed model (Phase 3), measure
 meanings defined once (Phase 4), and semantic search over them (Phase 5). Phase 6 puts
 the tools behind an API and hands them to the assistant.
 
+This roadmap is the design of the SDC Brain: how it is built. **What feeds it** is the
+SDC Pipelines page (<https://claude.ai/artifact/VvudJqpSYySCvKxs3bCXZZ>, visible to the
+SDC organization): each lifecycle, the software behind it, and where its data lands
+here. The two don't repeat each other; where they disagree, the Pipelines page is the
+newer statement and this file gets corrected
+([ADR 0006](../../docs/adr/0006-share-inventory-under-tools.md)).
+
 Each phase builds on the one before it: semantic work (Phases 4–5) assumes a stable
 model (Phase 3), and a stable model assumes the warehouse runs reliably (Phase 2).
 
@@ -106,6 +113,15 @@ Measure definitions live in the repo (YAML, reviewed in PRs) and are loaded into
 - Use a **controlled list of subject areas** (Labor, Projects, Procurement, Finance, HR, Service…, about 10–20), assigned by an LLM from each item's description and reviewed by a person. Tags then mean the same thing every time they're regenerated.
 - **Use clustering to discover the list, not as the tags.** k-means needs the number of groups chosen in advance and returns unnamed groups that reshuffle when items are added. HDBSCAN or hierarchical clustering on the embeddings, with an LLM naming each cluster, is a better way to propose the initial subject areas. A person then fixes the list.
 - Multi-tag is allowed (a measure can be both Labor and Projects).
+- **Sensitivity is not a tag an LLM assigns.** The Phase 4 sensitivity flags are set by rule or
+  by a person. One source of rules: the exposure categories in `tools/share-inventory/findings`.
+- Tags narrow and boost a search; they never replace the embedding ranking. If a tag filter
+  leaves too few candidates, widen to the subject area. A sensitivity filter is never widened.
+
+**Documents**
+- The same store holds the documents index the Pipelines page describes: documents split,
+  embedded and linked back to the source file and to the job, customer or employee they
+  belong to. `tools/share-inventory` supplies the file index it starts from.
 
 **What it enables**
 - Search: "where is overtime?" finds the right measure even when nothing is named "overtime".
@@ -147,6 +163,14 @@ the same number. `run_sql` is the escape hatch.
   Postgres row- and column-level security, not by the prompt.
 - Every call is logged (who, which tool, the SQL, row count, time) in an `"Integration"`
   audit table, which is also how we learn which questions people actually ask.
+
+**Reading before writing**
+- Every tool above reads. Tools that change something (call another system's API, start a
+  workflow) come only after read-only use is proven, and each needs its own approval and
+  audit design first.
+- The assistant does not edit CAD, schematic or PLC files. It reads rules and templates;
+  generators produce output for a person to review
+  ([engineering rules plan](../../docs/engineering-rules-plan.md)).
 
 **Measuring it**
 - A set of real questions with known answers (e.g. "hours on job 1118 in September",
