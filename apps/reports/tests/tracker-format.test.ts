@@ -160,7 +160,7 @@ test("the figures above the project list are sums of its rows, over open project
     remainingHours: number,
     unscheduledTasks = 0,
     unestimatedTasks = 0,
-  ) => ({ key, state, targetDate, atRisk, remainingHours, unscheduledTasks, unestimatedTasks });
+  ) => ({ key, name: `${key} project`, state, targetDate, atRisk, remainingHours, unscheduledTasks, unestimatedTasks });
 
   assert.deepEqual(portfolioSummary([], "2026-11-20"), {
     open: 0,
@@ -196,11 +196,12 @@ test("the figures above the project list are sums of its rows, over open project
     noEstimate: 3,
     pastTarget: 1,
     // The soonest still to come: not LATE (gone by), not GONE (cancelled).
-    nextTarget: { key: "ALPHA", date: "2026-12-11" },
+    nextTarget: { key: "ALPHA", name: "ALPHA project", date: "2026-12-11" },
   });
   // A target of today is still to come.
   assert.deepEqual(portfolioSummary([p("NOW", "active", "2026-11-20", false, 1)], "2026-11-20").nextTarget, {
     key: "NOW",
+    name: "NOW project",
     date: "2026-11-20",
   });
 });

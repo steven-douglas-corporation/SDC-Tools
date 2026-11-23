@@ -200,13 +200,13 @@ export interface PortfolioSummary {
   /** Open projects whose target date has already gone by. */
   pastTarget: number;
   /** The soonest target date still to come, and whose it is. */
-  nextTarget: { key: string; date: string } | null;
+  nextTarget: { key: string; name: string; date: string } | null;
 }
 
 export function portfolioSummary(
   projects: Pick<
     ProjectListItem,
-    "key" | "state" | "targetDate" | "atRisk" | "remainingHours" | "unscheduledTasks" | "unestimatedTasks"
+    "key" | "name" | "state" | "targetDate" | "atRisk" | "remainingHours" | "unscheduledTasks" | "unestimatedTasks"
   >[],
   /** YYYY-MM-DD. Passed in, so the sums do not depend on the clock. */
   today: string,
@@ -224,7 +224,7 @@ export function portfolioSummary(
     notForecast: open.reduce((sum, p) => sum + p.unscheduledTasks, 0),
     noEstimate: open.reduce((sum, p) => sum + p.unestimatedTasks, 0),
     pastTarget: open.filter((p) => p.targetDate != null && p.targetDate < today).length,
-    nextTarget: upcoming[0] ? { key: upcoming[0].key, date: upcoming[0].targetDate } : null,
+    nextTarget: upcoming[0] ? { key: upcoming[0].key, name: upcoming[0].name, date: upcoming[0].targetDate } : null,
   };
 }
 
