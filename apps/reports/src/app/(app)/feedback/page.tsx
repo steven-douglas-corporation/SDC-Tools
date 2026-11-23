@@ -90,6 +90,7 @@ export async function FeedbackView({
     when: f.createdAt.toISOString().slice(0, 16).replace("T", " "),
     status: f.status,
     severity: f.severity,
+    sourceApp: f.sourceApp,
     category: f.category,
     view: f.viewLabel ?? f.routePath ?? "—",
     context: f.params ? describeContext(f.params) : "",
@@ -192,7 +193,7 @@ export async function FeedbackView({
           message={
             !everFiled
               ? canTriage
-                ? "When someone flags a number that looks wrong, it lands here with the view, the filters and the record they were looking at already attached."
+                ? "When someone flags a problem on any page, in any tool, it lands here with the view, the filters and the record they were looking at already attached."
                 : "Nothing reported yet. Use the Flag button in the corner of any page and the view you're on comes with it."
               : activeTab === "queue"
                 ? `Everything has been dealt with — ${counts.fixed ?? 0} fixed, ${counts.wontfix ?? 0} closed without a change.`

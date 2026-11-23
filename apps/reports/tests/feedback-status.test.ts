@@ -114,3 +114,20 @@ test("every refusal carries a message a user can act on", () => {
     }
   }
 });
+
+test("a report is tagged with the tool it was filed from, and its urgency reads to suit", async () => {
+  const S = await import("../src/lib/feedback-status");
+  assert.equal(S.feedbackSourceFor("/tracker/BIN/12"), "tracker");
+  assert.equal(S.feedbackSourceFor("/tracker"), "tracker");
+  for (const path of ["/dashboard", "/etc", "/audit-log", "/admin/users", "", null]) {
+    assert.equal(S.feedbackSourceFor(path), "reports", String(path));
+  }
+  assert.equal(S.feedbackSourceLabel("reports"), "Reports");
+  assert.equal(S.feedbackSourceLabel("tracker"), "Project Tracker");
+  assert.equal(S.feedbackSourceLabel("something-new"), "something-new", "an unknown one is shown as it is");
+  // "Wrong number" is right where there are numbers; elsewhere it only says something is wrong.
+  assert.equal(S.feedbackSeverityLabel("wrong", "reports"), "Wrong number");
+  assert.equal(S.feedbackSeverityLabel("wrong", "tracker"), "Something is wrong");
+  assert.equal(S.feedbackSeverityLabel("blocking", "tracker"), "Can't work");
+  assert.equal(S.feedbackSeverityLabel("cosmetic", "scheduler"), "Minor");
+});

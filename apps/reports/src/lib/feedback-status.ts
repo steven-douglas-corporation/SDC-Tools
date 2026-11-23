@@ -35,6 +35,7 @@
 // isFeedbackStatus() at every write boundary is what actually constrains it.
 
 import type { StatusVariant } from "@/components/ui/StatusBadge";
+import { toolForPath } from "@/lib/tools";
 
 export const FEEDBACK_STATUSES = ["open", "ack", "fixed", "wontfix"] as const;
 export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
@@ -138,6 +139,40 @@ export const FEEDBACK_SEVERITY_LABELS: Record<FeedbackSeverity, string> = {
   wrong: "Wrong number",
   cosmetic: "Minor",
 };
+
+// ── Which tool a report is about (2026-11-23) ───────────────────────────────
+//
+// The Flag button is on every page, and the app is no longer only Reports. A report is tagged
+// with the tool whose page it was filed from, so the queue can tell "this number is wrong"
+// from "this card will not save". `sourceApp` was always a free string (the Scheduler files
+// through the integration route as "scheduler"), so this needs no migration: reports filed
+// before this change are all "reports", which is what they were.
+
+/** The `sourceApp` for a report filed from a page of this app. */
+export function feedbackSourceFor(routePath: string | null | undefined): string {
+  return routePath && toolForPath(routePath) === "tracker" ? "tracker" : "reports";
+}
+
+const FEEDBACK_SOURCE_LABELS: Record<string, string> = {
+  reports: "Reports",
+  tracker: "Project Tracker",
+  scheduler: "Scheduler",
+};
+
+/** A `sourceApp` as a person reads it. One nobody has named is shown as it is. */
+export function feedbackSourceLabel(sourceApp: string): string {
+  return FEEDBACK_SOURCE_LABELS[sourceApp] ?? sourceApp;
+}
+
+/**
+ * An urgency as a person reads it. The middle one is "Wrong number" in Reports, where that is
+ * what it nearly always is; anywhere else there may be no number in sight, so it says only
+ * that something is wrong.
+ */
+export function feedbackSeverityLabel(severity: FeedbackSeverity, sourceApp: string): string {
+  if (severity === "wrong" && sourceApp !== "reports") return "Something is wrong";
+  return FEEDBACK_SEVERITY_LABELS[severity];
+}
 
 export function isFeedbackSeverity(value: string): value is FeedbackSeverity {
   return (FEEDBACK_SEVERITIES as readonly string[]).includes(value);

@@ -10,7 +10,9 @@ import {
   FEEDBACK_CATEGORIES,
   FEEDBACK_CATEGORY_LABELS,
   FEEDBACK_SEVERITIES,
-  FEEDBACK_SEVERITY_LABELS,
+  feedbackSeverityLabel,
+  feedbackSourceFor,
+  feedbackSourceLabel,
   DEFAULT_FEEDBACK_CATEGORY,
   DEFAULT_FEEDBACK_SEVERITY,
   type FeedbackCategory,
@@ -151,7 +153,7 @@ export function FeedbackDrawer({
             silently filing against the wrong screen. */}
         <div className="rounded-lg border border-sdc-border-soft bg-sdc-gray-50 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge variant="neutral">Reports</StatusBadge>
+            <StatusBadge variant="neutral">{feedbackSourceLabel(feedbackSourceFor(context.routePath))}</StatusBadge>
             <StatusBadge variant="active">{context.viewLabel ?? context.routePath}</StatusBadge>
             {context.periodMonth && <StatusBadge variant="neutral">{context.periodMonth}</StatusBadge>}
           </div>
@@ -275,7 +277,7 @@ export function FeedbackDrawer({
                       : "border-sdc-border bg-white text-sdc-gray-700 hover:border-sdc-blue"
                   }`}
                 >
-                  {FEEDBACK_SEVERITY_LABELS[s]}
+                  {feedbackSeverityLabel(s, feedbackSourceFor(context.routePath))}
                 </button>
               ))}
             </div>

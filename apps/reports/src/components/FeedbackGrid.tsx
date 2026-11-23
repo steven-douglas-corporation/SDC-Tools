@@ -7,7 +7,7 @@ import { FeedbackDetailDrawer, type FeedbackDetail } from "@/components/Feedback
 import {
   FEEDBACK_STATUS_LABELS,
   FEEDBACK_STATUS_VARIANT,
-  FEEDBACK_SEVERITY_LABELS,
+  feedbackSeverityLabel,
   FEEDBACK_CATEGORY_LABELS,
   isFeedbackStatus,
   isFeedbackSeverity,
@@ -25,6 +25,8 @@ export type FeedbackGridRow = {
   when: string;
   status: string;
   severity: string;
+  /** The tool the report was filed from. Decides how the urgency reads. */
+  sourceApp: string;
   category: string;
   view: string;
   context: string;
@@ -43,7 +45,7 @@ export type FeedbackGridRow = {
 // A raw key would read as "wontfix"/"ack". Falling back to the raw value rather than
 // blanking it keeps a row written by a newer build (or by hand) legible.
 const labelStatus = (v: string) => (isFeedbackStatus(v) ? FEEDBACK_STATUS_LABELS[v] : v);
-const labelSeverity = (v: string) => (isFeedbackSeverity(v) ? FEEDBACK_SEVERITY_LABELS[v] : v);
+const labelSeverity = (v: string, sourceApp: string) => (isFeedbackSeverity(v) ? feedbackSeverityLabel(v, sourceApp) : v);
 const labelCategory = (v: string) => (isFeedbackCategory(v) ? FEEDBACK_CATEGORY_LABELS[v] : v);
 
 const COLUMNS: DataTableColumn<FeedbackGridRow>[] = [
@@ -55,7 +57,7 @@ const COLUMNS: DataTableColumn<FeedbackGridRow>[] = [
     width: "130px",
     render: (r) => (isFeedbackStatus(r.status) ? <StatusBadge variant={FEEDBACK_STATUS_VARIANT[r.status]}>{FEEDBACK_STATUS_LABELS[r.status]}</StatusBadge> : r.status),
   },
-  { id: "severity", header: "Urgency", value: (r) => labelSeverity(r.severity), width: "100px" },
+  { id: "severity", header: "Urgency", value: (r) => labelSeverity(r.severity, r.sourceApp), width: "100px" },
   { id: "category", header: "Kind", value: (r) => labelCategory(r.category), width: "130px" },
   { id: "view", header: "View", value: (r) => r.view, width: "140px" },
   { id: "job", header: "Job", value: (r) => r.job, width: "80px" },
