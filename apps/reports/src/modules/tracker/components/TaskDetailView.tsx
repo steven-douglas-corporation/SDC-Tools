@@ -113,6 +113,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   const [remaining, setRemaining] = useState(task.remainingHours?.toString() ?? "");
   const [priority, setPriority] = useState(task.priority.toString());
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
+  const [plannedStart, setPlannedStart] = useState(task.plannedStartDate ?? "");
   const [startedOn, setStartedOn] = useState(task.actualStartDate ?? "");
   const [finishedOn, setFinishedOn] = useState(task.actualCompletionDate ?? "");
   // Setting these by hand is back-dating: it changes what the timeline says happened.
@@ -165,6 +166,7 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
     if (nextParent !== task.parentTaskId) changes.parentTaskId = nextParent;
     if (Number(priority) !== task.priority) changes.priority = Number(priority);
     if ((dueDate || null) !== task.dueDate) changes.dueDate = dueDate || null;
+    if ((plannedStart || null) !== task.plannedStartDate) changes.plannedStartDate = plannedStart || null;
     if ((startedOn || null) !== task.actualStartDate) changes.actualStartDate = startedOn || null;
     if (finishedOn && finishedOn !== task.actualCompletionDate) changes.actualCompletionDate = finishedOn;
     if ((estimated || null) !== task.estimatedCompletionDate) changes.estimatedCompletionDate = estimated || null;
@@ -402,6 +404,19 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                   className={INPUT}
                 />
                 <span className="text-xs text-sdc-gray-600">A commitment. The forecast is compared with it.</span>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className={LABEL}>Planned start</span>
+                <input
+                  type="date"
+                  value={plannedStart}
+                  disabled={!mayChange}
+                  onChange={(e) => setPlannedStart(e.target.value)}
+                  className={INPUT}
+                />
+                <span className="text-xs text-sdc-gray-600">
+                  A commitment to begin on this day. The forecast places it first, ahead of the stack rank.
+                </span>
               </label>
               <label className="flex flex-col gap-1">
                 <span className={LABEL}>Started on</span>

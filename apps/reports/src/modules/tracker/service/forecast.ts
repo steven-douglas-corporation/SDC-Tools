@@ -49,6 +49,7 @@ interface TaskRow {
   priority: number;
   remaining: number | null;
   not_before_date: string | null;
+  planned_start_date: string | null;
   expected_unblock_date: string | null;
   in_sprint: boolean | null;
   bucket_hours: number | null;
@@ -77,7 +78,7 @@ export async function loadForecastInputs(tx: Tx, asOf: string): Promise<LoadedIn
     `SELECT t.id, t.project_id, p.state AS project_state, p.portfolio_rank, t.number, t.type, t.category,
             t.assignee_person_id, t.role_pool_id, p.done_by_team_id, t.priority,
             coalesce(t.remaining_effort_hours, t.effort_estimate_hours)::float8 AS remaining,
-            t.not_before_date::text, t.expected_unblock_date::text,
+            t.not_before_date::text, t.planned_start_date::text, t.expected_unblock_date::text,
             (sp.state = 'active') AS in_sprint,
             b.hours::float8 AS bucket_hours, b.low_hours::float8, b.high_hours::float8,
             p.estimate_low_factor::float8, p.estimate_high_factor::float8
@@ -137,7 +138,13 @@ export async function loadForecastInputs(tx: Tx, asOf: string): Promise<LoadedIn
       priority: Number(r.priority),
       number: Number(r.number),
       inSprint: r.in_sprint === true,
-      notBefore: r.not_before_date,
+      // A planned start is a commitment: the card is placed ahead of the rank order, and not
+      // before that day (or its not-before day, if that is later).
+      planned: r.planned_start_date != null,
+      notBefore:
+        r.planned_start_date && (!r.not_before_date || r.planned_start_date > r.not_before_date)
+          ? r.planned_start_date
+          : r.not_before_date,
       blocked: hold !== null || r.category === "blocked",
       expectedUnblock: hold !== null ? null : r.expected_unblock_date,
       preds: predsOf.get(id) ?? [],
