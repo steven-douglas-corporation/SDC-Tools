@@ -12,9 +12,10 @@
   each lifecycle, the software behind it, and where its data lands in the
   warehouse.
 - A separate `SDC-Brain` repository: the share crawler, plus planning documents
-  ported from a whiteboard session. Those said the platform was not chosen,
-  proposed a separate graph database, and described the warehouse's model as
-  "not yet inspected" — all three out of date against the two sources above.
+  ported from a whiteboard session. Those said the platform was not chosen and
+  described the warehouse's model as "not yet inspected", both out of date
+  against the two sources above. They also proposed a separate graph database,
+  which neither source mentions.
 
 The `SDC-Brain` repository's code is three small standard-library Python
 packages (`inventory`, `mining`, `findings`). In the Pipelines page they are
@@ -31,7 +32,8 @@ one of the warehouse's sources: the file scan of the shares.
 - The whiteboard documents are not carried over. The few points they made that
   the roadmap lacked (sensitivity is never decided by a model alone, an
   assistant reads before it is allowed to write, AI does not edit design files)
-  are added to the roadmap.
+  are added to the roadmap. So are the questions they raised that nothing else
+  answers, the graph database among them, under "Open decisions".
 - The engineering standards plan comes across as
   `docs/engineering-rules-plan.md`. It is a plan, not rule content.
 

@@ -177,3 +177,20 @@ the same number. `run_sql` is the escape hatch.
   checked against the warehouse). Run it whenever the model, catalog or tools change,
   and track how often the assistant gets the right number from the right measure.
 
+## Open decisions
+
+Carried over from the SDC-Brain planning documents (November 2026 whiteboard) because
+neither this roadmap nor the Pipelines page settles them.
+
+- **A graph database, or not.** The whiteboard had a separate graph database holding the
+  ontology's relationships, used to expand a search hit to related jobs, measures and
+  documents. Phase 5 assumes those relationships are ordinary tables in this Postgres
+  database, next to the vectors. Undecided. Revisit when Phase 5 starts and there are
+  real relationships to query; until then nothing here depends on the answer.
+- **Who owns the tag list.** Phase 5 says a person fixes the subject areas and reviews tag
+  assignments. Nobody is named.
+- **The customer key.** Employee ID and job number tie the pipelines together today. There
+  is no agreed customer identifier across Total ETO, Sage, the Scheduler and the job
+  folders, and the Pipelines page parks "Customer & account" until there is a CRM answer.
+- **A customer portal beyond service requests.** The whiteboard listed projects and billing
+  for customers alongside service requests. Only the service request form exists.
