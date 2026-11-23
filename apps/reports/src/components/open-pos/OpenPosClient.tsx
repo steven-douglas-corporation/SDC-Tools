@@ -1211,9 +1211,9 @@ export function OpenPosClient({ data, schedulerVendorPosUrl }: { data: OpenPosRe
       // The timeline's own setting, in its own bar, next to what it changes.
       controls={
         <span className="flex items-center gap-2">
-          <span className={CONTROL_LABEL}>Dots</span>
+          <span className={CONTROL_LABEL}>Circles</span>
           <Segmented
-            label="Dot colour"
+            label="Circle colour"
             value={dotsBy}
             onChange={setDotsBy}
             options={[

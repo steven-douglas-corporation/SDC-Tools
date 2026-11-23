@@ -346,7 +346,7 @@ export function PoTimeline({
           type="button"
           aria-pressed={showKey}
           onClick={() => setShowKey((v) => !v)}
-          title="What the dots, diamonds and lines mean, and how to move around"
+          title="What the circles (expected date), diamonds (required date) and lines mean, and how to move around"
           className={`${ctl} ${showKey ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}
         >
           Key
@@ -551,7 +551,33 @@ export function PoTimeline({
           aria-label="Key"
           className="absolute inset-y-0 right-0 z-[6] flex w-52 cursor-default flex-col gap-4 overflow-y-auto border-l border-sdc-border bg-white px-3 py-3 text-note text-sdc-gray-600 shadow-lg"
         >
-          <KeyGroup title="Dots" tip={dotsBy === "status" ? "Coloured by where the PO stands" : "Coloured like the line: does it arrive by the BOM's required date?"}>
+          {/* The two shapes first, labelled where they sit on a row (2026-11-20, by request:
+              the key listed colours, and which shape was which date was easy to miss). */}
+          <KeyGroup title="Each PO row" tip="A PO row runs from the date it is expected (circle) to the date the BOM requires it (diamond)">
+            {/* Drawn as on a real row: this one is red, so it is expected after it's required
+                and the diamond is the left end. */}
+            <div className="flex flex-col gap-1" title="Diamond: required date. Circle: expected date. This one arrives after it's required, so the line is red">
+              <span aria-hidden className="mx-1 flex h-3 items-center">
+                <span className="h-2 w-2 shrink-0 rotate-45 border-2 border-red-600 bg-white" />
+                <span className="h-0.5 flex-1 bg-red-600" />
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-sdc-blue" />
+              </span>
+              <span className="flex justify-between gap-2 font-semibold text-sdc-navy">
+                <span>Required date</span>
+                <span className="text-right">Expected date</span>
+              </span>
+            </div>
+            <span className="inline-flex items-center gap-1.5" title="When Total ETO expects the PO's next part still to arrive">
+              <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-sdc-blue" />
+              Circle: expected date
+            </span>
+            <span className="inline-flex items-center gap-1.5" title="When the job's BOM requires that same part">
+              <span aria-hidden className="ml-px mr-px inline-block h-2 w-2 shrink-0 rotate-45 border-2 border-sdc-gray-600 bg-white" />
+              Diamond: required date
+            </span>
+            <span className="text-sdc-gray-400">Diamond left of the circle: it arrives after it&apos;s required</span>
+          </KeyGroup>
+          <KeyGroup title="Circle colour" tip={dotsBy === "status" ? "Coloured by where the PO stands" : "Coloured like the line: does it arrive by the BOM's required date?"}>
             {dotsBy === "status" ? (
               <>
                 <Legend cls="bg-sdc-red" label="Late" tip="Expected before today and not here" />
@@ -567,11 +593,7 @@ export function PoTimeline({
             )}
             <Legend cls="border border-sdc-gray-400 bg-white" label="No expected date" tip="Total ETO has no expected date for it (in Later)" />
           </KeyGroup>
-          <KeyGroup title="Lines" tip="Each PO row runs from when it's expected (the dot) to the BOM's required date (the diamond)">
-            <span className="inline-flex items-center gap-1.5" title="The BOM's required date for the part">
-              <span aria-hidden className="inline-block h-2 w-2 shrink-0 rotate-45 border-2 border-sdc-gray-600 bg-white" />
-              Required by the BOM
-            </span>
+          <KeyGroup title="Lines" tip="Each PO row runs from when it's expected (the circle) to the BOM's required date (the diamond)">
             <span className="inline-flex items-center gap-1.5" title="Expected on or before the BOM's required date">
               <span aria-hidden className="inline-block h-0.5 w-4 shrink-0 bg-green-600" />
               Arrives in time
@@ -598,7 +620,7 @@ export function PoTimeline({
             <span>Drag sideways to move through the weeks</span>
             <span>Hover a PO to pick it out</span>
             <span>Click a PO&apos;s row to show its parts, one row each</span>
-            <span>Click a dot or PO number to open the PO</span>
+            <span>Click a circle or PO number to open the PO</span>
           </KeyGroup>
         </aside>
         )}
