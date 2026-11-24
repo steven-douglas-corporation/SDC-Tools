@@ -1,8 +1,3 @@
-# ── SDC_Scheduler — managed as its own standalone git repo ──────────────────
-# Do NOT track this directory in the monorepo. It has its own .git pointing
-# directly at danbelliveau2/SDC_Scheduler for clean bi-directional sync.
-SDC_Scheduler/
-
 # ── tools/powerbi (was tools/powerbi until 2026-09-13) — TRACKED here since 2026-09-03 ─────────────────────────
 # It used to be ignored, as its own standalone repo (SDC-PowerBI)
 # (and before that, a broken unregistered gitlink — a fresh clone got an empty
