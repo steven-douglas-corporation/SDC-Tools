@@ -278,15 +278,51 @@ test("the project list's view is read from the address and written back without 
     sort: "rank",
     only: null,
     q: "",
-    finished: false,
+    states: [],
+    valueIds: [],
+    assignees: [],
+    risk: [],
+    progressMin: null,
+    progressMax: null,
+    hoursMin: null,
+    hoursMax: null,
+    dateField: "target",
+    dateFrom: null,
+    dateTo: null,
   };
   assert.deepEqual(F.listView({}), plain);
   assert.deepEqual(
-    F.listView({ sort: "nonsense", only: "everything", q: "   ", done: "yes" }),
+    F.listView({
+      sort: "nonsense",
+      only: "everything",
+      q: "   ",
+      state: "bogus",
+      value: "x",
+      risk: "nope",
+      pmin: "abc",
+      from: "notadate",
+    }),
     plain,
     "unknown values are ignored",
   );
-  const busy = F.listView({ for: "12", group: "1", sort: "value", only: "at-risk", q: "  ware ", done: "1" });
+  const busy = F.listView({
+    for: "12",
+    group: "1",
+    sort: "value",
+    only: "at-risk",
+    q: "  ware ",
+    state: "active,completed",
+    value: "3,7",
+    who: "Alice Smith,Bob Jones",
+    risk: "at-risk,none",
+    pmin: "10",
+    pmax: "90",
+    hmin: "5",
+    hmax: "40",
+    datef: "forecast",
+    from: "2026-01-01",
+    to: "2026-12-31",
+  });
   assert.deepEqual(busy, {
     forIds: [12],
     byIds: [],
@@ -296,16 +332,37 @@ test("the project list's view is read from the address and written back without 
     sort: "value",
     only: "at-risk",
     q: "ware",
-    finished: true,
+    states: ["active", "completed"],
+    valueIds: [3, 7],
+    assignees: ["Alice Smith", "Bob Jones"],
+    risk: ["at-risk", "none"],
+    progressMin: 10,
+    progressMax: 90,
+    hoursMin: 5,
+    hoursMax: 40,
+    dateField: "forecast",
+    dateFrom: "2026-01-01",
+    dateTo: "2026-12-31",
   });
 
   assert.equal(F.listHref(F.listView({})), "/tracker");
-  assert.equal(F.listHref(busy), "/tracker?for=12&group=for&sort=value&only=at-risk&q=ware&done=1");
-  // One thing changed, the rest kept: what a figure's link does.
-  assert.equal(F.listHref(busy, { only: null }), "/tracker?for=12&group=for&sort=value&q=ware&done=1");
-  assert.equal(F.listHref(F.listView({}), { only: "incomplete" }), "/tracker?only=incomplete");
-  // Round trip.
+  // Round trip: whatever busy writes to reads back as busy.
   assert.deepEqual(F.listView(Object.fromEntries(new URLSearchParams(F.listHref(busy).split("?")[1]))), busy);
+  assert.equal(F.listHref(F.listView({}), { only: "incomplete" }), "/tracker?only=incomplete");
+  // A few written forms, for readability.
+  assert.equal(F.listHref({ ...plain, states: ["active"] }), "/tracker?state=active");
+  assert.equal(F.listHref({ ...plain, progressMin: 10, progressMax: 50 }), "/tracker?pmin=10&pmax=50");
+  assert.equal(F.listHref({ ...plain, hoursMin: 5 }), "/tracker?hmin=5");
+  assert.equal(
+    F.listHref({ ...plain, dateFrom: "2026-01-01" }),
+    "/tracker?from=2026-01-01",
+    "target is the default date, so it is not written",
+  );
+  assert.equal(
+    F.listHref({ ...plain, dateField: "forecast", dateFrom: "2026-01-01" }),
+    "/tracker?datef=forecast&from=2026-01-01",
+  );
+  assert.equal(F.listHref({ ...plain, dateField: "forecast" }), "/tracker", "the date only matters with a range");
 
   // Ranks are changed only with every project in view, in rank order.
   assert.equal(F.ranksLocked(plain), false);
@@ -321,6 +378,13 @@ test("the project list's view is read from the address and written back without 
   assert.equal(F.ranksLocked({ ...plain, sort: "name" }), true);
   assert.equal(F.ranksLocked({ ...plain, only: "active" }), true);
   assert.equal(F.ranksLocked({ ...plain, q: "x" }), true);
+  assert.equal(F.ranksLocked({ ...plain, states: ["active"] }), true, "a state filter locks ranks");
+  assert.equal(F.ranksLocked({ ...plain, valueIds: [3] }), true);
+  assert.equal(F.ranksLocked({ ...plain, assignees: ["Alice Smith"] }), true);
+  assert.equal(F.ranksLocked({ ...plain, risk: ["at-risk"] }), true);
+  assert.equal(F.ranksLocked({ ...plain, progressMin: 10 }), true);
+  assert.equal(F.ranksLocked({ ...plain, hoursMax: 40 }), true);
+  assert.equal(F.ranksLocked({ ...plain, dateFrom: "2026-01-01" }), true);
 });
 
 test("narrowing the project list: finished hidden, search, one figure, sorting with blanks last", async () => {
@@ -341,6 +405,14 @@ test("narrowing the project list: finished hidden, search, one figure, sorting w
       forDepartmentId: number | null;
       doneByDepartmentId: number | null;
       forGroupSort: number | null;
+      remainingHours: number;
+      estimatedHours: number;
+      estimatedCards: number;
+      unestimatedDoneCards: number;
+      unestimatedTasks: number;
+      taskCount: number;
+      doneCount: number;
+      assigneeNames: string[];
     }> = {},
   ) => ({
     key,
@@ -356,6 +428,14 @@ test("narrowing the project list: finished hidden, search, one figure, sorting w
     forDepartmentId: 5,
     doneByDepartmentId: 5,
     forGroupSort: 2,
+    remainingHours: 0,
+    estimatedHours: 0,
+    estimatedCards: 0,
+    unestimatedDoneCards: 0,
+    unestimatedTasks: 0,
+    taskCount: 0,
+    doneCount: 0,
+    assigneeNames: [] as string[],
     ...more,
   });
   // In stack-rank order, as the service hands them over, finished last.
@@ -364,40 +444,80 @@ test("narrowing the project list: finished hidden, search, one figure, sorting w
       targetDate: "2026-12-31",
       forecastFinish: "2027-01-10",
       atRisk: true,
+      valueBucketId: 2,
       valueSort: 5,
+      remainingHours: 40,
+      estimatedHours: 100, // 60% done
+      assigneeNames: ["Alice Smith"],
     }),
     p("ETC", "ETC roll-up", "active", {
       targetDate: "2026-12-11",
       forecastFinish: "2026-12-01",
       atRisk: false,
+      valueBucketId: 3,
       valueSort: 3,
       forDepartmentId: 7,
       forGroupSort: 1,
+      remainingHours: 10,
+      estimatedHours: 20, // 50% done
+      assigneeNames: ["Bob Jones"],
     }),
     p("OLD", "Legacy tidy", "planned", {
       unscheduledTasks: 2,
       justification: null,
       valueBucketId: null,
       valueSort: null,
+      remainingHours: 5, // 0% done, no estimated hours
     }),
     p("PAY", "Paylocity time off", "on_hold", {
       forecastFinish: "2026-11-30",
+      valueBucketId: 3,
       valueSort: 3,
       forDepartmentId: null,
       forGroupSort: null,
+      remainingHours: 0,
+      estimatedHours: 10, // 100% done
     }),
-    p("DONE", "Warehouse phase one", "completed", { valueSort: 4 }),
+    p("DONE", "Warehouse phase one", "completed", { valueBucketId: 4, valueSort: 4 }),
     p("DROP", "Abandoned", "cancelled"),
   ];
   const keys = (v: Partial<typeof view>, scope: Set<number> | null = null) =>
     F.narrowProjects(all, { ...view, ...v }, scope).shown.map((x) => x.key);
+  const ALL_STATES = ["planned", "active", "on_hold", "completed", "cancelled"];
 
-  assert.deepEqual(keys({}), ["WH", "ETC", "OLD", "PAY"], "finished and cancelled are left out unless asked for");
-  assert.deepEqual(keys({ finished: true }), ["WH", "ETC", "OLD", "PAY", "DONE", "DROP"]);
+  assert.deepEqual(
+    keys({}),
+    ["WH", "ETC", "OLD", "PAY"],
+    "finished and cancelled are left out unless a state is chosen",
+  );
+  assert.deepEqual(
+    keys({ states: ALL_STATES }),
+    ["WH", "ETC", "OLD", "PAY", "DONE", "DROP"],
+    "every state shows them all",
+  );
+  assert.deepEqual(keys({ states: ["active"] }), ["WH", "ETC"], "one state");
+  assert.deepEqual(keys({ states: ["completed", "cancelled"] }), ["DONE", "DROP"], "the finished states");
   assert.deepEqual(keys({ q: "ware" }), ["WH"], "the name, any case; the finished one stays hidden");
-  assert.deepEqual(keys({ q: "WARE", finished: true }), ["WH", "DONE"]);
+  assert.deepEqual(keys({ q: "WARE", states: ALL_STATES }), ["WH", "DONE"]);
   assert.deepEqual(keys({ q: "etc" }), ["ETC"], "or the key");
   assert.deepEqual(keys({}, new Set([7])), ["ETC"]);
+
+  // The new column filters.
+  assert.deepEqual(keys({ valueIds: [3] }), ["ETC", "PAY"], "a value bucket");
+  assert.deepEqual(keys({ assignees: ["Alice Smith"] }), ["WH"], "assignee by name");
+  assert.deepEqual(keys({ risk: ["at-risk"] }), ["WH"]);
+  assert.deepEqual(keys({ risk: ["on-track"] }), ["ETC"]);
+  assert.deepEqual(keys({ risk: ["none"] }), ["OLD", "PAY"], "not yet forecast");
+  assert.deepEqual(keys({ progressMin: 60 }), ["WH", "PAY"], "60% and up");
+  assert.deepEqual(keys({ progressMax: 50 }), ["ETC", "OLD"], "50% and under");
+  assert.deepEqual(keys({ hoursMin: 10 }), ["WH", "ETC"], "10 hours left and up");
+  assert.deepEqual(keys({ hoursMax: 5 }), ["OLD", "PAY"], "5 hours left and under");
+  assert.deepEqual(keys({ dateFrom: "2026-12-20" }), ["WH"], "target on or after a day");
+  assert.deepEqual(
+    keys({ dateField: "forecast", dateTo: "2026-12-05" }),
+    ["ETC", "PAY"],
+    "forecast on or before a day",
+  );
 
   assert.deepEqual(keys({ only: "active" }), ["WH", "ETC"]);
   assert.deepEqual(keys({ only: "at-risk" }), ["WH"]);

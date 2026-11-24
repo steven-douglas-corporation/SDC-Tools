@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { INPUT, LABEL } from "@/components/ui/classnames";
 import type { Department } from "../service/departments";
@@ -110,13 +109,7 @@ function DepartmentTicks({
 }
 
 /** The Group-by dropdown on its own, so the list (column filters) and the timeline (top filters) share it. */
-function GroupByControl({
-  grouping,
-  go,
-}: {
-  grouping: Grouping;
-  go: (change: Record<string, string | null>) => void;
-}) {
+function GroupByControl({ grouping, go }: { grouping: Grouping; go: (change: Record<string, string | null>) => void }) {
   return (
     <label className="flex flex-col gap-1">
       <span className={LABEL}>Group by</span>
@@ -237,7 +230,7 @@ export function DepartmentColumnFilter({
   );
 }
 
-function useAddress(alsoClear: string[] = []) {
+export function useAddress(alsoClear: string[] = []) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -280,59 +273,17 @@ export function DepartmentFilter({
 }
 
 /**
- * Everything above the project list that narrows or orders it: a search, the departments, the
- * grouping, a sort, and whether finished projects are shown. Each change goes into the address
- * (see listView in ./format.ts), which is what the page is drawn from.
+ * The one control left above the project list: how it is grouped. Every other way of narrowing or
+ * ordering it now lives in the table's own column headers — the Project text search, the State,
+ * Value, Assigned-to, Against-target, Progress, Hours-left and Dates filters, and the sorts. The
+ * "Find a project" box and the "Show finished" switch were folded into the Project and State
+ * column filters (2026-11-24). Each change goes into the address (see listView in ./format.ts).
  */
-export function ProjectListControls({
-  grouping,
-  search,
-  finished,
-  finishedCount,
-}: {
-  grouping: Grouping;
-  search: string;
-  finished: boolean;
-  /** How many finished or cancelled projects there are to show. With none, the switch is left out. */
-  finishedCount: number;
-}) {
+export function ProjectListControls({ grouping }: { grouping: Grouping }) {
   const go = useAddress();
-  const [typed, setTyped] = useState(search);
-
   return (
     <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
-      <form
-        role="search"
-        className="flex items-end gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          go({ q: typed.trim() || null });
-        }}
-      >
-        <label className="flex flex-col gap-1">
-          <span className={LABEL}>Find a project</span>
-          <input
-            type="search"
-            value={typed}
-            onChange={(e) => {
-              setTyped(e.target.value);
-              // Emptying the box shows everything again without a second step.
-              if (e.target.value === "" && search !== "") go({ q: null });
-            }}
-            placeholder="Name or key"
-            className={`${INPUT} w-48`}
-          />
-        </label>
-      </form>
-      {/* For / Done by filters moved onto the table's column headers (DepartmentColumnFilter), and
-          sorting onto the headers too (components/ProjectList.tsx), 2026-11-24. */}
       <GroupByControl grouping={grouping} go={go} />
-      {finishedCount > 0 && (
-        <label className="flex items-center gap-2 pb-2 text-sm text-sdc-navy">
-          <input type="checkbox" checked={finished} onChange={(e) => go({ done: e.target.checked ? "1" : null })} />
-          Show finished ({finishedCount})
-        </label>
-      )}
     </div>
   );
 }

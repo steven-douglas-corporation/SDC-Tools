@@ -27,6 +27,7 @@ import type { ProjectListItem } from "../service/queries";
 import type { Department } from "../service/departments";
 import { cleanKey, keyFromName } from "../project-key";
 import { DepartmentColumnFilter } from "./DepartmentPicker";
+import { ChoiceColumnFilter, DateColumnFilter, RangeColumnFilter, TextColumnFilter } from "./ColumnFilters";
 import {
   departmentDropEffect,
   departmentMoveEffect,
@@ -38,23 +39,19 @@ import {
   ONLY_LABEL,
   progress,
   rankClashEffect,
+  RISK_LABEL,
   shortDate,
   SORT_LABEL,
+  STATE_LABEL,
+  STATE_ORDER,
   type ListSort,
   type ListView,
+  type RiskKey,
 } from "./format";
 import { SafeDateHelp } from "./HelpTip";
 
 // The tracker's front page: every project the person can see, in stack-rank order, with the
 // forecast beside the target and the work the forecast leaves out beside both.
-
-const STATE_LABEL: Record<string, string> = {
-  planned: "Planned",
-  active: "Active",
-  on_hold: "On hold",
-  completed: "Completed",
-  cancelled: "Cancelled",
-};
 
 function Risk({ p }: { p: ProjectListItem }) {
   if (p.atRisk == null) return <span className="text-sdc-gray-400">—</span>;
@@ -468,12 +465,15 @@ function SortTh({
   view,
   align = "center",
   title,
+  filter,
 }: {
   label: ReactNode;
   sort: ListSort;
   view: ListView;
   align?: "left" | "center";
   title?: string;
+  /** A column filter shown beside the sort, when the column has one. */
+  filter?: ReactNode;
 }) {
   const active = view.sort === sort;
   return (
@@ -482,23 +482,26 @@ function SortTh({
       title={title}
       aria-sort={active ? "ascending" : "none"}
     >
-      <Link
-        href={listHref(view, { sort: active ? "rank" : sort })}
-        scroll={false}
-        className={`inline-flex items-center gap-1 ${active ? "text-sdc-blue" : "text-sdc-navy hover:text-sdc-blue"}`}
-        title={active ? "Sorted by this column — click for stack rank" : `Sort by ${SORT_LABEL[sort]}`}
-      >
-        {label}
-        <span aria-hidden="true" className={active ? "text-sdc-blue" : "text-sdc-gray-400 opacity-60"}>
-          {active ? "▼" : "⇅"}
-        </span>
-      </Link>
+      <span className="inline-flex items-center gap-2">
+        <Link
+          href={listHref(view, { sort: active ? "rank" : sort })}
+          scroll={false}
+          className={`inline-flex items-center gap-1 ${active ? "text-sdc-blue" : "text-sdc-navy hover:text-sdc-blue"}`}
+          title={active ? "Sorted by this column — click for stack rank" : `Sort by ${SORT_LABEL[sort]}`}
+        >
+          {label}
+          <span aria-hidden="true" className={active ? "text-sdc-blue" : "text-sdc-gray-400 opacity-60"}>
+            {active ? "▼" : "⇅"}
+          </span>
+        </Link>
+        {filter}
+      </span>
     </th>
   );
 }
 
 /** The Dates header, which cycles its sort target → forecast → stack rank and says which date is sorting. */
-function DatesTh({ view }: { view: ListView }) {
+function DatesTh({ view, filter }: { view: ListView; filter?: ReactNode }) {
   const active = view.sort === "target" || view.sort === "forecast";
   const next: ListSort = view.sort === "target" ? "forecast" : view.sort === "forecast" ? "rank" : "target";
   const by = view.sort === "target" ? "target" : view.sort === "forecast" ? "forecast" : null;
@@ -522,14 +525,24 @@ function DatesTh({ view }: { view: ListView }) {
         </Link>
         {by && <span className="text-micro font-normal text-sdc-gray-600">by {by}</span>}
         <SafeDateHelp />
+        {filter}
       </span>
     </th>
   );
 }
 
 /** The filters and sort in force now, each removable, with a clear-all. Nothing when the list is untouched. */
-function FiltersBar({ view, departments }: { view: ListView; departments: Department[] }) {
+function FiltersBar({
+  view,
+  departments,
+  valueOptions,
+}: {
+  view: ListView;
+  departments: Department[];
+  valueOptions: { id: number; label: string }[];
+}) {
   const nameOf = (id: number) => departments.find((d) => d.id === id)?.name ?? `#${id}`;
+  const valueOf = (id: number) => valueOptions.find((o) => o.id === id)?.label ?? `#${id}`;
   const chips: { label: string; href: string }[] = [];
   for (const id of view.forIds)
     chips.push({ label: `For: ${nameOf(id)}`, href: listHref(view, { forIds: view.forIds.filter((x) => x !== id) }) });
@@ -538,13 +551,44 @@ function FiltersBar({ view, departments }: { view: ListView; departments: Depart
       label: `Done by: ${nameOf(id)}`,
       href: listHref(view, { byIds: view.byIds.filter((x) => x !== id) }),
     });
-  if (view.q) chips.push({ label: `Search: “${view.q}”`, href: listHref(view, { q: "" }) });
+  if (view.q) chips.push({ label: `Project: “${view.q}”`, href: listHref(view, { q: "" }) });
+  for (const s of view.states)
+    chips.push({
+      label: `State: ${STATE_LABEL[s] ?? s}`,
+      href: listHref(view, { states: view.states.filter((x) => x !== s) }),
+    });
+  for (const id of view.valueIds)
+    chips.push({
+      label: `Value: ${valueOf(id)}`,
+      href: listHref(view, { valueIds: view.valueIds.filter((x) => x !== id) }),
+    });
+  for (const n of view.assignees)
+    chips.push({
+      label: `Assigned: ${n}`,
+      href: listHref(view, { assignees: view.assignees.filter((x) => x !== n) }),
+    });
+  for (const r of view.risk)
+    chips.push({ label: RISK_LABEL[r], href: listHref(view, { risk: view.risk.filter((x) => x !== r) }) });
+  if (view.progressMin != null || view.progressMax != null)
+    chips.push({
+      label: `Progress ${view.progressMin ?? 0}–${view.progressMax ?? 100}%`,
+      href: listHref(view, { progressMin: null, progressMax: null }),
+    });
+  if (view.hoursMin != null || view.hoursMax != null)
+    chips.push({
+      label: `Hours left ${view.hoursMin ?? 0}–${view.hoursMax ?? "∞"} h`,
+      href: listHref(view, { hoursMin: null, hoursMax: null }),
+    });
+  if (view.dateFrom || view.dateTo)
+    chips.push({
+      label: `${view.dateField === "forecast" ? "Forecast" : "Target"}: ${shortDate(view.dateFrom)} – ${shortDate(view.dateTo)}`,
+      href: listHref(view, { dateFrom: null, dateTo: null }),
+    });
   if (view.only) chips.push({ label: `Only ${ONLY_LABEL[view.only]}`, href: listHref(view, { only: null }) });
   if (view.grouped)
     chips.push({ label: `Grouped by ${GROUPINGS[groupingOf(view)]}`, href: listHref(view, { grouped: false }) });
   if (view.sort !== "rank")
     chips.push({ label: `Sorted by ${SORT_LABEL[view.sort]}`, href: listHref(view, { sort: "rank" }) });
-  if (view.finished) chips.push({ label: "Finished shown", href: listHref(view, { finished: false }) });
   if (chips.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -568,10 +612,19 @@ function FiltersBar({ view, departments }: { view: ListView; departments: Depart
           forIds: [],
           byIds: [],
           q: "",
+          states: [],
+          valueIds: [],
+          assignees: [],
+          risk: [],
+          progressMin: null,
+          progressMax: null,
+          hoursMin: null,
+          hoursMax: null,
+          dateFrom: null,
+          dateTo: null,
           only: null,
           grouped: false,
           sort: "rank",
-          finished: false,
         })}
         scroll={false}
         className="font-semibold text-sdc-blue hover:underline"
@@ -586,6 +639,8 @@ export function ProjectList({
   projects,
   view,
   departments,
+  valueOptions,
+  assigneeOptions,
   grouped = false,
   rankNote,
   rankWithinDepartment = false,
@@ -599,6 +654,10 @@ export function ProjectList({
   view: ListView;
   /** The departments a new project can be for. */
   departments: Department[];
+  /** The value ranges present, for the Value column filter. Highest first. */
+  valueOptions: { id: number; label: string }[];
+  /** The people named on cards, for the Assigned-to column filter. */
+  assigneeOptions: string[];
   /** Whether to draw a heading above each department's projects. They arrive already in that order. */
   grouped?: boolean;
   /** Why ranks cannot be changed in this view, when they cannot. */
@@ -672,7 +731,7 @@ export function ProjectList({
       {projects.length === 0 && narrowed ? (
         <EmptyState
           title="No project matches"
-          message="Nothing fits the department, search or figure chosen above."
+          message="Nothing fits the filters chosen above."
           action={
             clearHref ? (
               <Link href={clearHref} className="font-semibold text-sdc-blue hover:underline">
@@ -733,33 +792,102 @@ export function ProjectList({
               {dropError}
             </p>
           )}
-          <FiltersBar view={view} departments={departments} />
+          <FiltersBar view={view} departments={departments} valueOptions={valueOptions} />
           <div className={`${CARD_BASE} overflow-x-auto`}>
             <table className="w-full min-w-[60rem] text-sm">
               <thead>
                 <tr className={TABLE_HEADER_ROW}>
                   <SortTh label="Rank" sort="rank" view={view} />
-                  <SortTh label="Project" sort="name" view={view} align="left" />
+                  <SortTh
+                    label="Project"
+                    sort="name"
+                    view={view}
+                    align="left"
+                    filter={
+                      <TextColumnFilter label={<span className="sr-only">Filter by name or key</span>} value={view.q} />
+                    }
+                  />
                   <th className="px-3 py-2.5 text-left">
                     <DepartmentColumnFilter label="For" param="for" departments={departments} chosen={view.forIds} />
                   </th>
                   <th className="px-3 py-2.5 text-left">
                     <DepartmentColumnFilter label="Done by" param="by" departments={departments} chosen={view.byIds} />
                   </th>
-                  <SortTh label="Value a year" sort="value" view={view} align="left" />
-                  <th className="px-3 py-2.5">State</th>
-                  <th
-                    className="px-3 py-2.5 text-left"
-                    title="How far along it is, by hours where its cards have estimates"
-                  >
-                    Progress
+                  <SortTh
+                    label="Value a year"
+                    sort="value"
+                    view={view}
+                    align="left"
+                    filter={
+                      <ChoiceColumnFilter
+                        label={<span className="sr-only">Filter by value</span>}
+                        param="value"
+                        options={valueOptions.map((o) => ({ value: String(o.id), label: o.label }))}
+                        chosen={view.valueIds.map(String)}
+                      />
+                    }
+                  />
+                  <th className="px-3 py-2.5 text-left">
+                    <ChoiceColumnFilter
+                      label="State"
+                      param="state"
+                      options={STATE_ORDER.map((s) => ({ value: s, label: STATE_LABEL[s] }))}
+                      chosen={view.states}
+                    />
                   </th>
-                  <th className="px-3 py-2.5 text-left">Assigned to</th>
-                  <th className="px-3 py-2.5" title="Hours of work left, of the hours estimated across its cards">
-                    Hours left
+                  <th className="px-3 py-2.5 text-left">
+                    <RangeColumnFilter
+                      label="Progress"
+                      minParam="pmin"
+                      maxParam="pmax"
+                      min={view.progressMin}
+                      max={view.progressMax}
+                      suffix="%"
+                    />
                   </th>
-                  <DatesTh view={view} />
-                  <th className="px-3 py-2.5">Against target</th>
+                  <th className="px-3 py-2.5 text-left">
+                    <ChoiceColumnFilter
+                      label="Assigned to"
+                      param="who"
+                      options={assigneeOptions.map((n) => ({ value: n, label: n }))}
+                      chosen={view.assignees}
+                    />
+                  </th>
+                  <th className="px-3 py-2.5 text-left">
+                    <RangeColumnFilter
+                      label="Hours left"
+                      minParam="hmin"
+                      maxParam="hmax"
+                      min={view.hoursMin}
+                      max={view.hoursMax}
+                      suffix="h"
+                      align="right"
+                    />
+                  </th>
+                  <DatesTh
+                    view={view}
+                    filter={
+                      <DateColumnFilter
+                        label={<span className="sr-only">Filter by date</span>}
+                        field={view.dateField}
+                        from={view.dateFrom}
+                        to={view.dateTo}
+                        align="right"
+                      />
+                    }
+                  />
+                  <th className="px-3 py-2.5 text-left">
+                    <ChoiceColumnFilter
+                      label="Against target"
+                      param="risk"
+                      options={(["at-risk", "on-track", "none"] as RiskKey[]).map((r) => ({
+                        value: r,
+                        label: RISK_LABEL[r],
+                      }))}
+                      chosen={view.risk}
+                      align="right"
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody>

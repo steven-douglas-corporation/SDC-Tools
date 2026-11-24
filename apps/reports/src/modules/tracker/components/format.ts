@@ -265,6 +265,39 @@ function idList(value: string | undefined): number[] {
   return [...new Set(ids)];
 }
 
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A list of strings from the address: "active,on_hold". Blanks and duplicates dropped. */
+function strList(value: string | undefined): string[] {
+  return [
+    ...new Set(
+      (value ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+/** A whole percent 0–100 from the address, or null when it is blank or not a number. */
+function pctOrNull(value: string | undefined): number | null {
+  if (value == null || value.trim() === "") return null;
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : null;
+}
+
+/** A number 0 or more from the address, or null when it is blank or not a number. */
+function nonNegOrNull(value: string | undefined): number | null {
+  if (value == null || value.trim() === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** An ISO date from the address, or null when it is blank or not a date. */
+function isoOrNull(value: string | undefined): string | null {
+  return value && ISO.test(value) ? value : null;
+}
+
 export function departmentView(params: {
   for?: string | string[];
   by?: string | string[];
@@ -367,6 +400,10 @@ export function departmentDropEffect(drop: {
 
 export type ListSort = "rank" | "name" | "target" | "forecast" | "value";
 export type ListOnly = "active" | "at-risk" | "not-forecast" | "incomplete";
+/** The three ways a project reads against its target, for the Against-target column filter. */
+export type RiskKey = "at-risk" | "on-track" | "none";
+/** Which of a project's dates the Dates column filter ranges over. */
+export type DateField = "target" | "forecast";
 
 export const SORT_LABEL: Record<ListSort, string> = {
   rank: "Stack rank",
@@ -381,14 +418,44 @@ export const ONLY_LABEL: Record<ListOnly, string> = {
   "not-forecast": "projects with cards the forecast could not date",
   incomplete: "projects missing a justification, a value or a department",
 };
+/** The project states, in the order they are offered in the State column filter. */
+export const STATE_ORDER = ["planned", "active", "on_hold", "completed", "cancelled"] as const;
+export const STATE_LABEL: Record<string, string> = {
+  planned: "Planned",
+  active: "Active",
+  on_hold: "On hold",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+export const RISK_LABEL: Record<RiskKey, string> = {
+  "at-risk": "At risk",
+  "on-track": "On track",
+  none: "Not yet forecast",
+};
 
 export interface ListView extends DepartmentView {
   sort: ListSort;
   only: ListOnly | null;
-  /** What was typed in the search box, trimmed. */
+  /** The Project column's text filter: name or key, trimmed. */
   q: string;
-  /** Whether finished and cancelled projects are shown. They are not, unless asked for. */
-  finished: boolean;
+  /** States chosen in the State column filter. Empty means open only (planned, active, on hold). */
+  states: string[];
+  /** Value buckets chosen in the Value column filter. Empty means every value. */
+  valueIds: number[];
+  /** Assignee names chosen in the Assigned-to column filter. Empty means everyone. */
+  assignees: string[];
+  /** How a project reads against its target, chosen in the Against-target filter. Empty means any. */
+  risk: RiskKey[];
+  /** The Progress column's range, as whole percents. Null ends are open. */
+  progressMin: number | null;
+  progressMax: number | null;
+  /** The Hours-left column's range, in hours. Null ends are open. */
+  hoursMin: number | null;
+  hoursMax: number | null;
+  /** The Dates column filter: which date it ranges over, and the range. A range applies only when a from or to is set. */
+  dateField: DateField;
+  dateFrom: string | null;
+  dateTo: string | null;
 }
 
 export function listView(params: Record<string, string | string[] | undefined>): ListView {
@@ -400,7 +467,17 @@ export function listView(params: Record<string, string | string[] | undefined>):
     sort: sort in SORT_LABEL ? (sort as ListSort) : "rank",
     only: only in ONLY_LABEL ? (only as ListOnly) : null,
     q: one(params.q).trim().slice(0, 80),
-    finished: one(params.done) === "1",
+    states: strList(one(params.state)).filter((s) => s in STATE_LABEL),
+    valueIds: idList(one(params.value)),
+    assignees: strList(one(params.who)).map((s) => s.slice(0, 120)),
+    risk: strList(one(params.risk)).filter((r): r is RiskKey => r === "at-risk" || r === "on-track" || r === "none"),
+    progressMin: pctOrNull(one(params.pmin)),
+    progressMax: pctOrNull(one(params.pmax)),
+    hoursMin: nonNegOrNull(one(params.hmin)),
+    hoursMax: nonNegOrNull(one(params.hmax)),
+    dateField: one(params.datef) === "forecast" ? "forecast" : "target",
+    dateFrom: isoOrNull(one(params.from)),
+    dateTo: isoOrNull(one(params.to)),
   };
 }
 
@@ -414,7 +491,20 @@ export function listHref(view: ListView, change: Partial<ListView> = {}): string
   if (v.sort !== "rank") query.set("sort", v.sort);
   if (v.only) query.set("only", v.only);
   if (v.q) query.set("q", v.q);
-  if (v.finished) query.set("done", "1");
+  if (v.states.length) query.set("state", v.states.join(","));
+  if (v.valueIds.length) query.set("value", v.valueIds.join(","));
+  if (v.assignees.length) query.set("who", v.assignees.join(","));
+  if (v.risk.length) query.set("risk", v.risk.join(","));
+  if (v.progressMin != null) query.set("pmin", String(v.progressMin));
+  if (v.progressMax != null) query.set("pmax", String(v.progressMax));
+  if (v.hoursMin != null) query.set("hmin", String(v.hoursMin));
+  if (v.hoursMax != null) query.set("hmax", String(v.hoursMax));
+  // The chosen date only matters when the range is set, so it is only written then.
+  if (v.dateFrom || v.dateTo) {
+    if (v.dateField !== "target") query.set("datef", v.dateField);
+    if (v.dateFrom) query.set("from", v.dateFrom);
+    if (v.dateTo) query.set("to", v.dateTo);
+  }
   const text = query.toString();
   return text ? `/tracker?${text}` : "/tracker";
 }
@@ -440,7 +530,27 @@ export function isIncomplete(
  * a project is for.
  */
 export function ranksLocked(
-  view: Pick<ListView, "forIds" | "byIds" | "sort" | "only" | "q" | "grouped" | "lens" | "level">,
+  view: Pick<
+    ListView,
+    | "forIds"
+    | "byIds"
+    | "sort"
+    | "only"
+    | "q"
+    | "states"
+    | "valueIds"
+    | "assignees"
+    | "risk"
+    | "progressMin"
+    | "progressMax"
+    | "hoursMin"
+    | "hoursMax"
+    | "dateFrom"
+    | "dateTo"
+    | "grouped"
+    | "lens"
+    | "level"
+  >,
 ): boolean {
   return (
     view.forIds.length > 0 ||
@@ -448,6 +558,16 @@ export function ranksLocked(
     view.sort !== "rank" ||
     view.only != null ||
     view.q !== "" ||
+    view.states.length > 0 ||
+    view.valueIds.length > 0 ||
+    view.assignees.length > 0 ||
+    view.risk.length > 0 ||
+    view.progressMin != null ||
+    view.progressMax != null ||
+    view.hoursMin != null ||
+    view.hoursMax != null ||
+    view.dateFrom != null ||
+    view.dateTo != null ||
     (view.grouped && (view.lens === "by" || view.level === "team"))
   );
 }
@@ -467,6 +587,15 @@ type Listed = Pick<
   | "forDepartmentId"
   | "doneByDepartmentId"
   | "forGroupSort"
+  // Read by the column filters: progress is worked out from these, and the rest are filtered on directly.
+  | "taskCount"
+  | "doneCount"
+  | "remainingHours"
+  | "estimatedHours"
+  | "estimatedCards"
+  | "unestimatedDoneCards"
+  | "unestimatedTasks"
+  | "assigneeNames"
 >;
 
 /**
@@ -483,9 +612,24 @@ export function narrowProjects<P extends Listed>(
   scope: Set<number> | null,
 ): { described: P[]; shown: P[] } {
   const words = view.q.toLowerCase();
+  const inRange = (val: number, min: number | null, max: number | null) =>
+    (min == null || val >= min) && (max == null || val <= max);
+  const riskKey = (p: P): RiskKey => (p.atRisk === true ? "at-risk" : p.atRisk === false ? "on-track" : "none");
   const described = projectsFor(projects, scope)
-    .filter((p) => view.finished || isOpen(p))
-    .filter((p) => !words || p.key.toLowerCase().includes(words) || p.name.toLowerCase().includes(words));
+    // State: the chosen states, or open projects (planned, active, on hold) when none is chosen.
+    .filter((p) => (view.states.length ? view.states.includes(p.state) : isOpen(p)))
+    .filter((p) => !words || p.key.toLowerCase().includes(words) || p.name.toLowerCase().includes(words))
+    .filter((p) => view.valueIds.length === 0 || (p.valueBucketId != null && view.valueIds.includes(p.valueBucketId)))
+    .filter((p) => view.assignees.length === 0 || p.assigneeNames.some((n) => view.assignees.includes(n)))
+    .filter((p) => view.risk.length === 0 || view.risk.includes(riskKey(p)))
+    .filter((p) => inRange(progress(p).percent, view.progressMin, view.progressMax))
+    .filter((p) => inRange(p.remainingHours, view.hoursMin, view.hoursMax))
+    .filter((p) => {
+      if (!view.dateFrom && !view.dateTo) return true;
+      const d = view.dateField === "forecast" ? p.forecastFinish : p.targetDate;
+      // A project with no date on that field cannot sit inside a range, so it drops out.
+      return d != null && (!view.dateFrom || d >= view.dateFrom) && (!view.dateTo || d <= view.dateTo);
+    });
 
   const wanted: Record<ListOnly, (p: P) => boolean> = {
     active: (p) => p.state === "active",
@@ -529,4 +673,32 @@ export function narrowProjects<P extends Listed>(
         .map((x) => x.p)
     : narrowed;
   return { described, shown: view.grouped ? byDepartment(sorted) : sorted };
+}
+
+/**
+ * The value ranges present across the projects, for the Value column filter, highest first. Built
+ * from the projects themselves so the choices never list a range nobody uses. The label drops the
+ * trailing " a year" the column header already carries.
+ */
+export function valueFilterOptions<P extends Pick<ProjectListItem, "valueBucketId" | "valueLabel" | "valueSort">>(
+  projects: P[],
+): { id: number; label: string }[] {
+  const seen = new Map<number, { id: number; label: string; sort: number }>();
+  for (const p of projects) {
+    if (p.valueBucketId != null && !seen.has(p.valueBucketId)) {
+      seen.set(p.valueBucketId, {
+        id: p.valueBucketId,
+        label: (p.valueLabel ?? "").replace(" a year", ""),
+        sort: p.valueSort ?? 0,
+      });
+    }
+  }
+  return [...seen.values()].sort((a, b) => b.sort - a.sort).map(({ id, label }) => ({ id, label }));
+}
+
+/** The people named on the projects' cards, for the Assigned-to column filter, in name order. */
+export function assigneeFilterOptions<P extends Pick<ProjectListItem, "assigneeNames">>(projects: P[]): string[] {
+  const names = new Set<string>();
+  for (const p of projects) for (const n of p.assigneeNames) names.add(n);
+  return [...names].sort((a, b) => a.localeCompare(b));
 }

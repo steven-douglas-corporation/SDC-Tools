@@ -10,6 +10,7 @@ import { departmentsScope, listDepartments } from "@/modules/tracker/service/dep
 import { ProjectListControls } from "@/modules/tracker/components/DepartmentPicker";
 import {
   ONLY_LABEL,
+  assigneeFilterOptions,
   groupingOf,
   inDepartments,
   isIncomplete,
@@ -18,6 +19,7 @@ import {
   listView,
   narrowProjects,
   ranksLocked,
+  valueFilterOptions,
 } from "@/modules/tracker/components/format";
 import { listProjects, throughLens } from "@/modules/tracker/service/queries";
 import { ProjectList } from "@/modules/tracker/components/ProjectList";
@@ -56,12 +58,14 @@ export default async function TrackerPage({
   const departments = await listDepartments(trackerDb);
   // Filtered on the two departments as they are, then looked at through the grouping, which
   // decides which of the two a row sits under.
+  // The full list before any filter: the forecast's view of every project the person can see. The
+  // column filters' choices (which value ranges, which assignees) are drawn from it, so they never
+  // offer something no project has, and never drop an option just because another filter hid its row.
+  const allProjects = await listProjects(trackerDb, actor);
+  const valueOptions = valueFilterOptions(allProjects);
+  const assigneeOptions = assigneeFilterOptions(allProjects);
   const everyProject = throughLens(
-    inDepartments(
-      await listProjects(trackerDb, actor),
-      departmentsScope(departments, view.forIds),
-      departmentsScope(departments, view.byIds),
-    ),
+    inDepartments(allProjects, departmentsScope(departments, view.forIds), departmentsScope(departments, view.byIds)),
     view.lens,
     view.grouped ? view.level : "group",
   );
@@ -71,7 +75,6 @@ export default async function TrackerPage({
   const locked = ranksLocked(view);
   const withinDepartment = view.grouped && !locked;
   const incomplete = described.filter((p) => isOpen(p) && isIncomplete(p)).length;
-  const hidden = everyProject.length - everyProject.filter(isOpen).length;
 
   return (
     <div className={PAGE_SHELL}>
@@ -86,12 +89,7 @@ export default async function TrackerPage({
         sets each person&apos;s hours, time off and the company holidays.
       </p>
       <div className="mb-4">
-        <ProjectListControls
-          grouping={groupingOf(view)}
-          search={view.q}
-          finished={view.finished}
-          finishedCount={hidden}
-        />
+        <ProjectListControls grouping={groupingOf(view)} />
       </div>
       <PortfolioSummary projects={described} only={view.only} hrefFor={(only) => listHref(view, { only })} />
 
@@ -127,6 +125,8 @@ export default async function TrackerPage({
         projects={projects}
         view={view}
         departments={departments}
+        valueOptions={valueOptions}
+        assigneeOptions={assigneeOptions}
         grouped={view.grouped}
         // No project at all is a different thing from none matching, and is said differently.
         narrowed={everyProject.length > 0}
