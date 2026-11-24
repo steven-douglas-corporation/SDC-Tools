@@ -131,13 +131,15 @@ test("no footer control carries flex-1 unconditionally", () => {
   // rendered 14px tall. Measured before the fix: Refresh h=14, Expand h=14. After:
   // h=30 for both.
   //
-  // The rule is not "never use flex-1" — expanded, the two share a row and need it. It
-  // is that the class must be conditional on NOT being collapsed.
-  // From the JSX usage, not the import at the top of the file — the expanded search
-  // field above it has its own legitimate horizontal `flex-1`.
-  const footer = SIDEBAR_CODE.slice(SIDEBAR_CODE.lastIndexOf("<RefreshDataButton"));
+  // The rule is not "never use flex-1" — a shared row may need it expanded. It is that the
+  // class must be conditional on NOT being collapsed.
+  // Anchored on the footer via App Refresh (its first control), not the import at the top of the
+  // file — the expanded search field above it has its own legitimate horizontal `flex-1`.
+  // Refresh Data, which used to be the flex-1 offender here, moved to the Data Management page on
+  // 2026-11-23, so there may now be none to check — the invariant still has to hold for anything
+  // added to the footer later.
+  const footer = SIDEBAR_CODE.slice(SIDEBAR_CODE.lastIndexOf("<AppRefreshButton"));
   const flexOnes = [...footer.matchAll(/flex-1/g)];
-  assert.ok(flexOnes.length > 0, "expanded still wants it, so this test should have something to check");
   for (const m of flexOnes) {
     // Each occurrence must sit inside a `collapsed ? … : …` arm — i.e. the 120 characters
     // before it mention `collapsed`.

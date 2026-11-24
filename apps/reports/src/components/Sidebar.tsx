@@ -27,7 +27,6 @@ import {
 import { appVersionLabel } from "@/lib/app-version";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { isEtcDirty } from "@/lib/etc-dirty-tracker";
-import { RefreshDataButton } from "@/components/RefreshDataButton";
 import { AppZoom } from "@/components/AppZoom";
 import { AppRefreshButton } from "@/components/AppRefreshButton";
 import {
@@ -1200,41 +1199,11 @@ export default function Sidebar({
           />
         </div>
 
-        {/* Side-by-side in the mock rather than the two stacked full-width rows
-            this used to be — it reclaims a row of vertical space. Stacks again
-            when collapsed, where there's no width for two. */}
-        <div className={`flex gap-[3px] pt-1 pb-2.5 ${collapsed ? "flex-col" : "gap-1.5"}`}>
-          {/* THE refresh control (§25). It used to be `window.location.reload()` —
-              which, to anyone reading the label, was a second refresh button that
-              refreshed no data at all: it re-read the same rows the last sync had left
-              behind. It now runs the one application-wide pass, from every page, and the
-              reload it replaces is unnecessary because the action revalidates the routes
-              and broadcasts to the other tabs. */}
-          {/* ── One Refresh Data, and it lives here (§41.16, 2026-08-05) ────────
-              This was hidden on /etc from §29 until 2026-08-05, because §29 had moved a
-              second copy into the Monthly ETC toolbar on the reasoning that "the sidebar
-              collapses to a rail, and a control nobody can find is not a control".
-              §41.16 reverses that and asks for one application-wide control here. The
-              discoverability worry §29 raised is real but is answered by the rail rather
-              than by a second button: `compact={collapsed}` keeps it visible as an icon
-              with its label as a tooltip, so it never disappears — and the ETC toolbar
-              copy is gone, so there is exactly ONE on screen on every route.
-              There was only ever one refresh PATH (lib/refresh-actions ->
-              refresh-service -> runAllSyncs); this was always about how many buttons
-              point at it. */}
-          <RefreshDataButton
-            compact={collapsed}
-            // `dense` kept its label to what fit beside Collapse, which shared this row until
-            // it moved to the top of the sidebar. Left as it was: the short label still reads.
-            dense
-            // `flex-1` ONLY when expanded — see the footer's note. In the rail it made
-            // this a 14px-tall sliver with a clipped label.
-            className={`motion-interactive flex h-[30px] items-center justify-center gap-[7px] rounded-[7px] bg-[#0B2846] text-xs whitespace-nowrap text-[#C3D1E0] shadow-[inset_0_0_0_1px_#17395C] hover:bg-[#0E3157] disabled:opacity-60 ${
-              collapsed ? "w-full shrink-0" : "flex-1 px-2"
-            }`}
-          />
-
-        </div>
+        {/* Refresh Data moved to the Data Management page → Data sources tab (2026-11-23).
+            It pulls Reports' own sources (Paylocity, Total ETO, the SFTP files) into the
+            warehouse, so it belongs beside the source freshness it affects rather than in the
+            global footer, where it also showed on tools it has nothing to do with. App Refresh
+            above stays — it only reloads the tab. Per-source controls are planned (tracker: DW). */}
 
         {/* ── The account row, and the control that was missing entirely (§46.5) ──
             Collapsed, this used to render the avatar and NOTHING else: the email and the
