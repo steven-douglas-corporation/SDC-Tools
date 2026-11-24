@@ -104,6 +104,14 @@ Two apps also read a second, external database read-only:
 
 **Why MySQL over the old shared Azure SQL:** each app gets an independent, always-reachable local database with no cross-app schema coupling or shared-login failure mode; no native driver mismatch risk in the (now-dormant) in-process Electron loading path.
 
+**The data warehouse is PostgreSQL** (`tools/data-warehouse`, database `DataWarehouse`). It holds business data loaded from the source systems, and SDC Reports reads Paylocity hours, the roster and position families from it. The rule, decided 2026-11-24 ([ADR 0007](docs/adr/0007-mysql-for-apps-postgres-for-the-warehouse.md)):
+
+- **App databases use MySQL; the warehouse uses PostgreSQL.** This is the rule for new apps; nothing is migrated to fit it.
+- **The warehouse gets its own VM.** Apps and their databases stay together on the app server. Until that move, both run on `SERVER-APP1`.
+- **App data reaches the warehouse by a scheduled copy job** into its raw layer, the same pattern as the Paylocity load.
+
+The Project Tracker module in SDC Reports has its own PostgreSQL schema (`TRACKER_DATABASE_URL`). Whether it stays as the one app on Postgres is not yet decided (ADR 0007, "Not decided here").
+
 ---
 
 ## Authentication
