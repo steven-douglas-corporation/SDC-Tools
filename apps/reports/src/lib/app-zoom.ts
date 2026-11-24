@@ -51,14 +51,14 @@
  * first and last entries ARE the limits — `snapZoom` cannot return anything outside
  * the list, so there is no separate MIN/MAX to keep in step.
  *
- * ── Why the range moved down (2026-09-02) ─────────────────────────────────
+ * ── Why the range moved down, then back up (2026-09-02, 2026-11-19) ────────
  *
  * The original list was 75/80/90/100/110/125/150, built around 100% as the design
- * size with room to magnify. In practice this application is used the other way
- * round: the grids, the Job Hour Details chart and the ETC matrix are all wide, and
- * what people reach for is "fit more on the screen", not "make it bigger". Nothing
- * above 100% was earning its place, and the uneven 5/10/15/25% gaps meant the
- * stepper's travel per click changed depending where you were on the list.
+ * size with room to magnify. It was narrowed to 50–100 because this application is
+ * mostly used the other way round: the grids, the Job Hour Details chart and the
+ * ETC matrix are all wide, and what people reach for is "fit more on the screen",
+ * not "make it bigger" — plus the uneven 5/10/15/25% gaps meant the stepper's
+ * travel per click changed depending where you were on the list.
  *
  * So: one even 10% step throughout, nothing above 100% (the browser's own Ctrl+
  * still magnifies, and composes with this), and a 50% floor — the smallest level

@@ -108,9 +108,11 @@ test("out-of-range values clamp to the limits instead of applying", () => {
 test("a level retired in a later release snaps to its nearest survivor", () => {
   // The upgrade path, and the whole reason snapZoom compares in whole percent: every
   // one of these was a real saved value under the old 75/80/90/100/110/125/150 list,
-  // and 0.75 and 0.85 sit at the EXACT midpoint of two surviving levels. The float
+  // and 0.75, 0.85 and 1.25 sit at the EXACT midpoint of two surviving levels. The float
   // distances there are unequal in binary (0.049999999999999996 vs 0.05000000000000004),
   // so comparing the raw factors would resolve both downward. Ties go up.
+  // (1.1 and 1.5 are no longer retired — the 2026-11-19 ceiling change put them
+  // back on the list; see "every offered level snaps to itself" below.)
   assert.equal(snapZoom(0.75), 0.8);
   assert.equal(snapZoom(0.85), 0.9);
   assert.equal(snapZoom(0.95), 1);

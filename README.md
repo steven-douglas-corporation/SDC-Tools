@@ -18,6 +18,8 @@ keeps itself updated, and opens each app over HTTP.
 | Desktop shell | `apps/shell` | — | published installer | Electron, Vite + React, MSAL |
 
 Not services: `tools/powerbi` (Power BI report sources and the MCP server),
+`tools/data-warehouse` (the PostgreSQL warehouse: SQL, loader, roadmap),
+`tools/share-inventory` (metadata crawl of the company shares),
 `packages/` (code shared by two or more apps), `scripts/` (server updater and
 repo checks), `docs/` (architecture, ports, runbook, decision records).
 
@@ -106,6 +108,8 @@ apps/                 one directory per deployable app (own package.json, .env, 
   assemblies/  build-readiness/  calendar/  reports/  shell/  state-logic/
 SDC_Scheduler/        separate repo, ignored here (ADR 0002)
 tools/powerbi/        Power BI report sources, MCP server, design mock-ups
+tools/data-warehouse/ PostgreSQL warehouse: SQL, Paylocity loader, roadmap (the SDC Brain design)
+tools/share-inventory/ metadata crawl of the company shares; terms and exposure findings from it
 packages/             shared code — only what two or more apps import today
   eslint-config/      canonical ESLint rules, copied into each JS app
   design-system/      shared tokens and primitives

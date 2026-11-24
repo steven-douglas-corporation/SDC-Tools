@@ -144,7 +144,7 @@ export function pickBuckets<T extends { jobId: string; jobName: string }>(jobs: 
 export type LeftToInvoiceOverview = {
   /** Ascending `YYYY-MM`, every month any job has money in. */
   months: string[];
-  /** Jobs with a non-zero balance, largest first. */
+  /** Jobs with a non-zero balance, largest first (`order: "largest"`); every job in the caller's order for `"given"`. */
   rows: (JobBuckets & { sum: number })[];
   totals: { overdue: number; months: Record<string, number>; noDate: number; sum: number };
 };
@@ -154,11 +154,19 @@ export function bucketSum(b: LeftToInvoiceBuckets): number {
   return b.overdue + b.noDate + Object.values(b.months).reduce((a, v) => a + v, 0);
 }
 
-export function buildOverview(jobs: readonly JobBuckets[]): LeftToInvoiceOverview {
-  const rows = jobs
-    .map((j) => ({ ...j, sum: bucketSum(j.buckets) }))
-    .filter((r) => Math.abs(r.sum) >= 0.005 || Math.abs(r.buckets.overdue) >= 0.005 || Math.abs(r.buckets.noDate) >= 0.005)
-    .sort((a, b) => b.sum - a.sum || a.jobId.localeCompare(b.jobId));
+/**
+ * `order: "given"` keeps the caller's job list and its order, zero-balance jobs included — the
+ * Cash Flow split uses it so its rows are the Monthly ETC grid's rows, in the grid's order.
+ * The default drops empty jobs and sorts largest first.
+ */
+export function buildOverview(jobs: readonly JobBuckets[], order: "largest" | "given" = "largest"): LeftToInvoiceOverview {
+  const all = jobs.map((j) => ({ ...j, sum: bucketSum(j.buckets) }));
+  const rows =
+    order === "given"
+      ? all
+      : all
+          .filter((r) => Math.abs(r.sum) >= 0.005 || Math.abs(r.buckets.overdue) >= 0.005 || Math.abs(r.buckets.noDate) >= 0.005)
+          .sort((a, b) => b.sum - a.sum || a.jobId.localeCompare(b.jobId));
   const totals = { overdue: 0, months: {} as Record<string, number>, noDate: 0, sum: 0 };
   const months = new Set<string>();
   for (const r of rows) {

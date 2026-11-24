@@ -1,6 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { pageOf, searchRows, sortRows, type TableColumnLogic } from "../src/lib/data-table";
+import {
+  MIN_COLUMN_PX,
+  SHARED_COLUMN_PX,
+  clampColumnPx,
+  columnPx,
+  pageOf,
+  pxWidth,
+  searchRows,
+  sortRows,
+  tableWidth,
+  type TableColumnLogic,
+} from "../src/lib/data-table";
 
 type Row = { id: number; name: string; po: string; amount: number | null };
 const rows: Row[] = [
@@ -40,4 +51,31 @@ test("pages: clamped, and from/to count from 1", () => {
   assert.equal(last.from, 101);
   assert.equal(last.to, 120);
   assert.deepEqual(pageOf([], 0, 50), { rows: [], page: 0, pages: 1, from: 0, to: 0 });
+});
+
+test("pxWidth: only px widths count; percentages and unset share what is left", () => {
+  assert.equal(pxWidth("150px"), 150);
+  assert.equal(pxWidth(" 12.5px "), 12.5);
+  assert.equal(pxWidth("20%"), null);
+  assert.equal(pxWidth(undefined), null);
+});
+
+test("columnPx: a dragged width wins over the column's own", () => {
+  assert.equal(columnPx({ id: "a", width: "100px" }, {}), 100);
+  assert.equal(columnPx({ id: "a", width: "100px" }, { a: 180 }), 180);
+  assert.equal(columnPx({ id: "b" }, {}), null);
+  assert.equal(columnPx({ id: "b" }, { b: 90 }), 90);
+});
+
+test("clampColumnPx: rounds, never under the minimum", () => {
+  assert.equal(clampColumnPx(120.6), 121);
+  assert.equal(clampColumnPx(3), MIN_COLUMN_PX);
+});
+
+test("tableWidth: set widths plus each sharing column's minimum, so a narrow window scrolls instead of crushing it", () => {
+  const sized = [{ id: "po", width: "100px" }, { id: "supplier" }, { id: "notes", minWidth: 200 }, { id: "pct", width: "10%" }];
+  assert.deepEqual(tableWidth(sized, {}), { min: 100 + SHARED_COLUMN_PX + 200 + SHARED_COLUMN_PX, allFixed: false });
+  // Dragging a sharing column gives it a width; once every column has one, the table is exactly that wide.
+  assert.deepEqual(tableWidth(sized, { supplier: 160 }), { min: 100 + 160 + 200 + SHARED_COLUMN_PX, allFixed: false });
+  assert.deepEqual(tableWidth(sized, { supplier: 160, notes: 300, pct: 80 }), { min: 100 + 160 + 300 + 80, allFixed: true });
 });

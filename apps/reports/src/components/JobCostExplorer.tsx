@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   computeJobCost,
   isUtilityJob,
+  RATE_MATRIX_YEARS,
   type CostRates,
   type JobCostComputed,
   type JobCostRow,
@@ -26,6 +27,7 @@ import {
   busySlot,
 } from "@/components/ui/classnames";
 import { usd, hours } from "@/components/ui/format";
+import { explainJobCell } from "@/lib/job-cost-explain";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { MenuStatus, MenuGroup, MenuBulkActions, MenuCheckbox } from "@/components/MenuStatus";
@@ -166,9 +168,9 @@ function buildColTips(etcMonth: string | null, inventoryAsOf: string | null, rat
     : "No submitted Monthly ETC month exists yet, so this shows —.";
   return {
     engineeringHours:
-      "Eng Hrs — all-time actual hours on Engineering-group sections. Adds the pre-tracking migration snapshot, the frozen Monthly ETC hours for months the punch import doesn't cover, and Paylocity punches folded onto the job's sections. Runs through the latest synced day (through the picked month on an As-of view). Service & Spares (80-/90-) are excluded. Costed in Total Cost at the Eng rate for the year the hours were worked.",
+      "Eng Hrs — all-time actual hours on Engineering-group sections, including Warranty engineering (70-211, plus punches 70-311 / 70-312 / 70-313 / 70-516 / 70-517). Adds the pre-tracking migration snapshot, the frozen Monthly ETC hours for months the punch import doesn't cover, and Paylocity punches folded onto the job's sections. Runs through the latest synced day (through the picked month on an As-of view). Service & Spares (80-/90-) are excluded. Costed in Total Cost at the Eng rate for the year the hours were worked.",
     shopHours:
-      "Shop Hrs — same sources and cut-off as Eng Hrs, for Shop-group sections (build / test / install). Costed in Total Cost at the Shop rate for the year worked.",
+      "Shop Hrs — same sources and cut-off as Eng Hrs, for Shop-group sections: build / test / install and Warranty shop (70-411, plus punches 70-412 / 70-413 / 70-414). Manufacturing hours (10-413, including punches 10-414) are NOT included — they are shown under Other Hrs. Costed in Total Cost at the Shop rate for the year worked.",
     partInvoiced:
       "Parts Invoiced — GL-posted parts spend from Total ETO (the Projects tab's Parts Actual). For closed jobs below the final-parts cutoff it is the final Parts Cost Actual imported from the Sage job ledger. Always current: the As-of picker does not move it. Profit adds still-to-come parts on top (see Profit).",
     etcEngHours: `ETC Eng — Engineering hours still to do. ${etcSrc} Each section is reduced by its own hours worked after that month and floored at 0, so an overrun on one section never shrinks another. — means the job had no row in that submission; Complete jobs show 0. Added to Total Cost at the default Eng rate (${rates.engRate}/hr).`,
@@ -177,15 +179,15 @@ function buildColTips(etcMonth: string | null, inventoryAsOf: string | null, rat
     pmCost: "PM $ — Sales Price × PM % for the job's Complete Date year (Rate Matrix; the default PM % when there is no Complete Date). A share of sales, not hours. The rates in the Rate Matrix are used as entered.",
     mfgCost: "Mfg $ — Sales Price × Mfg % for the job's Complete Date year (Rate Matrix; the default Mfg % when there is no Complete Date). A share of sales, not hours. The rates in the Rate Matrix are used as entered.",
     totalCost:
-      `Total Cost — labour only: hours × rate. = (Eng Hrs + ETC Eng) × Eng rate + (Shop Hrs + ETC Shop) × Shop rate. Worked hours use the Rate Matrix rate for the year they were worked (a manual hour allocation from the Job Id overrides; hours with no year use the default, currently Eng $${rates.engRate}/hr and Shop $${rates.shopRate}/hr); ETC hours always use those default rates. Complete jobs have no ETC. Does not include PM $, Mfg $ or parts.`,
+      `Total Cost — everything Profit subtracts. = Labor + PM $ + Mfg $ + projected parts. Labor = (Eng Hrs + ETC Eng) × Eng rate + (Shop Hrs + ETC Shop) × Shop rate: worked hours at the Rate Matrix rate for the year they were worked (a manual hour allocation overrides; hours with no year use the default, currently Eng $${rates.engRate}/hr and Shop $${rates.shopRate}/hr), ETC hours at those default rates. Projected parts = Parts Invoiced + the larger of (open PO balance not yet invoiced, ETC Parts); Complete jobs use Parts Invoiced only and no ETC. So Sales Price − Total Cost = Profit.`,
     salesPrice:
       "Sales Price — the job's Sales Price on the Projects tab plus its Change Quote (an as-of view uses that month's inventory-workbook figure instead). Falls back to the inventory workbook / Power BI price when the Projects tab has none. Blank when no source has a price.",
     percentComplete: `% Complete — read from the inventory workbook snapshot${inventoryAsOf ? ` (as of ${inventoryAsOf})` : ""}, not calculated here. Complete jobs show 100%. — means the job isn't in the snapshot.`,
     profit:
-      "Profit = Sales Price − (Total Cost + PM $ + Mfg $ + projected parts). Projected parts = Parts Invoiced + the larger of (open PO balance not yet invoiced, ETC Parts); Complete jobs use Parts Invoiced only and no ETC. Blank when the job has no Sales Price.",
+      "Profit = Sales Price − Total Cost, where Total Cost = Labor Cost + PM $ + Mfg $ + projected parts (Parts Invoiced + the larger of the open PO balance and ETC Parts; Complete jobs use Parts Invoiced only). Blank when the job has no Sales Price.",
     margin: "Margin = Profit ÷ Sales Price × 100. Blank when the job has no Sales Price.",
     otherHours:
-      "Other Hrs — hours on sections that are neither Engineering nor Shop (e.g. PM / Management 10-111). Same sources and cut-off as Eng Hrs; Service & Spares (80-/90-) excluded. Counted in a job's actual hours but costed at $0 in Total Cost — PM and Mfg cost are modelled as a % of sales instead.",
+      "Other Hrs — hours on sections that are neither Engineering nor Shop (e.g. PM / Management 10-111, and Manufacturing 10-413 / 10-414). Same sources and cut-off as Eng Hrs; Service & Spares (80-/90-) excluded. Counted in a job's actual hours but costed at $0 in Total Cost — PM and Mfg cost are modelled as a % of sales instead.",
   };
 }
 
@@ -364,10 +366,16 @@ export function JobCostExplorer({
   // the same shape (2026-08-12, by request — "the same consistent multi-select
   // UX") and toggling one value is an O(1) add/delete rather than a
   // filter-and-rebuild on every click, on every one of them.
-  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
-  const [yearFilter, setYearFilter] = useState<Set<string>>(new Set());
-  const [customerFilter, setCustomerFilter] = useState<Set<string>>(new Set());
-  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<Set<string> | null>(null);
+  const [yearFilter, setYearFilter] = useState<Set<string> | null>(null);
+  // customerFilter is special: null means "no narrowing" (every job matches), same
+  // as the other three filters' empty Set — but an explicit EMPTY Set here means
+  // "narrowed to nothing", which is what the Customer group's own "Clear" (deselect
+  // all) sets it to. With 100+ customers, starting from none-checked and picking a
+  // handful is the real workflow; Status/Year/Type stay on the plain empty-Set-means-
+  // all convention since picking a few of four items from "all" is no hardship.
+  const [customerFilter, setCustomerFilter] = useState<Set<string> | null>(null);
+  const [typeFilter, setTypeFilter] = useState<Set<string> | null>(null);
   const [hideUtility, setHideUtility] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("jobId");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
@@ -592,12 +600,13 @@ export function JobCostExplorer({
   // one badge count the consolidated Filters button needs, rather than each
   // filter reporting its own count independently the way it did as three
   // separate buttons.
-  const statusNarrowing = statusFilter.size > 0 && statusFilter.size < allStatuses.length;
-  const customerNarrowing = customerFilter.size > 0 && customerFilter.size < customers.length;
-  const yearNarrowing = yearFilter.size > 0 && yearFilter.size < years.length;
-  const typeNarrowing = typeFilter.size > 0 && typeFilter.size < allTypes.length;
+  const statusNarrowing = statusFilter != null && statusFilter.size < allStatuses.length;
+  const customerNarrowing = customerFilter != null && customerFilter.size < customers.length;
+  const yearNarrowing = yearFilter != null && yearFilter.size < years.length;
+  const typeNarrowing = typeFilter != null && typeFilter.size < allTypes.length;
   const activeFilterCount = (statusNarrowing ? 1 : 0) + (customerNarrowing ? 1 : 0) + (yearNarrowing ? 1 : 0) + (typeNarrowing ? 1 : 0);
   function clearAllFilters() {
+    // Same effect as pressing Clear in every section: everything unchecked.
     setStatusFilter(new Set());
     setCustomerFilter(new Set());
     setTypeFilter(new Set());
@@ -608,10 +617,10 @@ export function JobCostExplorer({
     const terms = search.toLowerCase().split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
     let out = computed
       .filter((r) => !(hideUtility && isUtilityJob(r.jobId)))
-      .filter((r) => statusFilter.size === 0 || statusFilter.has(r.status))
-      .filter((r) => yearFilter.size === 0 || (r.completeDate != null && yearFilter.has(r.completeDate.slice(0, 4))))
-      .filter((r) => customerFilter.size === 0 || (r.customerName != null && customerFilter.has(r.customerName)))
-      .filter((r) => typeFilter.size === 0 || (r.jobType != null && typeFilter.has(r.jobType)))
+      .filter((r) => statusFilter == null || statusFilter.has(r.status))
+      .filter((r) => yearFilter == null || (r.completeDate != null && yearFilter.has(r.completeDate.slice(0, 4))))
+      .filter((r) => customerFilter == null || (r.customerName != null && customerFilter.has(r.customerName)))
+      .filter((r) => typeFilter == null || (r.jobType != null && typeFilter.has(r.jobType)))
       .filter((r) => !terms.length || terms.some((t) => `${r.jobId} ${r.jobName} ${r.customerName ?? ""} ${r.status}`.toLowerCase().includes(t)));
     out = [...out].sort((a, b) => {
       const av = a[sortKey as keyof JobCostComputed];
@@ -864,7 +873,12 @@ export function JobCostExplorer({
             Customer and Completion Year could become Sets without changing
             what "combines with Status" means — every one of these three
             filters was already ANDed together; only what was inside each
-            slot changed, from one string to a Set of them. */}
+            slot changed, from one string to a Set of them.
+
+            Customer diverged from that on 2026-11-19 (see the customerFilter
+            declaration above): it needed a real "deselect all" so picking a
+            handful out of 100+ customers doesn't mean unchecking the rest one
+            at a time, which plain empty-Set-means-all can't represent. */}
         <div className="flex items-center gap-1 border-l border-sdc-border-soft pl-1.5">
           <details ref={filtersRef} className="group relative inline-block">
             <summary className={`${TOOLBAR_BTN_COMPACT} ${activeFilterCount > 0 ? TOOLBAR_BTN_ACTIVE : TOOLBAR_BTN_NEUTRAL}`}>
@@ -878,19 +892,18 @@ export function JobCostExplorer({
                   type="button"
                   className={BUTTON_MENU_LINK}
                   onClick={clearAllFilters}
-                  disabled={activeFilterCount === 0}
                 >
                   Clear all
                 </button>
               </div>
-              <MenuGroup label={statusNarrowing ? `Status (${statusFilter.size})` : "Status"}>
+              <MenuGroup label={statusNarrowing ? `Status (${statusFilter?.size ?? 0})` : "Status"}>
                 <MenuBulkActions onAll={() => setStatusFilter(new Set(allStatuses))} onNone={() => setStatusFilter(new Set())} />
                 <div className="max-h-40 overflow-y-auto styled-scrollbar">
                   {allStatuses.map((s) => (
                     <MenuCheckbox
                       key={s}
                       label={s}
-                      checked={statusFilter.size === 0 || statusFilter.has(s)}
+                      checked={statusFilter == null || statusFilter.has(s)}
                       onChange={() =>
                         setStatusFilter((prev) => {
                           // Unchecking one box while every status is implicitly
@@ -898,7 +911,7 @@ export function JobCostExplorer({
                           // "every status EXCEPT this one" — seed the full set
                           // first, so a single uncheck doesn't look like it
                           // selected two unrelated statuses out of nowhere.
-                          const next = prev.size === 0 ? new Set(allStatuses) : new Set(prev);
+                          const next = prev == null ? new Set(allStatuses) : new Set(prev);
                           if (next.has(s)) next.delete(s);
                           else next.add(s);
                           return next;
@@ -908,21 +921,22 @@ export function JobCostExplorer({
                   ))}
                 </div>
               </MenuGroup>
-              <MenuGroup label={customerNarrowing ? `Customer (${customerFilter.size})` : "Customer"}>
+              <MenuGroup label={customerNarrowing ? `Customer (${customerFilter?.size ?? 0})` : "Customer"}>
                 <MenuBulkActions onAll={() => setCustomerFilter(new Set(customers))} onNone={() => setCustomerFilter(new Set())} />
                 <div className="max-h-40 overflow-y-auto styled-scrollbar">
                   {customers.map((c) => (
                     <MenuCheckbox
                       key={c}
                       label={c}
-                      checked={customerFilter.size === 0 || customerFilter.has(c)}
+                      checked={customerFilter == null || customerFilter.has(c)}
                       onChange={() =>
                         setCustomerFilter((prev) => {
-                          // Same "seed the full set on first uncheck" rule as
-                          // Status — an empty Set is implicitly every customer,
-                          // so unchecking one from THAT state has to become
-                          // "every customer except this one", not a set of one.
-                          const next = prev.size === 0 ? new Set(customers) : new Set(prev);
+                          // null (no narrowing) seeds the full set on first uncheck, same
+                          // as Status — unchecking one from THAT state has to become
+                          // "every customer except this one", not a set of one. An
+                          // explicit empty Set (deselect all) is left alone: checking one
+                          // from there correctly becomes a set of exactly that one.
+                          const next = prev == null ? new Set(customers) : new Set(prev);
                           if (next.has(c)) next.delete(c);
                           else next.add(c);
                           return next;
@@ -932,18 +946,18 @@ export function JobCostExplorer({
                   ))}
                 </div>
               </MenuGroup>
-              <MenuGroup label={typeNarrowing ? `Type (${typeFilter.size})` : "Type"}>
+              <MenuGroup label={typeNarrowing ? `Type (${typeFilter?.size ?? 0})` : "Type"}>
                 <MenuBulkActions onAll={() => setTypeFilter(new Set(allTypes))} onNone={() => setTypeFilter(new Set())} />
                 <div className="max-h-40 overflow-y-auto styled-scrollbar">
                   {allTypes.map((t) => (
                     <MenuCheckbox
                       key={t}
                       label={t}
-                      checked={typeFilter.size === 0 || typeFilter.has(t)}
+                      checked={typeFilter == null || typeFilter.has(t)}
                       onChange={() =>
                         setTypeFilter((prev) => {
                           // Same "seed the full set on first uncheck" rule as Status and Customer.
-                          const next = prev.size === 0 ? new Set(allTypes) : new Set(prev);
+                          const next = prev == null ? new Set(allTypes) : new Set(prev);
                           if (next.has(t)) next.delete(t);
                           else next.add(t);
                           return next;
@@ -954,17 +968,17 @@ export function JobCostExplorer({
                 </div>
               </MenuGroup>
               {years.length > 0 && (
-                <MenuGroup label={yearNarrowing ? `Completion Year (${yearFilter.size})` : "Completion Year"}>
+                <MenuGroup label={yearNarrowing ? `Completion Year (${yearFilter?.size ?? 0})` : "Completion Year"}>
                   <MenuBulkActions onAll={() => setYearFilter(new Set(years))} onNone={() => setYearFilter(new Set())} />
                   <div className="max-h-40 overflow-y-auto styled-scrollbar">
                     {years.map((y) => (
                       <MenuCheckbox
                         key={y}
                         label={y}
-                        checked={yearFilter.size === 0 || yearFilter.has(y)}
+                        checked={yearFilter == null || yearFilter.has(y)}
                         onChange={() =>
                           setYearFilter((prev) => {
-                            const next = prev.size === 0 ? new Set(years) : new Set(prev);
+                            const next = prev == null ? new Set(years) : new Set(prev);
                             if (next.has(y)) next.delete(y);
                             else next.add(y);
                             return next;
@@ -1117,6 +1131,9 @@ export function JobCostExplorer({
         {visibleRows.length} jobs
         {inventoryAsOf && ` · Sales/% complete as of ${inventoryAsOf}`}
         {etcRefreshedThru && ` · Submitted ETC for ${etcRefreshedThru}, less work and parts invoiced since`}
+      </p>
+      <p className="text-note text-sdc-gray-400">
+        Manufacturing (10-413, 10-414) and PM hours are reflected in the other hours below. Spares and Service hours are not reflected on this page.
       </p>
       {!partsCostAvailable && (
         <p className="rounded border border-sdc-yellow bg-sdc-yellow-bg px-2 py-1 text-note text-sdc-yellow-text">
@@ -1283,6 +1300,7 @@ export function JobCostExplorer({
             <tbody>
               {visibleRows.map((r, i) => {
                 const alloc = allocations[r.jobId];
+                const cellTip = (key: string, row: typeof r) => explainJobCell(key, row, rates, overrides, alloc);
                 // Translucent for normal cells — it composites with the row's
                 // OWN hover tint underneath (see TABLE_ROW_HOVER on the <tr>);
                 // opaque for the two frozen cells, which must stay solid on
@@ -1329,8 +1347,8 @@ export function JobCostExplorer({
                     </td>
                     {!hiddenCols.has("startDate") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("startDate")} ${zebra}`}>{r.startDate ?? "—"}</td>}
                     {!hiddenCols.has("completeDate") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("completeDate")} ${zebra}`}>{r.completeDate ?? "—"}</td>}
-                    {!hiddenCols.has("engineeringHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("engineeringHours")} ${zebra}`}>{fmtNum(r.engineeringHours)}</td>}
-                    {!hiddenCols.has("shopHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("shopHours")} ${zebra}`}>{fmtNum(r.shopHours)}</td>}
+                    {!hiddenCols.has("engineeringHours") && <td title={cellTip("engineeringHours", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("engineeringHours")} ${zebra}`}>{fmtNum(r.engineeringHours)}</td>}
+                    {!hiddenCols.has("shopHours") && <td title={cellTip("shopHours", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("shopHours")} ${zebra}`}>{fmtNum(r.shopHours)}</td>}
                     {!hiddenCols.has("partInvoiced") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("partInvoiced")} ${zebra}`}>{fmtMoney(r.partInvoiced)}</td>}
                     {!hiddenCols.has("etcEngHours") && (
                       <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("etcEngHours")} ${zebra}`}>
@@ -1347,13 +1365,14 @@ export function JobCostExplorer({
                         {r.etcPartsCost == null ? "—" : fmtMoney(r.etcPartsCost)}
                       </td>
                     )}
-                    {!hiddenCols.has("pmCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("pmCost")} ${zebra}`}>{fmtMoney(r.pmCost)}</td>}
-                    {!hiddenCols.has("mfgCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("mfgCost")} ${zebra}`}>{fmtMoney(r.mfgCost)}</td>}
+                    {!hiddenCols.has("pmCost") && <td title={cellTip("pmCost", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("pmCost")} ${zebra}`}>{fmtMoney(r.pmCost)}</td>}
+                    {!hiddenCols.has("mfgCost") && <td title={cellTip("mfgCost", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("mfgCost")} ${zebra}`}>{fmtMoney(r.mfgCost)}</td>}
                     {!hiddenCols.has("percentComplete") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("percentComplete")} ${zebra}`}>{fmtPct(r.percentComplete)}</td>}
-                    {!hiddenCols.has("salesPrice") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("salesPrice")} ${zebra}`}>{fmtMoney(r.salesPrice)}</td>}
-                    {!hiddenCols.has("totalCost") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("totalCost")} ${zebra}`}>{fmtMoney(r.totalCost)}</td>}
+                    {!hiddenCols.has("salesPrice") && <td title={cellTip("salesPrice", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("salesPrice")} ${zebra}`}>{fmtMoney(r.salesPrice)}</td>}
+                    {!hiddenCols.has("totalCost") && <td title={cellTip("totalCost", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("totalCost")} ${zebra}`}>{fmtMoney(r.totalCost)}</td>}
                     {!hiddenCols.has("profit") && (
                       <td
+                        title={cellTip("profit", r)}
                         className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("profit")} ${
                           r.profit == null ? zebra : r.profit >= 0 ? "bg-sdc-green-bg/50 text-sdc-green-text" : "bg-sdc-red-bg/50 text-sdc-red-text"
                         }`}
@@ -1363,6 +1382,7 @@ export function JobCostExplorer({
                     )}
                     {!hiddenCols.has("margin") && (
                       <td
+                        title={cellTip("margin", r)}
                         className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("margin")} ${
                           r.margin == null ? zebra : r.margin >= 0 ? "bg-sdc-green-bg/50 text-sdc-green-text" : "bg-sdc-red-bg/50 text-sdc-red-text"
                         }`}
@@ -1370,7 +1390,7 @@ export function JobCostExplorer({
                         {fmtPct(r.margin)}
                       </td>
                     )}
-                    {!hiddenCols.has("otherHours") && <td className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("otherHours")} ${zebra}`}>{r.otherHours ? fmtNum(r.otherHours) : "—"}</td>}
+                    {!hiddenCols.has("otherHours") && <td title={cellTip("otherHours", r)} className={`px-2 py-1.5 text-right align-middle border-b border-sdc-border-soft ${vBorder("otherHours")} ${zebra}`}>{r.otherHours ? fmtNum(r.otherHours) : "—"}</td>}
                   </tr>
                 );
               })}
@@ -1417,7 +1437,7 @@ export function JobCostExplorer({
         <JobCostRateMatrixModal
           defaultRates={rates}
           overrides={overrides}
-          years={[...new Set([...years, ...Object.keys(overrides)])].sort((a, b) => b.localeCompare(a))}
+          years={RATE_MATRIX_YEARS}
           onClose={() => setRateMatrixOpen(false)}
           onConfirm={confirmRates}
         />

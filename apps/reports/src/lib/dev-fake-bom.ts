@@ -24,6 +24,19 @@ const DAY = 86_400_000;
 const dateOf = (ymd: string | null | undefined) => (ymd ? new Date(`${ymd}T12:00:00`) : null);
 const shiftDays = (d: Date | null, days: number) => (d ? new Date(d.getTime() + days * DAY) : null);
 
+// When the last of a line arrived: somewhere from 9 days after the order to the earlier of its
+// due date and today, picked by its line id (so a line keeps its date). It used to be 9 days
+// after the order every time, so every receipt was months old and the Open POs timeline drew
+// them all in its Earlier column (2026-11-16).
+function fakeReceivedOn(l: { lineId: string; expectedDate?: string | null; requiredDate?: string | null }, purchased: Date | null): Date | null {
+  if (!purchased) return null;
+  const due = dateOf(l.expectedDate ?? l.requiredDate);
+  const end = Math.min(due ? due.getTime() : Date.now(), Date.now());
+  const span = Math.max(0, Math.floor((end - purchased.getTime()) / DAY) - 9);
+  const n = Number(l.lineId.slice(4)) || 0;
+  return new Date(purchased.getTime() + (9 + (span ? (n * 37) % (span + 1) : 0)) * DAY);
+}
+
 export function fakeBomRecordsets(jobId: number): JobBomRecordsets {
   const lines = fakePartsLines(String(jobId)).filter((l) => l.poNumber && l.partNumber);
   const base = jobId * 10_000;
@@ -54,7 +67,7 @@ export function fakeBomRecordsets(jobId: number): JobBomRecordsets {
       // Total ETO's line date is the re-promised one when a buyer entered it.
       DateRequired: dateOf(l.expectedDate ?? l.requiredDate),
       ReceivedQty: received,
-      LastReceivedDate: received > 0 && purchased ? new Date(purchased.getTime() + 9 * DAY) : null,
+      LastReceivedDate: received > 0 ? fakeReceivedOn(l, purchased) : null,
     };
   });
 

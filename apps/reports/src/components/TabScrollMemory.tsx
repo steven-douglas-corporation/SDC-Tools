@@ -179,6 +179,10 @@ export function TabScrollMemory({
     const onScroll = (e: Event) => {
       const el = e.target;
       if (!(el instanceof HTMLElement) || !root.contains(el)) return;
+      // A scroller that keeps its own position (data-scroll-own: the pan-and-zoom
+      // canvas, whose scroll offset means nothing without its zoom) is left to it.
+      // Never recorded, so never restored: one mechanism per element.
+      if (el.hasAttribute("data-scroll-own")) return;
       const key = el === root ? ROOT_KEY : scrollKeyOf(el, root);
       const next = { left: el.scrollLeft, top: el.scrollTop };
       const sinceUserInputMs = lastInput.current === null ? null : Date.now() - lastInput.current;

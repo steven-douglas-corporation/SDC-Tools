@@ -31,6 +31,18 @@ export type JobHourAllocation = { eng: HourAllocationEntry[]; shop: HourAllocati
 /** Per-year rate overrides. A missing field on a year falls back to the default, not to zero. */
 export type YearRateOverrides = Record<string, Partial<CostRates>>;
 
+/**
+ * Where a row's Sales Price came from, for its hover: the raw facts only (the grid's number is
+ * still `salesPrice`). `projectsSalesPrice` / `changeQuote` are the Projects tab's Job fields,
+ * whether or not they were used.
+ */
+export type SalesPriceDetail = {
+  source: "projects" | "inventory" | "powerbi" | null;
+  projectsSalesPrice: number | null;
+  changeQuote: number | null;
+  asOf: string | null;
+};
+
 export type JobCostRow = {
   jobId: string;
   jobName: string;
@@ -48,12 +60,19 @@ export type JobCostRow = {
    * column. Shown for reference and EXCLUDED from actualHours and from every calculation.
    */
   serviceHours: number | null;
+  /**
+   * Manufacturing hours (10-413, incl. 10-414 punches): the part of otherHours kept out of Shop Hrs.
+   * Display only (Other Hrs hover). Optional so older callers and fixtures need not supply it.
+   */
+  manufacturingHours?: number | null;
   partCost: number | null;
   partInvoiced: number | null;
   salesPrice: number | null;
   startDate: string | null;
   completeDate: string | null;
   percentComplete: number | null;
+  /** Optional so older callers and fixtures need not supply it; only the hover reads it. */
+  salesPriceDetail?: SalesPriceDetail;
   hoursByYear: HoursByYear;
   etcEngHours: number | null;
   etcShopHours: number | null;
@@ -63,12 +82,15 @@ export type JobCostRow = {
 export type JobCostComputed = JobCostRow & {
   pmCost: number;
   mfgCost: number;
+  /**
+   * Labor Cost column: hours × rate only — (Eng Hrs + ETC Eng) × Eng rate + (Shop Hrs + ETC Shop) ×
+   * Shop rate. Worked hours at the Rate Matrix rate for the year (or the manual allocation), ETC
+   * hours at the default rate. Excludes PM $, Mfg $ and parts.
+   */
   laborCost: number;
   /**
-   * Total Cost column (2026-11-13): labour only, hours × rate — (Eng Hrs + ETC Eng) × Eng rate
-   * + (Shop Hrs + ETC Shop) × Shop rate. Worked hours at the Rate Matrix rate for the year (or the
-   * manual allocation), ETC hours at the default rate. Excludes PM $, Mfg $ and parts; `profit`
-   * is untouched and equals sales − (totalCost + pmCost + mfgCost + partsProjected).
+   * Total Cost column: everything Profit subtracts —
+   * laborCost + pmCost + mfgCost + partsProjected — so `profit` = salesPrice − totalCost.
    */
   totalCost: number;
   /** The parts figure profit actually subtracts — see `partsCostForProfit`. */
@@ -115,6 +137,32 @@ export function partsCostForProfit(
 }
 
 /**
+ * Warranty (phase 70) codes that have no Eng/Shop column of their own, assigned to a billing group
+ * for PROFITABILITY only (2026-11-17), so their hours are costed at the Eng/Shop rate instead of
+ * sitting in Other Hrs at $0:
+ *   70-413, 70-414 -> Shop      70-312, 70-517 -> Engineering
+ * Deliberately local to the Job Cost Explorer: sections.ts keeps them as their own unmapped codes
+ * (the ETC grid and Job Hours pages are signed off on that), so those pages' Eng/Shop totals do not
+ * move. Add a code here only on the business's say-so.
+ */
+export const WARRANTY_BUCKET_OVERRIDES: Readonly<Record<string, "eng" | "shop">> = {
+  "70-413": "shop",
+  "70-414": "shop",
+  "70-312": "eng",
+  "70-517": "eng",
+};
+
+/**
+ * Manufacturing (2026-11-19): the phase-10 manufacturing column, 10-413. Paylocity punches 10-414
+ * fold onto it (SECTION_ALIASES). 11-414 folds there too but is deliberately kept as Shop. Kept OUT of
+ * Shop Hrs on Profitability and reported under Other Hrs instead, so it is not costed at the Shop
+ * rate. Local to the Job Cost Explorer: the Projects grid and the ETC/Job Hours pages still treat
+ * 10-413 as a Shop section. Warranty manufacturing (70-413 / 70-414) is a different code and
+ * stays Shop via WARRANTY_BUCKET_OVERRIDES.
+ */
+export const MANUFACTURING_CODE = "10-413";
+
+/**
  * Real jobs only — matches the original's UTILITY_IDS. These are Total ETO
  * clearing/placeholder rows, not actual jobs; kept as a literal set rather
  * than derived, exactly as before.
@@ -125,9 +173,31 @@ export function isUtilityJob(jobId: string): boolean {
   return UTILITY_JOB_IDS.has(jobId) || !jobId.trim();
 }
 
-/** The global year-matrix override for one year, else the default — never zero-filled. */
+/** The Rate Matrix has one row per year from FIRST to LAST. */
+export const RATE_MATRIX_FIRST_YEAR = 2024;
+export const RATE_MATRIX_LAST_YEAR = 2025;
+/** The matrix's years, newest first (what the Rate Matrix shows). */
+export const RATE_MATRIX_YEARS: string[] = Array.from(
+  { length: RATE_MATRIX_LAST_YEAR - RATE_MATRIX_FIRST_YEAR + 1 },
+  (_, i) => String(RATE_MATRIX_LAST_YEAR - i),
+);
+
+/**
+ * The rates for one year (a year worked, or a job's completion year):
+ *   before 2024      -> the 2024 row's rates
+ *   2024 to 2025     -> that year's own row
+ *   2026 and later   -> the default rates
+ * A blank cell in a row means "use the default" for that rate. Never zero-filled.
+ * Rows saved for years outside 2024-2025 (older saves, e.g. 2022/2023) are ignored.
+ */
 export function rateForYear(year: string, def: CostRates, overrides: YearRateOverrides): CostRates {
-  const o = overrides[year] ?? {};
+  const n = Number(year);
+  let key = year;
+  if (Number.isFinite(n)) {
+    if (n > RATE_MATRIX_LAST_YEAR) return def;
+    if (n < RATE_MATRIX_FIRST_YEAR) key = String(RATE_MATRIX_FIRST_YEAR);
+  }
+  const o = overrides[key] ?? {};
   return {
     engRate: o.engRate ?? def.engRate,
     shopRate: o.shopRate ?? def.shopRate,
@@ -175,10 +245,11 @@ export function laborForType(
 /**
  * The full per-job rollup — unchanged from the original's compute():
  *   Labor Cost = Σ_year(EngHours[year] × EngRate[year]) + Σ_year(ShopHours[year] × ShopRate[year])
- *              + Sales × PM%[completionYear] + Sales × Mfg%[completionYear]
- *   x (cost)   = Labor Cost + ETC_EngHours × EngRate_default + ETC_ShopHours × ShopRate_default
- *   y (parts)  = partsCostForProfit(row, ETC_PartsCost).projected   [2026-09-14; was PartCost + ETC_PartsCost]
- *   Profit     = Sales Price − (x + y)              [null if no Sales Price]
+ *              + ETC_EngHours × EngRate_default + ETC_ShopHours × ShopRate_default
+ *   PM $ / Mfg $ = Sales × PM%[completionYear] / Sales × Mfg%[completionYear]   (the Rate Matrix % as entered)
+ *   Parts      = partsCostForProfit(row, ETC_PartsCost).projected   [2026-09-14; was PartCost + ETC_PartsCost]
+ *   Total Cost = Labor Cost + PM $ + Mfg $ + Parts
+ *   Profit     = Sales Price − Total Cost            [null if no Sales Price]
  *   Margin     = Profit ÷ Sales Price × 100
  *
  * PM%/Mfg% are a share of sales, applied once at the job's completion-year
@@ -202,20 +273,19 @@ export function computeJobCost(
   const rc = compYear ? rateForYear(compYear, def, overrides) : def;
   const pmCost = sales * (rc.pmPct / 100);
   const mfgCost = sales * (rc.mfgPct / 100);
-  const laborCost = blendedLabor + pmCost + mfgCost;
 
   const isComplete = row.status === "Complete";
   const etcEngHours = isComplete ? 0 : row.etcEngHours;
   const etcShopHours = isComplete ? 0 : row.etcShopHours;
   const etcPartsCost = isComplete ? 0 : row.etcPartsCost;
 
-  const totalCost = blendedLabor + (etcEngHours || 0) * def.engRate + (etcShopHours || 0) * def.shopRate;
-  const x = laborCost + (etcEngHours || 0) * def.engRate + (etcShopHours || 0) * def.shopRate;
+  const laborCost = blendedLabor + (etcEngHours || 0) * def.engRate + (etcShopHours || 0) * def.shopRate;
   // The Parts Purchased / Parts Invoiced COLUMNS keep showing commitment and
   // GL-posted actual respectively — those labels are honest. Only what profit
   // subtracts changes: see partsCostForProfit.
   const y = partsCostForProfit(row, etcPartsCost).projected;
-  const profit = row.salesPrice != null ? sales - x - y : null;
+  const totalCost = laborCost + pmCost + mfgCost + y;
+  const profit = row.salesPrice != null ? sales - totalCost : null;
   const margin = profit != null && sales ? (profit / sales) * 100 : null;
   const percentComplete = isComplete ? 100 : row.percentComplete;
 

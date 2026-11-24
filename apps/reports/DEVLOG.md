@@ -7509,3 +7509,14 @@ therefore used 2.24% and 2.88% of Sales Price, and Profit was overstated by 20% 
 × Mfg %, with the percentages exactly as in the Rate Matrix. To change the reduction, change the
 rates. The Rate Matrix title is back to "rates by year", its footnote says the rates apply as
 entered, and the PM $ / Mfg $ tooltips match. The per-year rows (2024 to 2026) were not touched.
+
+
+## 96. Profitability: Rate Matrix years 2022 to 2025, 2026+ default, before 2022 = 2022 (2026-11-13)
+
+The Rate Matrix now has rows for 2025, 2024, 2023 and 2022 only (`RATE_MATRIX_YEARS`). `rateForYear`
+(lib/job-cost.ts) maps any year to its rates: before 2022 -> the 2022 row, 2022 to 2025 -> that
+year's own row, 2026 and later -> the default rates (a blank cell is still "use the default"). It
+applies to worked hours (by the year they were worked, or a manual allocation's year) and to PM %
+/ Mfg % (by the job's Complete Date year). Rows saved earlier for 2026, 2021, 2018 and 2017 stay in
+the database but are ignored and no longer shown. The modal title is "Rate Matrix — Actual Costs by
+Section" and its footnote states the rule.
