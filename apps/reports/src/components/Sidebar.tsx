@@ -277,10 +277,11 @@ const REPORT_GROUPS: Omit<NavGroup, "tool">[] = [
       },
     ],
   },
-  // Reports' own housekeeping (2026-11-23). These two sat in Admin, which is now the area for
-  // the whole app: accounts, permissions and feedback, shared by every tool. Data Management
-  // (rosters, finances, data quality) and the Audit Log are about Reports' data only, so they
-  // live with Reports. Their addresses and permissions are unchanged.
+  // Reports' own housekeeping (2026-11-23). Data Management sat in Admin, which is now the area
+  // for the whole app: accounts, permissions, feedback and the audit log, shared by every tool.
+  // Data Management (rosters, finances, data quality) is about Reports' data only, so it stays in
+  // Reports' menu. Its address and permission are unchanged. (The Audit Log moved to Admin — it
+  // records every tool's actions, not only Reports' — see lib/tools.ts and ADMIN_GROUP below.)
   {
     label: "Maintenance",
     items: [
@@ -293,19 +294,6 @@ const REPORT_GROUPS: Omit<NavGroup, "tool">[] = [
             <path d="M2 4.5 C2 3.4 4.7 2.5 8 2.5 C11.3 2.5 14 3.4 14 4.5" strokeLinecap="round" />
             <path d="M2 4.5 V11.5 C2 12.6 4.7 13.5 8 13.5 C11.3 13.5 14 12.6 14 11.5 V4.5" strokeLinecap="round" />
             <path d="M2 8 C2 9.1 4.7 10 8 10 C11.3 10 14 9.1 14 8" strokeLinecap="round" />
-          </Icon>
-        ),
-      },
-      {
-        href: "/audit-log",
-        label: "Audit Log",
-        isActive: (p) => p === "/audit-log",
-        icon: (
-          <Icon>
-            <rect x="2" y="2" width="12" height="12" rx="1.5" />
-            <line x1="4.5" y1="5.5" x2="11.5" y2="5.5" strokeLinecap="round" />
-            <line x1="4.5" y1="8" x2="11.5" y2="8" strokeLinecap="round" />
-            <line x1="4.5" y1="10.5" x2="8.5" y2="10.5" strokeLinecap="round" />
           </Icon>
         ),
       },
@@ -411,6 +399,22 @@ const ADMIN_GROUP: NavGroup = {
         <Icon>
           <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
           <path d="M5.75 7V5.25a2.25 2.25 0 0 1 4.5 0V7" strokeLinecap="round" />
+        </Icon>
+      ),
+    },
+    // The Audit Log (2026-11-23). It records every tool's actions — role changes, sign-ins and
+    // feedback as well as Reports data — so it belongs to the whole app, not Reports; see the
+    // "Feedback sits with the Audit Log" note above.
+    {
+      href: "/audit-log",
+      label: "Audit Log",
+      isActive: (p) => p === "/audit-log",
+      icon: (
+        <Icon>
+          <rect x="2" y="2" width="12" height="12" rx="1.5" />
+          <line x1="4.5" y1="5.5" x2="11.5" y2="5.5" strokeLinecap="round" />
+          <line x1="4.5" y1="8" x2="11.5" y2="8" strokeLinecap="round" />
+          <line x1="4.5" y1="10.5" x2="8.5" y2="10.5" strokeLinecap="round" />
         </Icon>
       ),
     },

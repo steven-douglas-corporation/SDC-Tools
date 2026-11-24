@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { permittedRoutePaths } from "@/lib/pane-permissions";
 import { getSchedulerBaseUrlForRequest } from "@/lib/scheduler-link";
 import { withSchedulerSso } from "@/lib/scheduler-sso";
-import { toolsFor, type ToolId } from "@/lib/tools";
+import { adminFor, toolsFor, type ToolId } from "@/lib/tools";
 
 // The tools page: the site's bare address. One tile per tool the person has.
 //
@@ -24,7 +24,7 @@ import { toolsFor, type ToolId } from "@/lib/tools";
 // Every signed-in person may open this page. What it shows is decided by the same list the
 // sidebar filters on, so a tile never leads to a page the role is refused.
 
-const ICONS: Record<ToolId | "scheduler", React.ReactNode> = {
+const ICONS: Record<ToolId | "scheduler" | "admin", React.ReactNode> = {
   reports: (
     <>
       <line x1="4" y1="20" x2="4" y2="11" />
@@ -47,9 +47,18 @@ const ICONS: Record<ToolId | "scheduler", React.ReactNode> = {
       <line x1="5" y1="18" x2="15" y2="18" />
     </>
   ),
+  admin: (
+    <>
+      <circle cx="13" cy="12" r="3.2" />
+      <path
+        d="M13 3.6v2.3M13 18.1v2.3M21.4 12h-2.3M6.9 12H4.6M18.9 6.1l-1.6 1.6M8.7 16.3l-1.6 1.6M18.9 17.9l-1.6-1.6M8.7 7.7 7.1 6.1"
+        strokeLinecap="round"
+      />
+    </>
+  ),
 };
 
-function TileIcon({ of }: { of: ToolId | "scheduler" }) {
+function TileIcon({ of }: { of: ToolId | "scheduler" | "admin" }) {
   return (
     <svg
       viewBox="0 0 26 24"
@@ -84,8 +93,12 @@ export default async function ToolsPage({
   }
 
   const session = await auth();
-  const tools = toolsFor(permittedRoutePaths(session?.user?.role ?? "ALL"));
-  if (tools.length === 1) redirect(tools[0]!.href);
+  const permitted = permittedRoutePaths(session?.user?.role ?? "ALL");
+  const tools = toolsFor(permitted);
+  const admin = adminFor(permitted);
+  // One place to go and nothing to choose — skip the grid. An admin always has a choice (the
+  // Admin tile beside their tool), so they keep the grid.
+  if (tools.length === 1 && !admin) redirect(tools[0]!.href);
 
   const schedulerUrl = withSchedulerSso(
     `${await getSchedulerBaseUrlForRequest()}/?view=projects`,
@@ -96,7 +109,7 @@ export default async function ToolsPage({
     <div className={PAGE_SHELL}>
       <PageTitle className="mb-1">Your tools</PageTitle>
       <p className="mb-5 text-sm text-sdc-gray-600">Pick one to open it. Its menu appears in the sidebar.</p>
-      {tools.length === 0 ? (
+      {tools.length === 0 && !admin ? (
         <EmptyState
           title="Nothing is switched on for your account yet"
           message="Ask an administrator to give your role access to the pages you need."
@@ -121,6 +134,15 @@ export default async function ToolsPage({
                 <span className="mt-3 block text-base font-semibold text-sdc-navy">Project Scheduler</span>
                 <span className="mt-0.5 block text-sm text-sdc-gray-600">A separate app. Opens in a new tab.</span>
               </a>
+            </li>
+          )}
+          {admin && (
+            <li>
+              <Link href={admin.href} className={TILE}>
+                <TileIcon of="admin" />
+                <span className="mt-3 block text-base font-semibold text-sdc-navy">{admin.label}</span>
+                <span className="mt-0.5 block text-sm text-sdc-gray-600">{admin.description}</span>
+              </Link>
             </li>
           )}
         </ul>

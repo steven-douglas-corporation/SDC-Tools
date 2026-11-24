@@ -12,9 +12,10 @@
 export type ToolId = "reports" | "tracker";
 
 /**
- * A tool, or Admin. Admin is not a tool and has no tile: it is the pages every tool shares
- * (users, permissions, the audit log, feedback). It is listed in the launcher beside the
- * tools, and has a menu of its own when it is open.
+ * A tool, or Admin. Admin is not a tool — it is the pages every tool shares (users,
+ * permissions, the audit log, feedback) — but it is reached two ways: a tile on the tools page
+ * (adminFor), shown only to someone who holds a real admin page, and an entry in the launcher
+ * beside the tools. It has a menu of its own when it is open.
  */
 export type AreaId = ToolId | "admin";
 
@@ -30,14 +31,15 @@ export interface Tool {
 const isTrackerPath = (path: string): boolean => path === "/tracker" || path.startsWith("/tracker/");
 
 /** Pages every tool shares. They are the Admin area, and never make a tool on their own. */
-// Admin is the app's own area: accounts, permissions and feedback, shared by every tool. Two
-// pages under /admin and beside it are about Reports' data only (Data Management, the Audit
-// Log) and belong to Reports, whatever their addresses say.
+// Admin is the app's own area: accounts, permissions, feedback and the audit log, shared by
+// every tool. (The audit log records every tool's actions, not only Reports'.) Data Management
+// has an /admin address but is about Reports' data only (rosters, finances, data quality), so it
+// lives in Reports' menu, not Admin.
 const isReportsHousekeeping = (path: string): boolean =>
-  path === "/audit-log" || path === "/admin/data-management" || path.startsWith("/admin/data-management/");
+  path === "/admin/data-management" || path.startsWith("/admin/data-management/");
 
 const isSharedPath = (path: string): boolean =>
-  !isReportsHousekeeping(path) && (path === "/feedback" || path.startsWith("/admin/"));
+  !isReportsHousekeeping(path) && (path === "/feedback" || path === "/audit-log" || path.startsWith("/admin/"));
 
 /**
  * The tools a person has, in the order they are shown. `permitted` is every path their role
@@ -67,6 +69,29 @@ export function toolsFor(permitted: readonly string[]): Tool[] {
     });
   }
   return tools;
+}
+
+/** Where an Admin tile lands, in order of preference — the first of these the person holds. */
+const ADMIN_LANDING = ["/admin/users", "/admin/permissions", "/audit-log"] as const;
+
+export interface AdminArea {
+  label: string;
+  description: string;
+  href: string;
+}
+
+/**
+ * The Admin tile for the tools page, or null when the person has no admin page to land on.
+ * Admin is not a tool, but it earns a tile so the shared pages are reachable from home, not
+ * only the launcher. Feedback alone does not earn the tile: every role may open Feedback, so a
+ * tile shown for that would call an ordinary person an administrator. The tile appears only for
+ * someone who holds a genuine admin page, and lands on the first they hold — always a page they
+ * may open, so it never leads to a refusal.
+ */
+export function adminFor(permitted: readonly string[]): AdminArea | null {
+  const href = ADMIN_LANDING.find((p) => permitted.includes(p));
+  if (!href) return null;
+  return { label: "Admin", description: "Accounts, permissions, feedback and the audit log", href };
 }
 
 /** Which area a page belongs to. Null for the tools page itself, which belongs to none. */
