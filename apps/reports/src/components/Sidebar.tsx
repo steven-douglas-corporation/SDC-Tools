@@ -282,7 +282,7 @@ const REPORT_GROUPS: Omit<NavGroup, "tool">[] = [
   // (rosters, finances, data quality) and the Audit Log are about Reports' data only, so they
   // live with Reports. Their addresses and permissions are unchanged.
   {
-    label: "Records",
+    label: "Maintenance",
     items: [
       {
         href: "/admin/data-management",
