@@ -6,7 +6,7 @@ and what is still open. Uncertain items are tracked in the SDC IT RAID Log workb
 (`SDC_IT_RAID_Log.xlsx`, kept outside this repo), under Scope = "Project Tracker". IDs below
 such as D-08 or R-06 refer to rows in that workbook.
 
-Status: draft, updated 2026-11-19. The schema, the forecast engine, the service layer and the
+Status: draft, updated 2026-11-24. The schema, the forecast engine, the service layer and the
 screens are built and tested as a module of SDC Reports (`apps/reports/src/modules/tracker`). Nothing is deployed. In a running copy the screens are visible only to the ELT role.
 
 A word on names: the screens call the simulation's 80% date the **Safe date** (the date to
@@ -166,6 +166,51 @@ where it describes them.
   departments: one person can be in several, and membership changes with need.
 - A **team** is where a person sits in the organisation. It drives capacity defaults and
   reporting.
+
+### Parallel work, pace and the baseline forecast (decided 2026-11-24)
+
+How a person's day is divided when they carry several cards at once — true parallel work, where
+items are picked up, set down and returned to, sometimes over several iterations. The decisions
+here extend the forecast engine. **None of it is built yet.** It supersedes the present
+behaviour, where a person's day is split only by allocation percentages entered by hand and the
+engine otherwise works one card at a time in rank order.
+
+- **Active cards are the parallel set, and no one types a percentage.** A card draws a share of
+  its assignee's day only while it is in an in-progress status — the work the person actually has
+  in hand. One active card fills the day (serial); several share it; cards in To do queue behind
+  and take up their share as the active ones finish. The forecast treats To do and In progress
+  alike today; this makes In progress the thing that pulls capacity now. Typed percentages were
+  rejected because across many cards they are confusing and have to add up to a hundred.
+- **Each active card draws a fixed pace set by its estimate.** A card's pace is its estimate
+  spread over its own span: the span is the high end of its estimate in hours divided by the
+  assignee's daily project hours (the capacity waterfall above), and the pace is the estimate
+  divided by that span. Taking the span from the high estimate keeps the pace gentle, so the work
+  spreads over the card's own timeline rather than being crammed. The pace does not change as work
+  is logged; a card that slips simply runs past its span at the same steady draw, and that is what
+  shows it as late.
+- **Several active cards share the day weighted by pace, not evenly.** A card meant to go faster
+  takes more of the day. When the active paces come to more than the person's day they are
+  over-committed: the day fills highest-priority first and the overflow is flagged, on the same
+  footing as the at-risk and Safe-date thinking. Carrying too many active cards is a soft flag,
+  like the incomplete-project banner, not a hard limit.
+- **Remaining effort is the only progress a person enters, and roughly.** It is not asked for
+  daily or expected to be exact, and it is the single progress field a person touches: it gives a
+  card's progress as the estimate less the remaining over the estimate, and it sets how much work
+  is left. Progress is never inferred from elapsed time or from the board; the last figure entered
+  stands until it is changed.
+- **The committed forecast date is a baseline and does not move with progress.** It re-baselines
+  only when an estimate, a dependency or capacity changes — capacity meaning both a person's
+  available hours and which cards are active. Falling behind on the work does not move it; being
+  late is shown as the gap against the baseline, never by sliding the date. This carries the
+  `baseline_completion_date` idea through the whole forecast.
+- **Two lines, read together.** The baseline burns the estimate down — the plan — at each card's
+  actual share of the day, through its dependencies and the person's capacity. The remaining
+  effort a person enters is laid against that plan to show how far behind the card is. The
+  projected line slopes at the card's actual share, so a card that is behind because its owner is
+  juggling several things is measured against a realistic line, not a solo full-pace one.
+- **Open.** Whether a must-hit priority band sits on top — a tier that always takes its pace
+  before the rest, rather than pace-weighted competition alone. Sprint planning, the layer that
+  chooses which cards go active in a period, is not designed here yet.
 
 ## Proposed, not yet confirmed
 
