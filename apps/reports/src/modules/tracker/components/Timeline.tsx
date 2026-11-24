@@ -16,6 +16,11 @@ const HEAD = 44; // px, height of the dates header
 const DAY_MS = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+// How far the time axis is zoomed out. "fit" is the day-scaled view with month labels; "quarter"
+// and "year" compress it so a long plan fits on screen, with the labels and ticks getting coarser.
+export type TimelineScale = "fit" | "quarter" | "year";
+const SCALE_LABEL: Record<TimelineScale, string> = { fit: "Fit", quarter: "Quarters", year: "Years" };
+
 /** Days since 1970 for a YYYY-MM-DD date, with no time zone involved. */
 function dayNumber(iso: string): number {
   const [y, m, d] = iso.split("-").map(Number);
@@ -126,6 +131,8 @@ export function Timeline({
   closed = [],
   toggleHref,
   finished = false,
+  scale = "fit",
+  scaleHref,
 }: {
   timeline: Pick<TimelineData, "rows" | "links" | "forecastAsOf">;
   /** Where a row's key leads. A card's own page unless told otherwise. */
@@ -148,6 +155,10 @@ export function Timeline({
    * always drawn from the day it started; this adds what is already finished, however long ago.
    */
   finished?: boolean;
+  /** How far the time axis is zoomed out. */
+  scale?: TimelineScale;
+  /** Builds the address for a zoom level; given, the Fit / Quarters / Years control is shown. */
+  scaleHref?: (scale: TimelineScale) => string;
 }) {
   const { rows: allRows, links } = timeline;
   if (allRows.length === 0) {
@@ -197,24 +208,45 @@ export function Timeline({
   const first = Math.min(...dated) - 2;
   const last = Math.max(...dated) + 4;
   const days = last - first + 1;
-  // Sized so a plan of up to about eight months fits beside the card column without scrolling
-  // sideways; a longer one scrolls, because a day narrower than 4px cannot be read.
-  const dayWidth = Math.max(4, Math.min(22, Math.floor(960 / days)));
+  // Day width by zoom level. "fit" keeps the day scale (about eight months beside the cards,
+  // scrolling beyond; a day narrower than 4px cannot be read). "quarter" and "year" compress so
+  // a long plan fits on screen, the floor low enough that years of work fit even though a single
+  // day is no longer meant to be read at that zoom.
+  const dayWidth =
+    scale === "year"
+      ? Math.max(0.7, Math.min(3, 960 / days))
+      : scale === "quarter"
+        ? Math.max(1.5, Math.min(8, 960 / days))
+        : Math.max(4, Math.min(22, Math.floor(960 / days)));
   const width = days * dayWidth;
   const x = (day: number) => (day - first) * dayWidth;
 
-  // ---- header marks: a label at each month start, a tick at each Monday ----
-  const months: { left: number; label: string }[] = [];
-  const mondays: { left: number; label: string }[] = [];
+  // ---- header marks: big labels, and thin ticks between them, coarser the further out ----
+  // fit: a label each month, a tick each Monday (with its date when there is room). quarter: a
+  // label each quarter, a tick each month. year: a label each year, a tick each quarter.
+  const labels: { left: number; label: string }[] = [];
+  const ticks: { left: number; label: string }[] = [];
   for (let d = first; d <= last; d++) {
     const date = new Date(d * DAY_MS);
-    if (date.getUTCDate() === 1 || d === first) {
-      months.push({ left: x(d), label: `${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}` });
+    const monthStart = date.getUTCDate() === 1;
+    const month = date.getUTCMonth();
+    const year = date.getUTCFullYear();
+    const atStart = d === first;
+    if (scale === "year") {
+      if ((monthStart && month === 0) || atStart) labels.push({ left: x(d), label: String(year) });
+      if (monthStart && month % 3 === 0) ticks.push({ left: x(d), label: "" });
+    } else if (scale === "quarter") {
+      if ((monthStart && month % 3 === 0) || atStart) {
+        labels.push({ left: x(d), label: `Q${Math.floor(month / 3) + 1} ${year}` });
+      }
+      if (monthStart) ticks.push({ left: x(d), label: "" });
+    } else {
+      if (monthStart || atStart) labels.push({ left: x(d), label: `${MONTHS[month]} ${year}` });
+      if (date.getUTCDay() === 1) ticks.push({ left: x(d), label: dayWidth >= 8 ? String(date.getUTCDate()) : "" });
     }
-    if (date.getUTCDay() === 1) mondays.push({ left: x(d), label: String(date.getUTCDate()) });
   }
-  // Drop the first label if the next month starts too close for both to fit.
-  if (months.length > 1 && months[1]!.left - months[0]!.left < 64) months.shift();
+  // Drop the first label if the next starts too close for both to fit.
+  if (labels.length > 1 && labels[1]!.left - labels[0]!.left < 64) labels.shift();
 
   // ---- where each card's bar is, for the arrows ----
   const index = new Map(rows.map((r, i) => [r.id, i]));
@@ -247,6 +279,26 @@ export function Timeline({
   return (
     <div className="space-y-3">
       <Legend of={of} stale={stale} grouped={parents.length > 0} />
+      {scaleHref && (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-semibold text-sdc-gray-600">Zoom</span>
+          <div className="inline-flex overflow-hidden rounded-md border border-sdc-border">
+            {(["fit", "quarter", "year"] as const).map((s) => (
+              <Link
+                key={s}
+                href={scaleHref(s)}
+                scroll={false}
+                aria-current={scale === s ? "true" : undefined}
+                className={`px-2.5 py-1 font-semibold ${
+                  scale === s ? "bg-sdc-blue text-white" : "bg-white text-sdc-navy hover:bg-sdc-gray-100"
+                }`}
+              >
+                {SCALE_LABEL[s]}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
       {toggleHref && parents.length > 0 && (
         <p className="flex gap-4 text-xs">
           <Link href={toggleHref(parents)} scroll={false} className="font-semibold text-sdc-blue hover:underline">
@@ -330,7 +382,7 @@ export function Timeline({
         <div className="min-w-0 flex-1 overflow-x-auto">
           <div className="relative" style={{ width, height: HEAD + rows.length * ROW }}>
             <div className="absolute inset-x-0 top-0 border-b border-sdc-border" style={{ height: HEAD }}>
-              {months.map((m) => (
+              {labels.map((m) => (
                 <span
                   key={m.left}
                   style={{ left: m.left + 4 }}
@@ -339,17 +391,17 @@ export function Timeline({
                   {m.label}
                 </span>
               ))}
-              {mondays.map((m) => (
+              {ticks.map((m) => (
                 <span
                   key={m.left}
                   style={{ left: m.left + 2 }}
                   className="absolute bottom-1 text-micro text-sdc-gray-600"
                 >
-                  {dayWidth >= 8 ? m.label : ""}
+                  {m.label}
                 </span>
               ))}
             </div>
-            {mondays.map((m) => (
+            {ticks.map((m) => (
               <div
                 key={m.left}
                 style={{ left: m.left, top: HEAD, bottom: 0 }}

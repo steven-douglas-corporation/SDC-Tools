@@ -9,7 +9,7 @@ import { getPortfolioTimeline } from "@/modules/tracker/service/timeline";
 import { departmentsScope, listDepartments } from "@/modules/tracker/service/departments";
 import { DepartmentFilter } from "@/modules/tracker/components/DepartmentPicker";
 import { departmentView, groupingOf } from "@/modules/tracker/components/format";
-import { Timeline } from "@/modules/tracker/components/Timeline";
+import { Timeline, type TimelineScale } from "@/modules/tracker/components/Timeline";
 import { TrackerTabs } from "@/modules/tracker/components/TrackerTabs";
 
 // Every open project on one timeline, at /tracker/timeline. "TIMELINE" is a reserved project
@@ -22,6 +22,7 @@ export default async function TrackerPortfolioTimelinePage({
     group?: string | string[];
     closed?: string | string[];
     done?: string | string[];
+    scale?: string | string[];
   }>;
 }) {
   const session = await requirePagePermission("tracker:view");
@@ -30,6 +31,8 @@ export default async function TrackerPortfolioTimelinePage({
   const params = await searchParams;
   const view = departmentView(params);
   const finished = (Array.isArray(params.done) ? params.done[0] : params.done) === "1";
+  const scaleParam = Array.isArray(params.scale) ? params.scale[0] : params.scale;
+  const scale: TimelineScale = scaleParam === "quarter" || scaleParam === "year" ? scaleParam : "fit";
   await syncDepartmentsFromOrg();
   const departments = await listDepartments(trackerDb);
   const filtered = view.forIds.length > 0 || view.byIds.length > 0;
@@ -52,14 +55,21 @@ export default async function TrackerPortfolioTimelinePage({
     if (view.byIds.length) query.set("by", view.byIds.join(","));
     if (view.grouped) query.set("group", groupingOf(view));
   };
-  const address = (ids: number[]) => {
+  // Every link here keeps the current zoom, departments, grouping and collapsed state, changing
+  // only the one thing it is for.
+  const build = (opts: { closed?: number[]; scale?: TimelineScale } = {}) => {
     const query = new URLSearchParams();
     setDepartments(query);
     if (finished) query.set("done", "1");
-    if (ids.length) query.set("closed", ids.join(","));
+    const c = opts.closed ?? closed;
+    if (c.length) query.set("closed", c.join(","));
+    const s = opts.scale ?? scale;
+    if (s !== "fit") query.set("scale", s);
     const text = query.toString();
     return text ? `/tracker/timeline?${text}` : "/tracker/timeline";
   };
+  const address = (ids: number[]) => build({ closed: ids });
+  const scaleHref = (s: TimelineScale) => build({ scale: s });
 
   return (
     <div className={PAGE_SHELL}>
@@ -71,6 +81,7 @@ export default async function TrackerPortfolioTimelinePage({
             const query = new URLSearchParams();
             setDepartments(query);
             if (!finished) query.set("done", "1");
+            if (scale !== "fit") query.set("scale", scale);
             const text = query.toString();
             return text ? `/tracker/timeline?${text}` : "/tracker/timeline";
           })()}
@@ -96,6 +107,8 @@ export default async function TrackerPortfolioTimelinePage({
         emptyText={filtered ? "No open project fits the departments chosen." : "There are no open projects to show."}
         of="projects"
         finished={finished}
+        scale={scale}
+        scaleHref={scaleHref}
       />
     </div>
   );
