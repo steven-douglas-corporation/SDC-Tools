@@ -411,3 +411,39 @@ test("a random 300-task plan passes every self-check", () => {
   const scheduled = [...out.results.values()].filter((r) => r.scheduled).length;
   assert.ok(scheduled > 200 && scheduled < 300, `${scheduled} scheduled`);
 });
+
+test("a planned start is placed ahead of the stack rank, from its day, and the rest follows in rank order", () => {
+  // One person, three projects in rank order. Without a plan, GAMMA waits for ALPHA and BETA.
+  const base = (planned: boolean): Inputs => ({
+    asOf: AS_OF,
+    holidays: [],
+    resources: [person("Ana")],
+    tasks: [
+      { id: "ALPHA-1", project: "ALPHA", projectRank: 1, remainingHours: 12, assignee: "Ana", number: 1 },
+      { id: "BETA-1", project: "BETA", projectRank: 2, remainingHours: 12, assignee: "Ana", number: 1 },
+      {
+        id: "GAMMA-1",
+        project: "GAMMA",
+        projectRank: 3,
+        remainingHours: 6,
+        assignee: "Ana",
+        number: 1,
+        ...(planned ? { planned: true, notBefore: "2026-11-12" } : {}),
+      },
+      { id: "GAMMA-2", project: "GAMMA", projectRank: 3, remainingHours: 6, assignee: "Ana", number: 2 },
+    ],
+  });
+  const plain = schedule(base(false)).results;
+  assert.equal(sched(plain, "GAMMA-1").start, "2026-11-17", "in rank order it waits its turn");
+
+  const full = schedule(base(true));
+  assert.deepEqual(verify(base(true), full), []);
+  const out = full.results;
+  // Thursday is given to the planned card; ALPHA takes the day before and the day after it.
+  assert.equal(sched(out, "GAMMA-1").start, "2026-11-12");
+  assert.equal(sched(out, "GAMMA-1").finish, "2026-11-12");
+  assert.equal(sched(out, "ALPHA-1").start, "2026-11-11");
+  assert.equal(sched(out, "ALPHA-1").finish, "2026-11-13");
+  // The rest of GAMMA is not planned, so it still comes after BETA.
+  assert.ok(sched(out, "GAMMA-2").start > sched(out, "BETA-1").finish);
+});

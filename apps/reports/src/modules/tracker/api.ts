@@ -23,12 +23,12 @@ export async function trackerApi<T>(read: (actor: Actor) => Promise<T>): Promise
   const denied = requireApiPermission(session, "tracker:view");
   if (denied) return denied;
   if (!trackerConfigured()) {
-    return NextResponse.json({ error: "The Project Tracker is not set up on this server." }, { status: 503 });
+    return NextResponse.json({ error: "The Internal Projects is not set up on this server." }, { status: 503 });
   }
   const schema = await getSchemaStatus(trackerDb);
   if (!schema.current) {
     return NextResponse.json(
-      { error: `The Project Tracker is waiting on a database update. ${schemaBehindDetail(schema)}` },
+      { error: `The Internal Projects is waiting on a database update. ${schemaBehindDetail(schema)}` },
       { status: 503 },
     );
   }

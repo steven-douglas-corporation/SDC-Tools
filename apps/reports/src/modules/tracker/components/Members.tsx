@@ -11,11 +11,22 @@ import type { Member } from "../service/people";
 const SMALL_INPUT =
   "rounded-md border border-sdc-border bg-white px-2 py-1.5 text-sm text-sdc-navy focus:border-sdc-blue focus:outline-none";
 
-const ROLE_HELP: Record<Member["role"], string> = {
-  viewer: "Viewer: can see the board",
-  contributor: "Contributor: can add, edit and move cards",
-  manager: "Manager: can also add people, archive cards and change the project",
-};
+// What each role may do, least first. Each one can do everything the one before it can. All
+// three are always shown, to everyone: whoever is choosing a role needs to see what the others
+// are, and whoever is on the project should be able to tell what their own allows.
+const ROLES: { role: Member["role"]; label: string; can: string }[] = [
+  {
+    role: "viewer",
+    label: "Viewer",
+    can: "Sees the project: its board, timeline, cards and settings. Changes nothing.",
+  },
+  { role: "contributor", label: "Contributor", can: "Also adds, edits and moves cards, and comments on them." },
+  {
+    role: "manager",
+    label: "Manager",
+    can: "Also changes the project's settings, adds and removes people, and archives cards.",
+  },
+];
 
 export function Members({
   projectId,
@@ -23,6 +34,7 @@ export function Members({
   members,
   people,
   canManage,
+  open = false,
 }: {
   projectId: number;
   projectKey: string;
@@ -30,6 +42,8 @@ export function Members({
   /** Everyone who could be added. */
   people: { id: number; name: string }[];
   canManage: boolean;
+  /** Shown open to begin with, where it is a main part of the page. */
+  open?: boolean;
 }) {
   const [personId, setPersonId] = useState("");
   const [role, setRole] = useState<Member["role"]>("contributor");
@@ -47,10 +61,18 @@ export function Members({
   }
 
   return (
-    <details className={`${CARD_BASE} p-4`}>
+    <details open={open} className={`${CARD_BASE} p-4`}>
       <summary className="cursor-pointer text-sm font-semibold text-sdc-navy">
         People on this project ({members.length})
       </summary>
+      <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs text-sdc-gray-600 sm:grid-cols-[auto_1fr]">
+        {ROLES.map((r) => (
+          <div key={r.role} className="contents">
+            <dt className="font-semibold text-sdc-navy">{r.label}</dt>
+            <dd>{r.can}</dd>
+          </div>
+        ))}
+      </dl>
       <ul className="mt-3 divide-y divide-sdc-border-soft text-sm">
         {members.map((m) => (
           <li key={m.personId} className="flex flex-wrap items-center justify-between gap-2 py-2">
@@ -117,7 +139,6 @@ export function Members({
           <button type="submit" disabled={pending || !personId} className={BUTTON_COMPACT}>
             Add
           </button>
-          <p className="w-full text-xs text-sdc-gray-600">{ROLE_HELP[role]}.</p>
         </form>
       )}
       {error && <p className="mt-2 text-sm text-sdc-red-text">{error}</p>}

@@ -12,6 +12,9 @@ import { useWorkspaceActions } from "@/components/useWorkspaceActions";
 import { NavItemMenu, NavItemMenuButton, type NavMenuAnchor } from "@/components/NavItemMenu";
 import { decideCrossAppNav, insideShell, reportCrossAppNavError } from "@/lib/shell-cross-app-nav";
 import { useToast } from "@/components/ui/Toast";
+import { ToolLauncher } from "@/components/ToolLauncher";
+import { SettingsMenu } from "@/components/SettingsMenu";
+import { toolForPath, toolsFor, type AreaId } from "@/lib/tools";
 import {
   applyNavOrder,
   moveItem,
@@ -24,7 +27,6 @@ import {
 import { appVersionLabel } from "@/lib/app-version";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { isEtcDirty } from "@/lib/etc-dirty-tracker";
-import { RefreshDataButton } from "@/components/RefreshDataButton";
 import { AppZoom } from "@/components/AppZoom";
 import { AppRefreshButton } from "@/components/AppRefreshButton";
 import {
@@ -75,8 +77,16 @@ const RAIL_ITEM = "flex h-9 w-full items-center justify-center rounded-[7px]";
 /** So the collapse toggle can `aria-controls` the thing it collapses (§46.15). */
 const SIDEBAR_ID = "app-sidebar";
 
-type NavItem = { href: string; label: string; icon: React.ReactNode; isActive: (path: string) => boolean };
-type NavGroup = { label: string; items: NavItem[] };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  isActive: (path: string) => boolean;
+  /** The route whose permission shows this item, when that is not the item's own href. */
+  gate?: string;
+};
+/** `tool`: the area whose menu this group belongs to. Without one it is shown in every area. */
+type NavGroup = { label: string; items: NavItem[]; tool?: AreaId };
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -120,14 +130,14 @@ function NavPendingHint() {
 // routes by accident.
 const PROFITABILITY_HREF = "/job-cost-explorer";
 
-const GROUPS: NavGroup[] = [
+const REPORT_GROUPS: Omit<NavGroup, "tool">[] = [
   {
     label: "Overview",
     items: [
       {
-        href: "/",
+        href: "/dashboard",
         label: "Dashboard",
-        isActive: (p) => p === "/",
+        isActive: (p) => p === "/dashboard",
         icon: (
           <Icon>
             <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" />
@@ -155,20 +165,6 @@ const GROUPS: NavGroup[] = [
           </Icon>
         ),
       },
-      {
-        // The Project Tracker module (2026-11-15). Shown only to roles holding
-        // tracker:view, which ships OFF for everyone but ELT.
-        href: "/tracker",
-        label: "Project Tracker",
-        isActive: (p) => p === "/tracker" || p.startsWith("/tracker/"),
-        icon: (
-          <Icon>
-            <rect x="1.75" y="2.5" width="3.5" height="11" rx="0.75" />
-            <rect x="6.25" y="2.5" width="3.5" height="7" rx="0.75" />
-            <rect x="10.75" y="2.5" width="3.5" height="9" rx="0.75" />
-          </Icon>
-        ),
-      },
     ],
   },
   {
@@ -182,6 +178,23 @@ const GROUPS: NavGroup[] = [
           <Icon>
             <circle cx="8" cy="8" r="6" />
             <line x1="8" y1="2" x2="8" y2="8" strokeLinecap="round" />
+          </Icon>
+        ),
+      },
+      // Internal Projects (src/modules/tracker) — a link in Reports' Planning menu for now, not a
+      // tool of its own (2026-11-24, lib/tools.ts). Projects, Timeline and People & time are tabs
+      // across the top of the tracker pages (TrackerTabs.tsx); this one link covers all three and
+      // stays active anywhere under /tracker. Gated by the single /tracker route.
+      {
+        href: "/tracker",
+        label: "Internal Projects",
+        gate: "/tracker",
+        isActive: (p) => p === "/tracker" || p.startsWith("/tracker/"),
+        icon: (
+          <Icon>
+            <rect x="1.75" y="2.5" width="3.5" height="11" rx="0.75" />
+            <rect x="6.25" y="2.5" width="3.5" height="7" rx="0.75" />
+            <rect x="10.75" y="2.5" width="3.5" height="9" rx="0.75" />
           </Icon>
         ),
       },
@@ -280,10 +293,38 @@ const GROUPS: NavGroup[] = [
       },
     ],
   },
+  // Reports' own housekeeping (2026-11-23). Data Management sat in Admin, which is now the area
+  // for the whole app: accounts, permissions, feedback and the audit log, shared by every tool.
+  // Data Management (rosters, finances, data quality) is about Reports' data only, so it stays in
+  // Reports' menu. Its address and permission are unchanged. (The Audit Log moved to Admin — it
+  // records every tool's actions, not only Reports' — see lib/tools.ts and ADMIN_GROUP below.)
+  {
+    label: "Maintenance",
+    items: [
+      {
+        href: "/admin/data-management",
+        label: "Data Management",
+        isActive: (p) => p === "/admin/data-management",
+        icon: (
+          <Icon>
+            <path d="M2 4.5 C2 3.4 4.7 2.5 8 2.5 C11.3 2.5 14 3.4 14 4.5" strokeLinecap="round" />
+            <path d="M2 4.5 V11.5 C2 12.6 4.7 13.5 8 13.5 C11.3 13.5 14 12.6 14 11.5 V4.5" strokeLinecap="round" />
+            <path d="M2 8 C2 9.1 4.7 10 8 10 C11.3 10 14 9.1 14 8" strokeLinecap="round" />
+          </Icon>
+        ),
+      },
+    ],
+  },
 ];
 
+const GROUPS: NavGroup[] = REPORT_GROUPS.map((g) => ({ ...g, tool: "reports" }));
+
+// Admin is an area of its own, opened from the launcher at the top of the sidebar. It
+// was a group at the foot of the one menu; it is kept as a group, shown alone, so its pages
+// are still ordinary sidebar items that can be opened in a tab or in Split View.
 const ADMIN_GROUP: NavGroup = {
   label: "Admin",
+  tool: "admin",
   items: [
     // Feedback sits with the Audit Log because they are the same kind of screen
     // — a record of what happened, read rather than worked in. Unlike the rest
@@ -298,31 +339,6 @@ const ADMIN_GROUP: NavGroup = {
       icon: (
         <Icon>
           <path d="M3.5 13.5 V2.5 H11 L10 5 L11 7.5 H3.5" strokeLinecap="round" strokeLinejoin="round" />
-        </Icon>
-      ),
-    },
-    {
-      href: "/audit-log",
-      label: "Audit Log",
-      isActive: (p) => p === "/audit-log",
-      icon: (
-        <Icon>
-          <rect x="2" y="2" width="12" height="12" rx="1.5" />
-          <line x1="4.5" y1="5.5" x2="11.5" y2="5.5" strokeLinecap="round" />
-          <line x1="4.5" y1="8" x2="11.5" y2="8" strokeLinecap="round" />
-          <line x1="4.5" y1="10.5" x2="8.5" y2="10.5" strokeLinecap="round" />
-        </Icon>
-      ),
-    },
-    {
-      href: "/admin/data-management",
-      label: "Data Management",
-      isActive: (p) => p === "/admin/data-management",
-      icon: (
-        <Icon>
-          <path d="M2 4.5 C2 3.4 4.7 2.5 8 2.5 C11.3 2.5 14 3.4 14 4.5" strokeLinecap="round" />
-          <path d="M2 4.5 V11.5 C2 12.6 4.7 13.5 8 13.5 C11.3 13.5 14 12.6 14 11.5 V4.5" strokeLinecap="round" />
-          <path d="M2 8 C2 9.1 4.7 10 8 10 C11.3 10 14 9.1 14 8" strokeLinecap="round" />
         </Icon>
       ),
     },
@@ -347,6 +363,22 @@ const ADMIN_GROUP: NavGroup = {
         <Icon>
           <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
           <path d="M5.75 7V5.25a2.25 2.25 0 0 1 4.5 0V7" strokeLinecap="round" />
+        </Icon>
+      ),
+    },
+    // The Audit Log (2026-11-23). It records every tool's actions — role changes, sign-ins and
+    // feedback as well as Reports data — so it belongs to the whole app, not Reports; see the
+    // "Feedback sits with the Audit Log" note above.
+    {
+      href: "/audit-log",
+      label: "Audit Log",
+      isActive: (p) => p === "/audit-log",
+      icon: (
+        <Icon>
+          <rect x="2" y="2" width="12" height="12" rx="1.5" />
+          <line x1="4.5" y1="5.5" x2="11.5" y2="5.5" strokeLinecap="round" />
+          <line x1="4.5" y1="8" x2="11.5" y2="8" strokeLinecap="round" />
+          <line x1="4.5" y1="10.5" x2="8.5" y2="10.5" strokeLinecap="round" />
         </Icon>
       ),
     },
@@ -432,9 +464,21 @@ export default function Sidebar({
   // refused there, or the reverse. An item whose href isn't in that map at
   // all (there are none today) would show unconditionally; every current nav
   // item has an entry.
+  //
+  // Each area has its own menu (lib/tools.ts): the groups of the one the page on screen
+  // belongs to are shown, and no others. On the tools page that is none, unless the person
+  // has a single tool, whose menu is then shown everywhere outside Admin.
+  const tools = toolsFor(visibleHrefs);
+  const currentTool = toolForPath(sidebarPath);
+  const menuTool = currentTool ?? (tools.length === 1 ? tools[0]!.id : null);
   const visibleGroups = [...GROUPS, ADMIN_GROUP]
-    .map((g) => ({ ...g, items: g.items.filter((i) => visibleHrefs.includes(i.href)) }))
+    .filter((g) => !g.tool || g.tool === menuTool)
+    .map((g) => ({ ...g, items: g.items.filter((i) => visibleHrefs.includes(i.gate ?? i.href)) }))
     .filter((g) => g.items.length > 0);
+  // The tools page has no menu of its own, so the things that act on a menu are left off it.
+  const onHome = sidebarPath === "/";
+  // Where the launcher's Admin entry leads: the first Admin page this person may open.
+  const adminHref = ADMIN_GROUP.items.find((i) => visibleHrefs.includes(i.gate ?? i.href))?.href;
 
   // The SAME list, shared with the workspace's tab bar so its "+" and Split View
   // pickers offer exactly the pages this sidebar shows — a route offered there and
@@ -660,7 +704,18 @@ export default function Sidebar({
           The wordmark is now `sr-only` when collapsed rather than unmounted: it is the
           application's name, and a screen reader should still be able to reach it from
           the landmark (§46.15). */}
-      <div className={`flex items-center gap-[11px] pt-5 pb-[18px] ${collapsed ? "justify-center px-0" : "px-[18px]"}`}>
+      {/* The header row: the way home, and the control that collapses the sidebar.
+          Expanded they share a row; in the rail the toggle sits directly under the logo. */}
+      <div className={collapsed ? `flex flex-col ${RAIL_PAD}` : "flex items-center pr-[12px]"}>
+      {/* The logo and the name are the way home: the tools page, which sends someone with a
+          single tool straight to it. */}
+      <Link
+        href="/"
+        title="All tools"
+        className={`flex min-w-0 items-center gap-[11px] pt-5 ${
+          collapsed ? "justify-center px-0 pb-2" : "flex-1 px-[18px] pb-[18px]"
+        }`}
+      >
         {/* Slightly lifted tile so the white-on-navy SDC mark still reads as a
             distinct badge against the navy panel behind it. */}
         <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-[#0D2A49] shadow-[inset_0_0_0_1px_#1B4270]">
@@ -670,12 +725,63 @@ export default function Sidebar({
           <p className="truncate text-sm font-semibold leading-tight tracking-[-0.005em] text-[#F3F6FA]">SDC Projects Reports</p>
           <p className="truncate text-note text-[#7E93AC]">Steven Douglas Corp.</p>
         </div>
+      </Link>
+      {/* ── The collapse toggle, at the top (2026-11-20) ────────────────────────────
+          It was the last button of the footer (§46.4), in the same slot in both states.
+          It is at the top now, where most applications keep it and beside the other
+          controls that shape the sidebar (the way home, the tool launcher). The cost,
+          taken knowingly: it is no longer under the pointer after a click, because the
+          header is a row when expanded and a column in the rail.
+
+          `aria-expanded` describes the SIDEBAR, and `aria-controls` names it, so the
+          button reports the state it controls rather than relying on the label
+          swapping (§46.15). An icon alone in both states, so its name is always the
+          hidden label, never only the tooltip. */}
+      <button
+        onClick={toggleCollapsed}
+        aria-expanded={!collapsed}
+        aria-controls={SIDEBAR_ID}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        className={
+          collapsed
+            ? `${RAIL_ITEM} mb-1 text-[#A9BCD0] motion-interactive hover:bg-[#0E3157] hover:text-[#F3F6FA]`
+            : "flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-[#8FA6BE] motion-interactive hover:bg-[#0E3157] hover:text-[#F3F6FA]"
+        }
+      >
+        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+          <Icon>
+            {collapsed ? (
+              <path d="M6 3 L11 8 L6 13" strokeLinecap="round" strokeLinejoin="round" />
+            ) : (
+              <path d="M10 3 L5 8 L10 13" strokeLinecap="round" strokeLinejoin="round" />
+            )}
+          </Icon>
+        </span>
+        <span className="sr-only">{collapsed ? "Expand sidebar" : "Collapse sidebar"}</span>
+      </button>
       </div>
+
+      {/* Shown to anyone with somewhere else to go: a second tool, Admin, or the Scheduler.
+          In practice that is everyone, since the Scheduler's link is in here and nowhere
+          else in the sidebar. */}
+      {(tools.length > 1 || adminHref || schedulerProjectsUrl) && (
+        <ToolLauncher
+          tools={tools}
+          current={currentTool}
+          adminHref={adminHref}
+          collapsed={collapsed}
+          railItemClass={RAIL_ITEM}
+          scheduler={
+            schedulerProjectsUrl ? { href: schedulerProjectsUrl, onClick: onSchedulerClick, inShell } : undefined
+          }
+        />
+      )}
 
       {/* Search — the design shows this field, so it had to be real rather than
           decorative: it filters the nav below by label. ⌘/Ctrl+K focuses it,
-          Escape clears. Hidden when collapsed (no room for a text field). */}
-      {!collapsed && (
+          Escape clears. Hidden when collapsed (no room for a text field), and on the
+          tools page, which has no menu to filter. */}
+      {!collapsed && !onHome && (
         <div className="px-[14px] pb-[14px]">
           <div className="flex h-8 items-center gap-[9px] rounded-[7px] bg-[#0B2846] px-[10px] shadow-[inset_0_0_0_1px_#17395C,0_1px_1px_rgba(0,0,0,0.35)] focus-within:shadow-[inset_0_0_0_1px_#4C8DE8]">
             <span className="h-[11px] w-[11px] shrink-0 rounded-full shadow-[inset_0_0_0_1.4px_#5F7B98]" />
@@ -686,7 +792,7 @@ export default function Sidebar({
               onKeyDown={(e) => {
                 if (e.key === "Escape") setQuery("");
               }}
-              placeholder="Search reports"
+              placeholder={menuTool === "reports" ? "Search reports" : "Search menu"}
               aria-label="Filter navigation"
               className="min-w-0 flex-1 bg-transparent text-xs text-[#C3D1E0] placeholder:text-[#7189A3] focus:outline-none"
             />
@@ -978,63 +1084,14 @@ export default function Sidebar({
           </button>
         )}
 
-        {/* Cross-app link out to the SDC Scheduler. Deliberately NOT part of
-            GROUPS: those are internal next/link routes with an isActive test,
-            while this is a different app on another port — a plain <a> in a new
-            tab, so the report you're on is never lost. The Scheduler has the
-            mirror-image button back to here. */}
-        {schedulerProjectsUrl && (
-          <div className="flex flex-col gap-[3px]">
-            <p
-              className={
-                collapsed ? "sr-only" : "px-[10px] pb-[7px] font-mono text-micro tracking-[0.16em] text-[#6E88A5] uppercase"
-              }
-            >
-              Apps
-            </p>
-            <a
-              href={schedulerProjectsUrl}
-              onClick={onSchedulerClick}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={
-                inShell
-                  ? "Project Scheduler — opens the SDC Scheduler's Projects page in SDC Tools"
-                  : "Project Scheduler — opens the SDC Scheduler's Projects page in a new tab"
-              }
-              className={`text-sm text-[#C3D1E0] motion-interactive hover:bg-[#0E3157] ${
-                collapsed ? RAIL_ITEM : "flex h-9 items-center gap-[11px] rounded-[7px] px-[10px]"
-              }`}
-            >
-              <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[#8FA6BE]">
-                {/* Same staggered gantt bars used for the Scheduler link in the
-                    grids, so the two read as the same destination. */}
-                <Icon>
-                  <line x1="2.5" y1="3.5" x2="9.5" y2="3.5" strokeLinecap="round" />
-                  <line x1="5.5" y1="8" x2="13.5" y2="8" strokeLinecap="round" />
-                  <line x1="3.5" y1="12.5" x2="10.5" y2="12.5" strokeLinecap="round" />
-                </Icon>
-              </span>
-              <span className={collapsed ? "sr-only" : "truncate"}>Project Scheduler</span>
-              {/* External-link cue, matching the new-tab behavior — and dropped
-                  inside the shell, where the click opens an SDC Tools window
-                  rather than leaving for a browser. Dropped in the rail too:
-                  there is no room for a second glyph beside the icon, and the tooltip
-                  and the sr-only label both say it opens in a new tab. */}
-              {!collapsed && !inShell && (
-                <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" className="ml-auto shrink-0 text-[#6E88A5]">
-                  <path d="M6 3 H13 V10" strokeLinecap="round" strokeLinejoin="round" />
-                  <line x1="13" y1="3" x2="6.5" y2="9.5" strokeLinecap="round" />
-                </svg>
-              )}
-            </a>
-          </div>
-        )}
+        {/* The link out to the SDC Scheduler was a group of its own here, "Apps". It is an
+            entry in the launcher at the top of the sidebar now, beside the tools, and a tile
+            on the tools page: a link to another application is not part of a tool's menu. */}
       </nav>
 
       {/* ── Footer block (§46.5, §46.11) ────────────────────────────────────────
-          One bordered group holding Zoom, Refresh, the collapse toggle and the account
-          row.
+          One bordered group holding the two refresh buttons and the account row,
+          which ends in the gear for the person's own settings (Zoom among them).
 
           `shrink-0` is the fix for the reported clipping, and it is worth being precise
           about what went wrong because the symptom did not look like a flex bug.
@@ -1051,12 +1108,6 @@ export default function Sidebar({
           the screenshot. The fix is structural, not cosmetic — the footer refuses to
           shrink, and `flex-1` is applied only in the state that wants it. */}
       <div className={`flex shrink-0 flex-col border-t border-[#12314F] pt-2.5 pb-3 ${collapsed ? RAIL_PAD : "px-[14px]"}`}>
-        {/* THE size control for the whole application (§45). Here, and only here:
-            the Monthly ETC and Projects toolbars used to carry their own Text size,
-            Font size, Row height and Column width steppers, so the same app could
-            be at two densities on two tabs. See lib/app-zoom.ts. */}
-        <AppZoom collapsed={collapsed} />
-
         {/* ── Exit Split View — the legacy /split route only (2026-10-08) ─────────
             A workspace split has no button any more: pages and tabs are dragged into
             place, and a split ends when one side runs out of tabs (or with Ctrl+\). The
@@ -1113,72 +1164,11 @@ export default function Sidebar({
           />
         </div>
 
-        {/* Side-by-side in the mock rather than the two stacked full-width rows
-            this used to be — it reclaims a row of vertical space. Stacks again
-            when collapsed, where there's no width for two. */}
-        <div className={`flex gap-[3px] pt-1 pb-2.5 ${collapsed ? "flex-col" : "gap-1.5"}`}>
-          {/* THE refresh control (§25). It used to be `window.location.reload()` —
-              which, to anyone reading the label, was a second refresh button that
-              refreshed no data at all: it re-read the same rows the last sync had left
-              behind. It now runs the one application-wide pass, from every page, and the
-              reload it replaces is unnecessary because the action revalidates the routes
-              and broadcasts to the other tabs. */}
-          {/* ── One Refresh Data, and it lives here (§41.16, 2026-08-05) ────────
-              This was hidden on /etc from §29 until 2026-08-05, because §29 had moved a
-              second copy into the Monthly ETC toolbar on the reasoning that "the sidebar
-              collapses to a rail, and a control nobody can find is not a control".
-              §41.16 reverses that and asks for one application-wide control here. The
-              discoverability worry §29 raised is real but is answered by the rail rather
-              than by a second button: `compact={collapsed}` keeps it visible as an icon
-              with its label as a tooltip, so it never disappears — and the ETC toolbar
-              copy is gone, so there is exactly ONE on screen on every route.
-              There was only ever one refresh PATH (lib/refresh-actions ->
-              refresh-service -> runAllSyncs); this was always about how many buttons
-              point at it. */}
-          <RefreshDataButton
-            compact={collapsed}
-            // `dense` keeps its label to what fits beside Collapse at 128px (see the note
-            // on the prop). Irrelevant when compact, which shows no label at all.
-            dense
-            // `flex-1` ONLY when expanded — see the footer's note. In the rail it made
-            // this a 14px-tall sliver with a clipped label.
-            className={`motion-interactive flex h-[30px] items-center justify-center gap-[7px] rounded-[7px] bg-[#0B2846] text-xs whitespace-nowrap text-[#C3D1E0] shadow-[inset_0_0_0_1px_#17395C] hover:bg-[#0E3157] disabled:opacity-60 ${
-              collapsed ? "w-full shrink-0" : "flex-1 px-2"
-            }`}
-          />
-
-          {/* ── One toggle, one position (§46.4) ──────────────────────────────────
-              It is the same button in both states, in the same slot, so it cannot "move
-              unexpectedly when the sidebar content changes". Collapsed it is a
-              full-rail-width chevron pointing right (expand); expanded it is the
-              labelled Collapse button.
-
-              `aria-expanded` describes the SIDEBAR, and `aria-controls` names it, so the
-              button reports the state it controls rather than relying on the label
-              swapping (§46.15). */}
-          <button
-            onClick={toggleCollapsed}
-            aria-expanded={!collapsed}
-            aria-controls={SIDEBAR_ID}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className={`flex h-[30px] items-center justify-center gap-[7px] rounded-[7px] bg-[#0B2846] text-xs text-[#C3D1E0] shadow-[inset_0_0_0_1px_#17395C] hover:bg-[#0E3157] ${
-              collapsed ? "w-full shrink-0" : "flex-1"
-            }`}
-          >
-            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-              <Icon>
-                {collapsed ? (
-                  <path d="M6 3 L11 8 L6 13" strokeLinecap="round" strokeLinejoin="round" />
-                ) : (
-                  <path d="M10 3 L5 8 L10 13" strokeLinecap="round" strokeLinejoin="round" />
-                )}
-              </Icon>
-            </span>
-            {/* Hidden, not removed: this is the button's accessible name, and it changes
-                with the state, which is exactly what a screen reader needs to hear. */}
-            <span className={collapsed ? "sr-only" : ""}>{collapsed ? "Expand sidebar" : "Collapse sidebar"}</span>
-          </button>
-        </div>
+        {/* Refresh Data moved to the Data Management page → Data sources tab (2026-11-23).
+            It pulls Reports' own sources (Paylocity, Total ETO, the SFTP files) into the
+            warehouse, so it belongs beside the source freshness it affects rather than in the
+            global footer, where it also showed on tools it has nothing to do with. App Refresh
+            above stays — it only reloads the tab. Per-source controls are planned (tracker: DW). */}
 
         {/* ── The account row, and the control that was missing entirely (§46.5) ──
             Collapsed, this used to render the avatar and NOTHING else: the email and the
@@ -1231,6 +1221,18 @@ export default function Sidebar({
             </form>
             )}
           </div>
+          {/* Settings that are the person's own, behind a gear beside their name.
+
+              THE size control for the whole application (§45) lives here, and only
+              here: the Monthly ETC and Projects toolbars used to carry their own Text
+              size, Font size, Row height and Column width steppers, so the same app
+              could be at two densities on two tabs. See lib/app-zoom.ts. It was the
+              footer's first row until 2026-11-20; in the gear it is still on every
+              page and still reachable from the collapsed rail, where the menu opens
+              beside the sidebar with the full control in it. */}
+          <SettingsMenu collapsed={collapsed}>
+            <AppZoom />
+          </SettingsMenu>
         </div>
 
         {/* The running application version. In the sidebar, so it is on every tab

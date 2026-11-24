@@ -15,10 +15,43 @@ export interface ProjectListItem {
   portfolioRank: number | null;
   ownerName: string;
   ownerPersonId: number;
+  /** Why it is worth doing. Null only on a project made before this was asked for. */
+  justification: string | null;
+  valueBucketId: number | null;
+  /** What it is worth in a year, as the range's own words, e.g. "$50k to $250k a year". */
+  valueLabel: string | null;
+  /** The range's place among the ranges, smallest first, for sorting by value. */
+  valueSort: number | null;
+  /** The department the project is for. Null only on a project made before this was asked for. */
+  forDepartmentId: number | null;
+  forDepartmentName: string | null;
+  /** The department's own place among the departments of its group. */
+  forDepartmentSort: number | null;
+  /** The group that department sits in, or the department itself when it stands alone. Lists are grouped by it. */
+  forGroupId: number | null;
+  forGroupName: string | null;
+  forGroupSort: number | null;
+  /** The department that does the work. Null only on a project made before this was asked for. */
+  doneByDepartmentId: number | null;
+  doneByDepartmentName: string | null;
+  doneByDepartmentSort: number | null;
+  /** The group that department sits in, or the department itself when it stands alone. */
+  doneByGroupId: number | null;
+  doneByGroupName: string | null;
+  doneByGroupSort: number | null;
   targetDate: string | null;
+  /** The day the project started, where a manager has said so. Otherwise its cards decide. */
+  startDate: string | null;
   taskCount: number;
   doneCount: number;
   remainingHours: number;
+  /** Hours estimated across the project's cards, done or not: what the remaining hours are left of. */
+  estimatedHours: number;
+  /** How many of its cards carry an estimate, and how many finished ones never had one. */
+  estimatedCards: number;
+  unestimatedDoneCards: number;
+  /** The people named on its open cards, by name. Empty when the work is the department's as a whole. */
+  assigneeNames: string[];
   forecastFinish: string | null;
   p80Finish: string | null;
   atRisk: boolean | null;
@@ -39,7 +72,28 @@ interface ProjectRow {
   portfolio_rank: number | null;
   owner_name: string;
   owner_person_id: number;
+  justification: string | null;
+  value_bucket_id: number | null;
+  value_label: string | null;
+  value_sort: number | null;
+  for_team_id: number | null;
+  for_name: string | null;
+  for_sort: number | null;
+  for_group_id: number | null;
+  for_group_name: string | null;
+  for_group_sort: number | null;
+  estimated_hours: number | null;
+  estimated_cards: number | null;
+  unestimated_done_cards: number | null;
+  assignee_names: string[] | null;
+  done_by_team_id: number | null;
+  done_by_name: string | null;
+  done_by_sort: number | null;
+  done_by_group_id: number | null;
+  done_by_group_name: string | null;
+  done_by_group_sort: number | null;
   target_date: string | null;
+  start_date: string | null;
   task_count: string | number | null;
   done_count: string | number | null;
   remaining_hours: number | null;
@@ -56,9 +110,113 @@ interface ProjectRow {
 
 const PROJECT_COLUMNS = `
   r.project_id, r.key, r.name, r.state, r.portfolio_rank, o.display_name AS owner_name, r.owner_person_id,
-  r.target_date::text, r.task_count, r.done_count, r.remaining_hours::float8,
+  pj.justification, pj.value_bucket_id, vb.label AS value_label, vb.sort_order AS value_sort,
+  pj.for_team_id, fd.name AS for_name, fd.sort_order AS for_sort, dd.sort_order AS done_by_sort, coalesce(fg.id, fd.id) AS for_group_id,
+  coalesce(fg.name, fd.name) AS for_group_name, coalesce(fg.sort_order, fd.sort_order) AS for_group_sort,
+  pj.done_by_team_id, dd.name AS done_by_name, coalesce(dg.id, dd.id) AS done_by_group_id,
+  coalesce(dg.name, dd.name) AS done_by_group_name, coalesce(dg.sort_order, dd.sort_order) AS done_by_group_sort,
+  r.target_date::text, pj.actual_start_date::text AS start_date, r.task_count, r.done_count, r.remaining_hours::float8,
   r.forecast_completion_date::text AS forecast_finish, r.p80_finish::text, r.at_risk, r.at_risk_basis,
-  r.unscheduled_tasks, r.unestimated_tasks, r.stale_tasks, r.next_milestone, m.role AS my_role`;
+  r.unscheduled_tasks, r.unestimated_tasks, r.stale_tasks, r.next_milestone, m.role AS my_role,
+  (SELECT coalesce(sum(e.effort_estimate_hours), 0)::float8
+     FROM tracker.task e
+     JOIN tracker.workflow_status es ON es.id = e.status_id
+    WHERE e.project_id = r.project_id AND e.archived_at IS NULL AND es.category <> 'cancelled'
+      AND NOT EXISTS (SELECT 1 FROM tracker.task c WHERE c.parent_task_id = e.id AND c.archived_at IS NULL)
+  ) AS estimated_hours,
+  (SELECT count(*)::int
+     FROM tracker.task e
+     JOIN tracker.workflow_status es ON es.id = e.status_id
+    WHERE e.project_id = r.project_id AND e.archived_at IS NULL AND es.category <> 'cancelled'
+      AND NOT EXISTS (SELECT 1 FROM tracker.task c WHERE c.parent_task_id = e.id AND c.archived_at IS NULL)
+      AND e.effort_estimate_hours IS NOT NULL
+  ) AS estimated_cards,
+  (SELECT count(*)::int
+     FROM tracker.task e
+     JOIN tracker.workflow_status es ON es.id = e.status_id
+    WHERE e.project_id = r.project_id AND e.archived_at IS NULL AND es.category <> 'cancelled'
+      AND NOT EXISTS (SELECT 1 FROM tracker.task c WHERE c.parent_task_id = e.id AND c.archived_at IS NULL)
+      AND e.effort_estimate_hours IS NULL AND e.type <> 'milestone' AND es.category = 'done'
+  ) AS unestimated_done_cards,
+  (SELECT array_agg(DISTINCT ap.display_name ORDER BY ap.display_name)
+     FROM tracker.task a
+     JOIN tracker.workflow_status s ON s.id = a.status_id
+     JOIN tracker.person ap ON ap.id = a.assignee_person_id
+    WHERE a.project_id = r.project_id AND a.archived_at IS NULL AND s.category NOT IN ('done', 'cancelled')
+  ) AS assignee_names`;
+
+/**
+ * Which of a project's two departments a list is filtered and grouped by: the one it is for,
+ * or the one doing the work.
+ */
+export type DepartmentLens = "for" | "by";
+
+/**
+ * How finely a grouped list is gathered: under the group a department sits in (Engineering),
+ * or under the department itself (Controls Engineering).
+ */
+export type DepartmentLevel = "group" | "team";
+
+type Lensed = Pick<
+  ProjectListItem,
+  | "forDepartmentId"
+  | "forDepartmentName"
+  | "forDepartmentSort"
+  | "forGroupId"
+  | "forGroupName"
+  | "forGroupSort"
+  | "doneByDepartmentId"
+  | "doneByDepartmentName"
+  | "doneByDepartmentSort"
+  | "doneByGroupId"
+  | "doneByGroupName"
+  | "doneByGroupSort"
+>;
+
+/**
+ * The projects as a list filters and groups them. Everything that narrows or gathers by
+ * department reads forDepartmentId and the three forGroup fields, so this hands back the same
+ * projects with those four set for the view asked for: taken from who does the work when
+ * looking through "by", and naming the department itself, not its group, at the "team" level.
+ * The names shown in the For and Done by columns are not touched. Through "for" at the "group"
+ * level nothing changes.
+ */
+export function throughLens<P extends Lensed>(
+  projects: P[],
+  lens: DepartmentLens,
+  level: DepartmentLevel = "group",
+): P[] {
+  if (lens === "for" && level === "group") return projects;
+  return projects.map((p) => {
+    const by = lens === "by";
+    const id = by ? p.doneByDepartmentId : p.forDepartmentId;
+    const group = {
+      id: by ? p.doneByGroupId : p.forGroupId,
+      name: by ? p.doneByGroupName : p.forGroupName,
+      sort: by ? p.doneByGroupSort : p.forGroupSort,
+    };
+    const own = {
+      name: by ? p.doneByDepartmentName : p.forDepartmentName,
+      sort: by ? p.doneByDepartmentSort : p.forDepartmentSort,
+    };
+    return {
+      ...p,
+      forDepartmentId: id,
+      // Departments stay together under their group's place in the company's order.
+      forGroupId: level === "team" ? id : group.id,
+      // A department is named with the group it sits in, so a heading says where it belongs.
+      forGroupName:
+        level !== "team"
+          ? group.name
+          : group.id != null && group.id !== id && group.name && own.name
+            ? `${group.name} › ${own.name}`
+            : own.name,
+      forGroupSort: level === "team" && group.sort != null ? group.sort * 1000 + (own.sort ?? 0) : group.sort,
+      // The other department, so a check for a missing one still sees both.
+      doneByDepartmentId: by ? p.forDepartmentId : p.doneByDepartmentId,
+    };
+  });
+}
 
 function toProject(r: ProjectRow, admin: boolean): ProjectListItem {
   return {
@@ -69,10 +227,31 @@ function toProject(r: ProjectRow, admin: boolean): ProjectListItem {
     portfolioRank: r.portfolio_rank == null ? null : Number(r.portfolio_rank),
     ownerName: r.owner_name,
     ownerPersonId: Number(r.owner_person_id),
+    justification: r.justification,
+    valueBucketId: r.value_bucket_id == null ? null : Number(r.value_bucket_id),
+    valueLabel: r.value_label,
+    valueSort: r.value_sort == null ? null : Number(r.value_sort),
+    forDepartmentId: r.for_team_id == null ? null : Number(r.for_team_id),
+    forDepartmentName: r.for_name,
+    forDepartmentSort: r.for_sort == null ? null : Number(r.for_sort),
+    forGroupId: r.for_group_id == null ? null : Number(r.for_group_id),
+    forGroupName: r.for_group_name,
+    forGroupSort: r.for_group_sort == null ? null : Number(r.for_group_sort),
+    doneByDepartmentId: r.done_by_team_id == null ? null : Number(r.done_by_team_id),
+    doneByDepartmentName: r.done_by_name,
+    doneByDepartmentSort: r.done_by_sort == null ? null : Number(r.done_by_sort),
+    doneByGroupId: r.done_by_group_id == null ? null : Number(r.done_by_group_id),
+    doneByGroupName: r.done_by_group_name,
+    doneByGroupSort: r.done_by_group_sort == null ? null : Number(r.done_by_group_sort),
     targetDate: r.target_date,
+    startDate: r.start_date,
     taskCount: Number(r.task_count ?? 0),
     doneCount: Number(r.done_count ?? 0),
     remainingHours: Number(r.remaining_hours ?? 0),
+    estimatedHours: Number(r.estimated_hours ?? 0),
+    estimatedCards: Number(r.estimated_cards ?? 0),
+    unestimatedDoneCards: Number(r.unestimated_done_cards ?? 0),
+    assigneeNames: r.assignee_names ?? [],
     forecastFinish: r.forecast_finish,
     p80Finish: r.p80_finish,
     atRisk: r.at_risk,
@@ -96,6 +275,12 @@ export async function listProjects(db: Database, actor: Actor): Promise<ProjectL
       `SELECT ${PROJECT_COLUMNS}
          FROM tracker.project_rollup r
          JOIN tracker.person o ON o.id = r.owner_person_id
+         JOIN tracker.project pj ON pj.id = r.project_id
+    LEFT JOIN tracker.value_bucket vb ON vb.id = pj.value_bucket_id
+    LEFT JOIN tracker.team fd ON fd.id = pj.for_team_id
+    LEFT JOIN tracker.team fg ON fg.id = fd.parent_team_id
+    LEFT JOIN tracker.team dd ON dd.id = pj.done_by_team_id
+    LEFT JOIN tracker.team dg ON dg.id = dd.parent_team_id
     LEFT JOIN tracker.project_member m ON m.project_id = r.project_id AND m.person_id = $1
         WHERE $2::boolean OR m.role IS NOT NULL
         ORDER BY (r.state IN ('completed', 'cancelled')), r.portfolio_rank NULLS LAST, r.key`,
@@ -334,6 +519,12 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
       `SELECT ${PROJECT_COLUMNS}
          FROM tracker.project_rollup r
          JOIN tracker.person o ON o.id = r.owner_person_id
+         JOIN tracker.project pj ON pj.id = r.project_id
+    LEFT JOIN tracker.value_bucket vb ON vb.id = pj.value_bucket_id
+    LEFT JOIN tracker.team fd ON fd.id = pj.for_team_id
+    LEFT JOIN tracker.team fg ON fg.id = fd.parent_team_id
+    LEFT JOIN tracker.team dd ON dd.id = pj.done_by_team_id
+    LEFT JOIN tracker.team dg ON dg.id = dd.parent_team_id
     LEFT JOIN tracker.project_member m ON m.project_id = r.project_id AND m.person_id = $1
         WHERE r.key = $2`,
       [actor.personId, projectKey.toUpperCase()],
@@ -478,5 +669,21 @@ export async function getBoard(db: Database, actor: Actor, projectKey: string): 
         .filter((c) => c.total > 0),
       forecastAsOf: run.rows[0]?.as_of ?? null,
     };
+  });
+}
+
+/** One of the dollar ranges a project's yearly value is chosen from. */
+export interface ValueBucket {
+  id: number;
+  label: string;
+}
+
+/** The value ranges, smallest first, for the forms that ask what a project is worth. */
+export async function listValueBuckets(db: Database): Promise<ValueBucket[]> {
+  return db.transaction(async (tx) => {
+    const { rows } = await tx.query<{ id: number; label: string }>(
+      `SELECT id, label FROM tracker.value_bucket ORDER BY sort_order`,
+    );
+    return rows.map((r) => ({ id: Number(r.id), label: r.label }));
   });
 }

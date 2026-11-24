@@ -19,7 +19,7 @@ const pools = new Map<string, Pool>();
 
 function poolFor(envName: string): Pool {
   const url = process.env[envName]?.trim();
-  if (!url) throw new Error(`The Project Tracker database is not configured: set ${envName} in .env.`);
+  if (!url) throw new Error(`The Internal Projects database is not configured: set ${envName} in .env.`);
   let pool = pools.get(url);
   if (!pool) {
     pool = new Pool({ connectionString: url, max: 5, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000 });

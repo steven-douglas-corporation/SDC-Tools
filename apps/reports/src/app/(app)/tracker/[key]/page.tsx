@@ -8,19 +8,16 @@ import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
 import { syncPeopleFromUsers, trackerActor } from "@/modules/tracker/current-actor";
 import { TrackerError } from "@/modules/tracker/service/database";
 import { getBoard, type Board as BoardData } from "@/modules/tracker/service/queries";
-import { listMembers } from "@/modules/tracker/service/people";
 import { Board } from "@/modules/tracker/components/Board";
-import { Members } from "@/modules/tracker/components/Members";
-import { ProjectSettings } from "@/modules/tracker/components/ProjectSettings";
-import type { ProjectState } from "@/modules/tracker/service/projects";
 import { ProjectViews } from "@/modules/tracker/components/ProjectViews";
 import { SafeDateHelp } from "@/modules/tracker/components/HelpTip";
-import { hours, shortDate } from "@/modules/tracker/components/format";
+import { STALE_HOURS, hours, shortDate } from "@/modules/tracker/components/format";
 
 const plural = (label: string) => (label.endsWith("y") ? `${label.slice(0, -1)}ies` : `${label}s`);
 
 // One project's board. Thin on purpose, like ../page.tsx: permission, who is asking, the
-// module's data, the module's component.
+// module's data, the module's component. What a manager changes about the project, and who is
+// on it, are on the Settings tab (./settings/page.tsx), not under the board.
 export default async function TrackerBoardPage({ params }: { params: Promise<{ key: string }> }) {
   const session = await requirePagePermission("tracker:view");
   if (!trackerConfigured()) notFound();
@@ -40,13 +37,20 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
     throw e;
   }
   const p = board.project;
-  const members = await listMembers(trackerDb, actor, p.id);
   const canEdit = hasPermission(session.user.role, "tracker:edit");
+  const settings = (
+    <Link href={`/tracker/${p.key}/settings`} className="font-semibold text-sdc-blue hover:underline">
+      Settings
+    </Link>
+  );
 
   const state = p.state.replace("_", " ");
   const facts: [string, string][] = [
     ["State", p.state === "completed" ? "Finished" : state.charAt(0).toUpperCase() + state.slice(1)],
     ["Owner", p.ownerName],
+    ["For", p.forDepartmentName ?? "Not set"],
+    ["Done by", p.doneByDepartmentName ?? "Not set"],
+    ["Value", p.valueLabel ?? "Not set"],
     ["Stack rank", p.portfolioRank?.toString() ?? "none"],
     ["Target", shortDate(p.targetDate)],
     ["Forecast", shortDate(p.forecastFinish)],
@@ -66,12 +70,20 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
     <div className={PAGE_SHELL}>
       <p className="mb-1 text-sm">
         <Link href="/tracker" className="text-sdc-blue hover:underline">
-          Project Tracker
+          Internal Projects
         </Link>
         <span className="text-sdc-gray-400"> / </span>
         <span className="text-sdc-gray-600">{p.key}</span>
       </p>
-      <PageTitle className="mb-3">{p.name}</PageTitle>
+      <PageTitle className="mb-1">{p.name}</PageTitle>
+      {/* Why the project exists, straight under its name: it is what its rank is argued from. */}
+      <p className="mb-3 max-w-3xl text-sm text-sdc-gray-600">
+        {p.justification ?? (
+          <span className="italic">
+            No justification yet. A manager adds one, with what the project is worth and who it is for, in {settings}.
+          </span>
+        )}
+      </p>
 
       <dl className="mb-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
         {facts.map(([label, value]) => (
@@ -99,51 +111,38 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
 
       {p.portfolioRank == null || p.state !== "active" ? (
         <p className="mb-4 rounded-lg border border-sdc-border bg-sdc-yellow-bg px-3 py-2 text-sm text-sdc-yellow-text">
-          {p.portfolioRank == null
-            ? "This project has no stack rank yet, so its work is not forecast. The portfolio owner sets the rank on the Project Tracker page."
-            : p.state === "completed" || p.state === "cancelled"
-              ? `This project is ${p.state === "completed" ? "finished" : "cancelled"}, so its work is not forecast.`
-              : `This project is ${p.state.replace("_", " ")}. Make it active in Project settings below when work starts.`}
+          {p.portfolioRank == null ? (
+            "This project has no stack rank yet, so its work is not forecast. The portfolio owner sets the rank on the Internal Projects page."
+          ) : p.state === "completed" || p.state === "cancelled" ? (
+            `This project is ${p.state === "completed" ? "finished" : "cancelled"}, so its work is not forecast.`
+          ) : (
+            <>
+              This project is {p.state.replace("_", " ")}. Make it active in {settings} when work starts.
+            </>
+          )}
         </p>
       ) : (
         (p.unscheduledTasks > 0 || p.staleTasks > 0) && (
           <p className="mb-4 rounded-lg border border-sdc-border bg-sdc-yellow-bg px-3 py-2 text-sm text-sdc-yellow-text">
-            The forecast above leaves out {p.unscheduledTasks} card{p.unscheduledTasks === 1 ? "" : "s"}
-            {p.unestimatedTasks > 0 ? ` (${p.unestimatedTasks} with no estimate)` : ""}
-            {p.staleTasks > 0
-              ? `, and ${p.staleTasks} card${p.staleTasks === 1 ? " has" : "s have"} hours left that nobody has confirmed lately`
-              : ""}
-            . Each card says why.
+            {p.unscheduledTasks > 0 && (
+              <>
+                The forecast above leaves out {p.unscheduledTasks} card{p.unscheduledTasks === 1 ? "" : "s"}
+                {p.unestimatedTasks > 0 ? ` (${p.unestimatedTasks} with no estimate)` : ""}, so the real finish is
+                later. Each card says why.{" "}
+              </>
+            )}
+            {p.staleTasks > 0 && (
+              <>
+                {STALE_HOURS(p.staleTasks)}: open {p.staleTasks === 1 ? "it" : "each"} and update the hours, or confirm
+                they are still right.
+              </>
+            )}
           </p>
         )
       )}
 
       <ProjectViews projectKey={p.key} current="board" />
       <Board board={board} canEdit={canEdit} />
-
-      {canEdit && p.myRole === "manager" && (
-        <div className="mt-4">
-          <ProjectSettings
-            projectId={p.id}
-            projectKey={p.key}
-            targetDate={p.targetDate}
-            ownerPersonId={p.ownerPersonId}
-            state={p.state as ProjectState}
-            openCards={p.taskCount - p.doneCount}
-            people={board.people}
-          />
-        </div>
-      )}
-
-      <div className="mt-4">
-        <Members
-          projectId={p.id}
-          projectKey={p.key}
-          members={members}
-          people={board.people}
-          canManage={canEdit && p.myRole === "manager"}
-        />
-      </div>
 
       {board.forecastAsOf && (
         <p className="mt-3 text-xs text-sdc-gray-600">Forecast made for {shortDate(board.forecastAsOf)}.</p>

@@ -1,142 +1,145 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { PAGE_SHELL, card } from "@/components/ui/classnames";
 import { PageTitle } from "@/components/ui/Typography";
-import { BUTTON_PRIMARY, PAGE_SHELL } from "@/components/ui/classnames";
-import { requirePagePermission } from "@/lib/require-permission";
-import { getDashboardOverview, dashboardMonth } from "@/lib/dashboard-overview";
-import { DashboardOverviewPanel, monthLabel } from "@/components/dashboard/DashboardOverview";
-import { DashboardMonthSelect } from "@/components/dashboard/DashboardMonthSelect";
-import { Band } from "@/components/dashboard/DashboardLayout";
-import { UtilizationPanel } from "@/components/dashboard/UtilizationPanel";
-import { DashboardTabs } from "@/components/DashboardTabs";
-import { FinancesPanel } from "@/components/dashboard/FinancesPanel";
-import { DashboardFeedbackBand } from "@/components/dashboard/DashboardFeedbackBand";
-import { canSeePartsBudget, financeCardsFor } from "@/lib/finance-cards";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { permittedRoutePaths } from "@/lib/pane-permissions";
+import { getSchedulerBaseUrlForRequest } from "@/lib/scheduler-link";
+import { withSchedulerSso } from "@/lib/scheduler-sso";
+import { adminFor, toolsFor, type ToolId } from "@/lib/tools";
 
-// ── The Dashboard (redesigned 2026-08-27) ───────────────────────────────────
+// The tools page: the site's bare address. One tile per tool the person has.
 //
-// Was four count KPIs, a "Manage Jobs" button and a refresh-status card, on a
-// page wide enough for far more — a landing page that told a manager the number
-// of jobs and nothing about the work. It now answers the questions the ETC
-// process actually opens with: what is active and for whom, what is being tested
-// this month and by which discipline, and what capacity the two execution
-// departments have in that month.
+// Until 2026-11-19 this address was the Dashboard, which is now at /dashboard. Three things
+// keep that move from being felt:
 //
-// Two structural rules hold this together:
+//   - A Dashboard link made before the move carries `m` (the month) or `tab`. It is sent on
+//     to /dashboard with the same query, so bookmarks and old feedback links still open it.
+//   - Someone with a single tool has nothing to choose between, so they go straight to it.
+//     For a role with Reports alone that is the Dashboard, or the first report they hold:
+//     the same place this address took them before.
+//   - Saved tabs and split views that name "/" are read as the Dashboard (lib/split-view.ts).
 //
-//   1. ONE data pass. Every figure comes from getDashboardOverview(month) — a
-//      single parallel batch of five reads (jobs, employees, punch hours,
-//      Scheduler FATs, Scheduler discipline owners). No card fetches anything of
-//      its own, so adding a card costs nothing and the numbers on two cards
-//      cannot disagree.
-//   2. ONE month. The month selector sets `?m=YYYY-MM` and the server rebuilds
-//      the page from it, so the FAT count, the ME/CE split, Engineering hours and
-//      Shop hours move together by construction rather than by four controls
-//      being kept in step.
-//
-// Active Jobs is deliberately NOT month-scoped. There is no historical
-// active-job model in this app — `Job.status` is the current state and nothing
-// records what it was in March — so a month-scoped active count would be a
-// number about today wearing a label about the past. It says "current status" on
-// the section instead.
-//
-// The Data Quality tab (with its issue badge) and the "Data source health" card
-// moved to Admin > Data Management on 2026-10-20. They are about whether to
-// trust the data rather than about the work, and the Dashboard is now only the
-// work. The Manage Jobs button stays.
-//
-// ── Two tabs: Executive and Finances (2026-10-20) ──────────────────────────
-//
-// Executive is everything above. Finances is a set of cards, each a window onto a
-// page that already shows the figure and each ending in a "More details" link to it —
-// see lib/finance-cards.ts. A role sees the Finances tab only if it can open at least
-// one of those pages; otherwise the Dashboard is exactly what it was, with no tab
-// strip.
-//
-// Finances is decided and built HERE, on the server, from the role: a role without
-// access never has finance figures in its page, which a hidden-but-mounted panel
-// would not guarantee. And it is only built when the URL says `?tab=finances`, so
-// the landing view does not pay for it.
+// Every signed-in person may open this page. What it shows is decided by the same list the
+// sidebar filters on, so a tile never leads to a page the role is refused.
 
-export async function DashboardView({ params }: { params: { tab?: string; m?: string } }) {
-  const session = await requirePagePermission("dashboard:view");
-  const month = dashboardMonth(params.m);
-  const financeCards = financeCardsFor(session.user.role);
-  const partsBudget = canSeePartsBudget(session.user.role);
-  const hasFinances = financeCards.length > 0 || partsBudget;
-  const financesOpen = hasFinances && params.tab === "finances";
+const ICONS: Record<ToolId | "scheduler" | "admin", React.ReactNode> = {
+  reports: (
+    <>
+      <line x1="4" y1="20" x2="4" y2="11" />
+      <line x1="10" y1="20" x2="10" y2="5" />
+      <line x1="16" y1="20" x2="16" y2="14" />
+      <line x1="22" y1="20" x2="22" y2="8" />
+    </>
+  ),
+  scheduler: (
+    <>
+      <line x1="4" y1="6" x2="14" y2="6" />
+      <line x1="8" y1="12" x2="20" y2="12" />
+      <line x1="5" y1="18" x2="15" y2="18" />
+    </>
+  ),
+  admin: (
+    <>
+      <circle cx="13" cy="12" r="3.2" />
+      <path
+        d="M13 3.6v2.3M13 18.1v2.3M21.4 12h-2.3M6.9 12H4.6M18.9 6.1l-1.6 1.6M8.7 16.3l-1.6 1.6M18.9 17.9l-1.6-1.6M8.7 7.7 7.1 6.1"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+};
 
-  const overview = await getDashboardOverview(month);
+function TileIcon({ of }: { of: ToolId | "scheduler" | "admin" }) {
+  return (
+    <svg
+      viewBox="0 0 26 24"
+      width="26"
+      height="24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      className="text-sdc-blue"
+      aria-hidden="true"
+    >
+      {ICONS[of]}
+    </svg>
+  );
+}
 
-  const executive = (
-    // Bands, not equal blocks in a stack. The KPI strip and the first two bands
-    // live inside DashboardOverviewPanel; capacity is a band here because it is a
-    // separate component. See DashboardLayout.tsx.
-    <div className="flex flex-col gap-8">
-      <DashboardOverviewPanel data={overview} />
+const TILE = `${card("p-5")} flex h-full flex-col hover:border-sdc-blue focus-visible:border-sdc-blue`;
 
-      {/* The page's most detailed figures — the "and here is the detail"
-          answer to the hours KPIs above. Same `overview` object, same
-          month: no second month state and no second fetch. */}
-      <Band label="Capacity &amp; utilization">
-        <UtilizationPanel result={overview.utilization} monthLabel={monthLabel(month)} />
-      </Band>
+export default async function ToolsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  if (params.m !== undefined || params.tab !== undefined) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      for (const v of Array.isArray(value) ? value : [value]) if (v !== undefined) query.append(key, v);
+    }
+    redirect(`/dashboard?${query.toString()}`);
+  }
 
-      <DashboardFeedbackBand view="executive" month={month} />
-    </div>
+  const session = await auth();
+  const permitted = permittedRoutePaths(session?.user?.role ?? "ALL");
+  const tools = toolsFor(permitted);
+  const admin = adminFor(permitted);
+  // One place to go and nothing to choose — skip the grid. An admin always has a choice (the
+  // Admin tile beside their tool), so they keep the grid.
+  if (tools.length === 1 && !admin) redirect(tools[0]!.href);
+
+  const schedulerUrl = withSchedulerSso(
+    `${await getSchedulerBaseUrlForRequest()}/?view=projects`,
+    session?.user?.email,
   );
 
   return (
     <div className={PAGE_SHELL}>
-      {/* ── Header bar ────────────────────────────────────────────────────────
-          A real bar now, closed by a rule, rather than a title floating above
-          the content: the month/year control and Manage Jobs belong to the whole
-          page, and the rule is what says so.
-
-          No "Refresh Data" button here on purpose — RefreshDataButton is already
-          in the sidebar on every page, and a second copy of a global control is
-          a second thing to keep in step, not a convenience. */}
-      <div className="mb-7 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-sdc-border pb-5">
-        <div className="min-w-0">
-          <PageTitle>Dashboard</PageTitle>
-          <p className="text-sm text-sdc-gray-600">
-            {hasFinances ? "Work, capacity and finances" : "Active work, execution and capacity"} — month-scoped figures are for{" "}
-            <span className="font-semibold text-sdc-navy">{monthLabel(month)}</span>
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2.5">
-          <DashboardMonthSelect month={month} />
-          <Link href="/jobs" className={BUTTON_PRIMARY}>
-            Manage Jobs
-          </Link>
-        </div>
-      </div>
-
-      {hasFinances ? (
-        <DashboardTabs
-          executive={executive}
-          finances={financesOpen ? <FinancesPanel month={month} cards={financeCards} partsBudget={partsBudget} /> : null}
+      <PageTitle className="mb-1">Your tools</PageTitle>
+      <p className="mb-5 text-sm text-sdc-gray-600">Pick one to open it. Its menu appears in the sidebar.</p>
+      {tools.length === 0 && !admin ? (
+        <EmptyState
+          title="Nothing is switched on for your account yet"
+          message="Ask an administrator to give your role access to the pages you need."
         />
       ) : (
-        executive
+        <ul className="grid max-w-4xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {tools.map((t) => (
+            <li key={t.id}>
+              <Link href={t.href} className={TILE}>
+                <TileIcon of={t.id} />
+                <span className="mt-3 block text-base font-semibold text-sdc-navy">{t.label}</span>
+                <span className="mt-0.5 block text-sm text-sdc-gray-600">{t.description}</span>
+              </Link>
+            </li>
+          ))}
+          {schedulerUrl && (
+            <li>
+              {/* A different app on another port, so a plain link in a new tab: the same
+                  choice the sidebar's own Project Scheduler link makes outside the shell. */}
+              <a href={schedulerUrl} target="_blank" rel="noopener noreferrer" className={TILE}>
+                <TileIcon of="scheduler" />
+                <span className="mt-3 block text-base font-semibold text-sdc-navy">Project Scheduler</span>
+                <span className="mt-0.5 block text-sm text-sdc-gray-600">A separate app. Opens in a new tab.</span>
+              </a>
+            </li>
+          )}
+          {admin && (
+            <li>
+              <Link href={admin.href} className={TILE}>
+                <TileIcon of="admin" />
+                <span className="mt-3 block text-base font-semibold text-sdc-navy">{admin.label}</span>
+                <span className="mt-0.5 block text-sm text-sdc-gray-600">{admin.description}</span>
+              </Link>
+            </li>
+          )}
+        </ul>
       )}
     </div>
   );
-}
-
-
-// -- Route entry point --
-//
-// The page's body lives in `DashboardView` above so that BOTH this route and the split
-// view can render it. Split view renders two views in ONE document (see
-// lib/split-view.ts for why one document rather than two frames), which means a
-// pane cannot be a route and therefore cannot read `searchParams` - there is only
-// one URL, and two panes reading it would collide. So the body takes its context as
-// a plain argument, and the two callers differ only in where they read that context
-// from: this wrapper reads the URL, a pane reads its own `l.`/`r.` namespace.
-//
-// Nothing about this route's behaviour changes: same URL, same params, same server
-// render. `searchParams` is still awaited HERE, which is what keeps this route
-// dynamic exactly as before.
-export default async function Home({ searchParams }: { searchParams: Promise<{ tab?: string; m?: string }> }) {
-  return <DashboardView params={await searchParams} />;
 }

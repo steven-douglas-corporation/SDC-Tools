@@ -18,6 +18,7 @@ import {
 } from "../actions";
 import type { LinkedTask, TaskDetail } from "../service/task-detail";
 import type { OpenCard } from "../service/tasks";
+import { ArchivePrompt } from "./ArchivePrompt";
 import { Checklist } from "./Checklist";
 import { CloseUnderPrompt } from "./CloseUnderPrompt";
 import { SafeDateHelp } from "./HelpTip";
@@ -112,6 +113,11 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
   const [remaining, setRemaining] = useState(task.remainingHours?.toString() ?? "");
   const [priority, setPriority] = useState(task.priority.toString());
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
+  const [plannedStart, setPlannedStart] = useState(task.plannedStartDate ?? "");
+  const [startedOn, setStartedOn] = useState(task.actualStartDate ?? "");
+  const [finishedOn, setFinishedOn] = useState(task.actualCompletionDate ?? "");
+  // Setting these by hand is back-dating: it changes what the timeline says happened.
+  const mayBackDate = mayChange && task.myRole === "manager";
   const [estimated, setEstimated] = useState(task.estimatedCompletionDate ?? "");
   const [kind, setKind] = useState(task.kind);
   const [parentId, setParentId] = useState(task.parentTaskId?.toString() ?? "");
@@ -160,6 +166,9 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
     if (nextParent !== task.parentTaskId) changes.parentTaskId = nextParent;
     if (Number(priority) !== task.priority) changes.priority = Number(priority);
     if ((dueDate || null) !== task.dueDate) changes.dueDate = dueDate || null;
+    if ((plannedStart || null) !== task.plannedStartDate) changes.plannedStartDate = plannedStart || null;
+    if ((startedOn || null) !== task.actualStartDate) changes.actualStartDate = startedOn || null;
+    if (finishedOn && finishedOn !== task.actualCompletionDate) changes.actualCompletionDate = finishedOn;
     if ((estimated || null) !== task.estimatedCompletionDate) changes.estimatedCompletionDate = estimated || null;
     if (Object.keys(changes).length === 0) return setSaved("Nothing to save.");
     run(
@@ -397,6 +406,47 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                 <span className="text-xs text-sdc-gray-600">A commitment. The forecast is compared with it.</span>
               </label>
               <label className="flex flex-col gap-1">
+                <span className={LABEL}>Planned start</span>
+                <input
+                  type="date"
+                  value={plannedStart}
+                  disabled={!mayChange}
+                  onChange={(e) => setPlannedStart(e.target.value)}
+                  className={INPUT}
+                />
+                <span className="text-xs text-sdc-gray-600">
+                  A commitment to begin on this day. The forecast places it first, ahead of the stack rank.
+                </span>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className={LABEL}>Started on</span>
+                <input
+                  type="date"
+                  value={startedOn}
+                  disabled={!mayBackDate}
+                  onChange={(e) => setStartedOn(e.target.value)}
+                  className={INPUT}
+                />
+                <span className="text-xs text-sdc-gray-600">
+                  Filled in when the card first moves into work. A manager can set an earlier day.
+                </span>
+              </label>
+              {task.actualCompletionDate && (
+                <label className="flex flex-col gap-1">
+                  <span className={LABEL}>Finished on</span>
+                  <input
+                    type="date"
+                    value={finishedOn}
+                    disabled={!mayBackDate}
+                    onChange={(e) => setFinishedOn(e.target.value)}
+                    className={INPUT}
+                  />
+                  <span className="text-xs text-sdc-gray-600">
+                    Filled in when the card was done. A manager can correct it.
+                  </span>
+                </label>
+              )}
+              <label className="flex flex-col gap-1">
                 <span className={LABEL}>Your estimated completion</span>
                 <input
                   type="date"
@@ -442,14 +492,14 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                     Hours left are still right
                   </button>
                 )}
-                {mayArchive && !archiving && (
+                {mayArchive && (
                   <button
                     type="button"
-                    disabled={pending || task.children.length > 0}
+                    disabled={pending}
                     className={BUTTON_COMPACT}
                     title={
-                      task.children.length > 0
-                        ? "Move or archive the cards under this one first"
+                      task.underCount > 0
+                        ? "Takes this card and the cards under it off the board and out of the forecast. Their history is kept."
                         : "Takes the card off the board and out of the forecast. Its history is kept."
                     }
                     onClick={() => setArchiving(true)}
@@ -458,37 +508,25 @@ export function TaskDetailView({ task, canEdit }: { task: TaskDetail; canEdit: b
                   </button>
                 )}
                 {mayArchive && archiving && (
-                  <span
-                    role="group"
-                    aria-label="Archive this card"
-                    className="flex flex-wrap items-center gap-2 text-sm"
-                  >
-                    <span className="font-semibold text-sdc-navy">
-                      Archive {task.key}? It leaves the board and the forecast, and nothing waits on it any more. Its
-                      history is kept. This cannot be undone here.
-                    </span>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      className={BUTTON_COMPACT}
-                      onClick={() =>
-                        run(
-                          () => archiveTaskAction({ taskId: task.id, projectKey: task.projectKey, taskKey: task.key }),
-                          () => router.push(`/tracker/${task.projectKey}`),
-                        )
-                      }
-                    >
-                      Yes, archive
-                    </button>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      className={BUTTON_COMPACT}
-                      onClick={() => setArchiving(false)}
-                    >
-                      Keep it
-                    </button>
-                  </span>
+                  <ArchivePrompt
+                    cardKey={task.key}
+                    title={task.title}
+                    underCount={task.underCount}
+                    pending={pending}
+                    onKeep={() => setArchiving(false)}
+                    onArchive={() =>
+                      run(
+                        () =>
+                          archiveTaskAction({
+                            taskId: task.id,
+                            projectKey: task.projectKey,
+                            taskKey: task.key,
+                            withUnder: task.underCount > 0,
+                          }),
+                        () => router.push(`/tracker/${task.projectKey}`),
+                      )
+                    }
+                  />
                 )}
               </div>
             )}

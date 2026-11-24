@@ -47,7 +47,7 @@
 // overlay covers the viewport exactly at every zoom level.)
 
 /**
- * The offered levels, smallest first: 50/60/.../150, an even 10% grid. The
+ * The offered levels, smallest first: 50% to 150% in an even 10% grid. The
  * first and last entries ARE the limits — `snapZoom` cannot return anything outside
  * the list, so there is no separate MIN/MAX to keep in step.
  *
@@ -60,10 +60,18 @@
  * not "make it bigger" — plus the uneven 5/10/15/25% gaps meant the stepper's
  * travel per click changed depending where you were on the list.
  *
- * The even 10% step stayed, but the ceiling was raised back to 150% on request —
- * there IS a use for magnifying past 100% (the browser's own Ctrl+ still works too,
- * and composes with this) — and the 50% floor stayed as the smallest level the
- * sidebar control itself stays comfortably clickable at.
+ * So: one even 10% step throughout, nothing above 100% (the browser's own Ctrl+
+ * still magnifies, and composes with this), and a 50% floor — the smallest level
+ * the sidebar control itself stays comfortably clickable at.
+ *
+ * ── Above 100% again (2026-11-20) ─────────────────────────────────────────
+ *
+ * The ceiling is back up, to 150%, at the product owner's request: this app is
+ * becoming the front door to every SDC tool, not only the wide Reports grids, and
+ * a person who wants it larger should not have to know the browser's shortcut.
+ * What the 2026-09-02 change fixed is kept: the grid is still an even 10% from end
+ * to end, so a click travels the same distance everywhere, and the default is
+ * still 80%. The retired 125% is the one old level off the grid; it snaps to 130%.
  */
 // `readonly number[]`, not `as const`: every function below does arithmetic and
 // index lookups on these, and a tuple of literal types turns each of those into a
@@ -102,7 +110,7 @@ export function snapZoom(value: unknown): number {
   // 0.05000000000000004, so the exact midpoint between two 10% steps silently
   // resolves DOWNWARD and a retired 75% would land on 70%. In percent those are 5
   // and 5, a real tie — and `<=` then breaks it upward, since the list ascends. That
-  // is the documented normalization: 75 -> 80, 85 -> 90, 110 -> 100, 40 -> 50.
+  // is the documented normalization: 75 -> 80, 85 -> 90, 125 -> 130, 40 -> 50.
   const pct = n * 100;
   let best = ZOOM_STEPS[0];
   for (const step of ZOOM_STEPS) {

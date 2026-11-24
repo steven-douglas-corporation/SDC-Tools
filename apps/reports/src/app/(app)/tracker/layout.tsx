@@ -18,10 +18,10 @@ export default async function TrackerLayout({ children }: { children: React.Reac
 
   return (
     <div className={PAGE_SHELL}>
-      <PageTitle className="mb-4">Project Tracker</PageTitle>
+      <PageTitle className="mb-4">Internal Projects</PageTitle>
       <EmptyState
         tone="warning"
-        title="The Project Tracker is waiting on a database update"
+        title="The Internal Projects is waiting on a database update"
         message={`The app was updated and its database was not, so the tracker is switched off until it is. Nothing is lost, and nothing is wrong with your account. ${schemaBehindDetail(status)}`}
       />
     </div>

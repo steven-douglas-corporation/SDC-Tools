@@ -45,9 +45,11 @@ interface TaskRow {
   category: string;
   assignee_person_id: number | null;
   role_pool_id: number | null;
+  done_by_team_id: number | null;
   priority: number;
   remaining: number | null;
   not_before_date: string | null;
+  planned_start_date: string | null;
   expected_unblock_date: string | null;
   in_sprint: boolean | null;
   bucket_hours: number | null;
@@ -74,9 +76,9 @@ export async function loadForecastInputs(tx: Tx, asOf: string): Promise<LoadedIn
 
   const taskRows = await tx.query<TaskRow>(
     `SELECT t.id, t.project_id, p.state AS project_state, p.portfolio_rank, t.number, t.type, t.category,
-            t.assignee_person_id, t.role_pool_id, t.priority,
+            t.assignee_person_id, t.role_pool_id, p.done_by_team_id, t.priority,
             coalesce(t.remaining_effort_hours, t.effort_estimate_hours)::float8 AS remaining,
-            t.not_before_date::text, t.expected_unblock_date::text,
+            t.not_before_date::text, t.planned_start_date::text, t.expected_unblock_date::text,
             (sp.state = 'active') AS in_sprint,
             b.hours::float8 AS bucket_hours, b.low_hours::float8, b.high_hours::float8,
             p.estimate_low_factor::float8, p.estimate_high_factor::float8
@@ -136,7 +138,13 @@ export async function loadForecastInputs(tx: Tx, asOf: string): Promise<LoadedIn
       priority: Number(r.priority),
       number: Number(r.number),
       inSprint: r.in_sprint === true,
-      notBefore: r.not_before_date,
+      // A planned start is a commitment: the card is placed ahead of the rank order, and not
+      // before that day (or its not-before day, if that is later).
+      planned: r.planned_start_date != null,
+      notBefore:
+        r.planned_start_date && (!r.not_before_date || r.planned_start_date > r.not_before_date)
+          ? r.planned_start_date
+          : r.not_before_date,
       blocked: hold !== null || r.category === "blocked",
       expectedUnblock: hold !== null ? null : r.expected_unblock_date,
       preds: predsOf.get(id) ?? [],
@@ -232,6 +240,31 @@ export async function loadForecastInputs(tx: Tx, asOf: string): Promise<LoadedIn
   );
   const pools: Record<string, string[]> = {};
   for (const r of poolRows.rows) (pools[String(r.role_pool_id)] ??= []).push(String(r.person_id));
+
+  // A card nobody is named on is still somebody's work: the department doing the project. Its
+  // people stand in as a pool, so the card is forecast on whoever of them is free first, and a
+  // name is only needed when it matters who. A person counts for their own team and for the
+  // group it sits in. A department with nobody in it leaves the card unassigned, as before.
+  const teams = await tx.query<{ id: number; parent_team_id: number | null }>(
+    `SELECT id, parent_team_id FROM tracker.team`,
+  );
+  const parentOf = new Map(
+    teams.rows.map((t) => [Number(t.id), t.parent_team_id == null ? null : Number(t.parent_team_id)]),
+  );
+  for (const p of people.rows) {
+    if (p.team_id == null) continue;
+    const own = Number(p.team_id);
+    for (const team of [own, parentOf.get(own) ?? null]) {
+      if (team != null) (pools[`team:${team}`] ??= []).push(String(p.id));
+    }
+  }
+  const doneBy = new Map(taskRows.rows.map((r) => [String(r.id), r.done_by_team_id]));
+  for (const t of tasks) {
+    const team = doneBy.get(t.id);
+    if (t.assignee == null && t.pool == null && team != null && pools[`team:${team}`]?.length) {
+      t.pool = `team:${team}`;
+    }
+  }
 
   const holidays = await tx.query<{ day: string }>(
     `SELECT holiday_date::text AS day FROM tracker.company_holiday WHERE holiday_date >= $1::date`,

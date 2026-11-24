@@ -1,8 +1,10 @@
 import Link from "next/link";
 
-// The ways of looking at the same thing, as tabs. Shown on each of them, so every view is one
-// click from the others: the list of projects and their timeline, or one project's board and
-// its timeline.
+// One project's pages, as tabs: its board, its timeline and its settings. Shown on all three,
+// so each is one click from the others.
+//
+// The list of all projects and the timeline of all projects had tabs of this kind too. They
+// are items in the tracker's sidebar menu now, so the tabs went.
 
 function Tabs({
   label,
@@ -38,8 +40,14 @@ function Tabs({
   );
 }
 
-/** One project: its board and its timeline. */
-export function ProjectViews({ projectKey, current }: { projectKey: string; current: "board" | "timeline" }) {
+/** One project: its board, its timeline and its settings. */
+export function ProjectViews({
+  projectKey,
+  current,
+}: {
+  projectKey: string;
+  current: "board" | "timeline" | "settings";
+}) {
   return (
     <Tabs
       label="Views of this project"
@@ -47,20 +55,7 @@ export function ProjectViews({ projectKey, current }: { projectKey: string; curr
       tabs={[
         { id: "board", label: "Board", href: `/tracker/${projectKey}` },
         { id: "timeline", label: "Timeline", href: `/tracker/${projectKey}/timeline` },
-      ]}
-    />
-  );
-}
-
-/** All projects: the list and the timeline. */
-export function PortfolioViews({ current }: { current: "list" | "timeline" }) {
-  return (
-    <Tabs
-      label="Views of all projects"
-      current={current}
-      tabs={[
-        { id: "list", label: "Projects", href: "/tracker" },
-        { id: "timeline", label: "Timeline", href: "/tracker/timeline" },
+        { id: "settings", label: "Settings", href: `/tracker/${projectKey}/settings` },
       ]}
     />
   );

@@ -1,5 +1,6 @@
 import { PageTitle } from "@/components/ui/Typography";
-import { PAGE_SHELL } from "@/components/ui/classnames";
+import { BUTTON_PRIMARY, PAGE_SHELL } from "@/components/ui/classnames";
+import { RefreshDataButton } from "@/components/RefreshDataButton";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/require-permission";
 import { hasPermission } from "@/lib/permissions";
@@ -144,7 +145,24 @@ async function SourcesTab() {
     currentRefresh(),
   ]);
 
-  return <RefreshScheduleCard health={buildSourceHealth({ freshness: freshnessRows, runs: refreshRuns, running: liveRefresh })} />;
+  // Refresh Data lives here now (2026-11-23), moved from the sidebar footer: this tab already
+  // shows each source's freshness, so the control that refreshes them belongs beside it. It runs
+  // the same all-sources pass as before (lib/refresh-actions → refresh-service → runAllSyncs);
+  // per-source controls are planned (tracker: DW). This page is gated on data-management:view, so
+  // refreshing is now a Managers/PM/Sales/ELT action — the base "All" role, which has no
+  // data-management:view, no longer refreshes; revisit if that is wanted.
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-sm text-sdc-gray-600">
+          Refresh pulls the latest from every source — Paylocity, Total ETO and the SFTP files — the
+          same pass the hourly schedule runs.
+        </p>
+        <RefreshDataButton className={BUTTON_PRIMARY} />
+      </div>
+      <RefreshScheduleCard health={buildSourceHealth({ freshness: freshnessRows, runs: refreshRuns, running: liveRefresh })} />
+    </>
+  );
 }
 
 async function PunchesTab({ params }: { params: DataManagementParams }) {

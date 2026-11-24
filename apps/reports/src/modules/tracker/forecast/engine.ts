@@ -1,5 +1,5 @@
 /**
- * SDC Project Tracker: completion forecast.
+ * SDC Internal Projects: completion forecast.
  *
  * Ported from forecast_prototype.py (2026-11-11) and extended per docs/project-tracker/DESIGN.md.
  *
@@ -7,8 +7,11 @@
  *  - All effort and capacity is in hours of project work. A person's hoursPerDay is the project
  *    hours they have on a working day (6 by default), already resolved by the caller from the
  *    global, team and person capacity settings.
- *  - Tasks are placed one at a time in priority order: project stack rank, then tasks in an
- *    active sprint, then task priority, then task number.
+ *  - Tasks are placed one at a time in priority order: tasks with a planned start first, then
+ *    project stack rank, then tasks in an active sprint, then task priority, then task number.
+ *    A planned start is a commitment to begin a particular piece of work on a particular day,
+ *    whatever project it is in, so it is placed before the rank order is worked through. This is
+ *    what lets a week's plan take one card from each of several projects.
  *  - Priority inheritance: a task that blocks more important work is placed at the priority of
  *    the most important thing waiting on it, through chains of dependencies.
  *  - A task starts on the first day on or after its earliest date on which its assignee has free
@@ -104,6 +107,8 @@ export interface Task {
   priority?: number;
   number?: number;
   inSprint?: boolean;
+  /** Has a planned start: placed ahead of the stack-rank order. The caller also gives the day as notBefore. */
+  planned?: boolean;
   notBefore?: string | null;
   /** In a blocked status. Without expectedUnblock the task is not scheduled. */
   blocked?: boolean;
@@ -165,18 +170,18 @@ export interface ProjectSummary {
 
 // ---------- ordering ----------
 
-type Key = readonly [number, number, number, number, string];
+type Key = readonly [number, number, number, number, number, string];
 
 function ownKey(t: Task): Key {
-  return [t.projectRank, t.inSprint ? 0 : 1, t.priority ?? 3, t.number ?? 0, t.id];
+  return [t.planned ? 0 : 1, t.projectRank, t.inSprint ? 0 : 1, t.priority ?? 3, t.number ?? 0, t.id];
 }
 
 function cmpKey(a: Key, b: Key): number {
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
     const d = (a[i] as number) - (b[i] as number);
     if (d !== 0) return d;
   }
-  return a[4] < b[4] ? -1 : a[4] > b[4] ? 1 : 0;
+  return a[5] < b[5] ? -1 : a[5] > b[5] ? 1 : 0;
 }
 
 /** Topological order of `ids`; anything it cannot order (cycles and what follows them) is left out. */

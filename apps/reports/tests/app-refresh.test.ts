@@ -49,12 +49,14 @@ test("it does not claim a cache-bypass it cannot perform", () => {
 test("it is a separate control from Refresh Data, with its own glyph", () => {
   const sidebar = readFileSync(join(process.cwd(), "src", "components", "Sidebar.tsx"), "utf8");
   assert.match(sidebar, /<AppRefreshButton/, "mounted in the sidebar");
-  assert.match(sidebar, /<RefreshDataButton/, "alongside, not replacing");
-  // Refresh Data's icon is a circular arrow; in the collapsed rail the icon is the
-  // only thing distinguishing them, so App Refresh draws a window instead.
+  // Refresh Data moved to the Data Management page (2026-11-23), so App Refresh is now the
+  // sidebar's only refresh-type control.
+  assert.doesNotMatch(sidebar, /<RefreshDataButton/, "Refresh Data is no longer in the sidebar");
+  // They are still distinct controls with distinct glyphs — a window outline vs a circular arrow
+  // — so wherever both appear they never read as the same button.
   assert.match(SRC, /<rect /, "App Refresh draws a window outline, not a bare arrow");
   const refreshData = readFileSync(join(process.cwd(), "src", "components", "RefreshDataButton.tsx"), "utf8");
-  assert.doesNotMatch(refreshData, /<rect /, "…and Refresh Data does not, so the two rail icons differ");
+  assert.doesNotMatch(refreshData, /<rect /, "…and Refresh Data does not, so the two icons differ");
 });
 
 test("both buttons say which is which on hover", () => {

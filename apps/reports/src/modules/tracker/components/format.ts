@@ -1,4 +1,4 @@
-import type { BoardTask } from "../service/queries";
+import type { BoardTask, DepartmentLens, DepartmentLevel, ProjectListItem } from "../service/queries";
 
 // How the tracker's screens word dates and forecast reasons. Dependency-free so it can be
 // unit-tested and used from both server and client components.
@@ -21,10 +21,11 @@ export function shortDate(iso: string | null | undefined): string {
   return `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
 
-/** Hours without a trailing ".0": 6 -> "6 h", 4.5 -> "4.5 h". */
+/** Hours without a trailing ".0", and with a comma in the thousands: 6 -> "6 h", 4.5 -> "4.5 h", 3494 -> "3,494 h". */
 export function hours(value: number | null | undefined): string {
   if (value == null) return "—";
-  return `${Number.isInteger(value) ? value : Math.round(value * 10) / 10} h`;
+  // en-US is named so the server and every browser write the same thing, whatever their own locale.
+  return `${(Math.round(value * 10) / 10).toLocaleString("en-US", { maximumFractionDigits: 1 })} h`;
 }
 
 /**
@@ -46,6 +47,58 @@ export function uncountedComparison(own: number, under: number, unsized: number)
   return `The cards under it have ${hours(under)} left, ${compared}.${missing}`;
 }
 
+/** Cards being worked on whose hours left nobody has touched for a while, in words. */
+export const STALE_HOURS = (n: number) =>
+  `${n} card${n === 1 ? " has" : "s have"} hours left that have not been updated in over a week`;
+
+/**
+ * The caveat on a project's forecast date: how many of its cards the forecast could not date,
+ * and why when it is for lack of an estimate. Null when every card is dated. The date is then
+ * the earliest the project could finish, not when it will.
+ */
+export function notInForecast(noDate: number, noEstimate: number): string | null {
+  if (noDate <= 0) return null;
+  const why =
+    noEstimate <= 0
+      ? ""
+      : noEstimate >= noDate
+        ? noDate === 1
+          ? ": it has no estimate"
+          : ": none of them has an estimate"
+        : `, ${noEstimate} for lack of an estimate`;
+  return `${noDate} card${noDate === 1 ? " is" : "s are"} not in this forecast${why}. The real finish is later.`;
+}
+
+/**
+ * How far along a project is. Weighted by hours where its cards have estimates, so one large
+ * card counts for more than several small ones; by the count of cards where none has.
+ *
+ * Cards with no estimate still count. Work recorded after it was done often has none, and
+ * leaving it out would show a half-finished project as not started. Each such card is taken to
+ * be the size of the project's average estimated card: a guess, but a fairer one than zero.
+ */
+export function progress(p: {
+  taskCount: number;
+  doneCount: number;
+  remainingHours: number;
+  estimatedHours: number;
+  estimatedCards?: number;
+  /** Finished cards that never had an estimate. */
+  unestimatedDoneCards?: number;
+  /** Open cards with no estimate. */
+  unestimatedTasks?: number;
+}): { percent: number; byHours: boolean; doneHours: number } {
+  if (p.estimatedHours > 0) {
+    const doneHours = Math.max(0, p.estimatedHours - p.remainingHours);
+    const average = p.estimatedCards && p.estimatedCards > 0 ? p.estimatedHours / p.estimatedCards : 0;
+    const unsizedDone = (p.unestimatedDoneCards ?? 0) * average;
+    const unsizedOpen = (p.unestimatedTasks ?? 0) * average;
+    const total = p.estimatedHours + unsizedDone + unsizedOpen;
+    return { percent: Math.min(100, Math.round(((doneHours + unsizedDone) / total) * 100)), byHours: true, doneHours };
+  }
+  return { percent: p.taskCount > 0 ? Math.round((p.doneCount / p.taskCount) * 100) : 0, byHours: false, doneHours: 0 };
+}
+
 /**
  * What a project's forecast leaves out, as short phrases. A card with no estimate is one of the
  * cards with no forecast date, so it is given as the reason, not counted a second time.
@@ -64,7 +117,7 @@ export function leftOutOfForecast(noDate: number, noEstimate: number, unconfirme
     out.push(`${noDate} card${noDate === 1 ? " has" : "s have"} no forecast date${why}`);
   }
   if (unconfirmed > 0) {
-    out.push(`${unconfirmed} card${unconfirmed === 1 ? " has" : "s have"} hours left that nobody has confirmed lately`);
+    out.push(STALE_HOURS(unconfirmed));
   }
   return out;
 }
@@ -129,4 +182,552 @@ export function rankClashEffect(clash: { holderKey: string; moved: number; direc
   return clash.moved <= 1
     ? `${clash.holderKey} moves ${clash.direction} one place.`
     : `${clash.holderKey} and ${clash.moved - 1} other ${clash.moved === 2 ? "project" : "projects"} each move ${clash.direction} one place.`;
+}
+
+/** The project list, added up. Open means planned, active or on hold: work still to come. */
+export interface PortfolioSummary {
+  open: number;
+  active: number;
+  /** Open projects with a target date. */
+  withTarget: number;
+  /** Open projects whose forecast (the safe date when there is one) is after their target. */
+  atRisk: number;
+  hoursLeft: number;
+  /** Open cards the forecast could not give a date. */
+  notForecast: number;
+  /** How many of those have no estimate. */
+  noEstimate: number;
+  /** Open projects whose target date has already gone by. */
+  pastTarget: number;
+  /** The soonest target date still to come, and whose it is. */
+  nextTarget: { key: string; name: string; date: string } | null;
+}
+
+export function portfolioSummary(
+  projects: Pick<
+    ProjectListItem,
+    "key" | "name" | "state" | "targetDate" | "atRisk" | "remainingHours" | "unscheduledTasks" | "unestimatedTasks"
+  >[],
+  /** YYYY-MM-DD. Passed in, so the sums do not depend on the clock. */
+  today: string,
+): PortfolioSummary {
+  const open = projects.filter((p) => p.state === "planned" || p.state === "active" || p.state === "on_hold");
+  const upcoming = open
+    .filter((p): p is typeof p & { targetDate: string } => p.targetDate != null && p.targetDate >= today)
+    .sort((a, b) => a.targetDate.localeCompare(b.targetDate) || a.key.localeCompare(b.key));
+  return {
+    open: open.length,
+    active: open.filter((p) => p.state === "active").length,
+    withTarget: open.filter((p) => p.targetDate != null).length,
+    atRisk: open.filter((p) => p.atRisk === true).length,
+    hoursLeft: Math.round(open.reduce((sum, p) => sum + p.remainingHours, 0) * 10) / 10,
+    notForecast: open.reduce((sum, p) => sum + p.unscheduledTasks, 0),
+    noEstimate: open.reduce((sum, p) => sum + p.unestimatedTasks, 0),
+    pastTarget: open.filter((p) => p.targetDate != null && p.targetDate < today).length,
+    nextTarget: upcoming[0] ? { key: upcoming[0].key, name: upcoming[0].name, date: upcoming[0].targetDate } : null,
+  };
+}
+
+/** What the project list and the timeline of all projects read from the address. */
+/**
+ * How a list is gathered under headings, as it is written in the address (?group=...): not at
+ * all, or by one of a project's two departments, at the level of the group a department sits in
+ * or of the department itself.
+ */
+export const GROUPINGS = {
+  "": "No grouping",
+  for: "Who it is for: department group",
+  "for-team": "Who it is for: department",
+  by: "Who does the work: department group",
+  "by-team": "Who does the work: department",
+} as const;
+export type Grouping = keyof typeof GROUPINGS;
+
+export interface DepartmentView {
+  /** The departments ticked in the For filter. Empty for all of them. */
+  forIds: number[];
+  /** The departments ticked in the Done by filter. Empty for all of them. */
+  byIds: number[];
+  /** Whether the rows are gathered under a heading per department. */
+  grouped: boolean;
+  /** Which of a project's two departments the headings are: who it is for, or who does the work. */
+  lens: DepartmentLens;
+  /** What a heading is when grouped: the group a department sits in, or the department itself. */
+  level: DepartmentLevel;
+}
+
+/** A list of ids from the address: "12,14". Anything that is not a department's id is dropped. */
+function idList(value: string | undefined): number[] {
+  const ids = (value ?? "")
+    .split(",")
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0);
+  return [...new Set(ids)];
+}
+
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A list of strings from the address: "active,on_hold". Blanks and duplicates dropped. */
+function strList(value: string | undefined): string[] {
+  return [
+    ...new Set(
+      (value ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+/** A whole percent 0–100 from the address, or null when it is blank or not a number. */
+function pctOrNull(value: string | undefined): number | null {
+  if (value == null || value.trim() === "") return null;
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : null;
+}
+
+/** A number 0 or more from the address, or null when it is blank or not a number. */
+function nonNegOrNull(value: string | undefined): number | null {
+  if (value == null || value.trim() === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** An ISO date from the address, or null when it is blank or not a date. */
+function isoOrNull(value: string | undefined): string | null {
+  return value && ISO.test(value) ? value : null;
+}
+
+export function departmentView(params: {
+  for?: string | string[];
+  by?: string | string[];
+  group?: string | string[];
+}): DepartmentView {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  // "1" and "team" are how the first two were written before there were four.
+  const asked = one(params.group) ?? "";
+  const group = asked === "1" ? "for" : asked === "team" ? "for-team" : asked;
+  const grouping: Grouping = group in GROUPINGS ? (group as Grouping) : "";
+  return {
+    forIds: idList(one(params.for)),
+    byIds: idList(one(params.by)),
+    grouped: grouping !== "",
+    level: grouping === "for-team" || grouping === "by-team" ? "team" : "group",
+    lens: grouping === "by" || grouping === "by-team" ? "by" : "for",
+  };
+}
+
+/** The view's grouping as the address writes it. */
+export function groupingOf(view: Pick<DepartmentView, "grouped" | "lens" | "level">): Grouping {
+  if (!view.grouped) return "";
+  if (view.lens === "by") return view.level === "team" ? "by-team" : "by";
+  return view.level === "team" ? "for-team" : "for";
+}
+
+/**
+ * The projects that pass the two department filters: for one of `forScope`, and done by one of
+ * `byScope` (see departmentsScope). Null is no filter. A project with no department passes
+ * neither filter when one is set.
+ */
+export function inDepartments<P extends Pick<ProjectListItem, "forDepartmentId" | "doneByDepartmentId">>(
+  projects: P[],
+  forScope: Set<number> | null,
+  byScope: Set<number> | null,
+): P[] {
+  return projects.filter(
+    (p) =>
+      (!forScope || (p.forDepartmentId != null && forScope.has(p.forDepartmentId))) &&
+      (!byScope || (p.doneByDepartmentId != null && byScope.has(p.doneByDepartmentId))),
+  );
+}
+
+/** The projects that are for one of `scope` (see departmentScope). A project with no department is for none. */
+export function projectsFor<P extends Pick<ProjectListItem, "forDepartmentId">>(
+  projects: P[],
+  scope: Set<number> | null,
+): P[] {
+  if (!scope) return projects;
+  return projects.filter((p) => p.forDepartmentId != null && scope.has(p.forDepartmentId));
+}
+
+/**
+ * The same projects with each department's together, departments in the company's own order,
+ * and those with no department last. Inside a department the order given is kept, so a list
+ * that came in stack-rank order is still in rank order under each heading.
+ */
+export function byDepartment<P extends Pick<ProjectListItem, "forGroupSort">>(projects: P[]): P[] {
+  const last = Number.MAX_SAFE_INTEGER;
+  return projects
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => (a.p.forGroupSort ?? last) - (b.p.forGroupSort ?? last) || a.i - b.i)
+    .map((x) => x.p);
+}
+
+/** What a move inside a department does to the company's ranks, for the question asked before it. */
+export function departmentMoveEffect(move: {
+  moved: { key: string; from: number; to: number };
+  other: { key: string; from: number; to: number };
+  passes: number;
+}): string {
+  const passing =
+    move.passes === 0
+      ? ""
+      : `, ${move.moved.to < move.moved.from ? "ahead of" : "behind"} ${move.passes} ${move.passes === 1 ? "project" : "projects"} of other departments`;
+  return `${move.moved.key} moves from company rank ${move.moved.from} to ${move.moved.to}${passing}. ${move.other.key} moves to ${move.other.to}.`;
+}
+
+/** What dropping a project at a new place in its department does to the company's ranks. */
+export function departmentDropEffect(drop: {
+  moved: { key: string; from: number; to: number };
+  shifted: number;
+  passes: number;
+}): string {
+  const passing =
+    drop.passes === 0
+      ? ""
+      : `, ${drop.moved.to < drop.moved.from ? "ahead of" : "behind"} ${drop.passes} ${drop.passes === 1 ? "project" : "projects"} of other departments`;
+  const making =
+    drop.shifted === 0
+      ? ""
+      : ` ${drop.shifted} other ${drop.shifted === 1 ? "project" : "projects"} of its department ${drop.shifted === 1 ? "moves" : "each move"} one place to make room.`;
+  return `${drop.moved.key} moves from company rank ${drop.moved.from} to ${drop.moved.to}${passing}.${making}`;
+}
+
+// ── The project list's view ────────────────────────────────────────────────────
+// Which projects the list shows and in what order, all of it in the address: the department
+// and grouping above, plus a search, a sort, one figure to narrow to, and whether finished
+// projects are shown. Pure, so the page can be drawn on the server and the rules tested.
+
+export type ListSort =
+  "rank" | "name" | "target" | "forecast" | "value" | "progress" | "hours" | "risk" | "state" | "assignee";
+export type ListOnly = "active" | "at-risk" | "not-forecast" | "incomplete";
+/** The three ways a project reads against its target, for the Against-target column filter. */
+export type RiskKey = "at-risk" | "on-track" | "none";
+/** Which of a project's dates the Dates column filter ranges over. */
+export type DateField = "target" | "forecast";
+
+export const SORT_LABEL: Record<ListSort, string> = {
+  rank: "Stack rank",
+  name: "Name",
+  target: "Target date, soonest first",
+  forecast: "Forecast, soonest first",
+  value: "Value, highest first",
+  progress: "Progress, most complete first",
+  hours: "Hours left, most first",
+  risk: "Against target, at risk first",
+  state: "State, planned first",
+  assignee: "Assigned to, A–Z",
+};
+export const ONLY_LABEL: Record<ListOnly, string> = {
+  active: "active projects",
+  "at-risk": "projects at risk",
+  "not-forecast": "projects with cards the forecast could not date",
+  incomplete: "projects missing a justification, a value or a department",
+};
+/** The project states, in the order they are offered in the State column filter. */
+export const STATE_ORDER = ["planned", "active", "on_hold", "completed", "cancelled"] as const;
+/**
+ * The states the list shows by default: open work, everything but completed and cancelled. The State
+ * column filter ticks these when nothing else is chosen (so the default reads as a real selection),
+ * and narrowProjects shows exactly these when no state is recorded — the same set isOpen names.
+ */
+export const OPEN_STATES: string[] = STATE_ORDER.filter((s) => s !== "completed" && s !== "cancelled");
+export const STATE_LABEL: Record<string, string> = {
+  planned: "Planned",
+  active: "Active",
+  on_hold: "On hold",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+export const RISK_LABEL: Record<RiskKey, string> = {
+  "at-risk": "At risk",
+  "on-track": "On track",
+  none: "Not yet forecast",
+};
+
+export interface ListView extends DepartmentView {
+  sort: ListSort;
+  only: ListOnly | null;
+  /** The Project column's text filter: name or key, trimmed. */
+  q: string;
+  /** States chosen in the State column filter. Empty means open only (planned, active, on hold). */
+  states: string[];
+  /** Value buckets chosen in the Value column filter. Empty means every value. */
+  valueIds: number[];
+  /** Assignee names chosen in the Assigned-to column filter. Empty means everyone. */
+  assignees: string[];
+  /** How a project reads against its target, chosen in the Against-target filter. Empty means any. */
+  risk: RiskKey[];
+  /** The Progress column's range, as whole percents. Null ends are open. */
+  progressMin: number | null;
+  progressMax: number | null;
+  /** The Hours-left column's range, in hours. Null ends are open. */
+  hoursMin: number | null;
+  hoursMax: number | null;
+  /** The Dates column filter: which date it ranges over, and the range. A range applies only when a from or to is set. */
+  dateField: DateField;
+  dateFrom: string | null;
+  dateTo: string | null;
+}
+
+export function listView(params: Record<string, string | string[] | undefined>): ListView {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+  const sort = one(params.sort);
+  const only = one(params.only);
+  return {
+    ...departmentView(params),
+    sort: sort in SORT_LABEL ? (sort as ListSort) : "rank",
+    only: only in ONLY_LABEL ? (only as ListOnly) : null,
+    q: one(params.q).trim().slice(0, 80),
+    states: strList(one(params.state)).filter((s) => s in STATE_LABEL),
+    valueIds: idList(one(params.value)),
+    assignees: strList(one(params.who)).map((s) => s.slice(0, 120)),
+    risk: strList(one(params.risk)).filter((r): r is RiskKey => r === "at-risk" || r === "on-track" || r === "none"),
+    progressMin: pctOrNull(one(params.pmin)),
+    progressMax: pctOrNull(one(params.pmax)),
+    hoursMin: nonNegOrNull(one(params.hmin)),
+    hoursMax: nonNegOrNull(one(params.hmax)),
+    dateField: one(params.datef) === "forecast" ? "forecast" : "target",
+    dateFrom: isoOrNull(one(params.from)),
+    dateTo: isoOrNull(one(params.to)),
+  };
+}
+
+/** The list's address for a view, or for a view with some of it changed. Defaults are left out. */
+export function listHref(view: ListView, change: Partial<ListView> = {}): string {
+  const v = { ...view, ...change };
+  const query = new URLSearchParams();
+  if (v.forIds.length) query.set("for", v.forIds.join(","));
+  if (v.byIds.length) query.set("by", v.byIds.join(","));
+  if (v.grouped) query.set("group", groupingOf(v));
+  if (v.sort !== "rank") query.set("sort", v.sort);
+  if (v.only) query.set("only", v.only);
+  if (v.q) query.set("q", v.q);
+  if (v.states.length) query.set("state", v.states.join(","));
+  if (v.valueIds.length) query.set("value", v.valueIds.join(","));
+  if (v.assignees.length) query.set("who", v.assignees.join(","));
+  if (v.risk.length) query.set("risk", v.risk.join(","));
+  if (v.progressMin != null) query.set("pmin", String(v.progressMin));
+  if (v.progressMax != null) query.set("pmax", String(v.progressMax));
+  if (v.hoursMin != null) query.set("hmin", String(v.hoursMin));
+  if (v.hoursMax != null) query.set("hmax", String(v.hoursMax));
+  // The chosen date only matters when the range is set, so it is only written then.
+  if (v.dateFrom || v.dateTo) {
+    if (v.dateField !== "target") query.set("datef", v.dateField);
+    if (v.dateFrom) query.set("from", v.dateFrom);
+    if (v.dateTo) query.set("to", v.dateTo);
+  }
+  const text = query.toString();
+  return text ? `/tracker?${text}` : "/tracker";
+}
+
+/** Planned, active or on hold: work still to come. */
+export function isOpen(p: Pick<ProjectListItem, "state">): boolean {
+  return p.state !== "completed" && p.state !== "cancelled";
+}
+
+/** Missing one of the four things every project is asked for. */
+export function isIncomplete(
+  p: Pick<ProjectListItem, "justification" | "valueBucketId" | "forDepartmentId" | "doneByDepartmentId">,
+): boolean {
+  return !p.justification || p.valueBucketId == null || p.forDepartmentId == null || p.doneByDepartmentId == null;
+}
+
+/**
+ * True when ranks can only be read: the list is not every project in rank order. A rank is a
+ * place among all of them, so it is changed with all of them in view. Grouping alone does not
+ * lock them (a project is then moved within its department), and neither does showing
+ * finished projects, which hold no place in the order. Grouped by who does the work, or by
+ * department within a group, they are locked: a move within a heading is defined for the group
+ * a project is for.
+ */
+export function ranksLocked(
+  view: Pick<
+    ListView,
+    | "forIds"
+    | "byIds"
+    | "sort"
+    | "only"
+    | "q"
+    | "states"
+    | "valueIds"
+    | "assignees"
+    | "risk"
+    | "progressMin"
+    | "progressMax"
+    | "hoursMin"
+    | "hoursMax"
+    | "dateFrom"
+    | "dateTo"
+    | "grouped"
+    | "lens"
+    | "level"
+  >,
+): boolean {
+  return (
+    view.forIds.length > 0 ||
+    view.byIds.length > 0 ||
+    view.sort !== "rank" ||
+    view.only != null ||
+    view.q !== "" ||
+    view.states.length > 0 ||
+    view.valueIds.length > 0 ||
+    view.assignees.length > 0 ||
+    view.risk.length > 0 ||
+    view.progressMin != null ||
+    view.progressMax != null ||
+    view.hoursMin != null ||
+    view.hoursMax != null ||
+    view.dateFrom != null ||
+    view.dateTo != null ||
+    (view.grouped && (view.lens === "by" || view.level === "team"))
+  );
+}
+
+type Listed = Pick<
+  ProjectListItem,
+  | "key"
+  | "name"
+  | "state"
+  | "targetDate"
+  | "forecastFinish"
+  | "atRisk"
+  | "unscheduledTasks"
+  | "justification"
+  | "valueBucketId"
+  | "valueSort"
+  | "forDepartmentId"
+  | "doneByDepartmentId"
+  | "forGroupSort"
+  // Read by the column filters: progress is worked out from these, and the rest are filtered on directly.
+  | "taskCount"
+  | "doneCount"
+  | "remainingHours"
+  | "estimatedHours"
+  | "estimatedCards"
+  | "unestimatedDoneCards"
+  | "unestimatedTasks"
+  | "assigneeNames"
+>;
+
+/**
+ * Applies a view to the projects, which arrive in stack-rank order.
+ *
+ * `described` is the list before a figure narrows it: the department, the search and whether
+ * finished projects are in. The figures above the list are worked out from it, so choosing a
+ * figure never changes the figures. `shown` is that, narrowed to the chosen figure, sorted and
+ * grouped: the rows of the table.
+ */
+export function narrowProjects<P extends Listed>(
+  projects: P[],
+  view: ListView,
+  scope: Set<number> | null,
+): { described: P[]; shown: P[] } {
+  const words = view.q.toLowerCase();
+  const inRange = (val: number, min: number | null, max: number | null) =>
+    (min == null || val >= min) && (max == null || val <= max);
+  const riskKey = (p: P): RiskKey => (p.atRisk === true ? "at-risk" : p.atRisk === false ? "on-track" : "none");
+  const described = projectsFor(projects, scope)
+    // State: the chosen states, or open projects (planned, active, on hold) when none is chosen.
+    .filter((p) => (view.states.length ? view.states.includes(p.state) : isOpen(p)))
+    .filter((p) => !words || p.key.toLowerCase().includes(words) || p.name.toLowerCase().includes(words))
+    .filter((p) => view.valueIds.length === 0 || (p.valueBucketId != null && view.valueIds.includes(p.valueBucketId)))
+    .filter((p) => view.assignees.length === 0 || p.assigneeNames.some((n) => view.assignees.includes(n)))
+    .filter((p) => view.risk.length === 0 || view.risk.includes(riskKey(p)))
+    .filter((p) => inRange(progress(p).percent, view.progressMin, view.progressMax))
+    .filter((p) => inRange(p.remainingHours, view.hoursMin, view.hoursMax))
+    .filter((p) => {
+      if (!view.dateFrom && !view.dateTo) return true;
+      const d = view.dateField === "forecast" ? p.forecastFinish : p.targetDate;
+      // A project with no date on that field cannot sit inside a range, so it drops out.
+      return d != null && (!view.dateFrom || d >= view.dateFrom) && (!view.dateTo || d <= view.dateTo);
+    });
+
+  const wanted: Record<ListOnly, (p: P) => boolean> = {
+    active: (p) => p.state === "active",
+    "at-risk": (p) => isOpen(p) && p.atRisk === true,
+    "not-forecast": (p) => isOpen(p) && p.unscheduledTasks > 0,
+    incomplete: (p) => isOpen(p) && isIncomplete(p),
+  };
+  const only = view.only;
+  const narrowed = only ? described.filter(wanted[only]) : described;
+
+  // Blanks go last whichever way the column runs: a project with no target is not "soonest".
+  const blankLast =
+    <T>(get: (p: P) => T | null, compare: (a: T, b: T) => number) =>
+    (a: P, b: P) => {
+      const [x, y] = [get(a), get(b)];
+      if (x == null || y == null) return (x == null ? 1 : 0) - (y == null ? 1 : 0);
+      return compare(x, y);
+    };
+  const states = STATE_ORDER as readonly string[];
+  const stateIndex = (s: string) => {
+    const i = states.indexOf(s);
+    return i < 0 ? states.length : i;
+  };
+  const riskRank: Record<RiskKey, number> = { "at-risk": 0, "on-track": 1, none: 2 };
+  const order: Record<ListSort, ((a: P, b: P) => number) | null> = {
+    rank: null,
+    name: (a, b) => a.name.localeCompare(b.name),
+    target: blankLast(
+      (p) => p.targetDate,
+      (a, b) => a.localeCompare(b),
+    ),
+    forecast: blankLast(
+      (p) => p.forecastFinish,
+      (a, b) => a.localeCompare(b),
+    ),
+    value: blankLast(
+      (p) => p.valueSort,
+      (a, b) => b - a,
+    ),
+    // Most complete first, then most hours of work left first: the numeric columns, biggest on top.
+    progress: (a, b) => progress(b).percent - progress(a).percent,
+    hours: (a, b) => b.remainingHours - a.remainingHours,
+    // At risk first, then on track, then the not-yet-forecast.
+    risk: (a, b) => riskRank[riskKey(a)] - riskRank[riskKey(b)],
+    // The states in their own order, planned first; then the first assignee's name, people with none last.
+    state: (a, b) => stateIndex(a.state) - stateIndex(b.state),
+    assignee: blankLast(
+      (p) => (p.assigneeNames.length ? [...p.assigneeNames].sort((x, y) => x.localeCompare(y))[0]! : null),
+      (a, b) => a.localeCompare(b),
+    ),
+  };
+  const compare = order[view.sort];
+  // Stable, so ties stay in rank order.
+  const sorted = compare
+    ? narrowed
+        .map((p, i) => ({ p, i }))
+        .sort((a, b) => compare(a.p, b.p) || a.i - b.i)
+        .map((x) => x.p)
+    : narrowed;
+  return { described, shown: view.grouped ? byDepartment(sorted) : sorted };
+}
+
+/**
+ * The value ranges present across the projects, for the Value column filter, highest first. Built
+ * from the projects themselves so the choices never list a range nobody uses. The label drops the
+ * trailing " a year" the column header already carries.
+ */
+export function valueFilterOptions<P extends Pick<ProjectListItem, "valueBucketId" | "valueLabel" | "valueSort">>(
+  projects: P[],
+): { id: number; label: string }[] {
+  const seen = new Map<number, { id: number; label: string; sort: number }>();
+  for (const p of projects) {
+    if (p.valueBucketId != null && !seen.has(p.valueBucketId)) {
+      seen.set(p.valueBucketId, {
+        id: p.valueBucketId,
+        label: (p.valueLabel ?? "").replace(" a year", ""),
+        sort: p.valueSort ?? 0,
+      });
+    }
+  }
+  return [...seen.values()].sort((a, b) => b.sort - a.sort).map(({ id, label }) => ({ id, label }));
+}
+
+/** The people named on the projects' cards, for the Assigned-to column filter, in name order. */
+export function assigneeFilterOptions<P extends Pick<ProjectListItem, "assigneeNames">>(projects: P[]): string[] {
+  const names = new Set<string>();
+  for (const p of projects) for (const n of p.assigneeNames) names.add(n);
+  return [...names].sort((a, b) => a.localeCompare(b));
 }

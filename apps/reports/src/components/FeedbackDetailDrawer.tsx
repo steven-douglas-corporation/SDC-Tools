@@ -11,7 +11,8 @@ import {
   FEEDBACK_STATUSES,
   FEEDBACK_STATUS_LABELS,
   FEEDBACK_STATUS_VARIANT,
-  FEEDBACK_SEVERITY_LABELS,
+  feedbackSeverityLabel,
+  feedbackSourceLabel,
   FEEDBACK_CATEGORY_LABELS,
   canTransition,
   isFeedbackStatus,
@@ -130,9 +131,9 @@ export function FeedbackDetailDrawer({
       <div className="flex flex-col gap-4 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge variant={FEEDBACK_STATUS_VARIANT[current]}>{FEEDBACK_STATUS_LABELS[current]}</StatusBadge>
-          {isFeedbackSeverity(item.severity) && <StatusBadge variant="neutral">{FEEDBACK_SEVERITY_LABELS[item.severity]}</StatusBadge>}
+          {isFeedbackSeverity(item.severity) && <StatusBadge variant="neutral">{feedbackSeverityLabel(item.severity, item.sourceApp)}</StatusBadge>}
           {isFeedbackCategory(item.category) && <StatusBadge variant="neutral">{FEEDBACK_CATEGORY_LABELS[item.category]}</StatusBadge>}
-          {item.sourceApp !== "reports" && <StatusBadge variant="neutral">{item.sourceApp}</StatusBadge>}
+          {item.sourceApp !== "reports" && <StatusBadge variant="neutral">{feedbackSourceLabel(item.sourceApp)}</StatusBadge>}
         </div>
 
         {/* ── Where they were standing ──────────────────────────────────────

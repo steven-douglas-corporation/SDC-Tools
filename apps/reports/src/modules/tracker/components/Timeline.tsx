@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CARD_BASE } from "@/components/ui/classnames";
 import type { Timeline as TimelineData, TimelineRow } from "../service/timeline";
 import { forecastReason, hours, localToday, shortDate } from "./format";
+import { TimelineTitles } from "./TimelineTitles";
 
 // One project as a timeline: a row per card, grouped under the card it sits under, a bar from
 // the forecast's start to its finish, and an arrow for each dependency. Nothing here is typed
@@ -14,6 +15,11 @@ const ROW = 30; // px, height of one row
 const HEAD = 44; // px, height of the dates header
 const DAY_MS = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// How far the time axis is zoomed out. "fit" is the day-scaled view with month labels; "quarter"
+// and "year" compress it so a long plan fits on screen, with the labels and ticks getting coarser.
+export type TimelineScale = "fit" | "quarter" | "year";
+const SCALE_LABEL: Record<TimelineScale, string> = { fit: "Fit", quarter: "Quarters", year: "Years" };
 
 /** Days since 1970 for a YYYY-MM-DD date, with no time zone involved. */
 function dayNumber(iso: string): number {
@@ -39,7 +45,7 @@ const taskHref = (key: string) => {
   return `/tracker/${key.slice(0, cut)}/${key.slice(cut + 1)}`;
 };
 
-/** One entry in the key under the chart: the mark exactly as it is drawn, and what it means. */
+/** One entry in the key above the chart: the mark exactly as it is drawn, and what it means. */
 function Mark({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <li className="flex items-center gap-1.5">
@@ -49,12 +55,15 @@ function Mark({ children, label }: { children: React.ReactNode; label: string })
   );
 }
 
-function Legend({ of, stale }: { of: "cards" | "projects"; stale: boolean }) {
+function Legend({ of, stale, grouped }: { of: "cards" | "projects"; stale: boolean; grouped: boolean }) {
   const cards = of === "cards";
   return (
     <ul aria-label="What the marks mean" className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-sdc-gray-600">
       <Mark label={cards ? "Forecast: start to finish (in progress)" : "Forecast: first start to finish (active)"}>
         <span className="h-3.5 w-full rounded bg-sdc-blue" />
+      </Mark>
+      <Mark label="Work already done: from when it started">
+        <span className="h-3.5 w-full rounded bg-sdc-green/60" />
       </Mark>
       <Mark label={cards ? "Not started yet" : "Not active yet"}>
         <span className="h-3.5 w-full rounded bg-sdc-blue/60" />
@@ -69,6 +78,11 @@ function Legend({ of, stale }: { of: "cards" | "projects"; stale: boolean }) {
       </Mark>
       {cards && (
         <Mark label="Has cards under it; spans them">
+          <span className="h-2 w-full rounded-sm bg-sdc-navy" />
+        </Mark>
+      )}
+      {!cards && grouped && (
+        <Mark label="A department; spans its projects">
           <span className="h-2 w-full rounded-sm bg-sdc-navy" />
         </Mark>
       )}
@@ -116,6 +130,9 @@ export function Timeline({
   of = "cards",
   closed = [],
   toggleHref,
+  finished = false,
+  scale = "fit",
+  scaleHref,
 }: {
   timeline: Pick<TimelineData, "rows" | "links" | "forecastAsOf">;
   /** Where a row's key leads. A card's own page unless told otherwise. */
@@ -123,7 +140,7 @@ export function Timeline({
   emptyText?: string;
   /** One date to mark down the whole chart: a project's target, on that project's timeline. */
   targetDate?: string | null;
-  /** What a row is, which decides the words in the key under the chart. */
+  /** What a row is, which decides the words in the key above the chart. */
   of?: "cards" | "projects";
   /** Ids of the rows whose cards under them are hidden. */
   closed?: number[];
@@ -133,6 +150,15 @@ export function Timeline({
    * the dependency arrows always match the rows on screen.
    */
   toggleHref?: (closed: number[]) => string;
+  /**
+   * Whether the chart reaches back to show finished work in full. Work that is still open is
+   * always drawn from the day it started; this adds what is already finished, however long ago.
+   */
+  finished?: boolean;
+  /** How far the time axis is zoomed out. */
+  scale?: TimelineScale;
+  /** Builds the address for a zoom level; given, the Fit / Quarters / Years control is shown. */
+  scaleHref?: (scale: TimelineScale) => string;
 }) {
   const { rows: allRows, links } = timeline;
   if (allRows.length === 0) {
@@ -173,31 +199,54 @@ export function Timeline({
     if (r.finish) dated.push(dayNumber(r.finish));
     if (r.p80Finish) dated.push(dayNumber(r.p80Finish));
     if (r.dueDate && r.category !== "done") dated.push(dayNumber(r.dueDate));
-    // A card finished long ago would stretch the chart for nothing; recent ones are shown.
-    if (r.doneOn && dayNumber(r.doneOn) >= todayN - 14) dated.push(dayNumber(r.doneOn));
+    // Open work reaches back to the day it started. Work finished long ago would stretch the
+    // chart for nothing, so only the recent is shown unless finished work was asked for.
+    if (r.startedOn && (finished || r.category !== "done")) dated.push(dayNumber(r.startedOn));
+    if (r.doneOn && (finished || dayNumber(r.doneOn) >= todayN - 14)) dated.push(dayNumber(r.doneOn));
   }
   if (targetDate) dated.push(dayNumber(targetDate));
   const first = Math.min(...dated) - 2;
   const last = Math.max(...dated) + 4;
   const days = last - first + 1;
-  // Sized so a plan of up to about eight months fits beside the card column without scrolling
-  // sideways; a longer one scrolls, because a day narrower than 4px cannot be read.
-  const dayWidth = Math.max(4, Math.min(22, Math.floor(960 / days)));
+  // Day width by zoom level. "fit" keeps the day scale (about eight months beside the cards,
+  // scrolling beyond; a day narrower than 4px cannot be read). "quarter" and "year" compress so
+  // a long plan fits on screen, the floor low enough that years of work fit even though a single
+  // day is no longer meant to be read at that zoom.
+  const dayWidth =
+    scale === "year"
+      ? Math.max(0.7, Math.min(3, 960 / days))
+      : scale === "quarter"
+        ? Math.max(1.5, Math.min(8, 960 / days))
+        : Math.max(4, Math.min(22, Math.floor(960 / days)));
   const width = days * dayWidth;
   const x = (day: number) => (day - first) * dayWidth;
 
-  // ---- header marks: a label at each month start, a tick at each Monday ----
-  const months: { left: number; label: string }[] = [];
-  const mondays: { left: number; label: string }[] = [];
+  // ---- header marks: big labels, and thin ticks between them, coarser the further out ----
+  // fit: a label each month, a tick each Monday (with its date when there is room). quarter: a
+  // label each quarter, a tick each month. year: a label each year, a tick each quarter.
+  const labels: { left: number; label: string }[] = [];
+  const ticks: { left: number; label: string }[] = [];
   for (let d = first; d <= last; d++) {
     const date = new Date(d * DAY_MS);
-    if (date.getUTCDate() === 1 || d === first) {
-      months.push({ left: x(d), label: `${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}` });
+    const monthStart = date.getUTCDate() === 1;
+    const month = date.getUTCMonth();
+    const year = date.getUTCFullYear();
+    const atStart = d === first;
+    if (scale === "year") {
+      if ((monthStart && month === 0) || atStart) labels.push({ left: x(d), label: String(year) });
+      if (monthStart && month % 3 === 0) ticks.push({ left: x(d), label: "" });
+    } else if (scale === "quarter") {
+      if ((monthStart && month % 3 === 0) || atStart) {
+        labels.push({ left: x(d), label: `Q${Math.floor(month / 3) + 1} ${year}` });
+      }
+      if (monthStart) ticks.push({ left: x(d), label: "" });
+    } else {
+      if (monthStart || atStart) labels.push({ left: x(d), label: `${MONTHS[month]} ${year}` });
+      if (date.getUTCDay() === 1) ticks.push({ left: x(d), label: dayWidth >= 8 ? String(date.getUTCDate()) : "" });
     }
-    if (date.getUTCDay() === 1) mondays.push({ left: x(d), label: String(date.getUTCDate()) });
   }
-  // Drop the first label if the next month starts too close for both to fit.
-  if (months.length > 1 && months[1]!.left - months[0]!.left < 64) months.shift();
+  // Drop the first label if the next starts too close for both to fit.
+  if (labels.length > 1 && labels[1]!.left - labels[0]!.left < 64) labels.shift();
 
   // ---- where each card's bar is, for the arrows ----
   const index = new Map(rows.map((r, i) => [r.id, i]));
@@ -229,6 +278,27 @@ export function Timeline({
 
   return (
     <div className="space-y-3">
+      <Legend of={of} stale={stale} grouped={parents.length > 0} />
+      {scaleHref && (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-semibold text-sdc-gray-600">Zoom</span>
+          <div className="inline-flex overflow-hidden rounded-md border border-sdc-border">
+            {(["fit", "quarter", "year"] as const).map((s) => (
+              <Link
+                key={s}
+                href={scaleHref(s)}
+                scroll={false}
+                aria-current={scale === s ? "true" : undefined}
+                className={`px-2.5 py-1 font-semibold ${
+                  scale === s ? "bg-sdc-blue text-white" : "bg-white text-sdc-navy hover:bg-sdc-gray-100"
+                }`}
+              >
+                {SCALE_LABEL[s]}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
       {toggleHref && parents.length > 0 && (
         <p className="flex gap-4 text-xs">
           <Link href={toggleHref(parents)} scroll={false} className="font-semibold text-sdc-blue hover:underline">
@@ -240,8 +310,9 @@ export function Timeline({
         </p>
       )}
       <div className={`${CARD_BASE} flex overflow-hidden`}>
-        {/* The cards, as a fixed column that stays put while the dates scroll. */}
-        <div className="w-80 shrink-0 border-r border-sdc-border">
+        {/* The cards, as a column that stays put while the dates scroll. Its right edge can be
+            dragged to make the titles wider or narrower. */}
+        <TimelineTitles>
           <div style={{ height: HEAD }} className="border-b border-sdc-border" />
           {rows.map((r) => (
             <div
@@ -264,8 +335,8 @@ export function Timeline({
                     href={toggleHref(shut.has(r.id) ? closed.filter((id) => id !== r.id) : [...closed, r.id])}
                     scroll={false}
                     aria-expanded={!shut.has(r.id)}
-                    aria-label={`${shut.has(r.id) ? "Show" : "Hide"} the cards under ${r.key}`}
-                    title={`${shut.has(r.id) ? "Show" : "Hide"} the cards under ${r.key}`}
+                    aria-label={`${shut.has(r.id) ? "Show" : "Hide"} the ${of === "projects" ? "projects" : "cards"} under ${r.key || r.title}`}
+                    title={`${shut.has(r.id) ? "Show" : "Hide"} the ${of === "projects" ? "projects" : "cards"} under ${r.key || r.title}`}
                     className="relative flex h-4 w-4 shrink-0 items-center justify-center rounded bg-white text-sdc-gray-600 hover:bg-sdc-gray-100 hover:text-sdc-navy"
                   >
                     {shut.has(r.id) ? "\u25B8" : "\u25BE"}
@@ -273,9 +344,12 @@ export function Timeline({
                 ) : (
                   <span className="w-4 shrink-0" />
                 ))}
-              <Link href={hrefFor(r)} className="font-mono font-semibold text-sdc-blue hover:underline">
-                {r.key}
-              </Link>
+              {/* A department's row on the timeline of all projects has a name and no key. */}
+              {r.key && (
+                <Link href={hrefFor(r)} className="font-mono font-semibold text-sdc-blue hover:underline">
+                  {r.key}
+                </Link>
+              )}
               <span
                 title={r.title}
                 className={`truncate ${r.isParent ? "font-semibold text-sdc-navy" : "text-sdc-navy"} ${
@@ -302,13 +376,13 @@ export function Timeline({
               )}
             </div>
           ))}
-        </div>
+        </TimelineTitles>
 
         {/* The dates. */}
         <div className="min-w-0 flex-1 overflow-x-auto">
           <div className="relative" style={{ width, height: HEAD + rows.length * ROW }}>
             <div className="absolute inset-x-0 top-0 border-b border-sdc-border" style={{ height: HEAD }}>
-              {months.map((m) => (
+              {labels.map((m) => (
                 <span
                   key={m.left}
                   style={{ left: m.left + 4 }}
@@ -317,17 +391,17 @@ export function Timeline({
                   {m.label}
                 </span>
               ))}
-              {mondays.map((m) => (
+              {ticks.map((m) => (
                 <span
                   key={m.left}
                   style={{ left: m.left + 2 }}
                   className="absolute bottom-1 text-micro text-sdc-gray-600"
                 >
-                  {dayWidth >= 8 ? m.label : ""}
+                  {m.label}
                 </span>
               ))}
             </div>
-            {mondays.map((m) => (
+            {ticks.map((m) => (
               <div
                 key={m.left}
                 style={{ left: m.left, top: HEAD, bottom: 0 }}
@@ -366,7 +440,7 @@ export function Timeline({
                 b ? `${shortDate(r.start)} to ${shortDate(r.finish)}` : null,
                 r.p80Finish ? `safe date ${shortDate(r.p80Finish)}` : null,
                 r.dueDate ? `due ${shortDate(r.dueDate)}` : null,
-                r.isParent ? "spans the cards under it" : r.assigneeName,
+                r.isParent ? (of === "projects" ? "spans its projects" : "spans the cards under it") : r.assigneeName,
                 r.statusName,
               ]
                 .filter(Boolean)
@@ -416,6 +490,21 @@ export function Timeline({
                         />
                       </>
                     ))}
+                  {(() => {
+                    // What has already happened: from the day the work started to the day it was
+                    // finished, or to the forecast's day while it is still open.
+                    if (!r.startedOn) return null;
+                    const from = Math.max(first, dayNumber(r.startedOn));
+                    const to = r.doneOn ? dayNumber(r.doneOn) : todayN;
+                    if (to <= from) return null;
+                    return (
+                      <div
+                        title={`${r.key} started ${shortDate(r.startedOn)}${r.doneOn ? `, finished ${shortDate(r.doneOn)}` : ""}`}
+                        style={{ left: x(from), width: x(to) - x(from), top: ROW / 2 - 7 }}
+                        className="absolute h-3.5 rounded-l bg-sdc-green/60"
+                      />
+                    );
+                  })()}
                   {r.doneOn && dayNumber(r.doneOn) >= first && (
                     <div
                       title={`${r.key} finished ${shortDate(r.doneOn)}`}
@@ -491,7 +580,6 @@ export function Timeline({
         </div>
       </div>
 
-      <Legend of={of} stale={stale} />
       {stale && (
         <p role="status" className="text-xs font-semibold text-sdc-yellow-text">
           This forecast was made for {shortDate(today)}, not today, so its dates may be out of date. It is redone

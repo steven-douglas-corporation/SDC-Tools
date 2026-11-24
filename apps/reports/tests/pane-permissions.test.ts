@@ -37,11 +37,18 @@ test("permittedRoutePaths is the layout's own visibleHrefs rule, verbatim", () =
   // be offered in one place and refused in the other — the exact drift the shared map
   // exists to prevent. Pinned against the layout's source rather than trusted.
   const layout = readFileSync(join(process.cwd(), "src", "app", "(app)", "layout.tsx"), "utf8");
-  assert.match(layout, /ROUTE_PERMISSIONS\.filter\(\(r\) => hasPermission\(role, r\.permission\)\)\.map\(\(r\) => r\.path\)/);
-  assert.match(layout, /if \(hasPermission\(role, "dashboard:view"\)\) visibleHrefs\.push\("\/"\)/);
+  assert.match(
+    layout,
+    /ROUTE_PERMISSIONS\.filter\(\(r\) => hasPermission\(role, r\.permission\)\)\.map\(\(r\) => r\.path\)/,
+  );
+  // The Dashboard is an ordinary row of that map now, so neither side adds it by hand.
+  assert.doesNotMatch(layout, /visibleHrefs\.push\(/);
   const lib = readFileSync(join(process.cwd(), "src", "lib", "pane-permissions.ts"), "utf8");
-  assert.match(lib, /ROUTE_PERMISSIONS\.filter\(\(r\) => hasPermission\(role, r\.permission\)\)\.map\(\(r\) => r\.path\)/);
-  assert.match(lib, /if \(hasPermission\(role, "dashboard:view"\)\) out\.push\("\/"\)/);
+  assert.match(
+    lib,
+    /ROUTE_PERMISSIONS\.filter\(\(r\) => hasPermission\(role, r\.permission\)\)\.map\(\(r\) => r\.path\)/,
+  );
+  assert.doesNotMatch(lib, /out\.push\(/);
 });
 
 // The tab strip's "+" picker, which this used to guard, was removed (2026-10-08): pages
@@ -62,5 +69,8 @@ test("PaneView renders the in-pane refusal instead of letting the page-level red
   assert.match(code, /title="You no longer have access to this page"/);
   // Still not a second gate: the page body's requirePagePermission remains the check
   // that actually refuses; this only decides what a refusal looks like inside a pane.
-  assert.ok(!/requirePagePermission|assertPermission|redirect\(/.test(code), "PaneView must not redirect or add its own gate");
+  assert.ok(
+    !/requirePagePermission|assertPermission|redirect\(/.test(code),
+    "PaneView must not redirect or add its own gate",
+  );
 });

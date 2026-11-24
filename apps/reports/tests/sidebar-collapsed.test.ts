@@ -131,13 +131,15 @@ test("no footer control carries flex-1 unconditionally", () => {
   // rendered 14px tall. Measured before the fix: Refresh h=14, Expand h=14. After:
   // h=30 for both.
   //
-  // The rule is not "never use flex-1" — expanded, the two share a row and need it. It
-  // is that the class must be conditional on NOT being collapsed.
-  // From the JSX usage, not the import at the top of the file — the expanded search
-  // field above it has its own legitimate horizontal `flex-1`.
-  const footer = SIDEBAR_CODE.slice(SIDEBAR_CODE.lastIndexOf("<RefreshDataButton"));
+  // The rule is not "never use flex-1" — a shared row may need it expanded. It is that the
+  // class must be conditional on NOT being collapsed.
+  // Anchored on the footer via App Refresh (its first control), not the import at the top of the
+  // file — the expanded search field above it has its own legitimate horizontal `flex-1`.
+  // Refresh Data, which used to be the flex-1 offender here, moved to the Data Management page on
+  // 2026-11-23, so there may now be none to check — the invariant still has to hold for anything
+  // added to the footer later.
+  const footer = SIDEBAR_CODE.slice(SIDEBAR_CODE.lastIndexOf("<AppRefreshButton"));
   const flexOnes = [...footer.matchAll(/flex-1/g)];
-  assert.ok(flexOnes.length > 0, "expanded still wants it, so this test should have something to check");
   for (const m of flexOnes) {
     // Each occurrence must sit inside a `collapsed ? … : …` arm — i.e. the 120 characters
     // before it mention `collapsed`.
@@ -151,9 +153,12 @@ test("the footer refuses to shrink", () => {
   // `shrink-0` the footer gives up its own height when the nav is tall — bottom controls
   // pushed past the viewport, which is §46.5's "do not allow items to extend beyond the
   // viewport".
-  const footerStart = SIDEBAR_CODE.indexOf("<AppZoom");
-  const openingTag = SIDEBAR_CODE.lastIndexOf("<div", footerStart);
-  assert.match(SIDEBAR_CODE.slice(openingTag, footerStart), /shrink-0/, "the footer block must be shrink-0");
+  //
+  // The footer is the aside's one bordered column block. (It used to be found from the zoom
+  // control, its first child until that moved into the settings menu beside the user's name.)
+  const blocks = [...SIDEBAR_CODE.matchAll(/<div className=\{`([^`]*\bflex-col\b[^`]*\bborder-t\b[^`]*)`\}>/g)];
+  assert.equal(blocks.length, 1, "exactly one bordered column block: the footer");
+  assert.match(blocks[0]![1]!, /shrink-0/, "the footer block must be shrink-0");
 });
 
 test("the rail's scroll area cannot steal the centring", () => {
@@ -193,7 +198,9 @@ test("every collapsed label is hidden with sr-only rather than unmounted", () =>
   for (const label of [
     /collapsed \? "sr-only" : "truncate"\}>\{item\.label\}/, // nav links
     /collapsed \? "sr-only" : ""\}>Back</, // the Back button
-    /collapsed \? "sr-only" : ""\}>\{collapsed \? "Expand sidebar"/, // the toggle
+    // The toggle is an icon in both states since it moved to the top of the sidebar, so its
+    // label is always the hidden one.
+    /className="sr-only">\{collapsed \? "Expand sidebar"/,
     /collapsed \? "sr-only" : ""\}>Sign out</, // sign out
   ]) {
     assert.match(SIDEBAR_CODE, label, `a label still disappears instead of being hidden: ${label}`);
