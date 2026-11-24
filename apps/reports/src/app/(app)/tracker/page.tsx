@@ -92,7 +92,6 @@ export default async function TrackerPage({
           forIds={view.forIds}
           byIds={view.byIds}
           grouping={groupingOf(view)}
-          sort={view.sort}
           search={view.q}
           finished={view.finished}
           finishedCount={hidden}
@@ -130,6 +129,7 @@ export default async function TrackerPage({
 
       <ProjectList
         projects={projects}
+        view={view}
         valueBuckets={valueBuckets}
         departments={departments}
         grouped={view.grouped}

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { INPUT, LABEL } from "@/components/ui/classnames";
 import type { Department } from "../service/departments";
-import { GROUPINGS, SORT_LABEL, type Grouping, type ListSort } from "./format";
+import { GROUPINGS, type Grouping } from "./format";
 
 // Choosing a department, in the two places it is chosen: on a project (which one it is for and
 // which one does the work), and above a list (which ones to show). Both list the departments
@@ -204,7 +204,6 @@ export function ProjectListControls({
   forIds,
   byIds,
   grouping,
-  sort,
   search,
   finished,
   finishedCount,
@@ -213,7 +212,6 @@ export function ProjectListControls({
   forIds: number[];
   byIds: number[];
   grouping: Grouping;
-  sort: ListSort;
   search: string;
   finished: boolean;
   /** How many finished or cancelled projects there are to show. With none, the switch is left out. */
@@ -248,20 +246,7 @@ export function ProjectListControls({
         </label>
       </form>
       <DepartmentControls departments={departments} forIds={forIds} byIds={byIds} grouping={grouping} go={go} />
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Sort by</span>
-        <select
-          value={sort}
-          onChange={(e) => go({ sort: e.target.value === "rank" ? null : e.target.value })}
-          className={INPUT}
-        >
-          {(Object.keys(SORT_LABEL) as ListSort[]).map((key) => (
-            <option key={key} value={key}>
-              {SORT_LABEL[key]}
-            </option>
-          ))}
-        </select>
-      </label>
+      {/* Sorting moved onto the table's column headers (components/ProjectList.tsx) 2026-11-24. */}
       {finishedCount > 0 && (
         <label className="flex items-center gap-2 pb-2 text-sm text-sdc-navy">
           <input type="checkbox" checked={finished} onChange={(e) => go({ done: e.target.checked ? "1" : null })} />

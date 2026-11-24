@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useState, useTransition } from "react";
+import { Fragment, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   BUTTON_COMPACT,
@@ -30,11 +30,18 @@ import { DepartmentOptions } from "./DepartmentPicker";
 import {
   departmentDropEffect,
   departmentMoveEffect,
+  GROUPINGS,
+  groupingOf,
   hours,
+  listHref,
   notInForecast,
+  ONLY_LABEL,
   progress,
   rankClashEffect,
   shortDate,
+  SORT_LABEL,
+  type ListSort,
+  type ListView,
 } from "./format";
 import { SafeDateHelp } from "./HelpTip";
 
@@ -504,8 +511,121 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
   );
 }
 
+/**
+ * A column header that sorts the list by that column. Clicking the active column again returns to
+ * stack rank. The sort lives in the address (listHref), so the server re-sorts and a sorted view
+ * can be sent to someone — the same as the list's other controls.
+ */
+function SortTh({
+  label,
+  sort,
+  view,
+  align = "center",
+  title,
+}: {
+  label: ReactNode;
+  sort: ListSort;
+  view: ListView;
+  align?: "left" | "center";
+  title?: string;
+}) {
+  const active = view.sort === sort;
+  return (
+    <th
+      className={`px-3 py-2.5 ${align === "left" ? "text-left" : ""}`}
+      title={title}
+      aria-sort={active ? "ascending" : "none"}
+    >
+      <Link
+        href={listHref(view, { sort: active ? "rank" : sort })}
+        scroll={false}
+        className={`inline-flex items-center gap-1 ${active ? "text-sdc-blue" : "text-sdc-navy hover:text-sdc-blue"}`}
+        title={active ? "Sorted by this column — click for stack rank" : `Sort by ${SORT_LABEL[sort]}`}
+      >
+        {label}
+        <span aria-hidden="true" className={active ? "text-sdc-blue" : "text-sdc-gray-400 opacity-60"}>
+          {active ? "▼" : "⇅"}
+        </span>
+      </Link>
+    </th>
+  );
+}
+
+/** The Dates header, which cycles its sort target → forecast → stack rank and says which date is sorting. */
+function DatesTh({ view }: { view: ListView }) {
+  const active = view.sort === "target" || view.sort === "forecast";
+  const next: ListSort = view.sort === "target" ? "forecast" : view.sort === "forecast" ? "rank" : "target";
+  const by = view.sort === "target" ? "target" : view.sort === "forecast" ? "forecast" : null;
+  return (
+    <th className="px-3 py-2.5 text-left" aria-sort={active ? "ascending" : "none"}>
+      <span className="inline-flex items-center gap-1.5">
+        <Link
+          href={listHref(view, { sort: next })}
+          scroll={false}
+          className={`inline-flex items-center gap-1 ${active ? "text-sdc-blue" : "text-sdc-navy hover:text-sdc-blue"}`}
+          title={
+            by
+              ? `Sorted by ${by}, soonest first — click for ${next === "rank" ? "stack rank" : next}`
+              : "Sort by target date, soonest first"
+          }
+        >
+          Dates
+          <span aria-hidden="true" className={active ? "text-sdc-blue" : "text-sdc-gray-400 opacity-60"}>
+            {active ? "▼" : "⇅"}
+          </span>
+        </Link>
+        {by && <span className="text-micro font-normal text-sdc-gray-600">by {by}</span>}
+        <SafeDateHelp />
+      </span>
+    </th>
+  );
+}
+
+/** The filters and sort in force now, each removable, with a clear-all. Nothing when the list is untouched. */
+function FiltersBar({ view, departments }: { view: ListView; departments: Department[] }) {
+  const nameOf = (id: number) => departments.find((d) => d.id === id)?.name ?? `#${id}`;
+  const chips: { label: string; href: string }[] = [];
+  for (const id of view.forIds)
+    chips.push({ label: `For: ${nameOf(id)}`, href: listHref(view, { forIds: view.forIds.filter((x) => x !== id) }) });
+  for (const id of view.byIds)
+    chips.push({ label: `Done by: ${nameOf(id)}`, href: listHref(view, { byIds: view.byIds.filter((x) => x !== id) }) });
+  if (view.q) chips.push({ label: `Search: “${view.q}”`, href: listHref(view, { q: "" }) });
+  if (view.only) chips.push({ label: `Only ${ONLY_LABEL[view.only]}`, href: listHref(view, { only: null }) });
+  if (view.grouped) chips.push({ label: `Grouped by ${GROUPINGS[groupingOf(view)]}`, href: listHref(view, { grouped: false }) });
+  if (view.sort !== "rank") chips.push({ label: `Sorted by ${SORT_LABEL[view.sort]}`, href: listHref(view, { sort: "rank" }) });
+  if (view.finished) chips.push({ label: "Finished shown", href: listHref(view, { finished: false }) });
+  if (chips.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="font-semibold text-sdc-gray-600">Showing:</span>
+      {chips.map((c) => (
+        <Link
+          key={c.label}
+          href={c.href}
+          scroll={false}
+          className="inline-flex items-center gap-1 rounded-full border border-sdc-border bg-white px-2 py-0.5 text-sdc-navy hover:border-sdc-blue hover:text-sdc-blue"
+        >
+          {c.label}
+          <span aria-hidden="true" className="text-sdc-gray-400">
+            {"×"}
+          </span>
+          <span className="sr-only">(remove)</span>
+        </Link>
+      ))}
+      <Link
+        href={listHref(view, { forIds: [], byIds: [], q: "", only: null, grouped: false, sort: "rank", finished: false })}
+        scroll={false}
+        className="font-semibold text-sdc-blue hover:underline"
+      >
+        Clear all
+      </Link>
+    </div>
+  );
+}
+
 export function ProjectList({
   projects,
+  view,
   valueBuckets,
   departments,
   grouped = false,
@@ -517,6 +637,8 @@ export function ProjectList({
   canRank,
 }: {
   projects: ProjectListItem[];
+  /** The view the list is drawn for: its sort, search, departments and figure, from the address. */
+  view: ListView;
   /** The ranges a new project's yearly value is chosen from. */
   valueBuckets: ValueBucket[];
   /** The departments a new project can be for. */
@@ -655,15 +777,16 @@ export function ProjectList({
               {dropError}
             </p>
           )}
+          <FiltersBar view={view} departments={departments} />
           <div className={`${CARD_BASE} overflow-x-auto`}>
             <table className="w-full min-w-[60rem] text-sm">
               <thead>
                 <tr className={TABLE_HEADER_ROW}>
-                  <th className="px-3 py-2.5">Rank</th>
-                  <th className="px-3 py-2.5 text-left">Project</th>
+                  <SortTh label="Rank" sort="rank" view={view} />
+                  <SortTh label="Project" sort="name" view={view} align="left" />
                   <th className="px-3 py-2.5 text-left">For</th>
                   <th className="px-3 py-2.5 text-left">Done by</th>
-                  <th className="px-3 py-2.5 text-left">Value a year</th>
+                  <SortTh label="Value a year" sort="value" view={view} align="left" />
                   <th className="px-3 py-2.5">State</th>
                   <th
                     className="px-3 py-2.5 text-left"
@@ -675,11 +798,7 @@ export function ProjectList({
                   <th className="px-3 py-2.5" title="Hours of work left, of the hours estimated across its cards">
                     Hours left
                   </th>
-                  <th className="px-3 py-2.5 text-left">
-                    <span className="inline-flex items-center gap-1.5">
-                      Dates <SafeDateHelp />
-                    </span>
-                  </th>
+                  <DatesTh view={view} />
                   <th className="px-3 py-2.5">Against target</th>
                 </tr>
               </thead>
