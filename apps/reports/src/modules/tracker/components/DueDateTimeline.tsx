@@ -34,13 +34,32 @@ export function DueDateTimeline({
   scaleHref?: (scale: TimelineScale) => string;
   emptyText?: string;
 }) {
-  // Only project rows, never a department heading. Planned is the target; forecast is the safe
+  // Each project is a row placed by date; when the list is grouped, the department heading rows
+  // are kept as labels so "Group by" shows here too. Planned is the target; forecast is the safe
   // date when there is one, else the forecast finish.
-  const dated = timeline.rows
-    .filter((r) => !r.isParent)
-    .map((r) => ({ r, planned: r.dueDate, forecast: r.p80Finish ?? r.finish }));
-  const withDate = dated.filter((d) => d.planned || d.forecast);
-  const noDate = dated.filter((d) => !d.planned && !d.forecast);
+  type Row = (typeof timeline.rows)[number];
+  type Entry =
+    | { kind: "head"; id: number; label: string }
+    | { kind: "proj"; r: Row; planned: string | null; forecast: string | null };
+  const noDate: Row[] = [];
+  const all: Entry[] = [];
+  for (const r of timeline.rows) {
+    if (r.isParent) {
+      all.push({ kind: "head", id: r.id, label: r.title });
+      continue;
+    }
+    const planned = r.dueDate;
+    const forecast = r.p80Finish ?? r.finish;
+    if (planned || forecast) all.push({ kind: "proj", r, planned, forecast });
+    else noDate.push(r);
+  }
+  // A department heading is kept only when a dated project follows it before the next heading.
+  const entries = all.filter((e, i) => {
+    if (e.kind === "proj") return true;
+    for (let j = i + 1; j < all.length && all[j]!.kind !== "head"; j++) if (all[j]!.kind === "proj") return true;
+    return false;
+  });
+  const withDate = entries.filter((e): e is Extract<Entry, { kind: "proj" }> => e.kind === "proj");
 
   if (withDate.length === 0) {
     return <p className={`${CARD_BASE} p-4 text-sm text-sdc-gray-600`}>{emptyText}</p>;
@@ -138,7 +157,7 @@ export function DueDateTimeline({
       )}
 
       <div className={`${CARD_BASE} overflow-x-auto`}>
-        <div className="relative" style={{ width: Math.max(width, 480), height: HEAD + withDate.length * ROW }}>
+        <div className="relative" style={{ width: Math.max(width, 480), height: HEAD + entries.length * ROW }}>
           <div className="absolute inset-x-0 top-0 border-b border-sdc-border" style={{ height: HEAD }}>
             {labels.map((m) => (
               <span key={m.left} style={{ left: m.left + 4 }} className="absolute top-1 text-xs font-semibold text-sdc-navy">
@@ -161,8 +180,20 @@ export function DueDateTimeline({
             </span>
           </div>
 
-          {withDate.map((d, i) => {
+          {entries.map((e, i) => {
             const top = HEAD + i * ROW;
+            if (e.kind === "head") {
+              return (
+                <div
+                  key={`head-${e.id}`}
+                  style={{ top, height: ROW }}
+                  className="absolute inset-x-0 flex items-center border-b border-sdc-border bg-sdc-gray-100 pl-2"
+                >
+                  <span className="sticky left-2 text-xs font-semibold text-sdc-navy">{e.label}</span>
+                </div>
+              );
+            }
+            const d = e;
             const p = d.planned ? dayNumber(d.planned) : null;
             const f = d.forecast ? dayNumber(d.forecast) : null;
             const late = p != null && f != null && f > p;

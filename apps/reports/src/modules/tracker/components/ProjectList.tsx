@@ -962,9 +962,11 @@ export function ProjectList({
                           {p.assigneeNames.length > 0 ? (
                             p.assigneeNames.join(", ")
                           ) : (
-                            // Nobody named: the work is the department's, and is forecast on its people.
+                            // Nobody named. Say so plainly, then name the department whose people the
+                            // forecast books it against, so "(unassigned)" is not read as an assignment.
                             <span className="text-sdc-gray-600">
-                              {p.doneByDepartmentName ? `${p.doneByDepartmentName} team` : "\u2014"}
+                              <span className="italic">(unassigned)</span>
+                              {p.doneByDepartmentName ? ` \u00b7 ${p.doneByDepartmentName} team` : ""}
                             </span>
                           )}
                         </td>
