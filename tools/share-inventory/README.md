@@ -42,7 +42,9 @@ Neither of those is repeated here. This page covers only the share inventory.
 
 - A file format for the curated ontology: term, definition, synonyms, source
   evidence (where seen, how often, how recently), domain, status (candidate,
-  confirmed, rejected), reviewer and review date.
+  confirmed, rejected), reviewer and review date. A first draft of the shape is
+  in [MODEL.md](MODEL.md); its rows are outside the repo and all still
+  candidates.
 - A script that turns the mining reports into candidate entries in that format.
   Output stays outside the repo until reviewed.
 - Map the findings categories to the catalog's sensitivity flags (roadmap
