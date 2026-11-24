@@ -109,7 +109,29 @@ function DepartmentTicks({
   );
 }
 
-/** The three department controls, shared by the project list and the timeline of all projects. */
+/** The Group-by dropdown on its own, so the list (column filters) and the timeline (top filters) share it. */
+function GroupByControl({
+  grouping,
+  go,
+}: {
+  grouping: Grouping;
+  go: (change: Record<string, string | null>) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className={LABEL}>Group by</span>
+      <select value={grouping} onChange={(e) => go({ group: e.target.value || null })} className={INPUT}>
+        {(Object.keys(GROUPINGS) as Grouping[]).map((g) => (
+          <option key={g} value={g}>
+            {GROUPINGS[g]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** The three department controls, used by the timeline of all projects (the list filters by column). */
 function DepartmentControls({
   departments,
   forIds,
@@ -138,17 +160,80 @@ function DepartmentControls({
         chosen={byIds}
         onChange={(ids) => go({ by: ids.join(",") || null })}
       />
-      <label className="flex flex-col gap-1">
-        <span className={LABEL}>Group by</span>
-        <select value={grouping} onChange={(e) => go({ group: e.target.value || null })} className={INPUT}>
-          {(Object.keys(GROUPINGS) as Grouping[]).map((g) => (
-            <option key={g} value={g}>
-              {GROUPINGS[g]}
-            </option>
-          ))}
-        </select>
-      </label>
+      <GroupByControl grouping={grouping} go={go} />
     </>
+  );
+}
+
+/**
+ * A department filter inside a table column header (For / Done by on the project list): a small
+ * caret beside the label that opens the same tick list as the timeline's filters, and turns blue
+ * with a count when the column is filtered — the "this column is filtered" indicator. It writes
+ * the choice into the address, so the server redraws and the view can be shared, like every other
+ * control here. `param` is the address key it owns, "for" or "by".
+ */
+export function DepartmentColumnFilter({
+  label,
+  param,
+  departments,
+  chosen,
+}: {
+  label: string;
+  param: "for" | "by";
+  departments: Department[];
+  chosen: number[];
+}) {
+  const go = useAddress();
+  if (departments.length === 0) return <>{label}</>;
+  const tops = departments.filter((d) => d.parentId == null);
+  const onChange = (ids: number[]) => go({ [param]: ids.join(",") || null });
+  const toggle = (id: number) => onChange(chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id]);
+  const active = chosen.length > 0;
+  const tick = (d: Department, indent: boolean) => (
+    <label
+      key={d.id}
+      className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm font-normal text-sdc-navy normal-case hover:bg-sdc-gray-100 ${indent ? "pl-7" : "font-semibold"}`}
+    >
+      <input type="checkbox" checked={chosen.includes(d.id)} onChange={() => toggle(d.id)} />
+      {d.name}
+    </label>
+  );
+  return (
+    <details className="relative inline-block">
+      <summary
+        className={`inline-flex cursor-pointer list-none items-center gap-1 ${active ? "text-sdc-blue" : "hover:text-sdc-blue"} [&::-webkit-details-marker]:hidden`}
+        title={active ? `${label}: filtered (${chosen.length})` : `Filter by ${label}`}
+      >
+        {label}
+        <span aria-hidden="true" className={active ? "text-sdc-blue" : "text-sdc-gray-400 opacity-60"}>
+          {"▾"}
+        </span>
+        {active && (
+          <span className="rounded-full bg-sdc-blue px-1.5 text-micro font-bold text-white">{chosen.length}</span>
+        )}
+      </summary>
+      <div
+        role="group"
+        aria-label={label}
+        className="styled-scrollbar absolute left-0 z-20 mt-1 max-h-80 min-w-[16rem] overflow-y-auto rounded-lg border border-sdc-border bg-white p-1.5 text-left shadow-lg"
+      >
+        {tops.map((top) => (
+          <div key={top.id}>
+            {tick(top, false)}
+            {departments.filter((d) => d.parentId === top.id).map((t) => tick(t, true))}
+          </div>
+        ))}
+        {active && (
+          <button
+            type="button"
+            className="mt-1 w-full rounded px-2 py-1 text-left text-sm font-semibold text-sdc-blue hover:bg-sdc-gray-100"
+            onClick={() => onChange([])}
+          >
+            Clear this filter
+          </button>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -200,17 +285,11 @@ export function DepartmentFilter({
  * (see listView in ./format.ts), which is what the page is drawn from.
  */
 export function ProjectListControls({
-  departments,
-  forIds,
-  byIds,
   grouping,
   search,
   finished,
   finishedCount,
 }: {
-  departments: Department[];
-  forIds: number[];
-  byIds: number[];
   grouping: Grouping;
   search: string;
   finished: boolean;
@@ -245,8 +324,9 @@ export function ProjectListControls({
           />
         </label>
       </form>
-      <DepartmentControls departments={departments} forIds={forIds} byIds={byIds} grouping={grouping} go={go} />
-      {/* Sorting moved onto the table's column headers (components/ProjectList.tsx) 2026-11-24. */}
+      {/* For / Done by filters moved onto the table's column headers (DepartmentColumnFilter), and
+          sorting onto the headers too (components/ProjectList.tsx), 2026-11-24. */}
+      <GroupByControl grouping={grouping} go={go} />
       {finishedCount > 0 && (
         <label className="flex items-center gap-2 pb-2 text-sm text-sdc-navy">
           <input type="checkbox" checked={finished} onChange={(e) => go({ done: e.target.checked ? "1" : null })} />

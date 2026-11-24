@@ -26,7 +26,7 @@ import type { DepartmentRankDrop, DepartmentRankMove, RankClash } from "../servi
 import type { ProjectListItem, ValueBucket } from "../service/queries";
 import type { Department } from "../service/departments";
 import { cleanKey, keyFromName } from "../project-key";
-import { DepartmentOptions } from "./DepartmentPicker";
+import { DepartmentColumnFilter, DepartmentOptions } from "./DepartmentPicker";
 import {
   departmentDropEffect,
   departmentMoveEffect,
@@ -784,8 +784,12 @@ export function ProjectList({
                 <tr className={TABLE_HEADER_ROW}>
                   <SortTh label="Rank" sort="rank" view={view} />
                   <SortTh label="Project" sort="name" view={view} align="left" />
-                  <th className="px-3 py-2.5 text-left">For</th>
-                  <th className="px-3 py-2.5 text-left">Done by</th>
+                  <th className="px-3 py-2.5 text-left">
+                    <DepartmentColumnFilter label="For" param="for" departments={departments} chosen={view.forIds} />
+                  </th>
+                  <th className="px-3 py-2.5 text-left">
+                    <DepartmentColumnFilter label="Done by" param="by" departments={departments} chosen={view.byIds} />
+                  </th>
                   <SortTh label="Value a year" sort="value" view={view} align="left" />
                   <th className="px-3 py-2.5">State</th>
                   <th

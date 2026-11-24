@@ -88,9 +88,6 @@ export default async function TrackerPage({
       </p>
       <div className="mb-4">
         <ProjectListControls
-          departments={departments}
-          forIds={view.forIds}
-          byIds={view.byIds}
           grouping={groupingOf(view)}
           search={view.q}
           finished={view.finished}
