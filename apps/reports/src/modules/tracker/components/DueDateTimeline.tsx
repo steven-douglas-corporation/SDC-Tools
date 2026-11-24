@@ -4,19 +4,22 @@ import type { Timeline as TimelineData } from "../service/timeline";
 import { localToday, shortDate } from "./format";
 import type { TimelineScale } from "./Timeline";
 
-// The portfolio by completion date: each project's name on the timeline where it is due, with its
-// planned date and its forecast date both marked and the gap between them drawn — red when the
-// forecast lands after the plan (late). It is the same data as the bar timeline (service/timeline),
-// read as two dates per project instead of a bar, so the two views cannot disagree.
-//
-// Planned = the project's target date (what was committed). Forecast = the engine's prediction, its
-// safe (P80) date where there is one, otherwise its forecast finish.
+// The portfolio as a single milestone line: one time axis, with each project's name stacked above
+// or below it and a leader line down to its date. Each project has two dates — planned (its target)
+// and forecast (the engine's safe/P80 date, else its forecast finish) — both marked on the axis
+// with the slip between them drawn, red when the forecast lands after the plan. The anchor toggle
+// chooses which of the two the label hangs from. Same data as the bar view, read as dates.
 
 const DAY_MS = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const ROW = 30;
-const HEAD = 44;
+const HEAD = 44; // date-header height
+const LANE_H = 22; // one row of stacked labels
+const LABEL_H = 18;
+const AXIS_PAD = 14; // gap between the axis and the nearest label lane
 const SCALE_LABEL: Record<TimelineScale, string> = { fit: "Fit", quarter: "Quarters", year: "Years" };
+
+export type DueDateAnchor = "planned" | "forecast";
+const ANCHOR_LABEL: Record<DueDateAnchor, string> = { planned: "Planned", forecast: "Forecast" };
 
 function dayNumber(iso: string): number {
   const [y, m, d] = iso.split("-").map(Number);
@@ -27,41 +30,27 @@ export function DueDateTimeline({
   timeline,
   scale = "fit",
   scaleHref,
-  emptyText = "There are no projects with a date to show.",
+  anchor = "planned",
+  anchorHref,
+  emptyText = "No project has a date to show yet.",
 }: {
   timeline: Pick<TimelineData, "rows" | "forecastAsOf">;
   scale?: TimelineScale;
   scaleHref?: (scale: TimelineScale) => string;
+  /** Which date a project's label hangs from. */
+  anchor?: DueDateAnchor;
+  /** Builds the address for an anchor; given, the Planned / Forecast toggle is shown. */
+  anchorHref?: (anchor: DueDateAnchor) => string;
   emptyText?: string;
 }) {
-  // Each project is a row placed by date; when the list is grouped, the department heading rows
-  // are kept as labels so "Group by" shows here too. Planned is the target; forecast is the safe
-  // date when there is one, else the forecast finish.
   type Row = (typeof timeline.rows)[number];
-  type Entry =
-    | { kind: "head"; id: number; label: string }
-    | { kind: "proj"; r: Row; planned: string | null; forecast: string | null };
-  const noDate: Row[] = [];
-  const all: Entry[] = [];
-  for (const r of timeline.rows) {
-    if (r.isParent) {
-      all.push({ kind: "head", id: r.id, label: r.title });
-      continue;
-    }
-    const planned = r.dueDate;
-    const forecast = r.p80Finish ?? r.finish;
-    if (planned || forecast) all.push({ kind: "proj", r, planned, forecast });
-    else noDate.push(r);
-  }
-  // A department heading is kept only when a dated project follows it before the next heading.
-  const entries = all.filter((e, i) => {
-    if (e.kind === "proj") return true;
-    for (let j = i + 1; j < all.length && all[j]!.kind !== "head"; j++) if (all[j]!.kind === "proj") return true;
-    return false;
-  });
-  const withDate = entries.filter((e): e is Extract<Entry, { kind: "proj" }> => e.kind === "proj");
+  const projects = timeline.rows
+    .filter((r) => !r.isParent)
+    .map((r) => ({ r, planned: r.dueDate, forecast: r.p80Finish ?? r.finish }));
+  const dated = projects.filter((p) => p.planned || p.forecast);
+  const noDate = projects.filter((p) => !p.planned && !p.forecast).map((p) => p.r);
 
-  if (withDate.length === 0) {
+  if (dated.length === 0) {
     return <p className={`${CARD_BASE} p-4 text-sm text-sdc-gray-600`}>{emptyText}</p>;
   }
 
@@ -70,9 +59,9 @@ export function DueDateTimeline({
   const stale = today !== realToday;
   const todayN = dayNumber(today);
   const nums = [todayN];
-  for (const d of withDate) {
-    if (d.planned) nums.push(dayNumber(d.planned));
-    if (d.forecast) nums.push(dayNumber(d.forecast));
+  for (const p of dated) {
+    if (p.planned) nums.push(dayNumber(p.planned));
+    if (p.forecast) nums.push(dayNumber(p.forecast));
   }
   const first = Math.min(...nums) - 10;
   const last = Math.max(...nums) + 10;
@@ -86,9 +75,9 @@ export function DueDateTimeline({
   const width = days * dayWidth;
   const x = (day: number) => (day - first) * dayWidth;
 
-  // Same axis marks as the bar timeline, coarser the further out.
+  // Axis marks, coarser the further out (same rule as the bar timeline).
   const labels: { left: number; label: string }[] = [];
-  const ticks: { left: number; label: string }[] = [];
+  const ticks: { left: number }[] = [];
   for (let d = first; d <= last; d++) {
     const date = new Date(d * DAY_MS);
     const monthStart = date.getUTCDate() === 1;
@@ -97,18 +86,44 @@ export function DueDateTimeline({
     const atStart = d === first;
     if (scale === "year") {
       if ((monthStart && month === 0) || atStart) labels.push({ left: x(d), label: String(year) });
-      if (monthStart && month % 3 === 0) ticks.push({ left: x(d), label: "" });
+      if (monthStart && month % 3 === 0) ticks.push({ left: x(d) });
     } else if (scale === "quarter") {
-      if ((monthStart && month % 3 === 0) || atStart) {
-        labels.push({ left: x(d), label: `Q${Math.floor(month / 3) + 1} ${year}` });
-      }
-      if (monthStart) ticks.push({ left: x(d), label: "" });
+      if ((monthStart && month % 3 === 0) || atStart) labels.push({ left: x(d), label: `Q${Math.floor(month / 3) + 1} ${year}` });
+      if (monthStart) ticks.push({ left: x(d) });
     } else {
       if (monthStart || atStart) labels.push({ left: x(d), label: `${MONTHS[month]} ${year}` });
-      if (date.getUTCDay() === 1) ticks.push({ left: x(d), label: dayWidth >= 8 ? String(date.getUTCDate()) : "" });
+      if (date.getUTCDay() === 1) ticks.push({ left: x(d) });
     }
   }
   if (labels.length > 1 && labels[1]!.left - labels[0]!.left < 64) labels.shift();
+
+  // Lay the labels out in lanes, alternating above and below the axis, packed left to right so two
+  // labels never sit on top of each other in the same lane. Text width is estimated (the server
+  // cannot measure it), so the packing is approximate.
+  const estWidth = (r: Row) => (r.key.length + 1 + r.title.length) * 6.2 + 16;
+  const placed = dated
+    .map((p) => {
+      const anchorDate = anchor === "planned" ? (p.planned ?? p.forecast!) : (p.forecast ?? p.planned!);
+      return { ...p, ax: x(dayNumber(anchorDate)) };
+    })
+    .sort((a, b) => a.ax - b.ax)
+    .map((p, i) => ({ p, side: (i % 2 === 0 ? "above" : "below") as "above" | "below", w: estWidth(p.r) }));
+
+  const laneEnds: Record<"above" | "below", number[]> = { above: [], below: [] };
+  const withLane = placed.map(({ p, side, w }) => {
+    const ends = laneEnds[side];
+    let lane = ends.findIndex((end) => end <= p.ax - 6);
+    if (lane === -1) {
+      lane = ends.length;
+      ends.push(0);
+    }
+    ends[lane] = p.ax + w;
+    return { p, side, lane };
+  });
+  const topLanes = laneEnds.above.length;
+  const bottomLanes = laneEnds.below.length;
+  const axisY = HEAD + AXIS_PAD + topLanes * LANE_H;
+  const height = axisY + AXIS_PAD + bottomLanes * LANE_H + AXIS_PAD;
 
   return (
     <div className="space-y-3">
@@ -135,37 +150,55 @@ export function DueDateTimeline({
         </li>
       </ul>
 
-      {scaleHref && (
-        <div className="flex items-center gap-2 text-xs">
-          <span className="font-semibold text-sdc-gray-600">Zoom</span>
-          <div className="inline-flex overflow-hidden rounded-md border border-sdc-border">
-            {(["fit", "quarter", "year"] as const).map((s) => (
-              <Link
-                key={s}
-                href={scaleHref(s)}
-                scroll={false}
-                aria-current={scale === s ? "true" : undefined}
-                className={`px-2.5 py-1 font-semibold ${
-                  scale === s ? "bg-sdc-blue text-white" : "bg-white text-sdc-navy hover:bg-sdc-gray-100"
-                }`}
-              >
-                {SCALE_LABEL[s]}
-              </Link>
-            ))}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+        {anchorHref && (
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sdc-gray-600">Hang labels from</span>
+            <div className="inline-flex overflow-hidden rounded-md border border-sdc-border">
+              {(["planned", "forecast"] as const).map((a) => (
+                <Link
+                  key={a}
+                  href={anchorHref(a)}
+                  scroll={false}
+                  aria-current={anchor === a ? "true" : undefined}
+                  className={`px-2.5 py-1 font-semibold ${
+                    anchor === a ? "bg-sdc-blue text-white" : "bg-white text-sdc-navy hover:bg-sdc-gray-100"
+                  }`}
+                >
+                  {ANCHOR_LABEL[a]}
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+        {scaleHref && (
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sdc-gray-600">Zoom</span>
+            <div className="inline-flex overflow-hidden rounded-md border border-sdc-border">
+              {(["fit", "quarter", "year"] as const).map((s) => (
+                <Link
+                  key={s}
+                  href={scaleHref(s)}
+                  scroll={false}
+                  aria-current={scale === s ? "true" : undefined}
+                  className={`px-2.5 py-1 font-semibold ${
+                    scale === s ? "bg-sdc-blue text-white" : "bg-white text-sdc-navy hover:bg-sdc-gray-100"
+                  }`}
+                >
+                  {SCALE_LABEL[s]}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className={`${CARD_BASE} overflow-x-auto`}>
-        <div className="relative" style={{ width: Math.max(width, 480), height: HEAD + entries.length * ROW }}>
+        <div className="relative" style={{ width: Math.max(width, 480), height }}>
+          {/* Date header */}
           <div className="absolute inset-x-0 top-0 border-b border-sdc-border" style={{ height: HEAD }}>
             {labels.map((m) => (
               <span key={m.left} style={{ left: m.left + 4 }} className="absolute top-1 text-xs font-semibold text-sdc-navy">
-                {m.label}
-              </span>
-            ))}
-            {ticks.map((m) => (
-              <span key={m.left} style={{ left: m.left + 2 }} className="absolute bottom-1 text-micro text-sdc-gray-600">
                 {m.label}
               </span>
             ))}
@@ -174,66 +207,55 @@ export function DueDateTimeline({
             <div key={m.left} style={{ left: m.left, top: HEAD, bottom: 0 }} className="absolute w-px bg-sdc-border-soft" />
           ))}
 
+          {/* Today */}
           <div style={{ left: x(todayN), top: HEAD - 14, bottom: 0 }} className="absolute w-px bg-sdc-navy" title={`Forecast made for ${shortDate(today)}`}>
             <span className="absolute -top-0.5 left-1 whitespace-nowrap bg-white px-0.5 text-micro font-semibold text-sdc-navy">
               {stale ? `As of ${shortDate(today)}` : "Today"}
             </span>
           </div>
 
-          {entries.map((e, i) => {
-            const top = HEAD + i * ROW;
-            if (e.kind === "head") {
-              return (
-                <div
-                  key={`head-${e.id}`}
-                  style={{ top, height: ROW }}
-                  className="absolute inset-x-0 flex items-center border-b border-sdc-border bg-sdc-gray-100 pl-2"
-                >
-                  <span className="sticky left-2 text-xs font-semibold text-sdc-navy">{e.label}</span>
-                </div>
-              );
-            }
-            const d = e;
-            const p = d.planned ? dayNumber(d.planned) : null;
-            const f = d.forecast ? dayNumber(d.forecast) : null;
-            const late = p != null && f != null && f > p;
-            // The name sits at the planned date when there is one, otherwise at the forecast.
-            const anchor = p ?? f!;
+          {/* The axis */}
+          <div style={{ left: 0, width, top: axisY }} className="absolute h-px bg-sdc-border" />
+
+          {withLane.map(({ p, side, lane }) => {
+            const pn = p.planned ? dayNumber(p.planned) : null;
+            const fn = p.forecast ? dayNumber(p.forecast) : null;
+            const late = pn != null && fn != null && fn > pn;
+            const labelTop = side === "above" ? axisY - AXIS_PAD - (lane + 1) * LANE_H : axisY + AXIS_PAD + lane * LANE_H;
+            // The leader runs from the axis to the label's near edge.
+            const leaderTop = side === "above" ? labelTop + LABEL_H : axisY;
+            const leaderH = side === "above" ? axisY - (labelTop + LABEL_H) : labelTop - axisY;
             const said = [
-              `${d.r.key} ${d.r.title}`,
-              d.planned ? `planned ${shortDate(d.planned)}` : "no target date",
-              d.forecast ? `forecast ${shortDate(d.forecast)}${late ? " (late)" : ""}` : "not forecast",
+              `${p.r.key} ${p.r.title}`,
+              p.planned ? `planned ${shortDate(p.planned)}` : "no target date",
+              p.forecast ? `forecast ${shortDate(p.forecast)}${late ? " (late)" : ""}` : "not forecast",
             ].join(" · ");
             return (
-              <div key={d.r.id} style={{ top, height: ROW }} className="absolute inset-x-0 border-b border-sdc-border-soft" title={said}>
-                {/* The slip: a dashed line from the plan to the forecast, red when the forecast is later. */}
-                {p != null && f != null && p !== f && (
+              <div key={p.r.id} title={said}>
+                {/* slip on the axis */}
+                {pn != null && fn != null && pn !== fn && (
                   <div
-                    style={{ left: x(Math.min(p, f)), width: Math.abs(x(f) - x(p)), top: ROW / 2 - 1 }}
+                    style={{ left: x(Math.min(pn, fn)), width: Math.abs(x(fn) - x(pn)), top: axisY - 1 }}
                     className={`absolute h-0 border-t-2 border-dashed ${late ? "border-sdc-red" : "border-sdc-gray-400"}`}
                   />
                 )}
-                {/* Planned: a hollow navy diamond. */}
-                {p != null && (
-                  <div
-                    style={{ left: x(p) - 5, top: ROW / 2 - 5 }}
-                    className="absolute h-2.5 w-2.5 rotate-45 border border-sdc-navy bg-white"
-                  />
+                {/* planned diamond */}
+                {pn != null && (
+                  <div style={{ left: x(pn) - 4, top: axisY - 4 }} className="absolute h-2 w-2 rotate-45 border border-sdc-navy bg-white" />
                 )}
-                {/* Forecast: a filled dot, red when late. */}
-                {f != null && (
-                  <div
-                    style={{ left: x(f) - 4, top: ROW / 2 - 4 }}
-                    className={`absolute h-2 w-2 rounded-full ${late ? "bg-sdc-red" : "bg-sdc-blue"}`}
-                  />
+                {/* forecast dot */}
+                {fn != null && (
+                  <div style={{ left: x(fn) - 3.5, top: axisY - 3.5 }} className={`absolute h-[7px] w-[7px] rounded-full ${late ? "bg-sdc-red" : "bg-sdc-blue"}`} />
                 )}
-                {/* The project's name, at where it is due. */}
+                {/* leader from the axis up/down to the label */}
+                <div style={{ left: p.ax, top: leaderTop, height: Math.max(0, leaderH) }} className="absolute w-px bg-sdc-gray-400" />
+                {/* the label */}
                 <Link
-                  href={`/tracker/${d.r.key}/timeline`}
-                  style={{ left: x(anchor) + 9 }}
-                  className="absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-xs font-semibold text-sdc-blue hover:underline"
+                  href={`/tracker/${p.r.key}/timeline`}
+                  style={{ left: p.ax + 3, top: labelTop }}
+                  className="absolute whitespace-nowrap text-xs font-semibold text-sdc-blue hover:underline"
                 >
-                  {d.r.key} <span className="font-normal text-sdc-navy">{d.r.title}</span>
+                  {p.r.key} <span className="font-normal text-sdc-navy">{p.r.title}</span>
                   {late && <span className="ml-1 font-bold text-sdc-red-text">late</span>}
                 </Link>
               </div>

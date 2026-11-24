@@ -10,7 +10,7 @@ import { departmentsScope, listDepartments } from "@/modules/tracker/service/dep
 import { DepartmentFilter } from "@/modules/tracker/components/DepartmentPicker";
 import { departmentView, groupingOf } from "@/modules/tracker/components/format";
 import { Timeline, type TimelineScale } from "@/modules/tracker/components/Timeline";
-import { DueDateTimeline } from "@/modules/tracker/components/DueDateTimeline";
+import { DueDateTimeline, type DueDateAnchor } from "@/modules/tracker/components/DueDateTimeline";
 import { TrackerTabs } from "@/modules/tracker/components/TrackerTabs";
 
 // Every open project on one timeline, at /tracker/timeline. "TIMELINE" is a reserved project
@@ -25,6 +25,7 @@ export default async function TrackerPortfolioTimelinePage({
     done?: string | string[];
     scale?: string | string[];
     mode?: string | string[];
+    anchor?: string | string[];
   }>;
 }) {
   const session = await requirePagePermission("tracker:view");
@@ -37,6 +38,8 @@ export default async function TrackerPortfolioTimelinePage({
   const scale: TimelineScale = scaleParam === "quarter" || scaleParam === "year" ? scaleParam : "fit";
   // "bars" is the Gantt-style view; "dates" is the by-completion-date view.
   const mode: "bars" | "dates" = (Array.isArray(params.mode) ? params.mode[0] : params.mode) === "dates" ? "dates" : "bars";
+  // Which date the due-date view hangs each project's label from.
+  const anchor: DueDateAnchor = (Array.isArray(params.anchor) ? params.anchor[0] : params.anchor) === "forecast" ? "forecast" : "planned";
   await syncDepartmentsFromOrg();
   const departments = await listDepartments(trackerDb);
   const filtered = view.forIds.length > 0 || view.byIds.length > 0;
@@ -61,7 +64,7 @@ export default async function TrackerPortfolioTimelinePage({
   };
   // Every link here keeps the current zoom, departments, grouping and collapsed state, changing
   // only the one thing it is for.
-  const build = (opts: { closed?: number[]; scale?: TimelineScale; mode?: "bars" | "dates" } = {}) => {
+  const build = (opts: { closed?: number[]; scale?: TimelineScale; mode?: "bars" | "dates"; anchor?: DueDateAnchor } = {}) => {
     const query = new URLSearchParams();
     setDepartments(query);
     if (finished) query.set("done", "1");
@@ -71,12 +74,15 @@ export default async function TrackerPortfolioTimelinePage({
     if (s !== "fit") query.set("scale", s);
     const m = opts.mode ?? mode;
     if (m !== "bars") query.set("mode", m);
+    const a = opts.anchor ?? anchor;
+    if (a !== "planned") query.set("anchor", a);
     const text = query.toString();
     return text ? `/tracker/timeline?${text}` : "/tracker/timeline";
   };
   const address = (ids: number[]) => build({ closed: ids });
   const scaleHref = (s: TimelineScale) => build({ scale: s });
   const modeHref = (m: "bars" | "dates") => build({ mode: m });
+  const anchorHref = (a: DueDateAnchor) => build({ anchor: a });
 
   return (
     <div className={PAGE_SHELL}>
@@ -132,6 +138,8 @@ export default async function TrackerPortfolioTimelinePage({
           timeline={timeline}
           scale={scale}
           scaleHref={scaleHref}
+          anchor={anchor}
+          anchorHref={anchorHref}
           emptyText={filtered ? "No project with a date fits the departments chosen." : "No project has a date to show yet."}
         />
       ) : (
