@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ListSort, ListView } from "./format";
 
@@ -31,18 +32,50 @@ export function useAddress(alsoClear: string[] = []) {
   };
 }
 
+export type MenuPos = { top: number; left?: number; right?: number };
+
 /**
- * The open/closed state of a popover, with the two things a native <details> does not do: close
- * when the click lands outside it, and close on Escape. Returns a ref to put on the popover's
- * outermost element so a click inside it is not treated as outside.
+ * An open popover anchored under a trigger button and rendered in a portal on <body>, with the three
+ * things a native <details> inside the table does not give: it is not clipped by the table's
+ * horizontal-scroll box (which clips both axes, so a few-row table would shear the menu off), it
+ * closes when the click lands outside it or on Escape, and it re-anchors as the page or the table
+ * scrolls. Put `triggerRef` on the button and `panelRef` on the portal panel; both count as inside.
+ * `pos` is the fixed position for the panel; render it with `createPortal(..., document.body)`.
  */
-export function useMenu() {
+export function useAnchoredMenu(align: "left" | "right") {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<MenuPos>({ top: 0, left: 0 });
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const el = triggerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setPos(
+        align === "right"
+          ? { top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) }
+          : { top: r.bottom + 4, left: Math.max(8, r.left) },
+      );
+    };
+    place();
+    window.addEventListener("resize", place);
+    // Capture, so the table's own horizontal scroll re-anchors the menu too, not just the window.
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, align]);
+
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent | TouchEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -56,7 +89,8 @@ export function useMenu() {
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
-  return { open, setOpen, ref };
+
+  return { open, setOpen, triggerRef, panelRef, pos };
 }
 
 /** The blue pill that says how many filter choices are in force on a column. */
@@ -102,12 +136,13 @@ export function HeaderMenu({
   align?: "left" | "right";
   children: ReactNode | ((close: () => void) => ReactNode);
 }) {
-  const { open, setOpen, ref } = useMenu();
+  const { open, setOpen, triggerRef, panelRef, pos } = useAnchoredMenu(align);
   const filtered = filterCount > 0;
   const active = sorted || filtered;
   return (
-    <div ref={ref} className="relative inline-block">
+    <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
@@ -123,17 +158,19 @@ export function HeaderMenu({
           {"▾"}
         </span>
       </button>
-      {open && (
-        <div
-          role="group"
-          className={`styled-scrollbar absolute z-20 mt-1 max-h-96 min-w-[14rem] overflow-y-auto rounded-lg border border-sdc-border bg-white p-2 text-left font-normal normal-case shadow-lg ${
-            align === "right" ? "right-0" : "left-0"
-          }`}
-        >
-          {typeof children === "function" ? children(() => setOpen(false)) : children}
-        </div>
-      )}
-    </div>
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="group"
+            style={{ position: "fixed", top: pos.top, left: pos.left, right: pos.right, zIndex: 50 }}
+            className="styled-scrollbar max-h-96 min-w-[14rem] max-w-[20rem] overflow-y-auto rounded-lg border border-sdc-border bg-white p-2 text-left font-normal normal-case shadow-lg"
+          >
+            {typeof children === "function" ? children(() => setOpen(false)) : children}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
