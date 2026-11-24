@@ -1,0 +1,41 @@
+/* portal.css — styles for the customer portal's login page. That's the
+   whole job now: a successful login redirects to the real app (see
+   portal-login.html's own comment for why). This file used to also style
+   a full standalone dashboard (header, project list, due tables, etc.) —
+   retired along with that dashboard once customer sessions started running
+   the real app.js/styles.css instead. Font-weight values below fall back to
+   the same numbers styles.css's --fw-* scale uses (700/800/600), since this
+   page doesn't load that file anymore and has no reason to — it never
+   renders a class styles.css defines. */
+:root {
+  --cp-primary: #1574c4;
+  --cp-text: #1e293b;
+  --cp-muted: #64748b;
+  --cp-border: #e2e8f0;
+  --cp-bg: #f4f5f7;
+  --cp-danger: #b91c1c;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--cp-bg);
+  color: var(--cp-text);
+  font-size: 14px;
+  line-height: 1.45;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.cp-loading { padding: 60px; text-align: center; color: var(--cp-muted); }
+
+/* ── Login ── */
+.cp-login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.cp-login-card { width: 100%; max-width: 360px; background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 32px; }
+.cp-login-logo { height: 32px; margin-bottom: 8px; }
+.cp-login-card h1 { font-size: 18px; margin: 0 0 20px; font-weight: 800; }
+.cp-field { margin-bottom: 14px; }
+.cp-field label { display: block; font-size: 12px; font-weight: 600; color: var(--cp-muted); margin-bottom: 4px; }
+.cp-field input { width: 100%; padding: 9px 11px; border: 1.5px solid var(--cp-border); border-radius: 6px; font-size: 14px; }
+.cp-field input:focus { outline: none; border-color: var(--cp-primary); }
+.cp-btn { width: 100%; padding: 10px; border: none; border-radius: 6px; background: var(--cp-primary); color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; }
+.cp-btn:hover { opacity: .92; }
+.cp-btn:disabled { opacity: .6; cursor: default; }
+.cp-error { color: var(--cp-danger); font-size: 12px; margin: 10px 0 0; }

@@ -1,0 +1,377 @@
+/**
+ * auth-ui.js — Phase 3 client-side auth.
+ *
+ * Loaded BEFORE app.js so it can:
+ *   1. Wrap window.fetch to attach Authorization: Bearer <token>
+ *   2. Detect AUTH_ENABLED on boot via /api/auth/me
+ *   3. Show a small login modal when auth is required
+ *   4. Stash the JWT in localStorage('sdc_auth_token') across reloads
+ *
+ * Public API on window:
+ *   sdcAuth.user        — { id, email, name, role, avatar_color } or null
+ *   sdcAuth.token       — JWT string or null
+ *   sdcAuth.authEnabled — boolean (set after /me)
+ *   sdcAuth.signOut()   — clear + reload
+ *   sdcAuth.showLogin() — force open the modal (used by 401 handler)
+ *
+ * Dan rule: NO dev-tools required. All errors surface as visible toasts /
+ * inline modal text, never console.log diagnostics.
+ */
+'use strict';
+
+const TOKEN_KEY = 'sdc_auth_token';
+const USER_KEY  = 'sdc_auth_user';
+
+window.sdcAuth = {
+  user: null,
+  token: localStorage.getItem(TOKEN_KEY) || null,
+  authEnabled: false,
+  // ── SDC Tools centralized login (2026-08-20) ──────────────────────────────
+  // Clears only THIS app's local token. It deliberately no longer calls
+  // /api/auth/revoke-etc-session: now that the shell owns one login for the
+  // whole suite, revoking the ETC Planner from here created a MUTUAL
+  // REVOCATION LOOP — the Planner's own logout revokes this app straight
+  // back, each bumping the other's token_version, so a perfectly good SSO
+  // hand-off died seconds after it succeeded and BOTH apps demanded a fresh
+  // login. Observed live: users.token_version climbing 7 → 9 → 14 on its own.
+  // Suite-wide sign-out belongs to the shell (shell/electron/sdcSession.js's
+  // clearSdcSession), which clears every app's cookie in one place. Do not
+  // reintroduce cross-app revoke without a single owner of session lifetime.
+  signOut() {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    location.reload();
+  },
+  showLogin() { _openModal(); },
+};
+
+// Try to hydrate user from localStorage so the toolbar pill renders immediately
+// on reload while /me is in flight.
+try {
+  const cached = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+  if (cached) window.sdcAuth.user = cached;
+} catch (_) {}
+
+// ── fetch wrapper ────────────────────────────────────────────────────────
+// Attaches Bearer token + intercepts 401/403 with a friendly message. Wraps
+// the global window.fetch so app.js needs no changes.
+// Customer share link (/?cust=<token>): no login — every request carries the
+// share token instead of a JWT, and the server scopes it to one project,
+// read-only. The login modal is suppressed entirely in this mode.
+const SHARE_TOKEN = new URLSearchParams(location.search).get('cust') || null;
+window.sdcAuth.shareMode = !!SHARE_TOKEN;
+
+// Customer portal session (sdc_customer_session cookie, HttpOnly — set by
+// routes/portal.js's login, unreadable from JS by design). Unlike
+// shareMode above, this can't be known synchronously: the only way to find
+// out is to ask the server. Kicked off here, at load time, as a promise
+// app.js's boot sequence awaits at the right point — NOT a bare flag read
+// later, which would race this fetch and could read `false` before it
+// resolves. Skipped entirely in share-link mode (that already answers "who
+// is this" a different way) — never awaited there, so it can't slow that
+// boot path down.
+window.sdcAuth.customerSessionCheck = SHARE_TOKEN
+  ? Promise.resolve({ isCustomer: false, customerName: null })
+  // window.fetch, not a wrapped copy: this line runs before the wrapping
+  // below happens, so it's still the browser's native fetch at this point.
+  : (async () => {
+      try {
+        const r = await window.fetch('/portal/api/me', { credentials: 'same-origin' });
+        if (!r.ok) return { isCustomer: false, customerName: null };
+        const data = await r.json();
+        return { isCustomer: !!data.ok, customerName: data.customerName || null };
+      } catch (_) {
+        return { isCustomer: false, customerName: null };
+      }
+    })();
+
+const _originalFetch = window.fetch.bind(window);
+window.fetch = async function (input, init) {
+  init = init || {};
+  init.headers = new Headers(init.headers || {});
+  if (SHARE_TOKEN) {
+    init.headers.set('X-Share-Token', SHARE_TOKEN);
+  } else if (window.sdcAuth.token) {
+    init.headers.set('Authorization', 'Bearer ' + window.sdcAuth.token);
+  }
+  const res = await _originalFetch(input, init);
+  // Share mode: 401s are EXPECTED — only a handful of read endpoints accept
+  // the share token; everything else politely refuses. Never open the login
+  // modal or clear a stored token here (an SDC person testing the customer
+  // link still has their own JWT in localStorage — nuking it and demanding a
+  // sign-in was exactly the bug).
+  if (SHARE_TOKEN) return res;
+  // 401 → only treat as "session expired" when we ACTUALLY HELD a token that the
+  // server rejected. Without this guard, any stray 401 wiped the token and
+  // trapped the user behind the login modal mid-work ("surprise logout"). When
+  // auth is on but we never had a token, _boot() handles showing the modal.
+  // 403 → user lacks the role, show toast (NOT a logout).
+  if (res.status === 401) {
+    const url = (typeof input === 'string') ? input : (input?.url || '');
+    const isAuthEndpoint = /\/api\/auth\/(login|register)/.test(url);
+    if (!isAuthEndpoint && window.sdcAuth.token) {
+      localStorage.removeItem(TOKEN_KEY);
+      window.sdcAuth.token = null;
+      if (typeof showToast === 'function') showToast('Your session expired — please sign in again.', { kind: 'error' });
+      _openModal();
+    }
+  } else if (res.status === 403) {
+    try {
+      const body = await res.clone().json();
+      if (typeof showToast === 'function') showToast(body.error || 'Permission denied', { kind: 'error' });
+    } catch (_) {}
+  }
+  return res;
+};
+
+// ── boot ────────────────────────────────────────────────────────────────
+// Arrived from the ETC Planner with a signed assertion? Trade it for a real
+// session before asking anyone to sign in. Runs before _boot's /api/auth/me
+// check, so the modal never flashes for someone who is already authenticated
+// next door.
+//
+// The parameter is stripped from the address bar either way: it is single-use, so
+// leaving it in the URL would mean a refresh or a shared link failing with "token
+// already used", which reads as a broken app rather than as expected behaviour.
+async function _trySsoHandoff() {
+  const params = new URLSearchParams(location.search);
+  const token = params.get('sso');
+  if (!token) return;
+  params.delete('sso');
+  const clean = location.pathname + (params.toString() ? '?' + params : '') + location.hash;
+  try {
+    const r = await _originalFetch('/api/auth/sso', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    if (r.ok) {
+      const body = await r.json();
+      window.sdcAuth.token = body.token;
+      window.sdcAuth.user  = body.user;
+      localStorage.setItem(TOKEN_KEY, body.token);
+      try { localStorage.setItem(USER_KEY, JSON.stringify(body.user)); } catch (_) {}
+    } else {
+      // 404 = no Scheduler account for that person; anything else = a broken
+      // hand-off. Either way _boot() falls through to the normal login modal, so
+      // the failure costs one extra sign-in rather than blocking access.
+      console.warn('[auth] SSO hand-off declined (' + r.status + ')');
+    }
+  } catch (e) {
+    console.warn('[auth] SSO hand-off failed:', e && e.message);
+  }
+  history.replaceState(null, '', clean);
+}
+
+async function _boot() {
+  // Customer share link: no login, no modal, no user pill — the share token
+  // on every request is the whole identity (read-only, one project).
+  if (SHARE_TOKEN) return;
+  // Customer portal session (sdc_customer_session cookie): same idea, no
+  // staff login, no modal, no user pill — that cookie is the whole identity
+  // here too (read-only, this customer's own projects). Without this check,
+  // a logged-in customer still hit the 401 branch below (no staff JWT, ever
+  // — they never have one) and got the SDC-email staff login modal on top
+  // of a page they were already correctly signed into a different way.
+  try {
+    const { isCustomer } = await window.sdcAuth.customerSessionCheck;
+    if (isCustomer) return;
+  } catch (_) {}
+  await _trySsoHandoff();
+  try {
+    const r = await _originalFetch('/api/auth/me', {
+      headers: window.sdcAuth.token ? { Authorization: 'Bearer ' + window.sdcAuth.token } : {},
+    });
+    if (r.ok) {
+      const data = await r.json();
+      window.sdcAuth.authEnabled = !!data.auth_enabled;
+      window.sdcAuth.user        = data.user;
+      try { localStorage.setItem(USER_KEY, JSON.stringify(data.user)); } catch (_) {}
+      _renderUserPill();
+    } else if (r.status === 401) {
+      // Auth is on, token missing/expired → show modal.
+      window.sdcAuth.authEnabled = true;
+      _openModal();
+    }
+  } catch (e) {
+    // Server unreachable — fail silent; app.js will surface the failure.
+  }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _boot);
+} else {
+  _boot();
+}
+
+// ── modal ───────────────────────────────────────────────────────────────
+let _modalEl = null;
+function _openModal() {
+  if (_modalEl) { _modalEl.classList.add('is-open'); return; }
+  _modalEl = document.createElement('div');
+  _modalEl.className = 'sdc-auth-modal-backdrop is-open';
+  _modalEl.innerHTML = `
+    <div class="sdc-auth-modal" role="dialog" aria-label="Sign in">
+      <h2>Sign in</h2>
+      <p class="sdc-auth-modal-sub">SDC Scheduler — enter your email + password.</p>
+      <form id="sdc-auth-form">
+        <label>Email
+          <input type="email" name="email" required autocomplete="username" />
+        </label>
+        <label>Password
+          <input type="password" name="password" required autocomplete="current-password" minlength="1" />
+        </label>
+        <p class="sdc-auth-hint" id="sdc-auth-hint" hidden>Pick a password you'll remember.</p>
+        <p class="sdc-auth-error" id="sdc-auth-error" hidden></p>
+        <button type="submit" class="btn-primary">Sign in</button>
+        <button type="button" class="sdc-auth-link" id="sdc-auth-toggle-register">Need an account? Register</button>
+        <button type="button" class="sdc-auth-link" id="sdc-auth-forgot">Forgot password?</button>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(_modalEl);
+  const form = _modalEl.querySelector('#sdc-auth-form');
+  let isRegister = false;
+  const toggle = _modalEl.querySelector('#sdc-auth-toggle-register');
+  const hint   = _modalEl.querySelector('#sdc-auth-hint');
+  const forgot = _modalEl.querySelector('#sdc-auth-forgot');
+  toggle.addEventListener('click', () => {
+    isRegister = !isRegister;
+    const h2 = _modalEl.querySelector('h2');
+    h2.textContent = isRegister ? 'Create account' : 'Sign in';
+    toggle.textContent = isRegister ? 'Have an account? Sign in' : 'Need an account? Register';
+    hint.hidden = !isRegister;            // password rule only matters when creating
+    forgot.hidden = isRegister;           // no "forgot" while registering
+    const pwInput = form.querySelector('input[name="password"]');
+    if (pwInput) pwInput.setAttribute('autocomplete', isRegister ? 'new-password' : 'current-password');
+    if (isRegister && !form.querySelector('input[name="name"]')) {
+      const nameLbl = document.createElement('label');
+      nameLbl.innerHTML = 'Name <input type="text" name="name" required autocomplete="name" />';
+      form.insertBefore(nameLbl, form.firstElementChild);
+    } else {
+      form.querySelector('label:has(input[name="name"])')?.remove();
+    }
+  });
+  // No self-service reset (internal tool, no guaranteed email) — point the user
+  // at the fast path: any admin can reset it instantly in Setup → Users.
+  forgot.addEventListener('click', () => {
+    const err = _modalEl.querySelector('#sdc-auth-error');
+    err.innerHTML = 'Ask an SDC admin to reset your password — they can do it in <b>Setup → Users</b> and give you a temporary one to sign in with.';
+    err.hidden = false;
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form).entries());
+    const url  = isRegister ? '/api/auth/register' : '/api/auth/login';
+    const err  = _modalEl.querySelector('#sdc-auth-error');
+    err.hidden = true;
+    try {
+      const r = await _originalFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error || 'Sign-in failed');
+      window.sdcAuth.token = body.token;
+      window.sdcAuth.user  = body.user;
+      localStorage.setItem(TOKEN_KEY, body.token);
+      try { localStorage.setItem(USER_KEY, JSON.stringify(body.user)); } catch (_) {}
+      location.reload();
+    } catch (e2) {
+      err.textContent = e2.message;
+      err.hidden = false;
+    }
+  });
+}
+
+// ── user avatar in the sidebar (above the Rev pill) ──────────────────────
+// Just a small circle with the signed-in person's initials so it never sits
+// over any controls. Click it for a small popup: name, role, change password,
+// sign out.
+function _renderUserPill() {
+  if (!window.sdcAuth.authEnabled || !window.sdcAuth.user) return;
+  if (document.getElementById('sdc-auth-pill')) return;
+  const u = window.sdcAuth.user;
+  const initials = (u.name || '?').split(/\s+/).map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
+  const pill = document.createElement('div');
+  pill.id = 'sdc-auth-pill';
+  pill.className = 'sdc-auth-pill';
+  pill.innerHTML = `
+    <button type="button" class="sdc-auth-avatar" style="background:${u.avatar_color || '#1574c4'};" title="${u.name} · ${u.role}">${initials}</button>
+    <div class="sdc-auth-menu" hidden>
+      <div class="sdc-auth-menu-name">${u.name}</div>
+      <div class="sdc-auth-menu-role">${u.role}</div>
+      <button type="button" class="sdc-auth-changepw">🔑 Change password</button>
+      <button type="button" class="sdc-auth-signout">Sign out</button>
+    </div>
+  `;
+  const menu = pill.querySelector('.sdc-auth-menu');
+  const closeMenu = () => { menu.hidden = true; };
+  pill.querySelector('.sdc-auth-avatar').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
+  pill.querySelector('.sdc-auth-signout').addEventListener('click', () => window.sdcAuth.signOut());
+  pill.querySelector('.sdc-auth-changepw').addEventListener('click', () => { closeMenu(); _showChangePasswordModal(); });
+  document.addEventListener('click', (e) => { if (!pill.contains(e.target)) closeMenu(); });
+
+  document.body.appendChild(pill);
+}
+
+// ── Change password modal ─────────────────────────────────────────────────
+function _showChangePasswordModal() {
+  document.getElementById('sdc-change-pw-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'sdc-change-pw-modal';
+  modal.className = 'sdc-auth-modal-backdrop is-open';
+  modal.innerHTML = `
+    <div class="sdc-auth-modal" role="dialog" aria-label="Change password">
+      <h2>Change password</h2>
+      <p class="sdc-auth-modal-sub">Signed in as ${window.sdcAuth.user?.name || ''}</p>
+      <form id="sdc-change-pw-form">
+        <label>Current password
+          <input type="password" name="current_password" required autocomplete="current-password" />
+        </label>
+        <label>New password
+          <input type="password" name="new_password" required autocomplete="new-password" minlength="1" />
+        </label>
+        <p class="sdc-auth-error" id="sdc-change-pw-error" hidden></p>
+        <p id="sdc-change-pw-ok" hidden style="color:#059669;font-size:13px;margin:8px 0;">Password updated!</p>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <button type="submit" class="btn-primary" style="flex:1;">Update</button>
+          <button type="button" id="sdc-change-pw-cancel" style="flex:1;">Cancel</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('#sdc-change-pw-cancel').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.querySelector('#sdc-change-pw-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const data   = Object.fromEntries(new FormData(e.target).entries());
+    const errEl  = modal.querySelector('#sdc-change-pw-error');
+    const okEl   = modal.querySelector('#sdc-change-pw-ok');
+    const btn    = modal.querySelector('button[type="submit"]');
+    errEl.hidden = true;
+    okEl.hidden  = true;
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/auth/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      let body;
+      try { body = await r.json(); }
+      catch (_) { throw new Error('Server error — please refresh the page and try again'); }
+      if (!r.ok) throw new Error(body.error || 'Update failed');
+      okEl.hidden = false;
+      e.target.reset();
+      setTimeout(() => modal.remove(), 1500);
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  modal.querySelector('input[name="current_password"]').focus();
+}
