@@ -10,6 +10,7 @@ import { departmentsScope, listDepartments } from "@/modules/tracker/service/dep
 import { DepartmentFilter } from "@/modules/tracker/components/DepartmentPicker";
 import { departmentView, groupingOf } from "@/modules/tracker/components/format";
 import { Timeline, type TimelineScale } from "@/modules/tracker/components/Timeline";
+import { DueDateTimeline } from "@/modules/tracker/components/DueDateTimeline";
 import { TrackerTabs } from "@/modules/tracker/components/TrackerTabs";
 
 // Every open project on one timeline, at /tracker/timeline. "TIMELINE" is a reserved project
@@ -23,6 +24,7 @@ export default async function TrackerPortfolioTimelinePage({
     closed?: string | string[];
     done?: string | string[];
     scale?: string | string[];
+    mode?: string | string[];
   }>;
 }) {
   const session = await requirePagePermission("tracker:view");
@@ -33,6 +35,8 @@ export default async function TrackerPortfolioTimelinePage({
   const finished = (Array.isArray(params.done) ? params.done[0] : params.done) === "1";
   const scaleParam = Array.isArray(params.scale) ? params.scale[0] : params.scale;
   const scale: TimelineScale = scaleParam === "quarter" || scaleParam === "year" ? scaleParam : "fit";
+  // "bars" is the Gantt-style view; "dates" is the by-completion-date view.
+  const mode: "bars" | "dates" = (Array.isArray(params.mode) ? params.mode[0] : params.mode) === "dates" ? "dates" : "bars";
   await syncDepartmentsFromOrg();
   const departments = await listDepartments(trackerDb);
   const filtered = view.forIds.length > 0 || view.byIds.length > 0;
@@ -57,7 +61,7 @@ export default async function TrackerPortfolioTimelinePage({
   };
   // Every link here keeps the current zoom, departments, grouping and collapsed state, changing
   // only the one thing it is for.
-  const build = (opts: { closed?: number[]; scale?: TimelineScale } = {}) => {
+  const build = (opts: { closed?: number[]; scale?: TimelineScale; mode?: "bars" | "dates" } = {}) => {
     const query = new URLSearchParams();
     setDepartments(query);
     if (finished) query.set("done", "1");
@@ -65,16 +69,39 @@ export default async function TrackerPortfolioTimelinePage({
     if (c.length) query.set("closed", c.join(","));
     const s = opts.scale ?? scale;
     if (s !== "fit") query.set("scale", s);
+    const m = opts.mode ?? mode;
+    if (m !== "bars") query.set("mode", m);
     const text = query.toString();
     return text ? `/tracker/timeline?${text}` : "/tracker/timeline";
   };
   const address = (ids: number[]) => build({ closed: ids });
   const scaleHref = (s: TimelineScale) => build({ scale: s });
+  const modeHref = (m: "bars" | "dates") => build({ mode: m });
 
   return (
     <div className={PAGE_SHELL}>
       <PageTitle className="mb-1">Internal Projects</PageTitle>
       <TrackerTabs active="timeline" />
+      <div className="mb-3 inline-flex overflow-hidden rounded-md border border-sdc-border text-sm">
+        {(
+          [
+            ["bars", "Bars"],
+            ["dates", "Due dates"],
+          ] as const
+        ).map(([m, lbl]) => (
+          <Link
+            key={m}
+            href={modeHref(m)}
+            scroll={false}
+            aria-current={mode === m ? "true" : undefined}
+            className={`px-3 py-1.5 font-semibold ${
+              mode === m ? "bg-sdc-blue text-white" : "bg-white text-sdc-navy hover:bg-sdc-gray-100"
+            }`}
+          >
+            {lbl}
+          </Link>
+        ))}
+      </div>
       <p className="mb-3 text-sm">
         <Link
           href={(() => {
@@ -82,6 +109,7 @@ export default async function TrackerPortfolioTimelinePage({
             setDepartments(query);
             if (!finished) query.set("done", "1");
             if (scale !== "fit") query.set("scale", scale);
+            if (mode !== "bars") query.set("mode", mode);
             const text = query.toString();
             return text ? `/tracker/timeline?${text}` : "/tracker/timeline";
           })()}
@@ -99,17 +127,26 @@ export default async function TrackerPortfolioTimelinePage({
           grouping={groupingOf(view)}
         />
       </div>
-      <Timeline
-        timeline={timeline}
-        closed={closed}
-        toggleHref={view.grouped ? address : undefined}
-        hrefFor={(row) => `/tracker/${row.key}/timeline`}
-        emptyText={filtered ? "No open project fits the departments chosen." : "There are no open projects to show."}
-        of="projects"
-        finished={finished}
-        scale={scale}
-        scaleHref={scaleHref}
-      />
+      {mode === "dates" ? (
+        <DueDateTimeline
+          timeline={timeline}
+          scale={scale}
+          scaleHref={scaleHref}
+          emptyText={filtered ? "No project with a date fits the departments chosen." : "No project has a date to show yet."}
+        />
+      ) : (
+        <Timeline
+          timeline={timeline}
+          closed={closed}
+          toggleHref={view.grouped ? address : undefined}
+          hrefFor={(row) => `/tracker/${row.key}/timeline`}
+          emptyText={filtered ? "No open project fits the departments chosen." : "There are no open projects to show."}
+          of="projects"
+          finished={finished}
+          scale={scale}
+          scaleHref={scaleHref}
+        />
+      )}
     </div>
   );
 }
