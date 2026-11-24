@@ -1,9 +1,13 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { INPUT, LABEL } from "@/components/ui/classnames";
 import type { Department } from "../service/departments";
 import { GROUPINGS, type Grouping } from "./format";
+import { HeaderMenu, useAddress } from "./columnMenu";
+
+// useAddress now lives in ./columnMenu (shared with the column filters); re-exported here so the
+// places that import it from this file keep working.
+export { useAddress } from "./columnMenu";
 
 // Choosing a department, in the two places it is chosen: on a project (which one it is for and
 // which one does the work), and above a list (which ones to show). Both list the departments
@@ -181,7 +185,6 @@ export function DepartmentColumnFilter({
   const tops = departments.filter((d) => d.parentId == null);
   const onChange = (ids: number[]) => go({ [param]: ids.join(",") || null });
   const toggle = (id: number) => onChange(chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id]);
-  const active = chosen.length > 0;
   const tick = (d: Department, indent: boolean) => (
     <label
       key={d.id}
@@ -192,31 +195,15 @@ export function DepartmentColumnFilter({
     </label>
   );
   return (
-    <details className="relative inline-block">
-      <summary
-        className={`inline-flex cursor-pointer list-none items-center gap-1 ${active ? "text-sdc-blue" : "hover:text-sdc-blue"} [&::-webkit-details-marker]:hidden`}
-        title={active ? `${label}: filtered (${chosen.length})` : `Filter by ${label}`}
-      >
-        {label}
-        <span aria-hidden="true" className={active ? "text-sdc-blue" : "text-sdc-gray-400 opacity-60"}>
-          {"▾"}
-        </span>
-        {active && (
-          <span className="rounded-full bg-sdc-blue px-1.5 text-micro font-bold text-white">{chosen.length}</span>
-        )}
-      </summary>
-      <div
-        role="group"
-        aria-label={label}
-        className="styled-scrollbar absolute left-0 z-20 mt-1 max-h-80 min-w-[16rem] overflow-y-auto rounded-lg border border-sdc-border bg-white p-1.5 text-left shadow-lg"
-      >
+    <HeaderMenu label={label} filterCount={chosen.length}>
+      <div className="flex flex-col">
         {tops.map((top) => (
           <div key={top.id}>
             {tick(top, false)}
             {departments.filter((d) => d.parentId === top.id).map((t) => tick(t, true))}
           </div>
         ))}
-        {active && (
+        {chosen.length > 0 && (
           <button
             type="button"
             className="mt-1 w-full rounded px-2 py-1 text-left text-sm font-semibold text-sdc-blue hover:bg-sdc-gray-100"
@@ -226,24 +213,8 @@ export function DepartmentColumnFilter({
           </button>
         )}
       </div>
-    </details>
+    </HeaderMenu>
   );
-}
-
-export function useAddress(alsoClear: string[] = []) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const params = useSearchParams();
-  return (change: Record<string, string | null>) => {
-    const next = new URLSearchParams(params.toString());
-    for (const [key, value] of Object.entries(change)) {
-      if (value) next.set(key, value);
-      else next.delete(key);
-    }
-    for (const key of alsoClear) next.delete(key);
-    const query = next.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  };
 }
 
 /**

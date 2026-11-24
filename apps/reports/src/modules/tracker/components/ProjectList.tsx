@@ -37,6 +37,7 @@ import {
   listHref,
   notInForecast,
   ONLY_LABEL,
+  OPEN_STATES,
   progress,
   rankClashEffect,
   RISK_LABEL,
@@ -500,37 +501,6 @@ function SortTh({
   );
 }
 
-/** The Dates header, which cycles its sort target → forecast → stack rank and says which date is sorting. */
-function DatesTh({ view, filter }: { view: ListView; filter?: ReactNode }) {
-  const active = view.sort === "target" || view.sort === "forecast";
-  const next: ListSort = view.sort === "target" ? "forecast" : view.sort === "forecast" ? "rank" : "target";
-  const by = view.sort === "target" ? "target" : view.sort === "forecast" ? "forecast" : null;
-  return (
-    <th className="px-3 py-2.5 text-left" aria-sort={active ? "ascending" : "none"}>
-      <span className="inline-flex items-center gap-1.5">
-        <Link
-          href={listHref(view, { sort: next })}
-          scroll={false}
-          className={`inline-flex items-center gap-1 ${active ? "text-sdc-blue" : "text-sdc-navy hover:text-sdc-blue"}`}
-          title={
-            by
-              ? `Sorted by ${by}, soonest first — click for ${next === "rank" ? "stack rank" : next}`
-              : "Sort by target date, soonest first"
-          }
-        >
-          Dates
-          <span aria-hidden="true" className={active ? "text-sdc-blue" : "text-sdc-gray-400 opacity-60"}>
-            {active ? "▼" : "⇅"}
-          </span>
-        </Link>
-        {by && <span className="text-micro font-normal text-sdc-gray-600">by {by}</span>}
-        <SafeDateHelp />
-        {filter}
-      </span>
-    </th>
-  );
-}
-
 /** The filters and sort in force now, each removable, with a clear-all. Nothing when the list is untouched. */
 function FiltersBar({
   view,
@@ -798,41 +768,35 @@ export function ProjectList({
               <thead>
                 <tr className={TABLE_HEADER_ROW}>
                   <SortTh label="Rank" sort="rank" view={view} />
-                  <SortTh
-                    label="Project"
-                    sort="name"
-                    view={view}
-                    align="left"
-                    filter={
-                      <TextColumnFilter label={<span className="sr-only">Filter by name or key</span>} value={view.q} />
-                    }
-                  />
+                  <th className="px-3 py-2.5 text-left">
+                    <TextColumnFilter
+                      label="Project"
+                      value={view.q}
+                      sort={{ view, options: [{ sort: "name", label: "Name (A–Z)" }] }}
+                    />
+                  </th>
                   <th className="px-3 py-2.5 text-left">
                     <DepartmentColumnFilter label="For" param="for" departments={departments} chosen={view.forIds} />
                   </th>
                   <th className="px-3 py-2.5 text-left">
                     <DepartmentColumnFilter label="Done by" param="by" departments={departments} chosen={view.byIds} />
                   </th>
-                  <SortTh
-                    label="Value a year"
-                    sort="value"
-                    view={view}
-                    align="left"
-                    filter={
-                      <ChoiceColumnFilter
-                        label={<span className="sr-only">Filter by value</span>}
-                        param="value"
-                        options={valueOptions.map((o) => ({ value: String(o.id), label: o.label }))}
-                        chosen={view.valueIds.map(String)}
-                      />
-                    }
-                  />
+                  <th className="px-3 py-2.5 text-left">
+                    <ChoiceColumnFilter
+                      label="Value a year"
+                      param="value"
+                      options={valueOptions.map((o) => ({ value: String(o.id), label: o.label }))}
+                      chosen={view.valueIds.map(String)}
+                      sort={{ view, options: [{ sort: "value", label: SORT_LABEL.value }] }}
+                    />
+                  </th>
                   <th className="px-3 py-2.5 text-left">
                     <ChoiceColumnFilter
                       label="State"
                       param="state"
                       options={STATE_ORDER.map((s) => ({ value: s, label: STATE_LABEL[s] }))}
                       chosen={view.states}
+                      defaultChosen={OPEN_STATES}
                     />
                   </th>
                   <th className="px-3 py-2.5 text-left">
@@ -864,18 +828,25 @@ export function ProjectList({
                       align="right"
                     />
                   </th>
-                  <DatesTh
-                    view={view}
-                    filter={
+                  <th className="px-3 py-2.5 text-left">
+                    <span className="inline-flex items-center gap-1.5">
                       <DateColumnFilter
-                        label={<span className="sr-only">Filter by date</span>}
+                        label="Dates"
                         field={view.dateField}
                         from={view.dateFrom}
                         to={view.dateTo}
+                        sort={{
+                          view,
+                          options: [
+                            { sort: "target", label: SORT_LABEL.target, word: "target" },
+                            { sort: "forecast", label: SORT_LABEL.forecast, word: "forecast" },
+                          ],
+                        }}
                         align="right"
                       />
-                    }
-                  />
+                      <SafeDateHelp />
+                    </span>
+                  </th>
                   <th className="px-3 py-2.5 text-left">
                     <ChoiceColumnFilter
                       label="Against target"

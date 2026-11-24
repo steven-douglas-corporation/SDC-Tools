@@ -420,6 +420,12 @@ export const ONLY_LABEL: Record<ListOnly, string> = {
 };
 /** The project states, in the order they are offered in the State column filter. */
 export const STATE_ORDER = ["planned", "active", "on_hold", "completed", "cancelled"] as const;
+/**
+ * The states the list shows by default: open work, everything but completed and cancelled. The State
+ * column filter ticks these when nothing else is chosen (so the default reads as a real selection),
+ * and narrowProjects shows exactly these when no state is recorded — the same set isOpen names.
+ */
+export const OPEN_STATES: string[] = STATE_ORDER.filter((s) => s !== "completed" && s !== "cancelled");
 export const STATE_LABEL: Record<string, string> = {
   planned: "Planned",
   active: "Active",
