@@ -1,4 +1,4 @@
-# Project Tracker module
+# Internal Projects module
 
 Projects, tasks, statuses and a completion forecast. Built as a module of this app; see
 [docs/MODULES.md](../../../docs/MODULES.md) for the conventions and

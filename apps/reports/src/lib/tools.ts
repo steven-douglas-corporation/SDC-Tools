@@ -63,7 +63,7 @@ export function toolsFor(permitted: readonly string[]): Tool[] {
   if (permitted.some(isTrackerPath)) {
     tools.push({
       id: "tracker",
-      label: "Project Tracker",
+      label: "Internal Projects",
       description: "Cards, forecast and timeline",
       href: "/tracker",
     });

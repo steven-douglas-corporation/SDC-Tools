@@ -76,7 +76,7 @@ function TileIcon({ of }: { of: ToolId | "scheduler" | "admin" }) {
   );
 }
 
-const TILE = `${card("p-5")} block hover:border-sdc-blue focus-visible:border-sdc-blue`;
+const TILE = `${card("p-5")} flex h-full flex-col hover:border-sdc-blue focus-visible:border-sdc-blue`;
 
 export default async function ToolsPage({
   searchParams,

@@ -70,7 +70,7 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
     <div className={PAGE_SHELL}>
       <p className="mb-1 text-sm">
         <Link href="/tracker" className="text-sdc-blue hover:underline">
-          Project Tracker
+          Internal Projects
         </Link>
         <span className="text-sdc-gray-400"> / </span>
         <span className="text-sdc-gray-600">{p.key}</span>
@@ -112,7 +112,7 @@ export default async function TrackerBoardPage({ params }: { params: Promise<{ k
       {p.portfolioRank == null || p.state !== "active" ? (
         <p className="mb-4 rounded-lg border border-sdc-border bg-sdc-yellow-bg px-3 py-2 text-sm text-sdc-yellow-text">
           {p.portfolioRank == null ? (
-            "This project has no stack rank yet, so its work is not forecast. The portfolio owner sets the rank on the Project Tracker page."
+            "This project has no stack rank yet, so its work is not forecast. The portfolio owner sets the rank on the Internal Projects page."
           ) : p.state === "completed" || p.state === "cancelled" ? (
             `This project is ${p.state === "completed" ? "finished" : "cancelled"}, so its work is not forecast.`
           ) : (

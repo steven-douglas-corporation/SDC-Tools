@@ -155,7 +155,7 @@ export function feedbackSourceFor(routePath: string | null | undefined): string 
 
 const FEEDBACK_SOURCE_LABELS: Record<string, string> = {
   reports: "Reports",
-  tracker: "Project Tracker",
+  tracker: "Internal Projects",
   scheduler: "Scheduler",
 };
 

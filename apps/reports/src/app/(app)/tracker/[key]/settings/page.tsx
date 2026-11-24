@@ -50,7 +50,7 @@ export default async function TrackerProjectSettingsPage({ params }: { params: P
     <div className={PAGE_SHELL}>
       <p className="mb-1 text-sm">
         <Link href="/tracker" className="text-sdc-blue hover:underline">
-          Project Tracker
+          Internal Projects
         </Link>
         <span className="text-sdc-gray-400"> / </span>
         <Link href={`/tracker/${p.key}`} className="text-sdc-blue hover:underline">

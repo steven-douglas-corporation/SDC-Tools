@@ -1,5 +1,5 @@
 /**
- * SDC Project Tracker: completion forecast.
+ * SDC Internal Projects: completion forecast.
  *
  * Ported from forecast_prototype.py (2026-11-11) and extended per docs/project-tracker/DESIGN.md.
  *

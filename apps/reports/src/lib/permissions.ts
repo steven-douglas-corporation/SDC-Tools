@@ -90,7 +90,7 @@ export type Permission =
   | "users:manage"
   | "permissions:manage"
   | "tm:view"
-  // ── Project Tracker (2026-11-15) ──────────────────────────────────────────
+  // ── Internal Projects (2026-11-15) ──────────────────────────────────────────
   //
   // The first module added to this app (docs/MODULES.md). Both keys ship OFF for
   // every role: only ELT sees the tracker, through its wildcard, until a pilot

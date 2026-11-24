@@ -303,11 +303,11 @@ const REPORT_GROUPS: Omit<NavGroup, "tool">[] = [
 
 const GROUPS: NavGroup[] = REPORT_GROUPS.map((g) => ({ ...g, tool: "reports" }));
 
-// The Project Tracker's own menu (src/modules/tracker). It was one link in the Reports menu
+// The Internal Projects's own menu (src/modules/tracker). It was one link in the Reports menu
 // until the tracker became a tool of its own; see lib/tools.ts. All three pages are gated by
 // the one route row, /tracker, so they appear and disappear together.
 const TRACKER_GROUP: NavGroup = {
-  label: "Project Tracker",
+  label: "Internal Projects",
   tool: "tracker",
   items: [
     {

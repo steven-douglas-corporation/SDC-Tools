@@ -23,7 +23,7 @@ import { listProjects, listValueBuckets, throughLens } from "@/modules/tracker/s
 import { ProjectList } from "@/modules/tracker/components/ProjectList";
 import { PortfolioSummary } from "@/modules/tracker/components/PortfolioSummary";
 
-// The Project Tracker's front page. This file is deliberately thin (docs/MODULES.md): it checks
+// The Internal Projects's front page. This file is deliberately thin (docs/MODULES.md): it checks
 // the app permission, works out who is asking, and hands the module's own data to the module's
 // own component. Everything else lives in src/modules/tracker.
 export default async function TrackerPage({
@@ -36,10 +36,10 @@ export default async function TrackerPage({
   if (!trackerConfigured()) {
     return (
       <div className={PAGE_SHELL}>
-        <PageTitle className="mb-4">Project Tracker</PageTitle>
+        <PageTitle className="mb-4">Internal Projects</PageTitle>
         <EmptyState
           tone="warning"
-          title="The Project Tracker is not set up on this server"
+          title="The Internal Projects is not set up on this server"
           message="It keeps its data in PostgreSQL, and TRACKER_DATABASE_URL is not set. Nothing is wrong with your account."
         />
       </div>
@@ -75,7 +75,7 @@ export default async function TrackerPage({
 
   return (
     <div className={PAGE_SHELL}>
-      <PageTitle className="mb-1">Project Tracker</PageTitle>
+      <PageTitle className="mb-1">Internal Projects</PageTitle>
       <p className="mb-4 max-w-3xl text-sm text-sdc-gray-600">
         Projects in stack-rank order. <strong>Forecast</strong> is when the work is expected to finish;{" "}
         <strong>Safe date</strong> allows for work running over, and is the one to promise.{" "}

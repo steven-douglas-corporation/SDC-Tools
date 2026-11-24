@@ -123,7 +123,7 @@ test("a report is tagged with the tool it was filed from, and its urgency reads 
     assert.equal(S.feedbackSourceFor(path), "reports", String(path));
   }
   assert.equal(S.feedbackSourceLabel("reports"), "Reports");
-  assert.equal(S.feedbackSourceLabel("tracker"), "Project Tracker");
+  assert.equal(S.feedbackSourceLabel("tracker"), "Internal Projects");
   assert.equal(S.feedbackSourceLabel("something-new"), "something-new", "an unknown one is shown as it is");
   // "Wrong number" is right where there are numbers; elsewhere it only says something is wrong.
   assert.equal(S.feedbackSeverityLabel("wrong", "reports"), "Wrong number");

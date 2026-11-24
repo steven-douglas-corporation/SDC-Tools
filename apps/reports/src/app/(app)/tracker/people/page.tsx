@@ -22,7 +22,7 @@ export default async function TrackerPeoplePage() {
     <div className={PAGE_SHELL}>
       <p className="mb-1 text-sm">
         <Link href="/tracker" className="text-sdc-blue hover:underline">
-          Project Tracker
+          Internal Projects
         </Link>
         <span className="text-sdc-gray-400"> / </span>
         <span className="text-sdc-gray-600">People and time</span>
