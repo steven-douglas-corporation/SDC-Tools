@@ -12,7 +12,7 @@ Five of these six ports were **not renumbered** as part of the 2026-08 monorepo 
 |-----:|-----|-------------|--------------|-------|
 | 4001 | Assemblies Library | `sdc-assemblies` | `GET /health` | |
 | 4002 | Build Readiness Report | `sdc-readiness` | `GET /health` | |
-| 4003 | SDC Scheduler | `sdc-scheduler` | `GET /health` | Own git repo, external collaborator (Dan) |
+| 4003 | SDC Scheduler | `sdc-scheduler` | `GET /health` | External collaborator (Dan); tracked here since ADR 0007 |
 | 4004 | State Logic Builder | `sdc-statelogic` | `GET /health` | |
 | 4005 | SDC Calendar | `sdc-calendar` | `GET /api/health` | |
 | 4006 | SDC Reports (ETC Planner) | `sdc-reports` | `GET /api/health` | Own git repo (`sdc-sheets`), separate Next.js deploy. Renumbered from 3010 — see above. |

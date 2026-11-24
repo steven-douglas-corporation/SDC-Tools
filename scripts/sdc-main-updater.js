@@ -10,15 +10,13 @@
  *        a. git fetch origin
  *        b. Diff changed files between local HEAD and remote
  *        c. Selectively checkout only files this updater owns
- *           (skips paths managed by sdc-scheduler-updater / sdc-statelogic-updater)
+ *           (skips paths managed by sdc-statelogic-updater)
  *        d. git reset --soft origin/master  — advances HEAD, leaves per-app dirs intact
  *        e. npm install  (only if package.json changed)
  *        f. Build Assemblies Library frontend  (only if its files changed)
  *        g. pm2 restart sdc-assemblies sdc-readiness sdc-calendar
  *
  * Protected paths — never overwritten (managed by per-app updaters):
- *   SDC_Scheduler/public/, db.js, .gitignore, ARROW_ROUTING_RULES.md
- *     → managed by sdc-scheduler-updater  (danbelliveau2/SDC_Scheduler)
  *   apps/state-logic/src/, public/, index.html
  *     → managed by sdc-statelogic-updater (danbelliveau2/state_logic_builder)
  *
@@ -39,10 +37,6 @@ const REPO_DIR          = path.join(__dirname, '..');
 // Paths managed by per-app updaters — never overwrite these from the monorepo git tree.
 // Each entry is a prefix; any changed file whose path starts with a prefix is skipped.
 const PROTECTED = [
-  'SDC_Scheduler/public/',
-  'SDC_Scheduler/db.js',
-  'SDC_Scheduler/.gitignore',
-  'SDC_Scheduler/ARROW_ROUTING_RULES.md',
   'apps/state-logic/src/',
   'apps/state-logic/public/',
   'apps/state-logic/index.html',
@@ -172,7 +166,7 @@ async function checkAndUpdate() {
     const monorepoFiles = changedFiles.filter(f => !isProtected(f));
     const skippedCount  = changedFiles.length - monorepoFiles.length;
     if (skippedCount > 0) {
-      log(`Skipping ${skippedCount} file(s) in per-app-updater dirs (scheduler/statelogic).`);
+      log(`Skipping ${skippedCount} file(s) in per-app-updater dirs (statelogic).`);
     }
 
     // 4. Selectively checkout only monorepo-owned files from remote
@@ -200,7 +194,7 @@ async function checkAndUpdate() {
     //    --include=dev (2026-10-04): pm2 runs everything with NODE_ENV=production, and
     //    under that npm install SKIPS and PRUNES devDependencies. The builds below need
     //    them (Vite, TypeScript types), so a dependency change used to break the next build.
-    if (monorepoFiles.some(f => f === 'package.json' || f === 'package-lock.json')) {
+    if (monorepoFiles.some(f => f === 'package.json' || f === 'package-lock.json' || f === 'SDC_Scheduler/package.json' || f === 'SDC_Scheduler/package-lock.json')) {
       log('package.json changed — running npm install…');
       run('npm install --include=dev');
     }
@@ -382,15 +376,18 @@ async function checkAndUpdate() {
     }
 
     // 8. Restart only the apps this updater owns.
-    //    sdc-scheduler and sdc-statelogic have their own per-app updaters.
+    //    sdc-statelogic has its own per-app updater. sdc-scheduler lives in this repo since
+    //    ADR 0007 and is restarted below when its files change.
     //
     //    sdc-reports is deliberately absent: step 7b already stopped and started
     //    it around its own migrate/generate/build sequence. Restarting it again here
     //    would be a second, pointless outage — and if 7b's start failed, this would
     //    paper over that failure instead of leaving the loud log line visible.
-    log('Restarting owned apps (assemblies, readiness, calendar)…');
+    const restartApps = ['sdc-assemblies', 'sdc-readiness', 'sdc-calendar'];
+    if (monorepoFiles.some(f => f.startsWith('SDC_Scheduler/'))) restartApps.push('sdc-scheduler');
+    log(`Restarting owned apps (${restartApps.join(', ')})…`);
     execSync(
-      'pm2 restart sdc-assemblies sdc-readiness sdc-calendar --update-env',
+      `pm2 restart ${restartApps.join(' ')} --update-env`,
       { cwd: REPO_DIR, stdio: 'inherit' }
     );
 
@@ -424,7 +421,7 @@ async function main() {
   log(`Watching: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/tree/${GITHUB_BRANCH}`);
   log(`Check interval: ${CHECK_INTERVAL_MS / 60000} min`);
   log('Owns: assemblies (4001)  readiness (4002)  calendar (4005)');
-  log('Per-app updaters: sdc-scheduler-updater → 4003 | sdc-statelogic-updater → 4004');
+  log('Per-app updaters: sdc-statelogic-updater → 4004');
 
   await checkAndUpdate();
   setInterval(checkAndUpdate, CHECK_INTERVAL_MS);

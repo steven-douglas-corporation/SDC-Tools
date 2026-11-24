@@ -12,7 +12,7 @@ account that ran `pm2 start`) or `pm2 list` shows an empty table.
 | `sdc-updater-hub` | Server updater (monorepo + Scheduler + State Logic updaters in one process) | 4013 / 4014 triggers | log only | repo root |
 | `sdc-assemblies` | Assemblies Library | 4001 | `GET /health` | `apps/assemblies` |
 | `sdc-readiness` | Build Readiness | 4002 | `GET /health` | `apps/build-readiness` |
-| `sdc-scheduler` | SDC Scheduler (separate repo) | 4003 | `GET /health` | `SDC_Scheduler` |
+| `sdc-scheduler` | SDC Scheduler | 4003 | `GET /health` | `SDC_Scheduler` |
 | `sdc-statelogic` | State Logic Builder | 4004 | `GET /health` | `apps/state-logic` |
 | `sdc-calendar` | SDC Calendar | 4005 | `GET /api/health` | `apps/calendar` |
 | `sdc-reports` | SDC Reports (Next.js) | 4006 | `GET /api/health` | `apps/reports` |

@@ -264,7 +264,7 @@ Centralized library/
 │   ├── state-logic/                 State Logic Builder (Express + React/Vite + MySQL)
 │   └── calendar/                    SDC Calendar (Express + React/Vite + MySQL)
 │
-├── SDC_Scheduler/                    Own standalone repo (danbelliveau2/SDC_Scheduler) — NOT moved
+├── SDC_Scheduler/                    SDC Scheduler — moved in from danbelliveau2/SDC_Scheduler (ADR 0007)
 ├── apps/reports/                  SDC Reports — own standalone repo (sdc-sheets) — NOT moved
 ├── tools/powerbi/                  Power BI project — own standalone repo — NOT moved, not a service
 │

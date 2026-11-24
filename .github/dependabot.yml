@@ -31,7 +31,7 @@ updates:
       minor-and-patch: { update-types: ["minor", "patch"] }
       majors: { update-types: ["major"] }
     ignore:
-      # The nested Scheduler repo is listed as a workspace but is not ours to update here.
+      # The Scheduler is a workspace here; its own package is not something to bump.
       - dependency-name: "sdc-scheduler"
 
 

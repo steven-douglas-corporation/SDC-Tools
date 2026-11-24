@@ -61,13 +61,12 @@ process.on('unhandledRejection', (err) => {
   log(`Caught an unhandled rejection from one of the updaters (process stays up): ${err && err.stack || err}`);
 });
 
-log('Starting all 3 updaters in one process...');
+log('Starting the updaters in one process (monorepo incl. Scheduler, statelogic)...');
 
 require('./sdc-main-updater.js');
-require('../SDC_Scheduler/scripts/server-auto-update.js');
 require('../apps/state-logic/scripts/server-auto-update.js');
 
-log('All 3 updaters started (assemblies/readiness/calendar/vendor monorepo, scheduler, statelogic).');
+log('Updaters started (monorepo incl. Scheduler, statelogic).');
 
 // Internal update feed for the desktop shell (see scripts/sdc-shell-feed.js).
 // Not an updater of this server, so a failure here must never stop the three
