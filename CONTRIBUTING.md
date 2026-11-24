@@ -16,6 +16,8 @@ commit to master as a deploy, because it is one.
 | `apps/shell` | Desktop launcher, Electron | published installer |
 | `SDC_Scheduler/` | SDC Scheduler — **separate repo**, ignored here | pm2 `sdc-scheduler` :4003 |
 | `tools/powerbi` | Power BI report sources and the MCP server | not a service |
+| `tools/data-warehouse` | PostgreSQL warehouse: SQL, Paylocity loader, roadmap | scheduled task on the server |
+| `tools/share-inventory` | Metadata crawl of the company shares (Python, standard library) | run by hand |
 | `packages/` | Code shared by two or more apps | — |
 | `scripts/` | Server updater, release and repo-wide checks | pm2 `sdc-updater-hub` |
 | `docs/` | Architecture, ports, runbook, decisions (`docs/adr`) | — |

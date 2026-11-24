@@ -26,10 +26,10 @@ function UsedIn({ uses, state }: { uses: PoBomUse[] | undefined; state: "loading
         <span
           key={i}
           className="leading-tight"
-          title={`${u.section}. ${u.assemblyPn} ${u.assemblyDesc}. Needs ${u.qty}${u.neededBy ? ` by ${fmtDate(u.neededBy)}` : ""}${u.onHold ? ". On engineering hold" : ""}`}
+          title={`${u.section}. ${u.assemblyPn} ${u.assemblyDesc}. Qty ${u.qty}${u.neededBy ? `, required by ${fmtDate(u.neededBy)}` : ""}${u.onHold ? ". On engineering hold" : ""}`}
         >
           <span className="font-mono text-sdc-navy">{u.assemblyPn}</span> <span className="text-sdc-gray-600">{u.assemblyDesc}</span>
-          {u.neededBy && <span className="text-sdc-gray-400"> · needed {fmtDate(u.neededBy)}</span>}
+          {u.neededBy && <span className="text-sdc-gray-400"> · required {fmtDate(u.neededBy)}</span>}
           {u.onHold && <span className="ml-1 rounded bg-sdc-yellow-bg px-1 text-micro font-bold text-sdc-yellow-text">HOLD</span>}
         </span>
       ))}
@@ -118,7 +118,7 @@ export function OpenPoPanel({
                 <th className="px-2 py-1.5 text-right" title="Value still to be invoiced on this line">
                   Left to invoice
                 </th>
-                <th className="px-3 py-1.5" title="Where the part is used in the job's BOM, and when it is needed there. Looked up when this panel opens">
+                <th className="px-3 py-1.5" title="Where the part is used in the job's BOM, and its required date there. Looked up when this panel opens">
                   Used in
                 </th>
               </tr>

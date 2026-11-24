@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { etcActiveJobFilter, etcEligibleJobFilter } from "@/lib/job-filters";
+import { compareJobIds, etcActiveJobFilter, etcEligibleJobFilter } from "@/lib/job-filters";
+import { currentMonth } from "@/lib/etc";
 
 // A Prisma client OR an interactive-transaction client. The freeze evaluates the
 // month's job universe INSIDE its transaction (2026-09-14), so the same rows that
@@ -78,4 +79,27 @@ export async function getEtcMonthJobIds(month: string, db: EtcDb = prisma): Prom
   const { where, monthIsLocked } = await getEtcMonthJobWhere(month, db);
   const jobs = await db.job.findMany({ where, select: { id: true } });
   return { ids: new Set(jobs.map((j) => j.id)), monthIsLocked };
+}
+
+// ── Shared by the Monthly ETC grid and the Cash Flow Left to Invoice split ────
+//
+// Both pages must list the same jobs in the same order and open on the same month, or their
+// Left to Invoice totals stop tying. They used to each spell these two rules out.
+
+/** The month Monthly ETC opens on: its newest month with entries, else this calendar month. */
+export function defaultEtcMonth(latestEntryMonth: string | null | undefined): string {
+  return latestEntryMonth || currentMonth();
+}
+
+export const isActiveTm = (j: { status: string | null; type: string | null }) => j.status === "Active" && j.type === "T&M";
+
+/**
+ * The grid's row order, in place: Job Id numerically, then active T&M jobs last (time & materials
+ * is billed as it is worked, so its ETC is a different kind of number). Array#sort is stable, so
+ * the second pass only moves rows across the T&M boundary.
+ */
+export function sortEtcGridJobs<T extends { jobId: string; status: string | null; type: string | null }>(jobs: T[]): T[] {
+  jobs.sort((a, b) => compareJobIds(a.jobId, b.jobId));
+  jobs.sort((a, b) => Number(isActiveTm(a)) - Number(isActiveTm(b)));
+  return jobs;
 }

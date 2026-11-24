@@ -27,6 +27,15 @@ port = 5432
 dbname = "DataWarehouse"           # case-sensitive; quote it in SQL: "DataWarehouse"
 user = "dw_loader"
 
+[reports_app]
+# When a run loads new files, ask the reports app to refresh right away instead
+# of waiting for its own hourly pass. Keep pull=0: without it the app starts this
+# job again. The token (the app's REFRESH_API_TOKEN) lives in Windows Credential
+# Manager, service "reports-refresh-api", user "paylocity_ingest". With no token
+# stored the run logs "not sent" and carries on. Remove refresh_url to turn it off.
+refresh_url = "http://localhost:4006/api/integration/refresh?pull=0"
+timeout_seconds = 15
+
 [paths]
 # incoming\ and archive\ are created under here.
 root = 'D:\DataWarehouse\paylocity'

@@ -367,10 +367,28 @@ test("no page keeps its own scroll-restore code beside this one", () => {
   };
   walk(app);
   const offenders = files
-    .filter((f) => !f.endsWith("TabScrollMemory.tsx") && !f.endsWith("tab-scroll-state.ts") && !f.endsWith("DragScroll.tsx"))
+    // PanZoomCanvas (2026-11-19): its pan is a scroll whose offset only means
+    // something with its zoom, so it keeps its own view and opts out of this
+    // (data-scroll-own, asserted below) — still one mechanism per element.
+    .filter(
+      (f) =>
+        !f.endsWith("TabScrollMemory.tsx") &&
+        !f.endsWith("tab-scroll-state.ts") &&
+        !f.endsWith("DragScroll.tsx") &&
+        !f.endsWith("PanZoomCanvas.tsx"),
+    )
     .filter((f) => /\.\s*scrollLeft\s*=/.test(readFileSync(f, "utf8").replace(/^\s*\/\/.*$/gm, "")))
     .map((f) => f.replace(process.cwd(), "").split("\\").join("/"));
   assert.deepEqual(offenders, [], `these set scrollLeft themselves:\n  ${offenders.join("\n  ")}`);
+});
+
+test("the canvas that keeps its own scroll is opted out, and the recorder honours it", () => {
+  // The exemption above is only safe if both halves hold: the canvas marks its
+  // scroller, and the recorder skips a marked one (else both would restore it).
+  const canvas = readFileSync(join(process.cwd(), "src", "components", "PanZoomCanvas.tsx"), "utf8");
+  assert.match(canvas, /ref=\{scrollerRef\}[\s\S]{0,200}data-scroll-own/, "PanZoomCanvas's scroller should carry data-scroll-own");
+  const memory = readFileSync(join(process.cwd(), "src", "components", "TabScrollMemory.tsx"), "utf8");
+  assert.match(memory, /hasAttribute\("data-scroll-own"\)\) return;/, "TabScrollMemory should skip data-scroll-own scrollers");
 });
 
 // ── The two bugs the first fix had ─────────────────────────────────────────

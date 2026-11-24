@@ -8,6 +8,7 @@ import {
   isUtilityJob,
   laborForType,
   rateForYear,
+  RATE_MATRIX_YEARS,
   partsCostForProfit,
   jobCostTotals,
   type JobCostComputed,
@@ -61,6 +62,29 @@ test("rateForYear with no override at all returns the default untouched", () => 
   assert.deepEqual(r, DEFAULT_RATES);
 });
 
+test("rateForYear: before 2024 uses the 2024 row, 2024-2025 their own rows, 2026+ the default", () => {
+  const ov = {
+    "2022": { engRate: 111 }, // stale row from an older save: ignored
+    "2023": { engRate: 125 }, // stale row from an older save: ignored
+    "2024": { engRate: 130, shopRate: 90, pmPct: 0, mfgPct: 0 },
+    "2025": { engRate: 140, shopRate: 100 },
+    "2026": { engRate: 999 }, // stale row from an older save: ignored
+    "2018": { engRate: 888 }, // stale row: ignored
+  };
+  assert.deepEqual(rateForYear("2017", DEFAULT_RATES, ov), { engRate: 130, shopRate: 90, pmPct: 0, mfgPct: 0 });
+  assert.deepEqual(rateForYear("2022", DEFAULT_RATES, ov), rateForYear("2024", DEFAULT_RATES, ov));
+  assert.deepEqual(rateForYear("2023", DEFAULT_RATES, ov), rateForYear("2024", DEFAULT_RATES, ov));
+  assert.equal(rateForYear("2025", DEFAULT_RATES, ov).engRate, 140);
+  assert.equal(rateForYear("2025", DEFAULT_RATES, ov).pmPct, DEFAULT_RATES.pmPct); // blank cell = default
+  assert.equal(rateForYear("2025", DEFAULT_RATES, ov).shopRate, 100);
+  assert.deepEqual(rateForYear("2026", DEFAULT_RATES, ov), DEFAULT_RATES);
+  assert.deepEqual(rateForYear("2031", DEFAULT_RATES, ov), DEFAULT_RATES);
+});
+
+test("the Rate Matrix shows 2025 down to 2024, newest first", () => {
+  assert.deepEqual(RATE_MATRIX_YEARS, ["2025", "2024"]);
+});
+
 test("laborForType costs the aggregate hours at the default rate with no year data", () => {
   const row = baseRow({ hoursByYear: {}, engineeringHours: 60 });
   const cost = laborForType(row, DEFAULT_RATES, {}, undefined, "eng");
@@ -101,10 +125,10 @@ test("laborForType prefers a manual allocation over the automatic year breakdown
   assert.equal(cost, 30 * DEFAULT_RATES.engRate);
 });
 
-test("computeJobCost: PM/Mfg % apply at the completion-year rate, not the work-year rate", () => {
+test("computeJobCost: PM/Mfg = Sales x completion-year %, not the work-year rate", () => {
   const row = baseRow({
     salesPrice: 10000,
-    completeDate: "2026-03-01",
+    completeDate: "2025-03-01",
     hoursByYear: {},
     engineeringHours: 0,
     shopHours: 0,
@@ -113,7 +137,7 @@ test("computeJobCost: PM/Mfg % apply at the completion-year rate, not the work-y
     etcPartsCost: 0,
     partCost: 0,
   });
-  const overrides = { "2026": { pmPct: 5, mfgPct: 2 } };
+  const overrides = { "2025": { pmPct: 5, mfgPct: 2 } };
   const c = computeJobCost(row, DEFAULT_RATES, overrides, undefined);
   assert.equal(c.pmCost, 10000 * 0.05);
   assert.equal(c.mfgCost, 10000 * 0.02);
@@ -152,11 +176,11 @@ test("computeJobCost: ETC (future) hours always cost at the default rate, never 
   // A year override that would change the answer if it were (wrongly) applied to ETC hours.
   const overrides = { [String(new Date().getFullYear())]: { engRate: 99999 } };
   const c = computeJobCost(row, DEFAULT_RATES, overrides, undefined);
-  assert.equal(c.laborCost, 0); // no worked hours, no sales-based PM/Mfg
+  assert.equal(c.laborCost, 10 * DEFAULT_RATES.engRate); // ETC hours at the default rate, never the year override
   assert.equal(c.profit, 0 - 10 * DEFAULT_RATES.engRate);
 });
 
-test("computeJobCost: totalCost is labour only — (worked + ETC hours) x rate — and leaves profit as it was", () => {
+test("computeJobCost: laborCost is hours x rate only; totalCost is everything profit subtracts", () => {
   const row = baseRow({
     status: "Active",
     salesPrice: 1_000_000,
@@ -172,12 +196,14 @@ test("computeJobCost: totalCost is labour only — (worked + ETC hours) x rate �
   });
   const c = computeJobCost(row, DEFAULT_RATES, {}, undefined);
   // No per-year hours, so worked hours cost at the default rates; ETC hours always do.
-  assert.equal(c.totalCost, (100 + 10) * DEFAULT_RATES.engRate + (200 + 20) * DEFAULT_RATES.shopRate);
-  // Profit still subtracts PM and Mfg (percent of sales) and parts, exactly as before.
-  assert.equal(c.profit, 1_000_000 - (c.totalCost + c.pmCost + c.mfgCost + c.partsProjected));
+  assert.equal(c.laborCost, (100 + 10) * DEFAULT_RATES.engRate + (200 + 20) * DEFAULT_RATES.shopRate);
+  // Total Cost adds PM and Mfg (percent of sales) and projected parts on top of labor, and
+  // Profit is Sales minus exactly that.
+  assert.equal(c.totalCost, c.laborCost + c.pmCost + c.mfgCost + c.partsProjected);
+  assert.equal(c.profit, 1_000_000 - c.totalCost);
   // A Complete job zeroes ETC first, so only worked hours remain.
   const done = computeJobCost({ ...row, status: "Complete" }, DEFAULT_RATES, {}, undefined);
-  assert.equal(done.totalCost, 100 * DEFAULT_RATES.engRate + 200 * DEFAULT_RATES.shopRate);
+  assert.equal(done.laborCost, 100 * DEFAULT_RATES.engRate + 200 * DEFAULT_RATES.shopRate);
 });
 
 test("computeJobCost: profit is null with no sales price on file, not zero", () => {
@@ -201,9 +227,10 @@ test("computeJobCost: margin is profit as a percentage of sales", () => {
     completeDate: null,
   });
   const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
-  // x = laborCost (0 + PM/Mfg on 1000 at 10%/10% = 200) = 200; y = 200
-  assert.equal(c.profit, 1000 - 200 - 200);
-  assert.equal(c.margin, ((1000 - 200 - 200) / 1000) * 100);
+  // PM + Mfg on 1000 at 10%/10%, = 200, no labor; parts = 200 → totalCost 400
+  assert.equal(c.pmCost + c.mfgCost, 200);
+  assert.equal(c.profit, 1000 - c.pmCost - c.mfgCost - 200);
+  assert.equal(c.margin, (c.profit! / 1000) * 100);
 });
 
 test("isUtilityJob matches the known clearing/placeholder IDs and blank IDs, not real jobs", () => {
@@ -263,7 +290,7 @@ test("computeJobCost: profit subtracts the projected parts figure and exposes it
   });
   const c = computeJobCost(row, TEN_PCT_RATES, {}, undefined);
   assert.equal(c.partsProjected, 170_000);
-  // x = PM 10% + Mfg 10% of sales = 200k; y = 170k
+  // PM 10% + Mfg 10% of sales = 200k; parts = 170k
   assert.equal(c.profit, 1_000_000 - 200_000 - 170_000);
   // The columns keep their honest meanings: Purchased is still commitment.
   assert.equal(c.partCost, 150_000);
@@ -329,7 +356,7 @@ test("Profitability Type: read from Job.type, drawn after Customer, filterable, 
   // Column order: Customer, then Type, then Status.
   assert.ok(explorer.indexOf('label="Customer"') < explorer.indexOf('label="Type"'));
   assert.ok(explorer.indexOf('label="Type"') < explorer.indexOf('label="Status"'));
-  assert.match(explorer, /typeFilter\.size === 0 \|\| \(r\.jobType != null && typeFilter\.has\(r\.jobType\)\)/);
+  assert.match(explorer, /typeFilter == null \|\| \(r\.jobType != null && typeFilter\.has\(r\.jobType\)\)/);
   assert.match(read("src/lib/export/job-cost-export.ts"), /jobType: \{ header: "Type", type: "text" \}/);
   assert.equal(jobCostTotals([], ["jobType"]).jobType, null);
 });
@@ -354,4 +381,19 @@ test("Service & Spares: bucketed by the Projects grid's own test, kept out of To
   // Profitability no longer shows Total Hrs or Service & Spares columns (2026-11-10); the data stays in the row.
   assert.doesNotMatch(explorer, /key: "serviceHours", label/);
   assert.doesNotMatch(explorer, /key: "actualHours", label/);
+});
+
+test("Warranty codes without their own column are costed: 70-413/70-414 as Shop, 70-312/70-517 as Eng", async () => {
+  const { WARRANTY_BUCKET_OVERRIDES } = await import("../src/lib/job-cost");
+  assert.deepEqual(WARRANTY_BUCKET_OVERRIDES, { "70-413": "shop", "70-414": "shop", "70-312": "eng", "70-517": "eng" });
+  // job-cost-source applies them over the section-derived buckets.
+  const src = readFileSync(join(__dirname, "..", "src", "lib", "job-cost-source.ts"), "utf8");
+  assert.match(src, /Object\.assign\(SECTION_BUCKET, WARRANTY_BUCKET_OVERRIDES\)/);
+});
+
+test("Manufacturing (10-413, incl. 10-414 punches) is kept out of Shop Hrs and bucketed as Other", async () => {
+  const { MANUFACTURING_CODE } = await import("../src/lib/job-cost");
+  assert.equal(MANUFACTURING_CODE, "10-413");
+  const src = readFileSync(join(__dirname, "..", "src", "lib", "job-cost-source.ts"), "utf8");
+  assert.match(src, /SECTION_BUCKET\[MANUFACTURING_CODE\] = "other"/);
 });

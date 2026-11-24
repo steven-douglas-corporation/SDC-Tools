@@ -165,8 +165,13 @@ export function RefreshDataButton({
       // refreshes on its own cadence and is routinely a few days behind this file. A
       // manager comparing the two needs to see the two vintages, not two timestamps.
       const through = outcome.hoursThrough ? ` Hours are complete through ${outcome.hoursThrough}.` : "";
+      // What the Paylocity SFTP pull found, when this pass ran one (it is the source
+      // "warehouse_ingest", see lib/warehouse-ingest.ts). "No new files" is worth
+      // saying: it is the answer to "did Paylocity send anything since this morning?".
+      const pulled = outcome.sources.find((s) => s.source === "warehouse_ingest" && s.status !== "failed")?.detail;
+      const pull = pulled ? ` ${pulled}` : "";
       if (outcome.status === "ok") {
-        toast(`All application data was refreshed successfully at ${at}.${through}${started}`, "success", { critical: true });
+        toast(`All application data was refreshed successfully at ${at}.${pull}${through}${started}`, "success", { critical: true });
       } else {
         // Explicitly NOT a success: names what failed, says what did update, and says
         // what happens next (§25.7).
@@ -191,10 +196,14 @@ export function RefreshDataButton({
         const why = only?.detail ? ` ${only.detail}` : "";
         // `retryable` is only set for Total ETO sources; anything else keeps the
         // old assumption, which is right for them — the hourly pass IS their retry.
+        // The SFTP pull is not part of this app's hourly pass (the warehouse load has
+        // its own schedule), so say what this refresh actually read instead.
         const tail =
-          only && only.retryable === false
-            ? " Refreshing again will not change this."
-            : " Everything else was updated; the hourly schedule will retry the rest.";
+          only?.source === "warehouse_ingest"
+            ? " Everything else was refreshed from what the warehouse already held."
+            : only && only.retryable === false
+              ? " Refreshing again will not change this."
+              : " Everything else was updated; the hourly schedule will retry the rest.";
         toast(
           `Refreshed at ${at}, but ${outcome.failedLabels.length} source${outcome.failedLabels.length === 1 ? "" : "s"} failed: ` +
             `${outcome.failedLabels.join(", ")}.${why}${tail}${started}`,

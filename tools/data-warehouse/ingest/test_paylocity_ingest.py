@@ -10,7 +10,8 @@ from pathlib import Path
 
 import openpyxl
 
-from paylocity_ingest import header_names, read_workbook, remote_folder, report_key, sheet_rows
+from paylocity_ingest import (header_names, notify_reports_app, read_workbook, remote_folder, report_key,
+                              sheet_rows, should_notify)
 
 
 class ReportKeyTest(unittest.TestCase):
@@ -74,6 +75,80 @@ class ReadWorkbookTest(unittest.TestCase):
 
         self.assertEqual(list(sheets), ["Report", "Old"])
         self.assertEqual(json.loads(sheets["Report"][1][2]), {"Job ID": "4508931", "Job Title": "Industrial Electrician"})
+
+
+class NotifyReportsAppTest(unittest.TestCase):
+    URL = "http://localhost:4006/api/integration/refresh?pull=0"
+
+    class _Response:
+        status = 202
+
+        def __init__(self, body=b'{"started": true}'):
+            self._body = body
+
+        def read(self):
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def test_only_when_files_were_loaded_and_the_warehouse_was_rebuilt(self):
+        self.assertTrue(should_notify({"loaded": 2}, refreshed=True))
+        self.assertFalse(should_notify({"seen": 0}, refreshed=True))              # the usual empty hourly run
+        self.assertFalse(should_notify({"downloaded": 1, "skipped": 1}, refreshed=True))  # a PDF: nothing loaded
+        self.assertFalse(should_notify({"loaded": 2}, refreshed=False))           # facts not rebuilt: nothing new to read
+
+    def test_off_without_a_url_and_not_sent_without_a_token(self):
+        calls = []
+        opener = lambda *a, **k: calls.append(a)
+        self.assertTrue(notify_reports_app({}, "t", opener).startswith("off"))
+        self.assertTrue(notify_reports_app({"refresh_url": self.URL}, None, opener).startswith("not sent"))
+        self.assertEqual(calls, [])
+
+    def test_posts_with_the_token_and_keeps_pull_0(self):
+        seen = {}
+
+        def opener(request, timeout):
+            seen.update(url=request.full_url, method=request.get_method(),
+                        auth=request.get_header("Authorization"), caller=request.get_header("X-refresh-caller"),
+                        timeout=timeout)
+            return self._Response()
+
+        out = notify_reports_app({"refresh_url": self.URL, "timeout_seconds": 5}, "secret", opener)
+        self.assertEqual(out, "started (HTTP 202)")
+        self.assertEqual(seen, {"url": self.URL, "method": "POST", "auth": "Bearer secret",
+                                "caller": "paylocity_ingest", "timeout": 5})
+
+    def test_a_refresh_queued_behind_a_running_one_is_said_so(self):
+        queued = lambda request, timeout: self._Response(b'{"started": false, "queued": true}')
+        out = notify_reports_app({"refresh_url": self.URL}, "t", queued)
+        self.assertEqual(out, "queued behind the refresh already running (HTTP 202)")
+
+    def test_an_answer_that_is_not_json_still_counts_as_started(self):
+        odd = lambda request, timeout: self._Response(b"OK")
+        self.assertEqual(notify_reports_app({"refresh_url": self.URL}, "t", odd), "started (HTTP 202)")
+
+    def test_a_refresh_already_running_is_not_a_failure(self):
+        import urllib.error
+
+        def busy(request, timeout):
+            raise urllib.error.HTTPError(request.full_url, 409, "Conflict", None, None)
+
+        self.assertTrue(notify_reports_app({"refresh_url": self.URL}, "t", busy).startswith("not needed"))
+
+    def test_an_unreachable_app_is_reported_never_raised(self):
+        def down(request, timeout):
+            raise ConnectionRefusedError("connection refused")
+
+        def denied(request, timeout):
+            import urllib.error
+            raise urllib.error.HTTPError(request.full_url, 401, "Unauthorized", None, None)
+
+        self.assertEqual(notify_reports_app({"refresh_url": self.URL}, "t", down), "failed: connection refused")
+        self.assertEqual(notify_reports_app({"refresh_url": self.URL}, "t", denied), "failed: the app answered HTTP 401")
 
 
 if __name__ == "__main__":

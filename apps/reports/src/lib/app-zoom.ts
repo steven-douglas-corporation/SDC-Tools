@@ -47,28 +47,29 @@
 // overlay covers the viewport exactly at every zoom level.)
 
 /**
- * The offered levels, smallest first: 50/60/70/80/90/100, an even 10% grid. The
+ * The offered levels, smallest first: 50/60/.../150, an even 10% grid. The
  * first and last entries ARE the limits — `snapZoom` cannot return anything outside
  * the list, so there is no separate MIN/MAX to keep in step.
  *
- * ── Why the range moved down (2026-09-02) ─────────────────────────────────
+ * ── Why the range moved down, then back up (2026-09-02, 2026-11-19) ────────
  *
  * The original list was 75/80/90/100/110/125/150, built around 100% as the design
- * size with room to magnify. In practice this application is used the other way
- * round: the grids, the Job Hour Details chart and the ETC matrix are all wide, and
- * what people reach for is "fit more on the screen", not "make it bigger". Nothing
- * above 100% was earning its place, and the uneven 5/10/15/25% gaps meant the
- * stepper's travel per click changed depending where you were on the list.
+ * size with room to magnify. It was narrowed to 50–100 because this application is
+ * mostly used the other way round: the grids, the Job Hour Details chart and the
+ * ETC matrix are all wide, and what people reach for is "fit more on the screen",
+ * not "make it bigger" — plus the uneven 5/10/15/25% gaps meant the stepper's
+ * travel per click changed depending where you were on the list.
  *
- * So: one even 10% step throughout, nothing above 100% (the browser's own Ctrl+
- * still magnifies, and composes with this), and a 50% floor — the smallest level
- * the sidebar control itself stays comfortably clickable at.
+ * The even 10% step stayed, but the ceiling was raised back to 150% on request —
+ * there IS a use for magnifying past 100% (the browser's own Ctrl+ still works too,
+ * and composes with this) — and the 50% floor stayed as the smallest level the
+ * sidebar control itself stays comfortably clickable at.
  */
 // `readonly number[]`, not `as const`: every function below does arithmetic and
 // index lookups on these, and a tuple of literal types turns each of those into a
 // cast. The list being fixed is what the `readonly` says; the exact values are not
 // something any caller should be typed against.
-export const ZOOM_STEPS: readonly number[] = [0.5, 0.6, 0.7, 0.8, 0.9, 1];
+export const ZOOM_STEPS: readonly number[] = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5];
 
 /**
  * 80%, not 100% — the level this app is actually laid out to be read at, so a new

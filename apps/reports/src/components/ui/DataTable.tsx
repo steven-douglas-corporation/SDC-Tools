@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { TOOLBAR_BTN_COMPACT, TOOLBAR_BTN_NEUTRAL } from "@/components/ui/classnames";
-import { pageOf, searchRows, sortRows, type SortDir, type TableColumnLogic } from "@/lib/data-table";
+import { clampColumnPx, columnPx, pageOf, searchRows, sortRows, tableWidth, type SortDir, type TableColumnLogic } from "@/lib/data-table";
 
 // ── DataTable: the app's one list-of-records table ──────────────────────────
 //
@@ -16,9 +16,12 @@ import { pageOf, searchRows, sortRows, type SortDir, type TableColumnLogic } fro
 //   - click a header to sort (again to reverse), with the direction shown;
 //   - ONE search box over the columns a page marks searchable;
 //   - paging chosen per page: "pages" (Previous / Next), "more" (Show more), or "none";
-//   - optional row click (Feedback opens a record) and custom cells (badges, bars).
+//   - optional row click (Feedback opens a record) and custom cells (badges, bars);
+//   - drag a header's right edge to resize its column (double-click the edge to undo);
+//     widths last until the page reloads;
+//   - never narrower than its columns need: a narrow window scrolls it sideways.
 //
-// Pure logic (sort, search, page) lives in `lib/data-table.ts` so it is tested without a DOM.
+// Pure logic (sort, search, page, widths) lives in `lib/data-table.ts` so it is tested without a DOM.
 
 export type DataTableColumn<T> = TableColumnLogic<T> & {
   header: string;
@@ -27,6 +30,8 @@ export type DataTableColumn<T> = TableColumnLogic<T> & {
   align?: "left" | "right";
   /** CSS width for the column (e.g. "150px", "20%"). Unset columns share what is left. */
   width?: string;
+  /** For a column with no px `width`: the narrowest (CSS px) it is squeezed to before the table scrolls sideways. Default 140. */
+  minWidth?: number;
   /** Let long text wrap onto more lines. Off: one line, cut off with "…", full text on hover. */
   wrap?: boolean;
   /** Hover text for a cell. */
@@ -97,6 +102,30 @@ export function DataTable<T>({
     resetPosition();
   };
 
+  // Widths set by dragging a header's edge (CSS px, by column id), until the page reloads.
+  const [dragged, setDragged] = useState<Record<string, number>>({});
+  const drag = useRef<{ id: string; x: number; px: number; scale: number } | null>(null);
+  const layout = tableWidth(columns, dragged);
+
+  const startResize = (id: string, e: PointerEvent<HTMLElement>) => {
+    const th = e.currentTarget.parentElement;
+    if (!th) return;
+    e.preventDefault(); // no text selected while dragging
+    e.currentTarget.setPointerCapture(e.pointerId);
+    // The pointer moves in screen px; the column is sized in its own CSS px, which the app's
+    // zoom makes smaller. Measured at the start, as useFillHeight does.
+    const scale = th.offsetWidth ? th.getBoundingClientRect().width / th.offsetWidth : 1;
+    drag.current = { id, x: e.clientX, px: th.offsetWidth, scale };
+  };
+  const moveResize = (e: PointerEvent<HTMLElement>) => {
+    const d = drag.current;
+    if (d) setDragged((w) => ({ ...w, [d.id]: clampColumnPx(d.px + (e.clientX - d.x) / d.scale) }));
+  };
+  const endResize = () => {
+    drag.current = null;
+  };
+  const resetWidth = (id: string) => setDragged(({ [id]: _dropped, ...rest }) => rest);
+
   return (
     <div className="flex flex-col gap-3">
       {(search || toolbar) && (
@@ -126,42 +155,72 @@ export function DataTable<T>({
         {/* globals.css sizes every <table> from --table-font-size (about 10px, !important),
             so a size class here would do nothing. A record list is read row by row rather
             than scanned as a dense grid, so it asks for 13px through that variable. */}
-        <table className="w-full table-fixed" aria-label={label} style={{ "--table-font-size": "0.8667rem" } as CSSProperties}>
+        {/* Never narrower than its columns need (tableWidth): below that the wrapper scrolls
+            sideways. Once every column has a px width it is exactly that wide, so dragging one
+            column does not stretch the others. */}
+        <table
+          className="w-full table-fixed"
+          aria-label={label}
+          style={{ "--table-font-size": "0.8667rem", minWidth: `${layout.min}px`, width: layout.allFixed ? `${layout.min}px` : undefined } as CSSProperties}
+        >
           <colgroup>
-            {columns.map((c) => (
-              <col key={c.id} style={c.width ? { width: c.width } : undefined} />
-            ))}
+            {columns.map((c) => {
+              const px = columnPx(c, dragged);
+              const width = px != null ? `${px}px` : c.width;
+              return <col key={c.id} style={width ? { width } : undefined} />;
+            })}
           </colgroup>
           <thead className="bg-slate-100 text-left text-sdc-gray-600">
             <tr>
-              {columns.map((c) => {
+              {columns.map((c, ci) => {
                 const sortable = c.sortable !== false;
                 const active = sort?.id === c.id;
-                const arrow = active ? (sort!.dir === "asc" ? "▲" : "▼") : "";
+                // Every sortable header shows a faint ↕ so it reads as clickable before any hover;
+                // the sorted one shows its direction (2026-11-16, the same as ListCard's headers).
+                // The arrow always follows the label. Right-aligned headers used to put it first,
+                // and a label wrapped onto two lines then sat at the far right with the arrow
+                // stranded at the far left, reading as a column of its own (2026-11-17).
+                const arrow = active ? (sort!.dir === "asc" ? "▲" : "▼") : "↕";
+                // A label wraps at its spaces; a word that still does not fit ends in "…" rather
+                // than running over the next header.
+                const labelCls = "min-w-0 overflow-hidden text-ellipsis";
                 return (
                   <th
                     key={c.id}
                     scope="col"
                     title={sortable ? `${c.headerTitle ? `${c.headerTitle}. ` : ""}Click to sort; click again to reverse` : c.headerTitle}
                     aria-sort={active ? (sort!.dir === "asc" ? "ascending" : "descending") : undefined}
-                    className={`px-3 py-2 font-semibold ${c.align === "right" ? "text-right" : ""}`}
+                    className={`relative overflow-hidden px-3 py-2 font-semibold ${c.align === "right" ? "text-right" : ""}`}
                   >
                     {sortable ? (
                       <button
                         type="button"
                         onClick={() => toggleSort(c.id)}
-                        className={`inline-flex items-center gap-1 font-semibold hover:text-sdc-navy ${active ? "text-sdc-navy" : ""} ${
-                          c.align === "right" ? "flex-row-reverse" : ""
-                        }`}
+                        className={`group -mx-1 inline-flex max-w-full cursor-pointer items-center gap-1 rounded px-1 font-semibold hover:bg-white hover:text-sdc-navy ${active ? "text-sdc-navy" : ""}`}
                       >
-                        <span>{c.header}</span>
-                        <span aria-hidden className="w-3">
+                        <span className={labelCls}>{c.header}</span>
+                        <span aria-hidden className={`w-3 shrink-0 text-center ${active ? "" : "opacity-40 group-hover:opacity-100"}`}>
                           {arrow}
                         </span>
                       </button>
                     ) : (
-                      c.header
+                      <span className={`block ${labelCls}`}>{c.header}</span>
                     )}
+                    {/* The resize grip: the header's right edge, marked by a short grey line that
+                        turns blue on hover (none on the last column, against the table's border).
+                        The grab area is wider than the line. Pointer only. */}
+                    <span
+                      aria-hidden
+                      title="Drag to resize this column; double-click to undo"
+                      onPointerDown={(e) => startResize(c.id, e)}
+                      onPointerMove={moveResize}
+                      onPointerUp={endResize}
+                      onPointerCancel={endResize}
+                      onDoubleClick={() => resetWidth(c.id)}
+                      className={`absolute inset-y-0 right-0 w-2 cursor-col-resize touch-none after:absolute after:inset-y-2 after:right-0 after:w-px hover:after:w-0.5 hover:after:bg-sdc-blue ${
+                        ci < columns.length - 1 ? "after:bg-slate-300" : ""
+                      }`}
+                    />
                   </th>
                 );
               })}
