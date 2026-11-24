@@ -28,6 +28,7 @@ import type { Department } from "../service/departments";
 import { cleanKey, keyFromName } from "../project-key";
 import { DepartmentColumnFilter } from "./DepartmentPicker";
 import { ChoiceColumnFilter, DateColumnFilter, RangeColumnFilter, TextColumnFilter } from "./ColumnFilters";
+import { useMenu } from "./columnMenu";
 import {
   departmentDropEffect,
   departmentMoveEffect,
@@ -63,14 +64,54 @@ function Risk({ p }: { p: ProjectListItem }) {
   );
 }
 
+/**
+ * A rank number that cannot be edited right now because the list is sorted, searched or filtered —
+ * a rank is a place among every project, so they are only changed with all of them in rank order.
+ * Greyed, so the frozen state reads at a glance; clicking it says why and offers the way back.
+ */
+function LockedRankCell({ rank, rankOrderHref }: { rank: number | null; rankOrderHref: string }) {
+  const { open, setOpen, ref } = useMenu();
+  return (
+    <span ref={ref} className="relative inline-flex flex-col items-center">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title="Ranks can only be changed in rank order"
+        className="rounded px-1 tabular-nums text-sdc-muted hover:bg-sdc-gray-100 hover:text-sdc-navy"
+      >
+        {rank ?? "—"}
+      </button>
+      {open && (
+        <span
+          role="dialog"
+          className="absolute top-full left-1/2 z-20 mt-1 flex w-56 -translate-x-1/2 flex-col gap-2 rounded-md border border-sdc-border bg-white p-2 text-left text-xs text-sdc-navy shadow-lg"
+        >
+          <span>
+            Ranks can only be changed with every project shown in rank order — this list is sorted or filtered.
+          </span>
+          <Link href={rankOrderHref} scroll={false} className={BUTTON_COMPACT} onClick={() => setOpen(false)}>
+            Show in rank order
+          </Link>
+        </span>
+      )}
+    </span>
+  );
+}
+
 function RankCell({
   p,
   canRank,
+  rankLocked = false,
+  rankOrderHref = "/tracker",
   first,
   last,
 }: {
   p: ProjectListItem;
   canRank: boolean;
+  /** Could rank, but the list is sorted/filtered so it is frozen: show the greyed explain-and-restore cue. */
+  rankLocked?: boolean;
+  /** Where the list sits in plain rank order, for the "Show in rank order" button. */
+  rankOrderHref?: string;
   /** True when this is the top, or the bottom, of the ranked projects: that arrow does nothing. */
   first: boolean;
   last: boolean;
@@ -80,7 +121,12 @@ function RankCell({
   // Set while the person is being asked whether to take a rank another project holds.
   const [ask, setAsk] = useState<{ rank: number; clash: RankClash } | null>(null);
   const [pending, start] = useTransition();
-  if (!canRank) return <>{p.portfolioRank ?? "—"}</>;
+  if (!canRank)
+    return rankLocked ? (
+      <LockedRankCell rank={p.portfolioRank ?? null} rankOrderHref={rankOrderHref} />
+    ) : (
+      <>{p.portfolioRank ?? "—"}</>
+    );
 
   const reset = () => setValue(p.portfolioRank?.toString() ?? "");
 
@@ -618,6 +664,7 @@ export function ProjectList({
   clearHref,
   canEdit,
   canRank,
+  rankLocked = false,
 }: {
   projects: ProjectListItem[];
   /** The view the list is drawn for: its sort, search, departments and figure, from the address. */
@@ -645,6 +692,8 @@ export function ProjectList({
   canEdit: boolean;
   /** May set the company-wide stack rank (in this app: ELT). */
   canRank: boolean;
+  /** Could rank, but the list is sorted/filtered: the Rank column is greyed and explains how to unlock. */
+  rankLocked?: boolean;
 }) {
   // The open projects that hold a rank, top first: the ends are where an arrow has nowhere to go.
   const ranked = projects
@@ -767,7 +816,20 @@ export function ProjectList({
             <table className="w-full min-w-[60rem] text-sm">
               <thead>
                 <tr className={TABLE_HEADER_ROW}>
-                  <SortTh label="Rank" sort="rank" view={view} />
+                  {rankLocked ? (
+                    <th className="px-3 py-2.5">
+                      <Link
+                        href={clearHref ?? "/tracker"}
+                        scroll={false}
+                        title="Show in rank order to change ranks"
+                        className="text-sdc-muted hover:text-sdc-blue hover:underline"
+                      >
+                        Rank
+                      </Link>
+                    </th>
+                  ) : (
+                    <SortTh label="Rank" sort="rank" view={view} />
+                  )}
                   <th className="px-3 py-2.5 text-left">
                     <TextColumnFilter
                       label="Project"
@@ -797,6 +859,7 @@ export function ProjectList({
                       options={STATE_ORDER.map((s) => ({ value: s, label: STATE_LABEL[s] }))}
                       chosen={view.states}
                       defaultChosen={OPEN_STATES}
+                      sort={{ view, options: [{ sort: "state", label: "Planned → Cancelled" }] }}
                     />
                   </th>
                   <th className="px-3 py-2.5 text-left">
@@ -807,6 +870,7 @@ export function ProjectList({
                       min={view.progressMin}
                       max={view.progressMax}
                       suffix="%"
+                      sort={{ view, options: [{ sort: "progress", label: "Most complete first" }] }}
                     />
                   </th>
                   <th className="px-3 py-2.5 text-left">
@@ -815,6 +879,7 @@ export function ProjectList({
                       param="who"
                       options={assigneeOptions.map((n) => ({ value: n, label: n }))}
                       chosen={view.assignees}
+                      sort={{ view, options: [{ sort: "assignee", label: "A–Z" }] }}
                     />
                   </th>
                   <th className="px-3 py-2.5 text-left">
@@ -826,6 +891,7 @@ export function ProjectList({
                       max={view.hoursMax}
                       suffix="h"
                       align="right"
+                      sort={{ view, options: [{ sort: "hours", label: "Most hours left first" }] }}
                     />
                   </th>
                   <th className="px-3 py-2.5 text-left">
@@ -857,6 +923,7 @@ export function ProjectList({
                       }))}
                       chosen={view.risk}
                       align="right"
+                      sort={{ view, options: [{ sort: "risk", label: "At risk first" }] }}
                     />
                   </th>
                 </tr>
@@ -951,6 +1018,8 @@ export function ProjectList({
                                   key={`${p.id}:${p.portfolioRank}`}
                                   p={p}
                                   canRank={canRank && canEdit}
+                                  rankLocked={rankLocked}
+                                  rankOrderHref={clearHref ?? "/tracker"}
                                   first={p.id === ranked[0]}
                                   last={p.id === ranked[ranked.length - 1]}
                                 />

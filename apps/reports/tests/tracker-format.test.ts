@@ -533,6 +533,20 @@ test("narrowing the project list: finished hidden, search, one figure, sorting w
     ["WH", "ETC", "PAY", "OLD"],
     "highest first, ties in rank order, none last",
   );
+  // The sorts on the rest of the columns.
+  assert.deepEqual(keys({ sort: "progress" }), ["PAY", "WH", "ETC", "OLD"], "most complete first");
+  assert.deepEqual(keys({ sort: "hours" }), ["WH", "ETC", "OLD", "PAY"], "most hours left first");
+  assert.deepEqual(keys({ sort: "risk" }), ["WH", "ETC", "OLD", "PAY"], "at risk, then on track, then not forecast");
+  assert.deepEqual(
+    keys({ sort: "state" }),
+    ["OLD", "WH", "ETC", "PAY"],
+    "planned, then active ties in rank order, then on hold",
+  );
+  assert.deepEqual(
+    keys({ sort: "assignee" }),
+    ["WH", "ETC", "OLD", "PAY"],
+    "by first assignee A–Z, nobody assigned last",
+  );
   assert.deepEqual(keys({ grouped: true }), ["ETC", "WH", "OLD", "PAY"], "by department, no department last");
   assert.deepEqual(keys({ grouped: true, sort: "name" }), ["ETC", "OLD", "WH", "PAY"], "sorted inside each department");
 

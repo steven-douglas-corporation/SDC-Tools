@@ -138,6 +138,8 @@ export default async function TrackerPage({
         // Grouped with every department in view, a project is moved among its own
         // department's projects instead: they trade the ranks that department already holds.
         canRank={actor.admin === true && !locked}
+        // Could rank, but the list is sorted or filtered: the Rank column greys and explains how to unlock.
+        rankLocked={actor.admin === true && hasPermission(session.user.role, "tracker:edit") && locked}
         rankWithinDepartment={withinDepartment}
         rankNote={
           actor.admin !== true

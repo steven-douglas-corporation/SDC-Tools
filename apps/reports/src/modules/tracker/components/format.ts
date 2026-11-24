@@ -398,7 +398,8 @@ export function departmentDropEffect(drop: {
 // and grouping above, plus a search, a sort, one figure to narrow to, and whether finished
 // projects are shown. Pure, so the page can be drawn on the server and the rules tested.
 
-export type ListSort = "rank" | "name" | "target" | "forecast" | "value";
+export type ListSort =
+  "rank" | "name" | "target" | "forecast" | "value" | "progress" | "hours" | "risk" | "state" | "assignee";
 export type ListOnly = "active" | "at-risk" | "not-forecast" | "incomplete";
 /** The three ways a project reads against its target, for the Against-target column filter. */
 export type RiskKey = "at-risk" | "on-track" | "none";
@@ -411,6 +412,11 @@ export const SORT_LABEL: Record<ListSort, string> = {
   target: "Target date, soonest first",
   forecast: "Forecast, soonest first",
   value: "Value, highest first",
+  progress: "Progress, most complete first",
+  hours: "Hours left, most first",
+  risk: "Against target, at risk first",
+  state: "State, planned first",
+  assignee: "Assigned to, A–Z",
 };
 export const ONLY_LABEL: Record<ListOnly, string> = {
   active: "active projects",
@@ -654,6 +660,12 @@ export function narrowProjects<P extends Listed>(
       if (x == null || y == null) return (x == null ? 1 : 0) - (y == null ? 1 : 0);
       return compare(x, y);
     };
+  const states = STATE_ORDER as readonly string[];
+  const stateIndex = (s: string) => {
+    const i = states.indexOf(s);
+    return i < 0 ? states.length : i;
+  };
+  const riskRank: Record<RiskKey, number> = { "at-risk": 0, "on-track": 1, none: 2 };
   const order: Record<ListSort, ((a: P, b: P) => number) | null> = {
     rank: null,
     name: (a, b) => a.name.localeCompare(b.name),
@@ -668,6 +680,17 @@ export function narrowProjects<P extends Listed>(
     value: blankLast(
       (p) => p.valueSort,
       (a, b) => b - a,
+    ),
+    // Most complete first, then most hours of work left first: the numeric columns, biggest on top.
+    progress: (a, b) => progress(b).percent - progress(a).percent,
+    hours: (a, b) => b.remainingHours - a.remainingHours,
+    // At risk first, then on track, then the not-yet-forecast.
+    risk: (a, b) => riskRank[riskKey(a)] - riskRank[riskKey(b)],
+    // The states in their own order, planned first; then the first assignee's name, people with none last.
+    state: (a, b) => stateIndex(a.state) - stateIndex(b.state),
+    assignee: blankLast(
+      (p) => (p.assigneeNames.length ? [...p.assigneeNames].sort((x, y) => x.localeCompare(y))[0]! : null),
+      (a, b) => a.localeCompare(b),
     ),
   };
   const compare = order[view.sort];
