@@ -13,14 +13,17 @@ export interface NewProject {
   description?: string | null;
   objective?: string | null;
   definitionOfDone?: string | null;
-  /** Why it is worth doing: what it saves, earns or prevents. Required. */
-  justification: string;
-  /** What it is worth to the bottom line in a year, as a tracker.value_bucket. Required. */
-  valueBucketId: number;
-  /** The department the project is for: the one that benefits. A tracker.team. Required. */
-  forDepartmentId: number;
-  /** The department that does the work. A tracker.team. Required. */
-  doneByDepartmentId: number;
+  // The next four are optional when a project is CREATED (quick capture) but required before it can
+  // be made active — the activation gate in updateProject enforces that, and migration 0010 records
+  // why the rule lives in the service, not a NOT NULL constraint. They are added on the Settings tab.
+  /** Why it is worth doing: what it saves, earns or prevents. */
+  justification?: string | null;
+  /** What it is worth to the bottom line in a year, as a tracker.value_bucket. */
+  valueBucketId?: number | null;
+  /** The department the project is for: the one that benefits. A tracker.team. */
+  forDepartmentId?: number | null;
+  /** The department that does the work. A tracker.team. */
+  doneByDepartmentId?: number | null;
   targetDate?: string | null;
   teamId?: number | null;
   jobNumber?: string | null;
@@ -102,18 +105,18 @@ export async function createProject(
   // A project's board lives at /tracker/KEY, so a key cannot be the name of another tracker page.
   if (RESERVED_KEYS.has(key)) throw new TrackerError("invalid", `${key} is reserved. Choose a different key.`);
   if (!input.name.trim()) throw new TrackerError("invalid", "A project needs a name.");
-  const justification = cleanJustification(input.justification);
-  if (input.valueBucketId == null) throw new TrackerError("invalid", NO_VALUE);
-  if (input.forDepartmentId == null) throw new TrackerError("invalid", NO_DEPARTMENT);
-  if (input.doneByDepartmentId == null) throw new TrackerError("invalid", NO_DOER);
+  // A project is captured with little more than a name and key, then completed on its Settings tab:
+  // justification, value and the two departments are optional here but required before it is made
+  // active (updateProject's activation gate). Each is still validated when it IS supplied.
+  const justification = input.justification?.trim() ? cleanJustification(input.justification) : null;
   assertIsoDate(input.targetDate, "Target date");
 
   return db.transaction(async (tx) => {
     const taken = await tx.query(`SELECT 1 FROM tracker.project WHERE key = $1`, [key]);
     if (taken.rows.length) throw new TrackerError("conflict", `The key ${key} is already used by another project.`);
-    await valueBucketLabel(tx, input.valueBucketId);
-    await departmentName(tx, input.forDepartmentId);
-    await departmentName(tx, input.doneByDepartmentId, NO_DOER);
+    if (input.valueBucketId != null) await valueBucketLabel(tx, input.valueBucketId);
+    if (input.forDepartmentId != null) await departmentName(tx, input.forDepartmentId);
+    if (input.doneByDepartmentId != null) await departmentName(tx, input.doneByDepartmentId, NO_DOER);
 
     const row = await one<{ id: number }>(
       tx,
@@ -134,9 +137,9 @@ export async function createProject(
         input.teamId ?? null,
         input.jobNumber ?? null,
         justification,
-        input.valueBucketId,
-        input.forDepartmentId,
-        input.doneByDepartmentId,
+        input.valueBucketId ?? null,
+        input.forDepartmentId ?? null,
+        input.doneByDepartmentId ?? null,
       ],
       "Project",
     );

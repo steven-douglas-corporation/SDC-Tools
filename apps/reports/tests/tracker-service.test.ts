@@ -1812,7 +1812,7 @@ test("project settings: a new owner becomes a manager, and a finished project le
   assert.ok(done!.d, "the day it was finished is recorded");
 });
 
-test("justification: a project says why it is worth doing and what it is worth, before it exists and before it is active", async () => {
+test("justification: a project is captured with just a name, and says why it is worth doing before it is made active", async () => {
   const Q = await import("../src/modules/tracker/service/queries");
   const buckets = await Q.listValueBuckets(db);
   assert.deepEqual(
@@ -1821,43 +1821,23 @@ test("justification: a project says why it is worth doing and what it is worth, 
   );
   const [small, , mid] = buckets;
 
-  // Neither can be left out when a project is created.
-  await refuses(
-    () =>
-      createProjectAsIs(db, ana, {
-        doneByDepartmentId: someDepartment,
-        forDepartmentId: someDepartment,
-        key: "WHY1",
-        name: "No reason",
-        justification: "   ",
-        valueBucketId: mid!.id,
-      }),
-    "invalid",
-    /needs a justification: what it saves, earns or prevents/,
+  // Quick capture: a project can be created with nothing but a name and key. It comes out incomplete
+  // — no justification, value or departments — and stays 'planned' until it has them (asserted below).
+  const quick = await createProjectAsIs(db, ana, { key: "QUICK", name: "Captured in a hurry" });
+  const [qrow] = await rows<{ j: string | null; v: number | null; f: number | null; d: number | null; s: string }>(
+    `SELECT justification AS j, value_bucket_id AS v, for_team_id AS f, done_by_team_id AS d, state::text AS s
+       FROM tracker.project WHERE id = $1`,
+    [quick.id],
   );
-  await refuses(
-    () =>
-      createProjectAsIs(db, ana, {
-        doneByDepartmentId: someDepartment,
-        forDepartmentId: someDepartment,
-        key: "WHY1",
-        name: "No value",
-        justification: "Saves two days a month.",
-        valueBucketId: null as unknown as number,
-      }),
-    "invalid",
-    /worth to the bottom line in a year/,
+  assert.deepEqual(
+    [qrow!.j, qrow!.v, qrow!.f, qrow!.d, qrow!.s],
+    [null, null, null, null, "planned"],
+    "a quick-captured project is planned and empty, ready to be completed on its Settings tab",
   );
+
+  // A value that IS given but does not exist is still refused at creation.
   await refuses(
-    () =>
-      createProjectAsIs(db, ana, {
-        doneByDepartmentId: someDepartment,
-        forDepartmentId: someDepartment,
-        key: "WHY1",
-        name: "Bad value",
-        justification: "x",
-        valueBucketId: 999999,
-      }),
+    () => createProjectAsIs(db, ana, { key: "WHY1", name: "Bad value", valueBucketId: 999999 }),
     "invalid",
     /worth to the bottom line/,
   );
@@ -1963,20 +1943,9 @@ test("departments: copied from the roster in two levels, and a project says whic
   const after = await rows<{ x: string }>(`SELECT string_agg(xmin::text, ',' ORDER BY id) AS x FROM tracker.team`);
   assert.equal(after[0]!.x, before[0]!.x, "an unchanged roster touches no row");
 
-  // A project cannot be made without one, or with one that is not in use.
+  // A department is optional at creation (set later on the Settings tab, and required before the
+  // project goes active — see below), but one that IS given must be a department in use.
   const asked = { justification: "Saves time.", valueBucketId: someValue };
-  await refuses(
-    () =>
-      createProjectAsIs(db, ana, {
-        doneByDepartmentId: someDepartment,
-        key: "DEPT0",
-        name: "x",
-        ...asked,
-        forDepartmentId: null as unknown as number,
-      }),
-    "invalid",
-    /Choose the department the project is for/,
-  );
   await refuses(
     () =>
       createProjectAsIs(db, ana, {
@@ -2242,17 +2211,13 @@ test("dropping a project at another's place in its department rearranges only th
   );
 });
 
-test("a project says which department does the work: asked for when made, logged when changed, needed to go active", async () => {
+test("a project says which department does the work: optional when made, logged when changed, needed to go active", async () => {
   const Q = await import("../src/modules/tracker/service/queries");
   const all = await listDepartments(db);
   const id = (code: string) => all.find((d) => d.code === code)!.id;
   const asked = { justification: "Saves time.", valueBucketId: someValue, forDepartmentId: id("mech") };
-  await refuses(
-    () =>
-      createProjectAsIs(db, ana, { key: "DOER0", name: "x", ...asked, doneByDepartmentId: null as unknown as number }),
-    "invalid",
-    /Choose the department that does the work/,
-  );
+  // Optional at creation (set later, required before active — see below), but one that IS given
+  // must be a department in use.
   await refuses(
     () => createProjectAsIs(db, ana, { key: "DOER0", name: "x", ...asked, doneByDepartmentId: 999999 }),
     "invalid",

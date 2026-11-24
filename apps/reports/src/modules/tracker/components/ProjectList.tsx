@@ -23,10 +23,10 @@ import {
   setProjectStateAction,
 } from "../actions";
 import type { DepartmentRankDrop, DepartmentRankMove, RankClash } from "../service/projects";
-import type { ProjectListItem, ValueBucket } from "../service/queries";
+import type { ProjectListItem } from "../service/queries";
 import type { Department } from "../service/departments";
 import { cleanKey, keyFromName } from "../project-key";
-import { DepartmentColumnFilter, DepartmentOptions } from "./DepartmentPicker";
+import { DepartmentColumnFilter } from "./DepartmentPicker";
 import {
   departmentDropEffect,
   departmentMoveEffect,
@@ -348,7 +348,11 @@ function Dates({ p, caveat }: { p: ProjectListItem; caveat: string | null }) {
 /** What a dragged project row carries. Its own type, so nothing else dropped on the list is taken for one. */
 const RANK_DRAG = "application/x-sdc-tracker-project";
 
-function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]; departments: Department[] }) {
+// Quick capture (2026-11-24): a project starts from little more than a name and key, then opens to
+// its own card, where the justification, value and departments are filled in on the Settings tab —
+// the fields that are required before it can be made active. The heavier form that collected them
+// all up front was the thing that made a project feel expensive to log.
+function NewProject() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState("");
@@ -357,20 +361,15 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
   const [keyTyped, setKeyTyped] = useState(false);
   const [keyNote, setKeyNote] = useState("");
   const [targetDate, setTargetDate] = useState("");
-  const [justification, setJustification] = useState("");
-  const [valueBucketId, setValueBucketId] = useState("");
-  const [forDepartmentId, setForDepartmentId] = useState("");
-  const [doneByDepartmentId, setDoneByDepartmentId] = useState("");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
 
-  // Asked once the name is finished: a key suggested with the justification in mind and checked
-  // against the keys in use. It replaces the rule's key unless the person has typed their own
-  // in the meantime.
+  // Asked once the name is finished: a key suggested from the name and checked against the keys in
+  // use. It replaces the rule's key unless the person has typed their own in the meantime.
   async function suggestKey() {
     const asked = name.trim();
     if (keyTyped || !asked) return;
-    const res = await suggestProjectKeyAction({ name: asked, justification });
+    const res = await suggestProjectKeyAction({ name: asked, justification: "" });
     if (!res.ok) return;
     setKeyTyped((typed) => {
       if (!typed) {
@@ -396,16 +395,9 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
         e.preventDefault();
         setError("");
         start(async () => {
-          const res = await createProjectAction({
-            key,
-            name,
-            justification,
-            valueBucketId: valueBucketId ? Number(valueBucketId) : null,
-            forDepartmentId: forDepartmentId ? Number(forDepartmentId) : null,
-            doneByDepartmentId: doneByDepartmentId ? Number(doneByDepartmentId) : null,
-            targetDate: targetDate || null,
-          });
+          const res = await createProjectAction({ key, name, targetDate: targetDate || null });
           if (!res.ok) return setError(res.error);
+          // Straight to the new project's card, where the rest is filled in before it is made active.
           router.push(`/tracker/${res.key}`);
         });
       }}
@@ -424,7 +416,6 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
           onBlur={suggestKey}
           className={INPUT}
         />
-        <span className="text-xs text-sdc-gray-600">&nbsp;</span>
       </label>
       <label className="flex flex-col gap-1">
         <span className={LABEL}>Key</span>
@@ -449,56 +440,7 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
         <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} className={INPUT} />
         <span className="text-xs text-sdc-gray-600">Optional</span>
       </label>
-      <label className="flex w-full flex-col gap-1">
-        <span className={LABEL}>Justification</span>
-        <textarea
-          required
-          rows={2}
-          value={justification}
-          onChange={(e) => setJustification(e.target.value)}
-          className={INPUT}
-          placeholder="Cuts the monthly roll-up from two days to two hours"
-        />
-        <span className="text-xs text-sdc-gray-600">
-          Why this is worth doing: what it saves, earns or prevents. The stack rank is argued from it.
-        </span>
-      </label>
-      <label className="flex min-w-[16rem] flex-col gap-1">
-        <span className={LABEL}>For department</span>
-        <select required value={forDepartmentId} onChange={(e) => setForDepartmentId(e.target.value)} className={INPUT}>
-          <option value="">Choose a department</option>
-          <DepartmentOptions departments={departments} />
-        </select>
-        <span className="text-xs text-sdc-gray-600">Who benefits, not who does the work.</span>
-      </label>
-      <label className="flex min-w-[16rem] flex-col gap-1">
-        <span className={LABEL}>Done by department</span>
-        <select
-          required
-          value={doneByDepartmentId}
-          onChange={(e) => setDoneByDepartmentId(e.target.value)}
-          className={INPUT}
-        >
-          <option value="">Choose a department</option>
-          <DepartmentOptions departments={departments} />
-        </select>
-        <span className="text-xs text-sdc-gray-600">Who does the work.</span>
-      </label>
-      <label className="flex min-w-[16rem] flex-col gap-1">
-        <span className={LABEL}>Value to the bottom line</span>
-        <select required value={valueBucketId} onChange={(e) => setValueBucketId(e.target.value)} className={INPUT}>
-          <option value="">Choose a range</option>
-          {valueBuckets.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.label}
-            </option>
-          ))}
-        </select>
-        <span className="text-xs text-sdc-gray-600">
-          The best honest range for a year: savings, added profit or cost avoided.
-        </span>
-      </label>
-      <div className="flex gap-2 pb-6">
+      <div className="flex gap-2">
         <button type="submit" disabled={pending} className={BUTTON_PRIMARY}>
           {pending ? "Creating…" : "Create project"}
         </button>
@@ -506,6 +448,10 @@ function NewProject({ valueBuckets, departments }: { valueBuckets: ValueBucket[]
           Cancel
         </button>
       </div>
+      <p className="w-full text-xs text-sdc-gray-600">
+        Just a name and key to start. The justification, value and departments are added on the new project&rsquo;s
+        Settings tab, and are needed before it can be made active.
+      </p>
       {error && <p className="w-full text-sm text-sdc-red-text">{error}</p>}
     </form>
   );
@@ -588,11 +534,16 @@ function FiltersBar({ view, departments }: { view: ListView; departments: Depart
   for (const id of view.forIds)
     chips.push({ label: `For: ${nameOf(id)}`, href: listHref(view, { forIds: view.forIds.filter((x) => x !== id) }) });
   for (const id of view.byIds)
-    chips.push({ label: `Done by: ${nameOf(id)}`, href: listHref(view, { byIds: view.byIds.filter((x) => x !== id) }) });
+    chips.push({
+      label: `Done by: ${nameOf(id)}`,
+      href: listHref(view, { byIds: view.byIds.filter((x) => x !== id) }),
+    });
   if (view.q) chips.push({ label: `Search: “${view.q}”`, href: listHref(view, { q: "" }) });
   if (view.only) chips.push({ label: `Only ${ONLY_LABEL[view.only]}`, href: listHref(view, { only: null }) });
-  if (view.grouped) chips.push({ label: `Grouped by ${GROUPINGS[groupingOf(view)]}`, href: listHref(view, { grouped: false }) });
-  if (view.sort !== "rank") chips.push({ label: `Sorted by ${SORT_LABEL[view.sort]}`, href: listHref(view, { sort: "rank" }) });
+  if (view.grouped)
+    chips.push({ label: `Grouped by ${GROUPINGS[groupingOf(view)]}`, href: listHref(view, { grouped: false }) });
+  if (view.sort !== "rank")
+    chips.push({ label: `Sorted by ${SORT_LABEL[view.sort]}`, href: listHref(view, { sort: "rank" }) });
   if (view.finished) chips.push({ label: "Finished shown", href: listHref(view, { finished: false }) });
   if (chips.length === 0) return null;
   return (
@@ -613,7 +564,15 @@ function FiltersBar({ view, departments }: { view: ListView; departments: Depart
         </Link>
       ))}
       <Link
-        href={listHref(view, { forIds: [], byIds: [], q: "", only: null, grouped: false, sort: "rank", finished: false })}
+        href={listHref(view, {
+          forIds: [],
+          byIds: [],
+          q: "",
+          only: null,
+          grouped: false,
+          sort: "rank",
+          finished: false,
+        })}
         scroll={false}
         className="font-semibold text-sdc-blue hover:underline"
       >
@@ -626,7 +585,6 @@ function FiltersBar({ view, departments }: { view: ListView; departments: Depart
 export function ProjectList({
   projects,
   view,
-  valueBuckets,
   departments,
   grouped = false,
   rankNote,
@@ -639,8 +597,6 @@ export function ProjectList({
   projects: ProjectListItem[];
   /** The view the list is drawn for: its sort, search, departments and figure, from the address. */
   view: ListView;
-  /** The ranges a new project's yearly value is chosen from. */
-  valueBuckets: ValueBucket[];
   /** The departments a new project can be for. */
   departments: Department[];
   /** Whether to draw a heading above each department's projects. They arrive already in that order. */
@@ -709,7 +665,7 @@ export function ProjectList({
     <div className="space-y-4">
       {canEdit && (
         <div className="flex justify-end">
-          <NewProject valueBuckets={valueBuckets} departments={departments} />
+          <NewProject />
         </div>
       )}
 

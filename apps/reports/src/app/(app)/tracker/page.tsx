@@ -19,7 +19,7 @@ import {
   narrowProjects,
   ranksLocked,
 } from "@/modules/tracker/components/format";
-import { listProjects, listValueBuckets, throughLens } from "@/modules/tracker/service/queries";
+import { listProjects, throughLens } from "@/modules/tracker/service/queries";
 import { ProjectList } from "@/modules/tracker/components/ProjectList";
 import { PortfolioSummary } from "@/modules/tracker/components/PortfolioSummary";
 import { TrackerTabs } from "@/modules/tracker/components/TrackerTabs";
@@ -51,7 +51,6 @@ export default async function TrackerPage({
   // Everything about how the list is narrowed and ordered is in the address (see listView), so
   // the page is drawn on the server with figures to match and any view can be sent to someone.
   const view = listView(await searchParams);
-  const valueBuckets = await listValueBuckets(trackerDb);
   // The departments are the company's own, copied from the roster before they are offered.
   await syncDepartmentsFromOrg();
   const departments = await listDepartments(trackerDb);
@@ -127,7 +126,6 @@ export default async function TrackerPage({
       <ProjectList
         projects={projects}
         view={view}
-        valueBuckets={valueBuckets}
         departments={departments}
         grouped={view.grouped}
         // No project at all is a different thing from none matching, and is said differently.

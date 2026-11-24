@@ -117,10 +117,12 @@ export async function suggestProjectKeyAction(input: {
 export async function createProjectAction(input: {
   key: string;
   name: string;
-  justification: string;
-  valueBucketId: number | null;
-  forDepartmentId: number | null;
-  doneByDepartmentId: number | null;
+  // Quick capture: a project needs only a name and key here. Justification, value and the two
+  // departments are added on the Settings tab and are required before it can be made active.
+  justification?: string | null;
+  valueBucketId?: number | null;
+  forDepartmentId?: number | null;
+  doneByDepartmentId?: number | null;
   targetDate?: string | null;
 }): Promise<ActionResult<{ key: string }>> {
   return act(
@@ -128,11 +130,10 @@ export async function createProjectAction(input: {
       const p = await createProject(trackerDb, actor, {
         key: input.key,
         name: input.name,
-        justification: input.justification,
-        // Null reaches the service as it is, which refuses it in words.
-        valueBucketId: input.valueBucketId as number,
-        forDepartmentId: input.forDepartmentId as number,
-        doneByDepartmentId: input.doneByDepartmentId as number,
+        justification: input.justification ?? null,
+        valueBucketId: input.valueBucketId ?? null,
+        forDepartmentId: input.forDepartmentId ?? null,
+        doneByDepartmentId: input.doneByDepartmentId ?? null,
         targetDate: input.targetDate || null,
       });
       return { key: p.key };
