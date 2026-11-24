@@ -181,6 +181,23 @@ const REPORT_GROUPS: Omit<NavGroup, "tool">[] = [
           </Icon>
         ),
       },
+      // Internal Projects (src/modules/tracker) — a link in Reports' Planning menu for now, not a
+      // tool of its own (2026-11-24, lib/tools.ts). Projects, Timeline and People & time are tabs
+      // across the top of the tracker pages (TrackerTabs.tsx); this one link covers all three and
+      // stays active anywhere under /tracker. Gated by the single /tracker route.
+      {
+        href: "/tracker",
+        label: "Internal Projects",
+        gate: "/tracker",
+        isActive: (p) => p === "/tracker" || p.startsWith("/tracker/"),
+        icon: (
+          <Icon>
+            <rect x="1.75" y="2.5" width="3.5" height="11" rx="0.75" />
+            <rect x="6.25" y="2.5" width="3.5" height="7" rx="0.75" />
+            <rect x="10.75" y="2.5" width="3.5" height="9" rx="0.75" />
+          </Icon>
+        ),
+      },
       {
         href: "/etc",
         label: "Monthly ETC",
@@ -301,32 +318,6 @@ const REPORT_GROUPS: Omit<NavGroup, "tool">[] = [
 ];
 
 const GROUPS: NavGroup[] = REPORT_GROUPS.map((g) => ({ ...g, tool: "reports" }));
-
-// The Internal Projects's own menu (src/modules/tracker). It was one link in the Reports menu
-// until the tracker became a tool of its own; see lib/tools.ts. All three pages are gated by
-// the one route row, /tracker, so they appear and disappear together.
-const TRACKER_GROUP: NavGroup = {
-  label: "Internal Projects",
-  tool: "tracker",
-  // One item now (2026-11-24): Projects, Timeline and People and time are tabs across the top of
-  // the tracker pages (modules/tracker/components/TrackerTabs.tsx), not separate sidebar entries.
-  // The one item stays active anywhere in the tracker.
-  items: [
-    {
-      href: "/tracker",
-      label: "Projects",
-      gate: "/tracker",
-      isActive: (p) => p === "/tracker" || p.startsWith("/tracker/"),
-      icon: (
-        <Icon>
-          <rect x="1.75" y="2.5" width="3.5" height="11" rx="0.75" />
-          <rect x="6.25" y="2.5" width="3.5" height="7" rx="0.75" />
-          <rect x="10.75" y="2.5" width="3.5" height="9" rx="0.75" />
-        </Icon>
-      ),
-    },
-  ],
-};
 
 // Admin is an area of its own, opened from the launcher at the top of the sidebar. It
 // was a group at the foot of the one menu; it is kept as a group, shown alone, so its pages
@@ -480,7 +471,7 @@ export default function Sidebar({
   const tools = toolsFor(visibleHrefs);
   const currentTool = toolForPath(sidebarPath);
   const menuTool = currentTool ?? (tools.length === 1 ? tools[0]!.id : null);
-  const visibleGroups = [...GROUPS, TRACKER_GROUP, ADMIN_GROUP]
+  const visibleGroups = [...GROUPS, ADMIN_GROUP]
     .filter((g) => !g.tool || g.tool === menuTool)
     .map((g) => ({ ...g, items: g.items.filter((i) => visibleHrefs.includes(i.gate ?? i.href)) }))
     .filter((g) => g.items.length > 0);

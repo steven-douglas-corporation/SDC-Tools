@@ -1,15 +1,20 @@
 // The tools this app holds, and which of them a person has.
 //
-// A tool is a set of pages with its own menu in the sidebar: Reports, and the Project
-// Tracker (src/modules/tracker). The tools page at "/" shows a tile for each, and the
-// launcher at the top of the sidebar switches between them.
+// A tool is a set of pages with its own menu in the sidebar. For now there is one: Reports.
+// The tools page at "/" shows a tile for each, and the launcher at the top of the sidebar
+// switches between them.
+//
+// Internal Projects (src/modules/tracker, at /tracker) was a tool of its own; for now it is a
+// page in Reports' Planning menu instead (2026-11-24), so it has no tile or launcher entry and
+// its menu is Reports'. isTrackerPath still marks those pages so feedback can tag them as
+// "Internal Projects"; the tracker can be split back into its own tool later (see MODULES/ADR).
 //
 // Nothing here decides a permission. A tool is shown when the person may open at least
 // one of its pages, and that list (`permitted`) is the layout's `visibleHrefs`, worked
 // out on the server from ROUTE_PERMISSIONS. So this file is pure and safe in a client
 // component, and a tool can never be offered here and refused by the page.
 
-export type ToolId = "reports" | "tracker";
+export type ToolId = "reports";
 
 /**
  * A tool, or Admin. Admin is not a tool — it is the pages every tool shares (users,
@@ -28,7 +33,9 @@ export interface Tool {
   href: string;
 }
 
-const isTrackerPath = (path: string): boolean => path === "/tracker" || path.startsWith("/tracker/");
+/** An Internal Projects page. Exported for feedback tagging (feedback-status.ts); the nav no
+ * longer branches on it, since these are Reports pages now. */
+export const isTrackerPath = (path: string): boolean => path === "/tracker" || path.startsWith("/tracker/");
 
 /** Pages every tool shares. They are the Admin area, and never make a tool on their own. */
 // Admin is the app's own area: accounts, permissions, feedback and the audit log, shared by
@@ -49,7 +56,9 @@ export function toolsFor(permitted: readonly string[]): Tool[] {
   const tools: Tool[] = [];
   // The housekeeping pages sit in Reports' menu but do not make Reports a tool on their own:
   // someone who may open only the Audit Log is not offered a Reports tile that leads nowhere else.
-  const reportPages = permitted.filter((p) => !isTrackerPath(p) && !isSharedPath(p) && !isReportsHousekeeping(p));
+  // Internal Projects (/tracker) IS a Reports page now, so it counts here and earns no tile of its
+  // own — a tracker-only role lands on /tracker through the Reports tile.
+  const reportPages = permitted.filter((p) => !isSharedPath(p) && !isReportsHousekeeping(p));
   if (reportPages.length > 0) {
     tools.push({
       id: "reports",
@@ -58,14 +67,6 @@ export function toolsFor(permitted: readonly string[]): Tool[] {
       // The Dashboard for those who have it; otherwise the first report they do have, which
       // is the same page a refused visit already falls back to (safeFallbackPath).
       href: reportPages.includes("/dashboard") ? "/dashboard" : reportPages[0]!,
-    });
-  }
-  if (permitted.some(isTrackerPath)) {
-    tools.push({
-      id: "tracker",
-      label: "Internal Projects",
-      description: "Cards, forecast and timeline",
-      href: "/tracker",
     });
   }
   return tools;
@@ -95,8 +96,10 @@ export function adminFor(permitted: readonly string[]): AdminArea | null {
 }
 
 /** Which area a page belongs to. Null for the tools page itself, which belongs to none. */
+// Internal Projects pages (/tracker) are Reports pages now, so they show the Reports menu (where
+// their link lives, in the Planning group). isTrackerPath still exists for feedback tagging.
 export function toolForPath(path: string): AreaId | null {
   if (path === "/" || path === "") return null;
   if (isSharedPath(path)) return "admin";
-  return isTrackerPath(path) ? "tracker" : "reports";
+  return "reports";
 }

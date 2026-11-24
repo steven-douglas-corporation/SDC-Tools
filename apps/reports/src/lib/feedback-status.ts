@@ -35,7 +35,7 @@
 // isFeedbackStatus() at every write boundary is what actually constrains it.
 
 import type { StatusVariant } from "@/components/ui/StatusBadge";
-import { toolForPath } from "@/lib/tools";
+import { isTrackerPath } from "@/lib/tools";
 
 export const FEEDBACK_STATUSES = ["open", "ack", "fixed", "wontfix"] as const;
 export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
@@ -150,7 +150,7 @@ export const FEEDBACK_SEVERITY_LABELS: Record<FeedbackSeverity, string> = {
 
 /** The `sourceApp` for a report filed from a page of this app. */
 export function feedbackSourceFor(routePath: string | null | undefined): string {
-  return routePath && toolForPath(routePath) === "tracker" ? "tracker" : "reports";
+  return routePath && isTrackerPath(routePath) ? "tracker" : "reports";
 }
 
 const FEEDBACK_SOURCE_LABELS: Record<string, string> = {

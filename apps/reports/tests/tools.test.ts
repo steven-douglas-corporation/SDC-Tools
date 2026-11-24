@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adminFor, toolForPath, toolsFor } from "../src/lib/tools";
+import { adminFor, isTrackerPath, toolForPath, toolsFor } from "../src/lib/tools";
 import { ROUTE_PERMISSIONS, permissionForPath, safeFallbackPath } from "../src/lib/route-permissions";
 import { ROLES } from "../src/lib/permissions";
 
@@ -12,24 +12,24 @@ test("a tool is offered only when the person may open one of its pages", () => {
     toolsFor(["/job-hours", "/etc"]).map((t) => [t.id, t.href]),
     [["reports", "/job-hours"]],
   );
+  // Internal Projects (/tracker) is a Reports page now, so it folds into the one Reports tile
+  // rather than earning its own; the Dashboard still wins the landing when the person holds it.
   assert.deepEqual(
     toolsFor(["/job-hours", "/dashboard", "/tracker"]).map((t) => [t.id, t.href]),
-    [
-      ["reports", "/dashboard"],
-      ["tracker", "/tracker"],
-    ],
+    [["reports", "/dashboard"]],
   );
+  // A tracker-only role still gets a tool: the Reports tile, landing on /tracker.
   assert.deepEqual(
-    toolsFor(["/tracker", "/feedback"]).map((t) => t.id),
-    ["tracker"],
+    toolsFor(["/tracker", "/feedback"]).map((t) => [t.id, t.href]),
+    [["reports", "/tracker"]],
   );
 });
 
 test("a page belongs to one tool, and the tools page to none", () => {
   assert.equal(toolForPath("/"), null);
-  assert.equal(toolForPath("/tracker"), "tracker");
-  assert.equal(toolForPath("/tracker/ALPHA/7"), "tracker");
-  assert.equal(toolForPath("/trackers"), "reports", "a prefix that is not a path segment is not the tracker");
+  // Internal Projects pages show the Reports menu (their link lives in Reports' Planning group).
+  assert.equal(toolForPath("/tracker"), "reports");
+  assert.equal(toolForPath("/tracker/ALPHA/7"), "reports");
   for (const path of ["/dashboard", "/etc", "/w", "/split"]) assert.equal(toolForPath(path), "reports");
   // Admin is an area of its own, with its own menu, and is never counted as a tool. The audit
   // log belongs here too — it records every tool's actions, not only Reports'.
@@ -37,6 +37,13 @@ test("a page belongs to one tool, and the tools page to none", () => {
     assert.equal(toolForPath(path), "admin");
   // Data Management has an /admin address but shows Reports' menu — it is about Reports' data.
   assert.equal(toolForPath("/admin/data-management"), "reports");
+});
+
+test("isTrackerPath marks the Internal Projects pages (used for feedback tagging)", () => {
+  assert.equal(isTrackerPath("/tracker"), true);
+  assert.equal(isTrackerPath("/tracker/ALPHA/7"), true);
+  assert.equal(isTrackerPath("/trackers"), false, "a prefix that is not a path segment is not the tracker");
+  assert.equal(isTrackerPath("/dashboard"), false);
 });
 
 test("the Admin tile shows only for a real admin page, never Feedback alone", () => {

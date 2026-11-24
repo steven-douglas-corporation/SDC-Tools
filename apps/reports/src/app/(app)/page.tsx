@@ -33,13 +33,6 @@ const ICONS: Record<ToolId | "scheduler" | "admin", React.ReactNode> = {
       <line x1="22" y1="20" x2="22" y2="8" />
     </>
   ),
-  tracker: (
-    <>
-      <rect x="3" y="4" width="5" height="16" rx="1" />
-      <rect x="10" y="4" width="5" height="10" rx="1" />
-      <rect x="17" y="4" width="5" height="13" rx="1" />
-    </>
-  ),
   scheduler: (
     <>
       <line x1="4" y1="6" x2="14" y2="6" />
