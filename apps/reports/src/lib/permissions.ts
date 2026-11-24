@@ -39,7 +39,10 @@ export const ROLES: readonly AppRole[] = ["ALL", "MANAGER", "PM", "SALES", "ELT"
 
 /** Human labels, for every dropdown and column header that names a role. */
 export const ROLE_LABELS: Record<AppRole, string> = {
-  ALL: "All",
+  // "Basic", not "All" (2026-11-24): this is the baseline/default role — the least-privileged
+  // one, and the fallback for a session with no role — but "All" read as "all access", the
+  // opposite of what it grants. The stored value stays `ALL`; only the label people see changes.
+  ALL: "Basic",
   MANAGER: "Managers",
   PM: "PM",
   SALES: "Sales",
