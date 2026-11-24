@@ -1,5 +1,5 @@
 import { hasInvoiceBalance } from "@/lib/left-to-invoice";
-import { poDates, stateCounts, vsRequired, type OpenPoRow } from "@/lib/open-pos-rules";
+import { poDates, stateCounts, vsRequired, type OpenPoRow, type PoDates } from "@/lib/open-pos-rules";
 
 // ── Open POs' Advanced filters: checkboxes by category (2026-11-16) ───────────────────────
 //
@@ -114,6 +114,20 @@ export function advMatch(r: OpenPoRow, f: AdvFilters, ctx: AdvContext, skip?: Ad
 }
 
 export const advActive = (f: AdvFilters) => CATEGORIES.some((c) => f[c].size > 0);
+
+/** One timeline row's dates (poDates): its next part to arrive is expected after the BOM needs it. */
+export const datesArriveAfter = (d: PoDates) => d.outstanding && vsRequired(d.expected, d.required)?.onTime === false;
+
+/**
+ * The timeline's Basic pick "Arrives after it's required" (2026-11-20): a PO with a timeline row
+ * that would draw red. Supplier rows date the whole PO, project rows each job's own lines, so a
+ * PO split across jobs counts when either way of dating it arrives after. The timeline then
+ * keeps only the rows that do (datesArriveAfter).
+ */
+export function arrivesAfterRequired(r: OpenPoRow, requiredByLine: ReadonlyMap<string, string>): boolean {
+  if (datesArriveAfter(poDates(r.items, undefined, requiredByLine))) return true;
+  return r.jobIds.length > 1 && r.jobIds.some((j) => datesArriveAfter(poDates(r.items, j, requiredByLine)));
+}
 
 /**
  * How many POs each option would leave: those passing every OTHER category's ticks that match

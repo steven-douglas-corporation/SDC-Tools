@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { PartsCostLine } from "../src/lib/sync-totaleto";
-import { buildOpenPos, type OpenPoJob } from "../src/lib/open-pos-rules";
-import { advCounts, advMatch, NO_ADV_FILTERS, type AdvContext, type AdvFilters } from "../src/lib/open-pos-filters";
+import { buildOpenPos, poDates, type OpenPoJob } from "../src/lib/open-pos-rules";
+import { advCounts, advMatch, arrivesAfterRequired, datesArriveAfter, NO_ADV_FILTERS, type AdvContext, type AdvFilters } from "../src/lib/open-pos-filters";
 
 // Open POs' Advanced filters: any tick within a group, every group with ticks.
 
@@ -109,6 +109,23 @@ test("vs required uses the next line to arrive and its BOM date", () => {
   assert.deepEqual(r.rows.filter((x) => advMatch(x, f, withBom)).map((x) => x.poNumber), ["SOON"]);
   // With no required dates loaded, everything still to arrive is "not on the BOM".
   assert.equal(r.rows.filter((x) => advMatch(x, pick({ required: ["noBom"] }), ctx)).length, 4);
+});
+
+test("the timeline's Arrives after it's required matches its red rows, a split PO's jobs included", () => {
+  const withBom = new Map(r.rows.flatMap((x) => x.items.map((l) => [l.lineId, x.poNumber === "SOON" ? "2026-11-20" : "2026-12-31"] as [string, string])));
+  assert.deepEqual(r.rows.filter((x) => arrivesAfterRequired(x, withBom)).map((x) => x.poNumber), ["SOON"]);
+  // No required dates (not loaded, or not on the BOM): nothing can be shown arriving after.
+  assert.equal(r.rows.filter((x) => arrivesAfterRequired(x, new Map())).length, 0);
+
+  // Split across two jobs: the whole PO's next line (1101's) is in time, 1102's own line is
+  // after, so its project row draws red and the PO is listed.
+  const a = line({ po: "SPLIT", total: 100, requiredDate: "2026-11-10" });
+  const b = line({ po: "SPLIT", total: 100, requiredDate: "2026-12-15" });
+  const split = buildOpenPos(new Map([["1101", [a]], ["1102", [b]]]), JOBS, TODAY).rows[0];
+  const bom = new Map([[a.lineId, "2026-12-31"], [b.lineId, "2026-12-01"]]);
+  assert.equal(datesArriveAfter(poDates(split.items, undefined, bom)), false);
+  assert.equal(datesArriveAfter(poDates(split.items, "1102", bom)), true);
+  assert.equal(arrivesAfterRequired(split, bom), true);
 });
 
 test("a count is what ticking that box would leave, on top of the other groups", () => {
