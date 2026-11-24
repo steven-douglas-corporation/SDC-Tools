@@ -22,6 +22,7 @@ import {
 import { listProjects, listValueBuckets, throughLens } from "@/modules/tracker/service/queries";
 import { ProjectList } from "@/modules/tracker/components/ProjectList";
 import { PortfolioSummary } from "@/modules/tracker/components/PortfolioSummary";
+import { TrackerTabs } from "@/modules/tracker/components/TrackerTabs";
 
 // The Internal Projects's front page. This file is deliberately thin (docs/MODULES.md): it checks
 // the app permission, works out who is asking, and hands the module's own data to the module's
@@ -76,6 +77,7 @@ export default async function TrackerPage({
   return (
     <div className={PAGE_SHELL}>
       <PageTitle className="mb-1">Internal Projects</PageTitle>
+      <TrackerTabs active="projects" />
       <p className="mb-4 max-w-3xl text-sm text-sdc-gray-600">
         Projects in stack-rank order. <strong>Forecast</strong> is when the work is expected to finish;{" "}
         <strong>Safe date</strong> allows for work running over, and is the one to promise.{" "}

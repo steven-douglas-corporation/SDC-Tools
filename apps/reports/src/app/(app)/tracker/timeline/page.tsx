@@ -10,6 +10,7 @@ import { departmentsScope, listDepartments } from "@/modules/tracker/service/dep
 import { DepartmentFilter } from "@/modules/tracker/components/DepartmentPicker";
 import { departmentView, groupingOf } from "@/modules/tracker/components/format";
 import { Timeline } from "@/modules/tracker/components/Timeline";
+import { TrackerTabs } from "@/modules/tracker/components/TrackerTabs";
 
 // Every open project on one timeline, at /tracker/timeline. "TIMELINE" is a reserved project
 // key (service/projects.ts) so this page can never be shadowed by a project's board.
@@ -62,14 +63,8 @@ export default async function TrackerPortfolioTimelinePage({
 
   return (
     <div className={PAGE_SHELL}>
-      <p className="mb-1 text-sm">
-        <Link href="/tracker" className="text-sdc-blue hover:underline">
-          Internal Projects
-        </Link>
-        <span className="text-sdc-gray-400"> / </span>
-        <span className="text-sdc-gray-600">Timeline</span>
-      </p>
-      <PageTitle className="mb-3">Timeline of all projects</PageTitle>
+      <PageTitle className="mb-1">Internal Projects</PageTitle>
+      <TrackerTabs active="timeline" />
       <p className="mb-3 text-sm">
         <Link
           href={(() => {

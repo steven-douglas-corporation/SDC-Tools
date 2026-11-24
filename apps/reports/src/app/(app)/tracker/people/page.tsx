@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PAGE_SHELL } from "@/components/ui/classnames";
 import { PageTitle } from "@/components/ui/Typography";
@@ -8,6 +7,7 @@ import { trackerConfigured, trackerDb } from "@/modules/tracker/db";
 import { syncPeopleFromUsers, trackerActor } from "@/modules/tracker/current-actor";
 import { getCapacityOverview } from "@/modules/tracker/service/people";
 import { Capacity } from "@/modules/tracker/components/Capacity";
+import { TrackerTabs } from "@/modules/tracker/components/TrackerTabs";
 
 // People and their time, as the forecast sees them. "PEOPLE" is a reserved project key
 // (service/projects.ts) so this page can never be shadowed by a project's board.
@@ -20,14 +20,8 @@ export default async function TrackerPeoplePage() {
 
   return (
     <div className={PAGE_SHELL}>
-      <p className="mb-1 text-sm">
-        <Link href="/tracker" className="text-sdc-blue hover:underline">
-          Internal Projects
-        </Link>
-        <span className="text-sdc-gray-400"> / </span>
-        <span className="text-sdc-gray-600">People and time</span>
-      </p>
-      <PageTitle className="mb-1">People and time</PageTitle>
+      <PageTitle className="mb-1">Internal Projects</PageTitle>
+      <TrackerTabs active="people" />
       <p className="mb-4 max-w-3xl text-sm text-sdc-gray-600">
         The forecast books each card against its assignee&apos;s free hours, day by day. This page is where those hours
         come from: the length of a normal project day, anyone whose day is shorter, time off, and company holidays.

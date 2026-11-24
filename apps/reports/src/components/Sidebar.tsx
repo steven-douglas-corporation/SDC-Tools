@@ -308,46 +308,20 @@ const GROUPS: NavGroup[] = REPORT_GROUPS.map((g) => ({ ...g, tool: "reports" }))
 const TRACKER_GROUP: NavGroup = {
   label: "Internal Projects",
   tool: "tracker",
+  // One item now (2026-11-24): Projects, Timeline and People and time are tabs across the top of
+  // the tracker pages (modules/tracker/components/TrackerTabs.tsx), not separate sidebar entries.
+  // The one item stays active anywhere in the tracker.
   items: [
     {
       href: "/tracker",
       label: "Projects",
       gate: "/tracker",
-      // A project's own board, timeline and cards are all "in" Projects.
-      isActive: (p) =>
-        p === "/tracker" || (p.startsWith("/tracker/") && p !== "/tracker/timeline" && p !== "/tracker/people"),
+      isActive: (p) => p === "/tracker" || p.startsWith("/tracker/"),
       icon: (
         <Icon>
           <rect x="1.75" y="2.5" width="3.5" height="11" rx="0.75" />
           <rect x="6.25" y="2.5" width="3.5" height="7" rx="0.75" />
           <rect x="10.75" y="2.5" width="3.5" height="9" rx="0.75" />
-        </Icon>
-      ),
-    },
-    {
-      href: "/tracker/timeline",
-      label: "Timeline",
-      gate: "/tracker",
-      isActive: (p) => p === "/tracker/timeline",
-      icon: (
-        <Icon>
-          <line x1="2.5" y1="3.5" x2="9.5" y2="3.5" strokeLinecap="round" />
-          <line x1="5.5" y1="8" x2="13.5" y2="8" strokeLinecap="round" />
-          <line x1="3.5" y1="12.5" x2="10.5" y2="12.5" strokeLinecap="round" />
-        </Icon>
-      ),
-    },
-    {
-      href: "/tracker/people",
-      label: "People and time",
-      gate: "/tracker",
-      isActive: (p) => p === "/tracker/people",
-      icon: (
-        <Icon>
-          <circle cx="6" cy="5.5" r="2.5" />
-          <path d="M1.5 13.5 C1.5 10.5 3.5 9.5 6 9.5 C8.5 9.5 10.5 10.5 10.5 13.5" strokeLinecap="round" />
-          <circle cx="12" cy="9" r="2.75" />
-          <path d="M12 7.6 V9 L13 9.7" strokeLinecap="round" strokeLinejoin="round" />
         </Icon>
       ),
     },
