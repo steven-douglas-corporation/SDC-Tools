@@ -11,7 +11,7 @@ keeps itself updated, and opens each app over HTTP.
 |---|---|---:|---|---|
 | Assemblies Library | `apps/assemblies` | 4001 | `sdc-assemblies` | Express, Vite + React, Azure SQL |
 | Build Readiness Report | `apps/build-readiness` | 4002 | `sdc-readiness` | Express, Vite + React, Total ETO (MSSQL), Smartsheet |
-| SDC Scheduler | `SDC_Scheduler/` (separate repo) | 4003 | `sdc-scheduler` | Express, Socket.io, MySQL |
+| SDC Scheduler | `SDC_Scheduler/` | 4003 | `sdc-scheduler` | Express, Socket.io, MySQL |
 | State Logic Builder | `apps/state-logic` | 4004 | `sdc-statelogic` | Express, Vite + React Flow, Azure SQL |
 | SDC Calendar | `apps/calendar` | 4005 | `sdc-calendar` | Express, Vite + React, MySQL |
 | SDC Reports | `apps/reports` | 4006 | `sdc-reports` | Next.js 16, Prisma, MySQL, Total ETO |
@@ -58,9 +58,8 @@ npm run install:all               # the apps that are not workspaces (calendar s
 npm install --prefix apps/reports
 ```
 
-The Scheduler is a separate repository (see
-[ADR 0002](docs/adr/0002-scheduler-stays-a-separate-repository.md)); clone it
-into `SDC_Scheduler/` if you need it locally.
+The Scheduler lives in `SDC_Scheduler/` and is part of this repository (see
+[ADR 0007](docs/adr/0007-scheduler-moves-into-this-repository.md)); a normal clone includes it.
 
 Copy each app's `.env.example` to `.env` and fill it in. Then run one app:
 
@@ -106,7 +105,7 @@ themselves from there.
 ```
 apps/                 one directory per deployable app (own package.json, .env, lint/test/build)
   assemblies/  build-readiness/  calendar/  reports/  shell/  state-logic/
-SDC_Scheduler/        separate repo, ignored here (ADR 0002)
+SDC_Scheduler/        SDC Scheduler (moved in by ADR 0007)
 tools/powerbi/        Power BI report sources, MCP server, design mock-ups
 tools/data-warehouse/ PostgreSQL warehouse: SQL, Paylocity loader, roadmap (the SDC Brain design)
 tools/share-inventory/ metadata crawl of the company shares; terms and exposure findings from it

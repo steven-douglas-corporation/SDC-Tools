@@ -27,7 +27,7 @@ Every runnable app and tooling folder in this workspace, what it does, and how i
 ## SDC Scheduler
 
 - **Purpose:** Gantt/grid project scheduling, procurement/vendor PO tracking, job hours, SDC Assistant (Claude-powered chat).
-- **Folder:** `SDC_Scheduler/` — **not moved**. Its own standalone git repo (`danbelliveau2/SDC_Scheduler`), deliberately excluded from this monorepo's git tracking. Dan (external collaborator) pushes directly to its `main`; production re-syncs via `git reset --hard origin/main` every 2 minutes.
+- **Folder:** `SDC_Scheduler/` — moved into this repository by ADR 0007, with its full history (it was `danbelliveau2/SDC_Scheduler`). Dan (external collaborator) authors it. Production now deploys it through `sdc-main-updater` like the other apps; its own hard-reset updater is no longer started.
 - **Port:** 4003 (app), 4013 (updater manual trigger), 4100 (read-only MCP server)
 - **Start command:** `node server.js` (workspace: `npm run start:scheduler` from repo root)
 - **Production process:** PM2 `sdc-scheduler`; its updater runs inside `sdc-updater-hub`

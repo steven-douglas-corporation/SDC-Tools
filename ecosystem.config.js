@@ -39,7 +39,7 @@
  * ── Folder layout (2026-08 restructuring) ─────────────────────────────────────
  *   apps/assemblies, apps/build-readiness, apps/state-logic, apps/calendar,
  *   apps/shell live inside this monorepo and moved here from their old flat
- *   top-level names. SDC_Scheduler, apps/reports (then sdc-etc-planner), and tools/powerbi (then SDC-PowerBI-DEV) did
+ *   top-level names. SDC_Scheduler (until ADR 0007 brought it in), apps/reports (then sdc-etc-planner), and tools/powerbi (then SDC-PowerBI-DEV) did
  *   NOT move — each is its own independent git repo with its own remote and
  *   deploy pipeline, so relocating them inside this monorepo wouldn't change
  *   how production gets updates for them, only the paths every reference to
@@ -51,7 +51,7 @@ module.exports = {
   apps: [
 
     // ── SDC Updater Hub ──────────────────────────────────────────────────────
-    // Runs all 3 auto-updaters (monorepo, scheduler, statelogic) in one
+    // Runs the auto-updaters (monorepo incl. the Scheduler, statelogic) in one
     // process — see scripts/sdc-updater-hub.js for why this is safe (each
     // updater's own error handling is unchanged; only merged the OS process).
     // Replaces the old separate sdc-updater / sdc-brr-updater /
@@ -127,9 +127,9 @@ module.exports = {
     },
 
     // ── SDC Scheduler ───────────────────────────────────────────────────────
-    // NOT moved — own standalone git repo (danbelliveau2/SDC_Scheduler),
-    // deliberately excluded from this monorepo's git tracking (see .gitignore).
-    // (its auto-updater now runs inside sdc-updater-hub, not as a separate app)
+    // Tracked in this repo since ADR 0007 (it was danbelliveau2/SDC_Scheduler).
+    // sdc-main-updater deploys it like the other apps; its own auto-updater
+    // (SDC_Scheduler/scripts/server-auto-update.js) is no longer started.
     {
       name:          'sdc-scheduler',
       script:        'server.js',

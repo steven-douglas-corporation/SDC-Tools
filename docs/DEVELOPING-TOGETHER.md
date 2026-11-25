@@ -26,7 +26,7 @@ minutes:
 | Updater | Every | What it does to the tree |
 |---|---|---|
 | `scripts/sdc-main-updater.js` | 5 min | Fast-forward only (guarded), selective `git checkout` of changed files, `fs.unlinkSync` for files deleted upstream |
-| `SDC_Scheduler/scripts/server-auto-update.js` | **2 min** | **`git reset --hard origin/<branch>`** |
+| `SDC_Scheduler/scripts/server-auto-update.js` (retired by ADR 0007; no longer started) | **2 min** | **`git reset --hard origin/<branch>`** |
 | `apps/state-logic/scripts/server-auto-update.js` | 5 min | Pull, `npm install`, `npm run build`, `pm2 restart` |
 
 With one developer who knows where the traps are, that is survivable. With **two people

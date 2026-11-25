@@ -1,6 +1,6 @@
 # ADR 0002 — SDC Scheduler stays a separate repository, nested and ignored
 
-**Status:** Accepted, 2026-09-13
+**Status:** Superseded by [ADR 0007](0007-scheduler-moves-into-this-repository.md) (proposed 2026-11-24). Originally accepted 2026-09-13.
 
 ## Context
 

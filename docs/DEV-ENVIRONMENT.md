@@ -84,7 +84,7 @@ again. After editing `schema.prisma`, use `npx prisma migrate dev --name <what>`
 | Power BI / Fabric | Service principal | **Not connected** |
 | DataWarehouse (Postgres) | Hours, roster, position families, job postings | **Not connected**; hours are seeded directly, job postings are faked (`SDC_DEV_FAKE_HIRING=1`) |
 | Paylocity / inventory workbooks | Files on the share | **Not read**; paths unset |
-| Scheduler integration | Live | **Off**; Scheduler is a separate repo |
+| Scheduler integration | Live | **Off**; the Scheduler is not started in the dev environment |
 | Hourly auto-refresh + *Refresh Data* | On | **Off** (`SDC_DEV_DISABLE_SYNC=1`) |
 | `NODE_ENV` | `production` (built with `next build`) | `development` (Turbopack, hot reload) |
 | Deploys | Merge to `master` | **Nothing you do here deploys.** Open a pull request |
@@ -167,7 +167,7 @@ spreadsheet (see [SECURITY.md](../SECURITY.md)).
 
 | App | Why | What it would need |
 |---|---|---|
-| SDC Scheduler | Separate repository (ADR 0002); has its own `docker-compose.local.yml` and MySQL | Clone it into `SDC_Scheduler/`; its README and compose file are authoritative |
+| SDC Scheduler | Part of this repository (ADR 0007); has its own `docker-compose.local.yml` and MySQL | Its README and compose file in `SDC_Scheduler/` are authoritative |
 | Calendar | MySQL, but no schema bootstrap in the repo to build a database from | A schema export from production, with data removed |
 | Assemblies Library, State Logic Builder | Azure SQL and UNC file shares | An Azure SQL dev database and share |
 | Build Readiness Report (standalone) | Reads Total ETO (SQL Server) | A SQL Server container and a copy of the views it queries |
