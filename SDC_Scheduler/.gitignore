@@ -1,0 +1,71 @@
+# Node
+node_modules/
+
+# Runtime cache / generated files
+pbi_cache.json
+# Hours cache. Renamed from .pbi-cache on 2026-08-26 when hours moved off Power
+# BI; the old name is kept ignored so a stale directory on an existing server
+# does not suddenly show up as untracked.
+.hours-cache/
+.pbi-cache/
+.push-pending
+.update-conflict
+
+# Local reference/scratch material
+abhi-reference/
+
+# Personal local dev stack (MySQL + Node containers). Machine-specific,
+# not shared infra — production is PM2 on SERVER-APP1, not Docker.
+docker-compose.local.yml
+
+# Built DXT extension artifacts (rebuild with `npx @anthropic-ai/dxt pack` — see mcp/README.md)
+*.dxt
+
+# SQLite database files — runtime data, schema is in db.js
+scheduler.db
+scheduler.db-shm
+scheduler.db-wal
+
+# Database backup dumps — runtime data (full DB contents), never source
+backups/
+
+*.sql
+
+# Local IDE / tooling
+.claude/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.err
+npm-debug.log*
+
+# Customer-uploaded Service Request attachments (photos of faults, site docs).
+# Runtime data belonging to customers — never source, never committed.
+uploads/
+
+# Local data / private assets
+Estimate Sheet/
+Smartsheet Schedules/
+*.pdf
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Self-signed local TLS cert/key for the MCP server (mcp/sdc-db-server.mjs) —
+# generated per-server, never shared/committed, same treatment as .env.
+mcp/certs/
+azure-backup-*.json
+scripts/auto-pull.log
+
+# Auto-updater sync state (runtime, not source)
+.update-sha
+
+.env.bak*

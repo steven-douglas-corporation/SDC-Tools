@@ -1,0 +1,146 @@
+/**
+ * realtime-ui.js — Phase 4 client-side Socket.io listener.
+ *
+ * Connects to the server's Socket.io and listens for invalidate events:
+ *   tasks:updated      → debounce + reload tasks
+ *   team:updated       → debounce + reload team
+ *   settings:updated   → debounce + reload settings
+ *   shop_parts:updated → debounce + reload shop parts
+ *   vendor_pos:updated → debounce + reload vendor POs
+ *   users:updated      → no-op for now (Phase 3.5 may surface user list)
+ *
+ * Debounced (250 ms) so a burst of saves from another tab triggers one
+ * reload, not ten. Reload is best-effort — uses the existing loadTasks /
+ * loadTeam / loadSettings functions from app.js if they're present.
+ *
+ * No-op if window.io isn't available (CDN failed to load) — silent fallback,
+ * the app still works in single-tab mode.
+ */
+'use strict';
+
+(function () {
+  if (typeof io !== 'function') return;       // socket.io CDN didn't load
+  const socket = io('/', { transports: ['websocket', 'polling'] });
+
+  const _debouncers = {};
+  function _debounce(key, fn, ms = 250) {
+    clearTimeout(_debouncers[key]);
+    _debouncers[key] = setTimeout(fn, ms);
+  }
+
+  // Track whether the current tab made the most recent local edit so we
+  // don't echo our own write back as a "remote" change. App.js can stamp
+  // window._lastLocalEdit when it kicks off a save; we ignore events that
+  // arrive within 800 ms of that stamp.
+  function _isLocalEcho() {
+    return window._lastLocalEdit && (Date.now() - window._lastLocalEdit) < 800;
+  }
+
+  socket.on('tasks:updated', (_payload) => {
+    if (_isLocalEcho()) return;
+    _debounce('tasks', () => {
+      if (typeof loadTasks === 'function') loadTasks();
+    });
+  });
+
+  socket.on('team:updated', () => {
+    // Skip echoes from our own writes — otherwise the 250 ms-debounced reload
+    // tears down team-input rows while the user is still typing in them.
+    if (_isLocalEcho()) return;
+    _debounce('team', () => {
+      if (typeof loadTeam === 'function') loadTeam();
+    });
+  });
+
+  socket.on('settings:updated', () => {
+    _debounce('settings', () => {
+      if (typeof loadSettings === 'function') loadSettings();
+    });
+  });
+
+  // Added along with the nav-performance pass: shop parts / vendor POs were
+  // fetched fresh on every tab visit because nothing ever invalidated them —
+  // the server already emitted these events (see routes/shopParts.js,
+  // routes/vendorPos.js, lib/cronJobs.js's 30-min ETO sync) but no listener
+  // existed. Now that setView() caches state.shopParts/state.vendorPOs across
+  // navigations, these are what keep that cache correct when the data
+  // actually changes (this tab's own edits are skipped via _isLocalEcho()).
+  socket.on('shop_parts:updated', () => {
+    if (_isLocalEcho()) return;
+    _debounce('shop_parts', () => {
+      if (typeof loadShopParts === 'function') loadShopParts();
+    });
+  });
+
+  socket.on('vendor_pos:updated', () => {
+    if (_isLocalEcho()) return;
+    _debounce('vendor_pos', () => {
+      if (typeof loadVendorPOs === 'function') loadVendorPOs();
+    });
+  });
+
+  // Service module. Deliberately NOT skipped on _isLocalEcho(): the most
+  // valuable Service event is a CUSTOMER submitting from the website, which is
+  // never this tab's own edit, and the Service page redraws cheaply from two
+  // small queries. service-ui.js owns the redraw and no-ops unless the Service
+  // page is the one on screen.
+  socket.on('service:updated', () => {
+    _debounce('service', () => {
+      if (typeof window.onServiceUpdated === 'function') window.onServiceUpdated();
+    });
+  });
+
+  // Meeting notes changed on another tab/user. The server emits this but the
+  // client previously ignored it, so notes only refreshed on a full project
+  // switch ("click off and back on"). Reload the active project's notes.
+  socket.on('notes:updated', (payload) => {
+    if (_isLocalEcho()) return;
+    const project = payload && payload.project;
+    _debounce('notes', () => {
+      if (typeof reloadProjectNotes === 'function' && project) reloadProjectNotes(project);
+    });
+  });
+
+  // Project list changed (create / rename / delete). Reload tasks so renamed
+  // or new projects show without a manual refresh.
+  socket.on('projects_changed', () => {
+    if (_isLocalEcho()) return;
+    _debounce('projects', () => {
+      if (typeof loadTasks === 'function') loadTasks();
+    });
+  });
+
+  // 'connect' fires on the INITIAL connect and on every RECONNECT. The prod
+  // server restarts every ~2 min (git auto-pull) and on each deploy, dropping
+  // all sockets; any event emitted while we were disconnected is missed, so the
+  // tab silently shows stale data until a manual project switch. On reconnect,
+  // re-pull everything the user is looking at. (Skip the very first connect —
+  // app.js init() already did the initial load.)
+  let _connectedBefore = false;
+  socket.on('connect', () => {
+    if (_connectedBefore) {
+      _debounce('reconnect', () => {
+        try {
+          if (typeof loadTasks === 'function') loadTasks();
+          if (typeof loadSettings === 'function') loadSettings();
+          if (typeof loadTeam === 'function') loadTeam();
+          const project = (typeof state !== 'undefined') ? state?.filters?.project : null;
+          if (project && typeof reloadProjectNotes === 'function') reloadProjectNotes(project);
+        } catch (_) {}
+      }, 300);
+    }
+    _connectedBefore = true;
+    // Phase 4.1: announce ourselves as present on the active project so the
+    // server can broadcast a "currently editing" pill list. Best-effort —
+    // app.js doesn't have a state.filters.project until after init.
+    setTimeout(() => {
+      try {
+        const project = (typeof state !== 'undefined') ? state?.filters?.project : null;
+        const user    = window.sdcAuth?.user || { id: 0, name: 'anonymous' };
+        if (project) socket.emit('presence:join', { project, user });
+      } catch (_) {}
+    }, 600);
+  });
+
+  window._sdcSocket = socket;
+})();

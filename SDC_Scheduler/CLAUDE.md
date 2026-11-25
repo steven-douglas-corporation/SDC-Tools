@@ -1,0 +1,206 @@
+# SDC Project Scheduler — Working Rules
+
+---
+
+## TWO DEVELOPERS — READ THIS FIRST
+
+This repo is maintained by two people with distinct roles. Read this before touching anything.
+
+| Person | Role | What they own |
+|--------|------|---------------|
+| **Dan** (danbelliveau2) | Core developer | `public/app.js`, `public/styles.css`, `public/index.html`, `public/release-notes.js`, `public/phases.js` |
+| **Abhi** (akamuju) | Deployment + UI/UX + Backend | `server.js`, `db.js`, `lib/` (mysqlDb, hoursApi, etoDb, agent, ops, backfillProjects, cronJobs, emailService, auth), `scripts/`, `mcp/`, `custom-public/`, `routes/` |
+
+### CRITICAL — Production uses MySQL, NOT SQLite
+
+Dan's local dev uses `node:sqlite`. **Production runs MySQL (`mysql2` pool via `mysqlDb.js`).** These are completely different databases.
+
+- **NEVER rewrite `db.js` to use `node:sqlite` or `DatabaseSync`** — production will crash
+- **NEVER rewrite `server.js` to remove MySQL** — all routes depend on `mysqlDb.getPool()`
+- **NEVER remove `lib/mysqlDb.js`** — it is the database connection layer for production
+- **NEVER remove or simplify `auth.js` JWT logic** — production has full role-based auth (viewer/editor/admin)
+
+### File ownership rules for AI agents
+
+If you are **Dan's Claude Code session** (working on features, frontend):
+- Edit `public/app.js`, `public/styles.css`, `public/index.html` freely
+- Do NOT touch `server.js`, `db.js`, `mysqlDb.js`, `hoursApi.js`, `etoDb.js`, `auth.js`, `ops.js`, `mcp/`
+- Do NOT add SQLite imports anywhere
+
+If you are **Abhi's Claude Code session** (deployment, UI/UX, backend):
+- Edit backend files freely
+- For frontend patches: use `custom-public/app-local.js` when possible
+- For major frontend features: edit `public/app.js` directly but coordinate with Dan
+
+### Git workflow (BOTH developers)
+
+```
+Before starting:  git pull origin main
+After finishing:  git push origin main
+```
+
+One branch: `main`. Always pull first. Never commit and forget to push — the production server auto-pulls from `main` every 2 minutes.
+
+---
+
+## Hard rules (no exceptions)
+
+1. **EVERY push to GitHub is a release — bump the rev in `public/release-notes.js` and write the notes.**
+   Changed 2026-10-02. Verbatim from Dan: *"anytime you push to GitHub, you should be releasing a new revision and updating."* Newest entry first; `version`, `date`, `notes[]` in the house style already in the file (a one-line headline, then sections in CAPS with ▸ bullets written for the people who use the app, not for developers). The rail's Rev badge reads the first entry. The old rule was the opposite — only Dan bumped the rev — and it meant 207 commits shipped under one revision number with nothing written down.
+
+2. **NEVER tell Dan to open dev tools or check the console.**
+   Verbatim: *"I'm not fucking doing this dev tools bullshit. I'm not doing it."* Use visible alerts, in-app diagnostics, or just fix it.
+
+3. **NEVER commit without being explicitly asked.**
+
+4. **NEVER claim something works without verifying.**
+   Don't say "fixed!" when you haven't actually tested it.
+
+---
+
+## Design philosophy
+
+- **Strip code, simplify.** Verbatim: *"make hte code as simple as you can.. delete everytihgn you cna and have the same function. then build these features"*
+- **No overcomplication.** Verbatim: *"stop overthinking", "stop trying ot overcomplicate"*
+- **Personal view should mirror the main Schedule view.** Same patterns, same layout (grid LEFT + Gantt RIGHT), same column headers, same row-by-row alignment, same controls. Do NOT diverge — duplicating render logic creates drift that breaks the user's mental model.
+- **If a feature exists in the main Schedule view, the personal view inherits the same UX.** Don't reinvent.
+
+---
+
+## Specific UX rules
+
+### Never ship a raw browser control
+**Verbatim:** *"I've said this a hundred times, so it should be saved in your rules, but like this choose file button doesn't match the feel of this app at all. Not the right color, it's not the right shape, right font."*
+
+A bare `<input type="file">` renders the BROWSER's button — grey, square, system font, system border radius. Same for an unstyled `<select>`, `<input type="date">` spinner, `confirm()`, `alert()` and `prompt()`. They all read as "this part isn't finished."
+
+- **File input:** hide the input (`.visually-hidden-file`), drive it from a `<label for="…">` styled `btn-primary`, and show the chosen filename in a muted span beside it. Pattern: `showRiskPasteDialog`.
+- **Dialogs:** `showConfirmDialog` / `showAlertDialog` / `showPromptDialog` / `showPasswordDialog`. Never the native ones.
+- **Anything new:** it uses the app's buttons, the app's font, the app's radius and the SDC palette — or it isn't done.
+
+### Column widths in ANY grid
+**Verbatim:** *"Anytime you build a... any kind of grid for me, the columns have to all make sense for what they are. It's a description column. It's gotta fit the descriptions. Right? If it's a percent complete, it should be a small column."*
+
+- Description / Name columns get the MOST width — `width: auto` or `1fr` so they take the remainder. Long text like `"Acceptance at Customer (SAT)"` must not clip.
+- Numeric columns (%, $, qty) get small widths (~60–80 px). They hold 2-4 digits and a percent sign — nothing more.
+- Date columns sized for the ISO `YYYY-MM-DD` input (~130–150 px).
+- Single-icon columns (checkbox, ✓/×, delete button) get tiny widths (~40–60 px). They hold one glyph.
+- **Use `table-layout: fixed`** + `<colgroup>` so the widths actually apply. Without `fixed`, browsers redistribute width based on cell content (which is exactly what causes the bug — long placeholder text in one column starves the description column).
+- Tooltips on `<th>` should `white-space: nowrap` + `text-overflow: ellipsis` so long header text doesn't push the column wider than its data needs.
+
+### Grid + Gantt panels
+- Grid on LEFT, Gantt on RIGHT, side-by-side (not stacked).
+- Grid rows align row-by-row with Gantt bars — `alignGanttToGrid()` pattern. Personal view needs this too.
+- Column headers visible at the top of the grid (Task / Project / Dur / Due for personal; the standard set for main).
+
+### Right-click any row
+- "+ Add row below" always shown. No conditions. New row inherits the clicked row's section info, lands directly below via `sort_order = clicked + 0.5`.
+- Verbatim: *"if i click any line regardlesso f where it is i can add below it who cares about the sections.. just right click any line and it adds one below no quetions no notihng its so easy"*
+
+### Filters
+- Quick filters in the popover are "show ONLY X" filters. None should appear "on" with nothing checked.
+- "Show completed" ON = show ONLY completed; OFF = no completion filtering (all show).
+- **Hide completed items** lives in the **View** menu, NOT in filters. Separate toggle.
+
+### Default collapse state
+- A top-level section whose tasks are **all** 100% complete opens collapsed.
+- **Section 50 (Teardown & Install) opens collapsed until the LEAD test engineer is past 50%.** Verbatim from Dan: *"this is like one of the first things I do in every schedule I open is collapse section fifty because it takes up a lot of space, but it's like we're not even close to that, so I don't care about that yet."* The lead is the **first engineering test row in section 40 by sort order** (Test Engineer 1 on a standard schedule) — *"whoever the first engineer is, because that's like the main engineer."* A job with no test-engineer row has nothing to wait on, so section 50 opens normally. See `leadTestProgress()`.
+- Seeding runs **once per project** (`seedCollapsedSections`). Expand a section and it stays expanded for the rest of the visit.
+
+### Completed (100%) tasks
+- **Grid row stays normal.** No row-wide hash, no row-wide lime border. Just the green-check % pill.
+- **Gantt bar: lime green outline + diagonal lime hash lines through the bar.** Description label stays readable.
+- **NO ahead/behind drift chip on done tasks.** Baseline feature already covers finish-variance.
+- **NO over-allocation warning on done tasks, and done tasks book nothing.** Rule as of 2026-10-12 (Dan): over-allocation is a person's OPEN lines on real jobs (no templates, no Sales / Test / On Hold / Closed), summed per day. Every line on a day over 100% is over-allocated for THAT day only — both lines, not just the lower priority — and the Gantt paints a red band across just those days (`drawOverAllocSpans`). Verbatim: *"if it's not the only assignment, then it can't be red… there's times where a task is red and times where a task isn't red."* The old whole-bar red is gone.
+- **Completed column exists in the grid** — shows `completed_on` date. Server auto-stamps when progress → 100, clears when it drops below.
+
+### Backlog
+- **GUTTED.** No special-case handling. If user wants a Backlog row, they add a regular row and name it "Backlog". `isBacklogTask()` returns false everywhere. No auto-create. No special filter exemptions. No special delete protection.
+
+### Personal view (Actions tab when signed in)
+- Toolbar with: View (Grid / Both / Gantt), Filter chips (Overdue / Ahead / Hide done), Zoom (− / Fit / +), name + sign-out.
+- Filters are SEPARATE from the main Schedule's filters (live in `_actionsPageState.personalFilters`).
+- View modes inherit from main schedule patterns — Grid is the simple list, Both is grid+gantt side-by-side, Gantt is the personal Gantt full-width.
+
+---
+
+## Architecture notes (so you don't blow these away)
+
+- **Server**: `server.js` (Express + Socket.io + MySQL). Routes are in `routes/`. Backend helpers (auth, ops, agent, email, cron, ETO, hours) live in `lib/`. FIELDS list includes `completed_on`.
+- **Client**: single-page app under `public/`. `app.js` is the everything-file.
+- **Schema migrations**: `db.js` does `ALTER TABLE tasks ADD COLUMN …` on boot. Don't re-run, just add new lines if needed.
+- **`HIERARCHY`** constant drives every grid/gantt walk. Sections 10 / 40 / 50.
+- **`inferredAnchorKey(task)`** is the canonical anchor check. Returns null for `anchor_key='backlog'` (backlog is gutted; treated as regular row).
+- **`taskScheduleDelta(task)`** returns 0 for completed tasks — no drift chip when done.
+- **`alignGanttToGrid()`** at ~line 3357 aligns bars to grid rows by `data-id` → `offsetTop`. Personal view needs an analog.
+
+### Gantt render chain — DEFENSIVE WRAPPING REQUIRED
+
+`renderGantt()` calls a chain of drawers in order. **EVERY new drawer added to this chain MUST be wrapped in `try/catch`.** If any drawer throws, every drawer after it is skipped — that breaks zoom (scroll-restore in `setZoom` never runs → view drifts), breaks alloc/dur labels (`drawBarMeta` is at the end of the chain), and breaks any future feature anchored at the bottom.
+
+```js
+function drawNewThing() {
+  try {
+    // ...actual work...
+  } catch (_) { /* swallow — cosmetic, render chain must continue */ }
+}
+```
+
+This rule cost a half-day of debugging when `drawDoneHashOverlay` killed zoom + bar-meta labels. Never again.
+
+### Adding SVG children to a `.bar-wrapper` — USE `appendChild`, NOT `insertBefore`
+
+`.bar-label` in frappe-gantt is NOT a direct child of `.bar-wrapper`. It's nested. Calling `wrap.insertBefore(elem, label)` throws `DOMException: The node before which the new node is to be inserted is not a child of this node.` Combined with our defensive `try/catch`, the exception is silently swallowed and nothing renders.
+
+ALWAYS use `wrap.appendChild(elem)` when adding overlays to a bar-wrapper. This paints the element ON TOP of bar-label, so make the element thin / faint enough that the description text underneath still reads.
+
+URL references inside SVG attributes (`clip-path="url(#...)"`, `mask="url(#...)"`, `fill="url(#pattern)"`) also fail silently in this SVG context. Stick to inline math (clip endpoints to bar bounds, compute polygon vertices, etc.) and basic SVG primitives (`<rect>`, `<line>`, `<polygon>`). No URL refs.
+
+This rule cost multiple rounds of "ship and you can't see it" debugging on the done-task hash overlay. Never again.
+
+### SVG `<text>` elements need `font-family` inline
+
+frappe-gantt's stylesheet sets `font-family` on `.gantt text { ... }`. If you add a `<text>` element WITHOUT setting `style.fontFamily = 'sans-serif'` inline, the text inherits whatever frappe-gantt's stylesheet picked — which may not render visibly. Result: `<line>` and `<rect>` elements you add show up just fine, but `<text>` is invisible.
+
+Always copy the pattern from `drawBarMeta` for new SVG text:
+```js
+text.style.fontFamily = 'sans-serif';
+text.style.fontSize = '10px';
+text.style.fontWeight = '700';
+// Optional but recommended for legibility on busy backgrounds:
+text.setAttribute('paint-order', 'stroke');
+text.setAttribute('stroke', 'rgba(255,255,255,0.9)');
+text.setAttribute('stroke-width', '2.5');
+text.setAttribute('stroke-linejoin', 'round');
+```
+
+This rule cost MULTIPLE rounds of "letters not visible" debugging on the weekday-letters header row. Never again.
+
+### `state.gantt.gantt_start` is a Date OBJECT, not a string
+
+In frappe-gantt v0.6, `state.gantt.gantt_start` is a `Date` instance. Do NOT concatenate strings to it — `gantt_start + 'T00:00:00Z'` produces garbage like `"Fri Aug 07 2026 00:00:00 GMT-0500T00:00:00Z"` → `new Date(NaN)` → silent date-math failure (getUTCDay returns NaN, array[NaN] returns undefined, etc.). Always pass directly:
+
+```js
+const startMs = new Date(g.gantt_start).getTime();  // handles both Date and string inputs
+```
+
+This bug masquerades as "elements not rendering" because empty `textContent` produces invisible text. Took a day of investigation. Never again.
+
+### Procurement vendor status — metric mismatch bug
+
+In `_procPartsCardView()` (~line 8919), vendor-level status aggregation (lines 8926–8944) groups PARTS from the readiness BOM, calculating vendor % as `received parts / total parts`. The backend vendor API (`etoDb.getVendorStatus()`) counts PO LINES instead: `received lines / total lines`. These are different metrics.
+
+**The bug:** When backend data overrode vendor-level totals (lines 8952–8953), the yellow/partial badge showed even when all displayed parts were green/received — because a single PO line with partial qty (2/3) counted as a whole "line not received," inflating the unmet count.
+
+**The fix:** Keep vendor-level metrics parts-based (what's displayed in the parts list). Backend data updates only PO-level rows (lines 8966–8967) for accuracy. Never override vendor.total or vendor.received with backend counts — they measure different granularities.
+
+**Rule:** When aggregating progress at multiple levels (vendor / PO / part), all levels must use the same metric (either all line-based or all parts-based) or display visibly breaks. If backend and frontend calculate differently, DON'T merge them — one becomes the source of truth; the other is read-only.
+
+This rule cost a half-day of "all parts show received but vendor shows partial" debugging. Never again.
+
+---
+
+## When in doubt
+- Ask Dan once, then move forward.
+- Keep changes small and reversible.
+- The main Schedule view's UX is the reference. The personal view should look and behave the same way, scoped to one person.
