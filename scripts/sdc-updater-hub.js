@@ -1,13 +1,14 @@
 'use strict';
 
 /**
- * scripts/sdc-updater-hub.js — runs all 3 SDC auto-updaters in one PM2 process.
+ * scripts/sdc-updater-hub.js — runs the SDC auto-updaters in one PM2 process.
  *
  * Replaces separate PM2 apps (sdc-updater, sdc-scheduler-updater,
  * sdc-statelogic-updater) with one. Each updater's own file is unchanged in
  * behavior — this just `require()`s them, which runs their existing `main()`
  * self-start and their existing trigger HTTP server, exactly as when each ran
- * standalone. Ports 4013/4014 are unaffected; nothing outside this process
+ * standalone. Port 4014 (State Logic trigger) is unaffected; port 4013, the old
+ * Scheduler updater's trigger, is gone (ADR 0007); nothing outside this process
  * needs to change.
  *
  * ── Why Build Readiness has no updater here (2026-08-26) ───────────────────

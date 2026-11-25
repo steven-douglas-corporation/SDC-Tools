@@ -9,7 +9,7 @@ account that ran `pm2 start`) or `pm2 list` shows an empty table.
 
 | pm2 name | App | Port | Health | cwd |
 |---|---|---|---|---|
-| `sdc-updater-hub` | Server updater (monorepo + Scheduler + State Logic updaters in one process) | 4013 / 4014 triggers | log only | repo root |
+| `sdc-updater-hub` | Server updater (monorepo incl. Scheduler, plus State Logic updater, in one process) | 4014 trigger (State Logic) | log only | repo root |
 | `sdc-assemblies` | Assemblies Library | 4001 | `GET /health` | `apps/assemblies` |
 | `sdc-readiness` | Build Readiness | 4002 | `GET /health` | `apps/build-readiness` |
 | `sdc-scheduler` | SDC Scheduler | 4003 | `GET /health` | `SDC_Scheduler` |

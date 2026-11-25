@@ -141,12 +141,11 @@ GitHub Actions (windows-latest runner) — .github/workflows/release.yml
 
 ### Backend servers (live, no shell release needed)
 
-One PM2 process, `sdc-updater-hub`, runs three independent pollers in a single Node process (merged from separate PM2 apps for operational simplicity — each poller's own error handling is unchanged):
+One PM2 process, `sdc-updater-hub`, runs independent pollers in a single Node process (merged from separate PM2 apps for operational simplicity — each poller's own error handling is unchanged):
 
 | Poller | Watches | Interval | Manual trigger | Scope of what it overwrites |
 |---|---|---|---|---|
-| `sdc-main-updater.js` | `steven-douglas-corporation/SDC-Tools` (this monorepo's `master`) | 5 min | — | Everything **except** paths owned by the two updaters below; selective `git checkout` per changed file, `git reset --soft`; rebuilds the Assemblies and Build Readiness Vite bundles when their sources change; restarts `sdc-assemblies`, `sdc-readiness`, `sdc-calendar`. Only fast-forwards — it skips the update when local `HEAD` is ahead of or diverged from the remote |
-| `server-auto-update.js` (inside `SDC_Scheduler/scripts/`) | `danbelliveau2/SDC_Scheduler` `main` | 2 min | `POST :4013/trigger` | **Whole repo**, `git reset --hard origin/main` — any local uncommitted change here is destroyed within 2 minutes |
+| `sdc-main-updater.js` | `steven-douglas-corporation/SDC-Tools` (this monorepo's `master`) | 5 min | — | Everything **except** paths owned by the updater below (since ADR 0007 that includes `SDC_Scheduler/`); selective `git checkout` per changed file, `git reset --soft`; rebuilds the Assemblies and Build Readiness Vite bundles when their sources change; restarts `sdc-assemblies`, `sdc-readiness`, `sdc-calendar`, plus `sdc-scheduler` when files under `SDC_Scheduler/` change. Only fast-forwards — it skips the update when local `HEAD` is ahead of or diverged from the remote |
 | `server-auto-update.js` (inside `apps/state-logic/scripts/`) | `danbelliveau2/state_logic_builder` GitHub *Releases* (not every commit) | 5 min | `POST :4014/trigger` | `src/`, `public/`, `index.html` only — `server.js`/DB files/`.env` preserved |
 
 `apps/reports` (SDC Reports) and `tools/powerbi` have no live auto-updater — they're deployed manually (`npm run deploy` for Reports; Power BI Desktop publish for the PBI project).

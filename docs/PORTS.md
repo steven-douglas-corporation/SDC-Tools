@@ -26,7 +26,7 @@ The Electron shell itself is a desktop client, not a server — it has no produc
 | Port | Purpose | Owner |
 |-----:|---------|-------|
 | 4100 | Read-only MCP database server | `SDC_Scheduler/mcp/sdc-db-server.mjs` |
-| 4013 | Manual trigger — `POST /trigger` re-checks SDC Scheduler's external repo immediately | `SDC_Scheduler/scripts/server-auto-update.js` (runs inside `sdc-updater-hub`) |
+| 4013 | Retired (ADR 0007) — was the Scheduler's own updater trigger; nothing listens. The desktop shell's "update" action for the Scheduler still targets it and fails | — |
 | 4014 | Manual trigger — `POST /trigger` re-checks State Logic Builder's external repo immediately | `apps/state-logic/scripts/server-auto-update.js` (runs inside `sdc-updater-hub`) |
 | 4015 | Desktop shell update feed — read-only HTTP for `latest.yml`, the installer and its blockmap; **open this port to the LAN** in Windows Firewall | `scripts/sdc-shell-feed.js` (runs inside `sdc-updater-hub`) |
 

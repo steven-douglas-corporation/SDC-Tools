@@ -391,18 +391,6 @@ async function checkAndUpdate() {
       { cwd: REPO_DIR, stdio: 'inherit' }
     );
 
-    // 9. Ensure sdc-scheduler-repo-sync is running (start if not yet registered).
-    try {
-      execSync('pm2 describe sdc-scheduler-repo-sync', { stdio: 'pipe' });
-    } catch {
-      log('Starting sdc-scheduler-repo-sync for the first time…');
-      execSync(
-        `pm2 start "${REPO_DIR}/ecosystem.config.js" --only sdc-scheduler-repo-sync`,
-        { cwd: REPO_DIR, stdio: 'inherit' }
-      );
-      execSync('pm2 save --force', { cwd: REPO_DIR, stdio: 'pipe' });
-    }
-
     const newHead = getLocalHead();
     log(`Deploy complete. Now at: ${newHead ? newHead.slice(0, 7) : 'unknown'}`);
 

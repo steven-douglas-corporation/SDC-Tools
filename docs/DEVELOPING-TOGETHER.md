@@ -247,6 +247,8 @@ SDC-Tools afterwards. Doing neither loses it.
 
 ## 6. Phase 4 — The Scheduler, last or not at all
 
+> **Update 2026-11-25:** the Scheduler has since moved into this repository (ADR 0007), so reasons 1 and 2 below no longer apply. They are kept as the record of why it was left separate until then.
+
 Now that Dan has SDC-Tools access, `SDC_Scheduler` *could* move. It should go **last**, and
 only once Phases 0–3 are proven, for three reasons:
 
