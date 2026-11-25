@@ -33,6 +33,14 @@ if (!process.env.SKIP_AUTO_UPDATE) {
     ({ autoUpdater } = require('electron-updater'));
     autoUpdater.autoDownload         = true;  // silent background download
     autoUpdater.autoInstallOnAppQuit = false; // explicit install only (safety)
+    // Updates come from the company server (scripts/sdc-shell-feed.js, port 4015),
+    // not GitHub Releases: the repo is private, and the installer bundles .env.
+    // The feed mirrors the newest GitHub Release, so release.yml is unchanged.
+    // Same host the shell already uses to reach every app (SDC_SERVER_HOST).
+    autoUpdater.setFeedURL({
+      provider: 'generic',
+      url: process.env.SDC_UPDATE_FEED_URL || `http://${process.env.SDC_SERVER_HOST || 'localhost'}:4015`,
+    });
     autoUpdater.logger = { info: console.log, warn: console.warn, error: console.error, debug: () => {} };
   } catch (e) {
     console.warn('[updater] electron-updater not available:', e.message);
