@@ -398,12 +398,11 @@ and closes the two gaps.
 
 ### Server-hosted apps — already done, nothing to change
 
-`sdc-updater-hub` (PM2) runs three updaters in one process:
+`sdc-updater-hub` (PM2) runs two updaters in one process:
 
 | Updater | Pulls from | Covers |
 |---|---|---|
-| `sdc-main-updater.js` | **SDC-Tools** `master` | assemblies 4001, readiness 4002, statelogic 4004, calendar 4005, Reports 4006 |
-| scheduler updater | Dan's `SDC_Scheduler` | scheduler 4003 |
+| `sdc-main-updater.js` | **SDC-Tools** `master` | assemblies 4001, readiness 4002, scheduler 4003 (since ADR 0007), statelogic 4004, calendar 4005, Reports 4006 |
 | statelogic updater | upstream fork | State Logic vendored copy |
 
 So every server-hosted app already auto-updates from SDC-Tools — including Reports, which

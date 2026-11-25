@@ -186,7 +186,7 @@ async function checkAndUpdate() {
     if (checkedOut > 0) log(`Checked out ${checkedOut} monorepo file(s).`);
 
     // 5. Advance HEAD to remote SHA without touching working tree.
-    //    Per-app-updater files in SDC_Scheduler/ and apps/state-logic/ are preserved as-is.
+    //    Per-app-updater files in apps/state-logic/ are preserved as-is.
     run(`git reset --soft origin/${GITHUB_BRANCH}`);
     log(`HEAD → ${remoteSha.slice(0, 7)}`);
 
@@ -408,7 +408,7 @@ async function main() {
   log('SDC Tools monorepo server updater started (v2 — selective checkout)');
   log(`Watching: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/tree/${GITHUB_BRANCH}`);
   log(`Check interval: ${CHECK_INTERVAL_MS / 60000} min`);
-  log('Owns: assemblies (4001)  readiness (4002)  calendar (4005)');
+  log('Owns: assemblies (4001)  readiness (4002)  scheduler (4003)  calendar (4005)');
   log('Per-app updaters: sdc-statelogic-updater → 4004');
 
   await checkAndUpdate();

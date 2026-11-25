@@ -50,8 +50,9 @@ account that ran `pm2 start`) or `pm2 list` shows an empty table.
    The updater loads its code when it starts, so the first Reports deploy after
    this arrived still ran the old stop-first flow. Run `pm2 restart
    sdc-updater-hub` once after it; every deploy after that uses the above.
-5. State Logic and the Scheduler have their own updaters in the same hub,
-   following their own upstream repos.
+5. State Logic has its own updater in the same hub, following its own upstream
+   repo. The Scheduler is deployed by the main updater like the other apps
+   (ADR 0007).
 
 To deploy Reports by hand (same steps the updater takes; builds beside the
 running app, then switches):
@@ -124,8 +125,10 @@ the retired personal repo and need one manual install of a current installer.
 
 ## Known sharp edges
 
-- `git reset --hard` in `SDC_Scheduler/` every 2 minutes (its updater) wipes
-  unpushed work there. Never edit the Scheduler in place on the server.
+- The Scheduler is deployed by the main updater like the other apps (ADR 0007);
+  its old `git reset --hard` updater is no longer started. Still never edit the
+  Scheduler in place on the server: an update overwrites local changes to any
+  file it changes.
 - The updater's "local HEAD is ahead" guard: if someone commits on the server
   without pushing, deploys silently stop. `pm2 logs sdc-updater-hub` says so.
 - Port 4006 zombies — see Reports above.

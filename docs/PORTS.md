@@ -30,7 +30,7 @@ The Electron shell itself is a desktop client, not a server — it has no produc
 | 4014 | Manual trigger — `POST /trigger` re-checks State Logic Builder's external repo immediately | `apps/state-logic/scripts/server-auto-update.js` (runs inside `sdc-updater-hub`) |
 | 4015 | Desktop shell update feed — read-only HTTP for `latest.yml`, the installer and its blockmap; **open this port to the LAN** in Windows Firewall | `scripts/sdc-shell-feed.js` (runs inside `sdc-updater-hub`) |
 
-All four updaters (monorepo, Build Readiness, Scheduler, State Logic) run inside one PM2 process, `sdc-updater-hub` — see [DEPLOYMENT.md](../ARCHITECTURE.md#auto-update-pipeline) for what each one watches and how often.
+Two updaters (the monorepo one, which also deploys the Scheduler, and State Logic) run inside one PM2 process, `sdc-updater-hub` — see [DEPLOYMENT.md](../ARCHITECTURE.md#auto-update-pipeline) for what each one watches and how often.
 
 ## Reserved
 
