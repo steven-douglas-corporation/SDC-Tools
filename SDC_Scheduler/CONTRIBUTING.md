@@ -1,5 +1,7 @@
 # Contributing to SDC Scheduler
 
+> **Moved (ADR 0007, 2026-11-25).** This folder is part of the SDC-Tools repository. Pushing to `danbelliveau2/SDC_Scheduler` no longer deploys anything, and there is no `main` branch in SDC-Tools: the branch is `master`. Changes reach production only when a pull request is merged into SDC-Tools `master` (see the root `CONTRIBUTING.md`). The git commands below describe the old workflow and are kept until the new one is agreed.
+
 ## Who works on this repo
 
 | Developer | GitHub | Role |
@@ -21,7 +23,7 @@ git commit -m "feat: description"
 git push origin main
 ```
 
-The production server pulls from `main` every 2 minutes. Your push goes live automatically.
+In the old workflow the production server pulled from `main` every 2 minutes. It no longer does; see the notice at the top.
 
 **If push is rejected** (someone pushed while you were working):
 ```bash
@@ -63,7 +65,7 @@ git push origin main
 | `routes/` | All 12 route files |
 | `mcp/` | Read-only MCP server (port 4100) |
 | `custom-public/` | Frontend overlay patches |
-| `scripts/` | Auto-updater, deployment scripts |
+| `scripts/` | Helper scripts (the old auto-updater `server-auto-update.js` is retired; do not run it) |
 | `ecosystem.config.js` | PM2 process definitions |
 
 ---
@@ -86,8 +88,8 @@ tryAlter('ALTER TABLE tasks ADD COLUMN my_col VARCHAR(255) DEFAULT NULL');
 ## Production server
 
 ```
-GitHub (main branch)
-      ↓  auto-pulled every 2 min by sdc-scheduler-updater
+GitHub (SDC-Tools, master branch)
+      ↓  deployed every 5 min by sdc-main-updater (inside sdc-updater-hub)
 Windows Server — SERVER-APP1
       ├─ sdc-scheduler         port 4003  (main app)
       ├─ MySQL 9.7
@@ -96,7 +98,7 @@ Windows Server — SERVER-APP1
 
 - App URL on LAN: `http://SERVER-APP1:4003`
 - PM2 logs: `C:\Users\akamuju\.pm2\logs\sdc-scheduler-*.log`
-- Manual deploy trigger: `POST http://localhost:4013/trigger`
+- No manual deploy trigger. To check for an update immediately, restart `sdc-updater-hub` with `pm2` as the account that owns it
 
 ---
 
@@ -123,6 +125,6 @@ Windows Server — SERVER-APP1
 2. **Every Gantt drawer must be in `try/catch`** — one throw kills all subsequent drawers silently
 3. **`state.gantt.gantt_start` is a `Date` object** — never concatenate strings to it
 4. **SVG additions to `.bar-wrapper`: use `appendChild`, not `insertBefore`** — label is nested, not direct child
-5. **`mysqlDb.js` is never overwritten by the auto-updater** — preserved list
+5. **There is no "preserved files" list any more** — the old Scheduler updater protected `mysqlDb.js`, but `sdc-main-updater` deploys every file changed on `master`, so a change to `mysqlDb.js` goes live like any other
 6. **`.env` is never committed** — MySQL password, API keys, JWT secret live there
 7. **Compression filter excludes SSE routes** — buffering kills server-sent events

@@ -9,9 +9,9 @@ Single-page client (`public/app.js`) talks to an Express server (`server.js`) ba
 ## Quick start
 
 ```bash
-git clone https://github.com/danbelliveau2/SDC_Scheduler.git
-cd SDC_Scheduler
-npm install
+git clone https://github.com/steven-douglas-corporation/SDC-Tools.git
+cd SDC-Tools/SDC_Scheduler
+npm install            # the Scheduler is an npm workspace of SDC-Tools; deps install at the repo root
 cp .env.example .env        # fill in MYSQL_* at minimum; all other vars are optional
 node server.js
 # → http://localhost:3000
@@ -70,8 +70,7 @@ Fill `SMTP_*` in `.env`. Without those vars, @mentions still get logged to the `
 | `public/release-notes.js` | Rev history (only Dan bumps this) |
 | `mcp/sdc-db-server.mjs` | MCP server — exposes scheduler DB to Claude via stdio |
 | `mcp/dxt/` | Packaged DXT extension (rebuild with `npx @anthropic-ai/dxt pack`) |
-| `scripts/server-auto-update.js` | Polls danbelliveau2/SDC_Scheduler, replaces safe files, restarts PM2 |
-| `scripts/repo-sync.js` | Commits auto-updater changes back to centralized library repo |
+| `scripts/server-auto-update.js` | Retired (ADR 0007): the Scheduler's old own updater. No longer started; do not run it. Deployment is `sdc-main-updater` (see Production deployment) |
 | `CLAUDE.md` | Working rules for Claude when editing this codebase |
 | `ARROW_ROUTING_RULES.md` | Arrow / predecessor routing reference |
 | `ARCHITECTURE.md` | Deeper system design |
@@ -168,15 +167,12 @@ All env vars except `MYSQL_*` are optional. Defaults shown below.
 
 ## Production deployment (PM2)
 
-In the centralized library, PM2 manages the scheduler as `sdc-scheduler` (port 4003). Two sidecar processes run alongside it:
+This folder is part of the SDC-Tools repository (ADR 0007, 2026-11-25), and PM2 manages the scheduler as `sdc-scheduler` (port 4003). It is deployed like the other SDC-Tools apps:
 
-- **`sdc-scheduler-updater`** — polls `danbelliveau2/SDC_Scheduler` every 2 min; on new commit, downloads tarball, replaces safe dirs/files, merges new npm deps, and restarts PM2.
-- **`sdc-scheduler-repo-sync`** — commits any files updated by the auto-updater back to the centralized library repo every 2 min, keeping both repos in sync.
+- **`sdc-main-updater`** (running inside `sdc-updater-hub`) polls SDC-Tools `master` every 5 min. When `master` moves it checks out the changed files, runs `npm install` if `SDC_Scheduler/package.json` or its lockfile changed, and restarts `sdc-scheduler` when any file under `SDC_Scheduler/` changed. The other apps it owns restart too.
+- The old `sdc-scheduler-updater` (polling `danbelliveau2/SDC_Scheduler`) and the `sdc-scheduler-repo-sync` job are retired. Pushing to the old repository no longer deploys anything.
 
-Manual update trigger (runs on port 4013):
-```bash
-curl -X POST http://localhost:4013/trigger
-```
+There is no manual update trigger any more (the old one on port 4013 is gone). To check for an update immediately, restart `sdc-updater-hub` with `pm2` as the account that owns it.
 
 ---
 
