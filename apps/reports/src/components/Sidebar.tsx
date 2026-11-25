@@ -155,6 +155,20 @@ const GROUPS: NavGroup[] = [
           </Icon>
         ),
       },
+      {
+        // The Project Tracker module (2026-11-15). Shown only to roles holding
+        // tracker:view, which ships OFF for everyone but ELT.
+        href: "/tracker",
+        label: "Project Tracker",
+        isActive: (p) => p === "/tracker" || p.startsWith("/tracker/"),
+        icon: (
+          <Icon>
+            <rect x="1.75" y="2.5" width="3.5" height="11" rx="0.75" />
+            <rect x="6.25" y="2.5" width="3.5" height="7" rx="0.75" />
+            <rect x="10.75" y="2.5" width="3.5" height="9" rx="0.75" />
+          </Icon>
+        ),
+      },
     ],
   },
   {

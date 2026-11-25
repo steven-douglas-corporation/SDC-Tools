@@ -1,0 +1,139 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+// A small "?" that shows a short explanation next to the thing it explains: while the pointer
+// is on it, or pinned open by a click. A pinned one closes when the
+// "?" is clicked again, when anything outside it is clicked, and on Escape.
+//
+// Everything inside is a <span>, so it can sit inside a <label> or a table heading. Pass the
+// explanation as children, built from spans with "block" where a new line is wanted.
+
+export function HelpTip({ label, children }: { label: string; children: React.ReactNode }) {
+  // Where to draw the explanation, in window coordinates; null while it is closed. It is drawn
+  // at the end of the page and fixed to the window, not inside its parent, for two reasons: a
+  // scrolling table or card would cut it off, and this app's zoom control scales everything
+  // inside the page, which would put it in the wrong place.
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const open = at !== null;
+  const setOpen = (next: boolean | ((was: boolean) => boolean)) =>
+    setAt((was) => {
+      const want = typeof next === "function" ? next(was !== null) : next;
+      const el = box.current;
+      if (!want || !el) return null;
+      const r = el.getBoundingClientRect();
+      // The app's zoom control scales the whole page, so a pixel on screen is not a CSS pixel.
+      // How big the "?" is drawn against how big it is laid out gives the scale to undo.
+      const scale = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
+      const left = r.left / scale;
+      // 320px wide (w-80): kept on screen when the "?" is near the right edge.
+      return { top: r.bottom / scale + 6, left: Math.max(8, Math.min(left, window.innerWidth / scale - 328)) };
+    });
+  const box = useRef<HTMLSpanElement>(null);
+  const panel = useRef<HTMLSpanElement>(null);
+  // Hovering shows the explanation for as long as the pointer is on the "?". A click pins it
+  // open, for touch screens and for reading at leisure, until it is closed again.
+  const [pinned, setPinned] = useState(false);
+  const close = () => {
+    setPinned(false);
+    setOpen(false);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    // It does not follow the page, so it closes when the page moves under it.
+    const shut = () => {
+      setPinned(false);
+      setAt(null);
+    };
+    const moved = shut;
+    window.addEventListener("scroll", moved, true);
+    window.addEventListener("resize", moved);
+    const away = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (!box.current?.contains(target) && !panel.current?.contains(target)) shut();
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") shut();
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("scroll", moved, true);
+      window.removeEventListener("resize", moved);
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  return (
+    <span ref={box} className="relative inline-block normal-case tracking-normal">
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        // No title: the browser would show the button's name on hover, over the explanation.
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => {
+          if (!pinned) setOpen(false);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => {
+          if (!pinned) setOpen(false);
+        }}
+        // Inside a <label>: without this the click would also land on the field the label is for.
+        onClick={(e) => {
+          e.preventDefault();
+          if (pinned) close();
+          else {
+            setPinned(true);
+            setOpen(true);
+          }
+        }}
+        className={`flex h-4 w-4 items-center justify-center rounded-full border text-micro font-bold ${
+          open
+            ? "border-sdc-blue text-sdc-blue"
+            : "border-sdc-gray-400 text-sdc-gray-600 hover:border-sdc-blue hover:text-sdc-blue"
+        }`}
+      >
+        ?
+      </button>
+      {at &&
+        createPortal(
+          <span
+            ref={panel}
+            role="dialog"
+            aria-label={label}
+            style={at}
+            // A click inside is not a click on the label's field either.
+            onClick={(e) => e.preventDefault()}
+            className="fixed z-50 block w-80 cursor-default whitespace-normal rounded-lg border border-sdc-border bg-white p-3 text-left text-xs font-normal leading-snug text-sdc-navy shadow-lg"
+          >
+            {children}
+          </span>,
+          document.body,
+        )}
+    </span>
+  );
+}
+
+/** What the safe date means, wherever one is shown. The screens say "Safe date"; the data calls it P80. */
+export function SafeDateHelp() {
+  return (
+    <HelpTip label="What the safe date means">
+      <span className="mb-1 block font-semibold">Safe date: the date to promise</span>
+      <span className="block">
+        There are 4 chances in 5 that the work is finished by this date. The Forecast date is what happens if every
+        estimate is exactly right, so it is the earlier of the two; the safe date allows for work running over.
+      </span>
+      <span className="mt-2 block">
+        It is blank until the simulation has run, and again after a change to the plan until it next runs.
+      </span>
+      <span className="mt-2 block text-sdc-gray-600">
+        How it is worked out: the forecast is run thousands of times, each time letting every estimate come in a little
+        under or over. The safe date is the one that 80% of those runs finish by, also called P80.
+      </span>
+    </HelpTip>
+  );
+}
