@@ -33,7 +33,9 @@ model (Phase 3), and a stable model assumes the warehouse runs reliably (Phase 2
 **Platform** (the open items in the README)
 - Register Postgres as a Windows service; schedule the daily run; open the firewall rule.
 - Backups: a nightly `pg_dump` plus the file archive, stored off this machine, with a quarterly test restore.
-- Decide where the warehouse lives long term. A Linux VM is the better home: it gets off the shared app server, and Phase 5 needs pgvector, which the Windows Postgres binaries don't include.
+- Move the warehouse to its own VM, off the shared app server. Decided 2026-11-24 ([ADR 0007](../../docs/adr/0007-mysql-for-apps-postgres-for-the-warehouse.md)), along with the engine split: apps stay on MySQL, the warehouse stays on PostgreSQL. Still open: when it moves, and the operating system. Linux is the better home, because Phase 5 needs pgvector, which the Windows Postgres binaries don't include.
+- Before that move, replace the Reports app's on-demand load trigger. It starts a local Windows scheduled task, so it only works while the app and the warehouse share a server.
+- App-entered data (ETC entries, quoted hours, overrides) and Total ETO come into the raw layer by scheduled copy jobs built like the Paylocity load (ADR 0007).
 
 **Logging**
 - Structured logs: one JSON line per event (run, step, file, rows, duration, outcome), written to `D:\DataWarehouse\logs` and kept 90 days.
