@@ -247,6 +247,8 @@ SDC-Tools afterwards. Doing neither loses it.
 
 ## 6. Phase 4 — The Scheduler, last or not at all
 
+> **Update 2026-11-25:** the Scheduler has since moved into this repository (ADR 0007), so reasons 1 and 2 below no longer apply. They are kept as the record of why it was left separate until then.
+
 Now that Dan has SDC-Tools access, `SDC_Scheduler` *could* move. It should go **last**, and
 only once Phases 0–3 are proven, for three reasons:
 
@@ -396,12 +398,11 @@ and closes the two gaps.
 
 ### Server-hosted apps — already done, nothing to change
 
-`sdc-updater-hub` (PM2) runs three updaters in one process:
+`sdc-updater-hub` (PM2) runs two updaters in one process:
 
 | Updater | Pulls from | Covers |
 |---|---|---|
-| `sdc-main-updater.js` | **SDC-Tools** `master` | assemblies 4001, readiness 4002, statelogic 4004, calendar 4005, Reports 4006 |
-| scheduler updater | Dan's `SDC_Scheduler` | scheduler 4003 |
+| `sdc-main-updater.js` | **SDC-Tools** `master` | assemblies 4001, readiness 4002, scheduler 4003 (since ADR 0007), statelogic 4004, calendar 4005, Reports 4006 |
 | statelogic updater | upstream fork | State Logic vendored copy |
 
 So every server-hosted app already auto-updates from SDC-Tools — including Reports, which
