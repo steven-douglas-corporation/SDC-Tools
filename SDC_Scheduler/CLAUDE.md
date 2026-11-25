@@ -39,7 +39,7 @@ Before starting:  git pull origin main
 After finishing:  git push origin main
 ```
 
-One branch: `main`. Always pull first. Never commit and forget to push — the production server auto-pulls from `main` every 2 minutes.
+**Moved (ADR 0007, 2026-11-25):** this folder is part of SDC-Tools. There is no `main` branch there: the branch is `master`, changes go in through a pull request, and the production server deploys `master` every 5 minutes. Pushing to `danbelliveau2/SDC_Scheduler` no longer deploys. The two commands above are the old workflow.
 
 ---
 
