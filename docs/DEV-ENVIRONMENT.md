@@ -76,13 +76,13 @@ again. After editing `schema.prisma`, use `npx prisma migrate dev --name <what>`
 |---|---|---|
 | Where it runs | `SERVER-APP1`, PM2, auto-deployed from `master` within ~5 min | Your machine, started by hand |
 | Port | 4006 | 4006 (same, so links and the shell behave) |
-| Database | MySQL on the server, real company data | MySQL 8 in Docker, `127.0.0.1:3317`, database `sdc_reports_dev`, **seeded fake data** |
+| Database | MySQL on the server, real company data | MySQL 8 in Docker, `127.0.0.1:3317`, database `sdc_reports_dev`, **seeded fake data**. For real numbers, read the DataWarehouse (see [Real data](#real-data-read-the-datawarehouse)) |
 | Sign-in | Entra ID SSO via the Scheduler broker, plus credentials | Credentials only (`*@dev.local`) |
 | Total ETO parts lines (parts cost, left-to-invoice, parts list) | Live SQL Server over the LAN | **Faked**: generated PO lines (`SDC_DEV_FAKE_ETO=1`, see [DEV-TEST-DATA.md](DEV-TEST-DATA.md#3-faux-eto-and-bom-data)) |
 | Total ETO BOM tree (Job Details > Procurement) | Live SQL Server | **Faked** from the same PO lines (`SDC_DEV_FAKE_ETO=1`, [`dev-fake-bom.ts`](../apps/reports/src/lib/dev-fake-bom.ts)) |
 | Total ETO job mirror, cash-flow queries | Live SQL Server | **Not connected**; BOM dashboard is seeded instead |
 | Power BI / Fabric | Service principal | **Not connected** |
-| DataWarehouse (Postgres) | Hours, roster, position families, job postings | **Not connected**; hours are seeded directly, job postings are faked (`SDC_DEV_FAKE_HIRING=1`) |
+| DataWarehouse (Postgres) | Hours, roster, position families, job postings | Read-only through the `reports_dev` login when `DATAWAREHOUSE_URL` is set ([tools/data-warehouse/README.md](../tools/data-warehouse/README.md)). Blank in the seeded profile, where hours are seeded directly and job postings are faked (`SDC_DEV_FAKE_HIRING=1`) |
 | Paylocity / inventory workbooks | Files on the share | **Not read**; paths unset |
 | Scheduler integration | Live | **Off**; Scheduler is a separate repo |
 | Hourly auto-refresh + *Refresh Data* | On | **Off** (`SDC_DEV_DISABLE_SYNC=1`) |
@@ -90,8 +90,50 @@ again. After editing `schema.prisma`, use `npx prisma migrate dev --name <what>`
 | Deploys | Merge to `master` | **Nothing you do here deploys.** Open a pull request |
 
 The practical consequence: in production a page is filled by a sync from a
-company system; in dev **you put the rows in the database yourself**. That is
-what the seed and [DEV-TEST-DATA.md](DEV-TEST-DATA.md) are for.
+company system. In dev **you put the rows in the app's database yourself**; that
+is what the seed and [DEV-TEST-DATA.md](DEV-TEST-DATA.md) are for. For real
+numbers, read the DataWarehouse.
+
+### Real data: read the DataWarehouse
+
+Seeded data cannot show a problem that only real data has (an hours code nobody
+mapped, a job with years of history), so a fix built against it can be wrong and
+still look right. When the work is checking numbers, reports or calculations,
+check them against the DataWarehouse, through its read-only `reports_dev` login
+(added 2026-11-15, see [tools/data-warehouse/README.md](../tools/data-warehouse/README.md)).
+
+A dev clone never connects to the production Reports database, read-only or
+otherwise. The rule for where data lives (direction set 2026-11-20):
+
+| Kind of data | Examples | Lives in |
+|---|---|---|
+| What the app needs to run | Users, sessions, role permissions, saved views, refresh locks | The app's own database only |
+| Business data from another system | Paylocity hours and roster, Total ETO jobs and parts | The DataWarehouse |
+| Source data entered in the app | Monthly ETC, quoted hours, change quotes, Standard Fees pools, the Profitability Rate Matrix | The app's database, where it is entered, **and copied into the DataWarehouse** |
+
+Reporting and dev read business data and the copied source data from the
+warehouse, never from the app's production database.
+
+**What the warehouse has today:** Paylocity punches (`"Fact"."JobHours"`), the
+roster, position families and job postings.
+
+**What it does not have yet:** anything entered in Reports. The copy of that
+source data into the warehouse is **not built** (as of 2026-11-20). Until it is,
+a figure that depends on it (quoted hours, ETC, a job's type or status, the
+pre-2025 hours snapshot) cannot be reproduced on a dev machine. Compare with the
+live app instead, and say in the pull request which figures you could not check.
+
+To use it, put the `reports_dev` connection string in `DATAWAREHOUSE_URL` in
+your own `apps/reports/.env`. The password is in Credential Manager, not in any
+file in this repo.
+
+- Keep `SDC_DEV_DISABLE_SYNC=1`. With the warehouse connected, a refresh would
+  load real hours and the real roster over your seeded rows.
+- The simplest check is a read-only query against the warehouse from a script,
+  compared with what your change produces.
+- The data is confidential. Do not paste real names, hours or dollar amounts
+  into a prompt, a commit, a test fixture or a screenshot (see
+  [SECURITY.md](../SECURITY.md)).
 
 ---
 
@@ -128,9 +170,11 @@ previous months; ETC entries for those months **locked** and the current month
 
 ## 4. Safety: what stops a dev build reaching production
 
-1. **No credentials.** Total ETO, Power BI, the DataWarehouse and the Scheduler
-   are only reachable if you put their credentials in `.env`. The dev profile
-   leaves them blank. Do not add them.
+1. **No credentials that can write, and none for production's own database.**
+   Total ETO, Power BI, the DataWarehouse and the Scheduler are only reachable
+   if you put their credentials in `.env`. The dev profile leaves them blank.
+   The one you may add is `reports_dev` on the DataWarehouse, which is read-only
+   ([Real data](#real-data-read-the-datawarehouse)).
 2. **The sync switch.** `SDC_DEV_DISABLE_SYNC=1` stops the hourly pass and makes
    *Refresh Data* refuse. Without it the app tries every source on boot and
    a sync can overwrite or purge seeded rows.
